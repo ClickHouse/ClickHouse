@@ -224,7 +224,7 @@ void FunctionArrayUniq::executeMethodImpl(
                 }
             }
 
-            method.emplaceKey(set, j, pool);
+            method.template emplaceKey(set, j, pool);
         }
 
         res_values[i] = set.size() + found_null;

@@ -95,13 +95,12 @@ struct HashTableCell
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State &) : key(key_) {}
-/// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
-    value_type & getValueMutable() { return key; }
     const value_type & getValue() const { return key; }
 
     /// Get the key.
+    Key & getKey() { return key; }
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Are the keys at the cells equal?
@@ -266,6 +265,12 @@ protected:
 
     template <typename, typename, typename, typename, typename, typename, size_t>
     friend class TwoLevelHashTable;
+
+    template <typename>
+    friend class StringHashTable;
+
+    template <typename, typename, size_t>
+    friend class TwoLevelStringHashTable;
 
     using HashValue = size_t;
     using Self = HashTable;
@@ -751,16 +756,34 @@ public:
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
     {
         size_t hash_value = hash(x);
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
+        emplace(x, it, inserted, hash_value);
     }
 
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, DB::Arena & pool)
+    {
+        size_t hash_value = hash(x);
+        emplace(x, it, inserted, hash_value, pool);
+    }
 
     /// Same, but with a precalculated value of hash function.
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         if (!emplaceIfZero(x, it, inserted, hash_value))
             emplaceNonZero(x, it, inserted, hash_value);
+    }
+
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value, DB::Arena & pool)
+    {
+        if (!emplaceIfZero(x, it, inserted, hash_value))
+            emplaceNonZero(x, it, inserted, hash_value);
+        if constexpr (std::is_same_v<Key, StringRef>)
+        {
+            if (inserted)
+            {
+                auto & key = it->getKey();
+                key.data = pool.insert(key.data, key.size);
+            }
+        }
     }
 
     /// Same, but search position by object. Hack for ReverseIndex.

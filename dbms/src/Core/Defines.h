@@ -126,6 +126,17 @@
     #define OPTIMIZE(x)
 #endif
 
+#if defined __GNUC__ && !defined __clang__
+    #define IGNORE_MAYBE_UNINITIALIZED_PUSH \
+        _Pragma("GCC diagnostic push")\
+        _Pragma("GCC diagnostic ignored \"-Wmaybe-uninitialized\"")
+    #define IGNORE_MAYBE_UNINITIALIZED_POP \
+        _Pragma("GCC diagnostic pop")
+#else
+    #define IGNORE_MAYBE_UNINITIALIZED_PUSH
+    #define IGNORE_MAYBE_UNINITIALIZED_POP
+#endif
+
 /// This number is only used for distributed version compatible.
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE

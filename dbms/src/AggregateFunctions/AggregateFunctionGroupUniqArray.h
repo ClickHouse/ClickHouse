@@ -89,7 +89,7 @@ public:
         auto & set = this->data(place).value;
         size_t size = set.size();
         writeVarUInt(size, buf);
-        for (auto & elem : set)
+        for (const auto & elem : set)
             writeIntBinary(elem, buf);
     }
 
@@ -216,17 +216,12 @@ public:
             return;
         StringRef str_serialized = getSerialization(*columns[0], row_num, *arena);
 
-        set.emplace(str_serialized, it, inserted);
+        set.emplace(str_serialized, it, inserted, *arena);
 
         if constexpr (!is_plain_column)
         {
             if (!inserted)
                 arena->rollback(str_serialized.size);
-        }
-        else
-        {
-            if (inserted)
-                it->getValueMutable().data = arena->insert(str_serialized.data, str_serialized.size);
         }
     }
 
@@ -237,18 +232,11 @@ public:
 
         bool inserted;
         State::Set::iterator it;
-        for (auto & rhs_elem : rhs_set)
+        for (const auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
                 return ;
-            cur_set.emplace(rhs_elem.getValue(), it, inserted);
-            if (inserted)
-            {
-                if (it->getValue().size)
-                    it->getValueMutable().data = arena->insert(it->getValue().data, it->getValue().size);
-                else
-                    it->getValueMutable().data = nullptr;
-            }
+            cur_set.emplace(rhs_elem.getValue(), it, inserted, *arena);
         }
     }
 
@@ -261,7 +249,7 @@ public:
         auto & set = this->data(place).value;
         offsets_to.push_back(offsets_to.back() + set.size());
 
-        for (auto & elem : set)
+        for (const auto & elem : set)
         {
             deserializeAndInsert(elem.getValue(), data_to);
         }

@@ -533,6 +533,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
+        else if (params.short_string_optimization)
+            return AggregatedDataVariants::Type::key_short_string;
         else
             return AggregatedDataVariants::Type::key_string;
     }
@@ -541,6 +543,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else if (params.short_string_optimization)
+            return AggregatedDataVariants::Type::key_short_fixed_string;
         else
             return AggregatedDataVariants::Type::key_fixed_string;
     }
@@ -1120,15 +1124,12 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
     }
 
-    for (const auto & value : data)
+    data.forEachValue([&](const auto & value)
     {
         method.insertKeyIntoColumns(value.getValue(), key_columns, key_sizes);
-
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->insertResultInto(
-                value.getSecond() + offsets_of_aggregate_states[i],
-                *final_aggregate_columns[i]);
-    }
+            aggregate_functions[i]->insertResultInto(value.getSecond() + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+    });
 
     destroyImpl<Method>(data);
 }
@@ -1151,7 +1152,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         }
     }
 
-    for (auto & value : data)
+    data.forEachValue([&](auto & value)
     {
         method.insertKeyIntoColumns(value.getValue(), key_columns, key_sizes);
 
@@ -1160,7 +1161,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
             aggregate_columns[i]->push_back(value.getSecond() + offsets_of_aggregate_states[i]);
 
         value.getSecond() = nullptr;
-    }
+    });
 }
 
 
@@ -1493,32 +1494,19 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+    table_src.mergeToEmplace(table_dst, [&](auto & dst, auto & src, bool inserted)
     {
-        typename Table::iterator res_it;
-        bool inserted;
-        table_dst.emplace(it->getFirst(), res_it, inserted, it.getHash());
-
         if (!inserted)
         {
             for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->merge(
-                    res_it->getSecond() + offsets_of_aggregate_states[i],
-                    it->getSecond() + offsets_of_aggregate_states[i],
-                    arena);
-
+                aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
             for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->destroy(
-                    it->getSecond() + offsets_of_aggregate_states[i]);
+                aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
         }
         else
-        {
-            res_it->getSecond() = it->getSecond();
-        }
-
-        it->getSecond() = nullptr;
-    }
-
+            dst = src;
+        src = nullptr;
+    });
     table_src.clearAndShrink();
 }
 
@@ -1534,26 +1522,15 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+    table_src.mergeToFind(table_dst, [&](auto & dst, auto & src, bool found)
     {
-        typename Table::iterator res_it = table_dst.find(it->getFirst(), it.getHash());
-
-        AggregateDataPtr res_data = table_dst.end() == res_it
-            ? overflows
-            : res_it->getSecond();
-
+        AggregateDataPtr res_data = found ? dst : overflows;
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(
-                res_data + offsets_of_aggregate_states[i],
-                it->getSecond() + offsets_of_aggregate_states[i],
-                arena);
-
+            aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->destroy(it->getSecond() + offsets_of_aggregate_states[i]);
-
-        it->getSecond() = nullptr;
-    }
-
+            aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+        src = nullptr;
+    });
     table_src.clearAndShrink();
 }
 
@@ -1567,27 +1544,17 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     if constexpr (Method::low_cardinality_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    table_src.mergeToFind(table_dst, [&](auto & dst, auto & src, bool found)
     {
-        decltype(it) res_it = table_dst.find(it->getFirst(), it.getHash());
-
-        if (table_dst.end() == res_it)
-            continue;
-
-        AggregateDataPtr res_data = res_it->getSecond();
-
+        if (!found)
+            return;
+        AggregateDataPtr res_data = dst;
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(
-                res_data + offsets_of_aggregate_states[i],
-                it->getSecond() + offsets_of_aggregate_states[i],
-                arena);
-
+            aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->destroy(it->getSecond() + offsets_of_aggregate_states[i]);
-
-        it->getSecond() = nullptr;
-    }
-
+            aggregate_functions[i]->destroy(src + offsets_of_aggregate_states[i]);
+        src = nullptr;
+    });
     table_src.clearAndShrink();
 }
 
@@ -2428,23 +2395,21 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::destroyImpl(Table & table) const
 {
-    for (auto elem : table)
+    table.forEachMapped([&](auto & data)
     {
-        AggregateDataPtr & data = elem.getSecond();
-
         /** If an exception (usually a lack of memory, the MemoryTracker throws) arose
           *  after inserting the key into a hash table, but before creating all states of aggregate functions,
           *  then data will be equal nullptr.
           */
         if (nullptr == data)
-            continue;
+            return;
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             if (!aggregate_functions[i]->isState())
                 aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
 
         data = nullptr;
-    }
+    });
 }
 
 

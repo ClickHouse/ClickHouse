@@ -11,32 +11,28 @@
   */
 
 
-struct NoInitTag {};
+struct NoInitTag
+{
+};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
-class PairNoInit
+struct PairNoInit
 {
     First first;
     Second second;
-    template <typename, typename, typename, typename>
-    friend class HashMapCell;
 
-public:
     PairNoInit() {}
 
     template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag)
-        : first(std::forward<First_>(first_)) {}
+    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
+    {
+    }
 
     template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_)
-        : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
-
-    First & getFirstMutable() { return first; }
-    const First & getFirst() const { return first; }
-    Second & getSecond() { return second; }
-    const Second & getSecond() const { return second; }
+    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
+    {
+    }
 };
 
 
@@ -58,9 +54,9 @@ struct HashMapCell
     Mapped & getSecond() { return value.second; }
     const Mapped & getSecond() const { return value.second; }
 
-    value_type & getValueMutable() { return value; }
     const value_type & getValue() const { return value; }
 
+    Key & getKey() { return value.first; }
     static const Key & getKey(const value_type & value) { return value.first; }
 
     bool keyEquals(const Key & key_) const { return value.first == key_; }
@@ -123,8 +119,8 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.getFirst() == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.getFirst() == key_; }
+    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
     bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
@@ -132,22 +128,60 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 };
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
+    using Self = HashMapTable;
     using key_type = Key;
     using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
 
     using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToEmplace(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it;
+            bool inserted;
+            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
+            func(res_it->getSecond(), it->getSecond(), inserted);
+        }
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToFind(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it = that.find(it->getFirst(), it.getHash());
+            if (res_it == that.end())
+                func(it->getSecond(), it->getSecond(), false);
+            else
+                func(res_it->getSecond(), it->getSecond(), true);
+        }
+    }
+
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & v : *this)
+            func(v);
+    }
+
+    template <typename Func>
+    void forEachMapped(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getSecond());
+    }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
@@ -170,30 +204,26 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new(&it->getSecond()) mapped_type();
+            new (&it->getSecond()) mapped_type();
 
         return it->getSecond();
     }
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;

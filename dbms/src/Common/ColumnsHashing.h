@@ -61,7 +61,7 @@ struct HashMethodOneNumber
     /// Get StringRef from value which can be inserted into column.
     static StringRef getValueRef(const Value & value)
     {
-        return StringRef(reinterpret_cast<const char *>(&value.getFirst()), sizeof(value.getFirst()));
+        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 
@@ -76,6 +76,7 @@ struct HashMethodString
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
+    static constexpr bool key_to_arena = place_string_to_arena;
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
@@ -90,19 +91,10 @@ struct HashMethodString
         return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
     }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
-
-    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
-    {
-        if constexpr (place_string_to_arena)
-        {
-            if (key.size)
-                key.data = pool.insert(key.data, key.size);
-        }
-    }
 };
 
 
@@ -116,6 +108,7 @@ struct HashMethodFixedString
 
     size_t n;
     const ColumnFixedString::Chars * chars;
+    static constexpr bool key_to_arena = place_string_to_arena;
 
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
@@ -127,15 +120,10 @@ struct HashMethodFixedString
 
     StringRef getKey(size_t row, Arena &) const { return StringRef(&(*chars)[row * n], n); }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
-    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
-    {
-        if constexpr (place_string_to_arena)
-            key.data = pool.insert(key.data, key.size);
-    }
 };
 
 
@@ -350,22 +338,27 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         bool inserted = false;
         typename Data::iterator it;
-        if (saved_hash)
-            data.emplace(key, it, inserted, saved_hash[row]);
+        if constexpr (SingleColumnMethod::key_to_arena)
+        {
+            if (saved_hash)
+                data.emplace(key, it, inserted, saved_hash[row], pool);
+            else
+                data.emplace(key, it, inserted, pool);
+        }
         else
-            data.emplace(key, it, inserted);
+        {
+            if (saved_hash)
+                data.emplace(key, it, inserted, saved_hash[row]);
+            else
+                data.emplace(key, it, inserted);
+        }
 
         visit_cache[row] = VisitValue::Found;
 
         if (inserted)
         {
             if constexpr (has_mapped)
-            {
                 new(&it->getSecond()) Mapped();
-                Base::onNewKey(it->getFirstMutable(), pool);
-            }
-            else
-                Base::onNewKey(*it, pool);
         }
 
         if constexpr (has_mapped)

@@ -36,10 +36,12 @@ struct LastElementCache
     bool empty = true;
     bool found = false;
 
+    IGNORE_MAYBE_UNINITIALIZED_PUSH
     bool check(const Value & value_) { return !empty && value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.getFirst() == key; }
+    bool check(const Key & key) { return !empty && value.first == key; }
+    IGNORE_MAYBE_UNINITIALIZED_POP
 };
 
 template <typename Data>
@@ -108,6 +110,7 @@ public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped>;
     static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
+    static constexpr bool key_to_arena = false;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
@@ -116,7 +119,7 @@ public:
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
         auto key = static_cast<Derived &>(*this).getKey(row, pool);
-        return emplaceKeyImpl(key, data, pool);
+        return emplaceKeyImpl<Derived::key_to_arena>(key, data, pool);
     }
 
     template <typename Data>
@@ -140,27 +143,12 @@ public:
 protected:
     Cache cache;
 
-    HashMethodBase()
-    {
-        if constexpr (consecutive_keys_optimization)
-        {
-            if constexpr (has_mapped)
-            {
-                /// Init PairNoInit elements.
-                cache.value.getSecond() = Mapped();
-                cache.value.getFirstMutable() = {};
-            }
-            else
-                cache.value = Value();
-        }
-    }
-
     template <typename Key>
     static ALWAYS_INLINE void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
     template <typename Key>
     static ALWAYS_INLINE void onExistingKey(Key & /*key*/, Arena & /*pool*/) {}
 
-    template <typename Data, typename Key>
+    template <bool may_place_key_to_arena, typename Data, typename Key>
     ALWAYS_INLINE EmplaceResult emplaceKeyImpl(Key key, Data & data, Arena & pool)
     {
         if constexpr (Cache::consecutive_keys_optimization)
@@ -170,7 +158,7 @@ protected:
                 static_cast<Derived &>(*this).onExistingKey(key, pool);
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.getSecond(), cache.value.getSecond(), false);
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
                 else
                     return EmplaceResult(false);
             }
@@ -178,7 +166,10 @@ protected:
 
         typename Data::iterator it;
         bool inserted = false;
-        data.emplace(key, it, inserted);
+        if constexpr (may_place_key_to_arena)
+            data.emplace(key, it, inserted, pool);
+        else
+            data.emplace(key, it, inserted);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
@@ -187,12 +178,7 @@ protected:
         if (inserted)
         {
             if constexpr (has_mapped)
-            {
                 new(&it->getSecond()) Mapped();
-                static_cast<Derived &>(*this).onNewKey(it->getFirstMutable(), pool);
-            }
-            else
-                static_cast<Derived &>(*this).onNewKey(it->getValueMutable(), pool);
         }
         else
             static_cast<Derived &>(*this).onExistingKey(key, pool);
@@ -204,7 +190,7 @@ protected:
             cache.empty = false;
 
             if constexpr (has_mapped)
-                cached = &cache.value.getSecond();
+                cached = &cache.value.second;
         }
 
         if constexpr (has_mapped)
@@ -221,7 +207,7 @@ protected:
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(&cache.value.getSecond(), cache.found);
+                    return FindResult(&cache.value.second, cache.found);
                 else
                     return FindResult(cache.found);
             }
@@ -240,7 +226,7 @@ protected:
             else
             {
                 if constexpr (has_mapped)
-                    cache.value.getFirstMutable() = key;
+                    cache.value.first = key;
                 else
                     cache.value = key;
             }
