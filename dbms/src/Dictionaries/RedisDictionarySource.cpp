@@ -84,15 +84,20 @@ namespace DB
             , sample_block{sample_block}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
+        LOG_INFO(&Logger::get("Redis"), "in ctor");
+        LOG_INFO(&Logger::get("Redis"), dict_struct.attributes.size());
         if (dict_struct.attributes.size() != 1)
             throw Exception{"Invalid number of non key columns for Redis source: " +
                             DB::toString(dict_struct.attributes.size()) + ", expected 1",
                             ErrorCodes::INVALID_CONFIG_PARAMETER};
 
+        LOG_INFO(&Logger::get("Redis"), "After first check");
+
         if (storage_type == RedisStorageType::HASH_MAP)
         {
+            LOG_INFO(&Logger::get("Redis"), "SET STORAGE_TYPE");
             if (!dict_struct.key.has_value())
-                throw Exception{"Redis source with storage type \'hash_map\' mush have key",
+                throw Exception{"Redis source with storage type \'hash_map\' must have key",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
             if (dict_struct.key.value().size() > 2)
                 throw Exception{"Redis source with complex keys having more than 2 attributes are unsupported",
@@ -100,8 +105,11 @@ namespace DB
             // suppose key[0] is primary key, key[1] is secondary key
         }
 
+        LOG_INFO(&Logger::get("Redis"), "After second check");
+
         if (db_index != 0)
         {
+            LOG_INFO(&Logger::get("Redis"), "SET DB_INDEX");
             Poco::Redis::Command command("SELECT");
             command << static_cast<Int64>(db_index);
             std::string reply = client->execute<std::string>(command);
@@ -109,6 +117,8 @@ namespace DB
                 throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
                                 ErrorCodes::CANNOT_SELECT};
         }
+
+        LOG_INFO(&Logger::get("Redis"), "After third check");
     }
 
 
