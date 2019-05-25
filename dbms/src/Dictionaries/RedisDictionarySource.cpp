@@ -202,7 +202,7 @@ namespace DB
         Poco::Redis::Array keys;
 
         for (UInt64 id : ids)
-            keys << static_cast<Int64>(id);
+            keys << DB::toString(id);
 
         LOG_INFO(&Logger::get("Redis"), "KEYS: " + keys.toString());
 

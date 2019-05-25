@@ -123,24 +123,17 @@ namespace DB
                     insert<Float64>(column, stringValue);
                     break;
                 case ValueType::String:
-                    insert<String>(column, stringValue);
+                    static_cast<ColumnString &>(column).insert(parse<String>(stringValue));
                     break;
                 case ValueType::Date:
-                {
                     static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(stringValue).getDayNum());
                     break;
-                }
-
                 case ValueType::DateTime:
-                {
                     static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(stringValue)));
                     break;
-                }
                 case ValueType::UUID:
-                {
                     static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(stringValue));
                     break;
-                }
             }
         }
 
