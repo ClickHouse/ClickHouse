@@ -472,38 +472,39 @@ ClickHouse doesn't support the syntax with commas directly, so we don't recommen
 
 - `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
-- `ASOF` — For uncertain join of time series by timestamp. Usage of `ASOF JOIN` is described below.
+- `ASOF` — For joining sequences with an uncertain match. Usage of `ASOF JOIN` is described below.
 
 **ASOF JOIN Usage**
 
-`ASOF JOIN` is useful when you need to join two events that lay near in time. For example, consider the following tables:
+`ASOF JOIN` is useful when you need to join records that have no exact match. For example, consider the following tables:
 
 ```
      table_1               table_2
-  event   | ev_time      event     | ev_time
-----------|-----------   ----------|-----------             
-         ...                      ...
-event_1_1 | 12:00        event_2_1 | 11:59
-         ...             event_2_2 | 12:30
-event_1_2 | 13:00        event_2_3 | 13:00
-         ...                      ...
+  event   | ev_time | user_id       event   | ev_time | user_id
+----------|---------|----------   ----------|---------|----------             
+              ...                               ...
+event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
+              ...                 event_2_2 |  12:30  |   42
+event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
+              ...                               ...
 ```
 
-`ASOF JOIN` takes the timestamp of an event from `table_1` and finds in `table_2` an event, which timestamp is closest (equal or less) to the timestamp of the event from `table_1`. In our example, `event_1_1` can be joined with the `event_2_1`, `event_1_2` can be joined with `event_2_3`, `event_2_2` cannot be joined.
+`ASOF JOIN` takes the timestamp of a user event from `table_1` and finds in `table_2` an event, which timestamp is closest (equal or less) to the timestamp of the event from `table_1`. In our example, `event_1_1` can be joined with the `event_2_1`, `event_1_2` can be joined with `event_2_3`, `event_2_2` cannot be joined.
 
-Tables for `ASOF JOIN` must have the timestamp column. The timestamp column cannot be alone. You can use `UInt32`, `UInt64`, and `DateTime` data types for this column.
+Tables for `ASOF JOIN` must have the ordered sequence column. This column cannot be alone in a table. You can use `UInt32`, `UInt64`, `Float32`, `Float64`, `Date` and `DateTime` data types for this column.
 
 Use the following syntax for `ASOF JOIN`:
 
 ```
-SELECT expression_list FROM table_1 ASOF LEFT JOIN table_2 USING(some_column, timestamp_column)
+SELECT expression_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... equi_columnN, asof_column)
 ```
+
+`ASOF JOIN` uses `equi_columnX` for joining on equality (`user_id` in our example) and `asof_column` for joining on uncertain match.
 
 Implementation features:
 
-- The `timestamp_column` should be the last in the `USING` clause.
+- The `asof_column` should be the last in the `USING` clause.
 - The `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
-
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
