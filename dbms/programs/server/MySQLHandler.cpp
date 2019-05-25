@@ -62,7 +62,7 @@ void MySQLHandler::run()
          *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
          *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
          */
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING, scramble + '\0');
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, scramble + '\0');
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
