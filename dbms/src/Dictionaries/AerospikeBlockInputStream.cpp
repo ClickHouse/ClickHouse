@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 AerospikeBlockInputStream::AerospikeBlockInputStream(
     const aerospike & client,
-    std::vector<as_key> keys,
+    std::vector<std::unique_ptr<as_key>>&& keys,
     const Block & sample_block,
     const size_t max_block_size)
     : client(client)
@@ -57,30 +57,37 @@ namespace
         , cursor(cursor)
         {}
 
-        void HandleRecord(const as_record& record) {
+        void HandleRecordBins(const as_record& record) {
 
-            ++cursor;
-            const auto & name = description.sample_block.getByPosition(0).name;
-            insertKey(*((*columns)[0]), description.types[0].first, as_rec_key(&record._), &record, name); // TODO(gleb777) handle null result
+            ++num_rows;
 
-            /*for (const auto idx : ext::range(0, columns->size()))
+            for (const auto idx : ext::range(1, columns->size()))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
 
-                if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
-                else
-                {
+                const as_bin_value& bin_value = record.bins.entries[idx - 1].value;
+                if (as_val_type(&bin_value) == AS_NIL) {
+                    insertDefaultValue(*(*columns)[idx], *description.sample_block.getByPosition(idx).column);
+                } else {
                     if (description.types[idx].second)
                     {
-                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
-                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name);
+                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*(*columns)[idx]);
+                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, &bin_value, name);
                         column_nullable.getNullMapData().emplace_back(0);
                     }
                     else
-                        insertValue(*columns[idx], description.types[idx].first, *value, name);
+                        insertValue(*(*columns)[idx], description.types[idx].first, &bin_value, name);
                 }
-            }*/
+            }
+        }
+        
+        // Aerospike batch result return only bins. Keys must be processed separately 
+        void HandleKeys(const std::vector<std::unique_ptr<as_key>>& keys) const {
+            const auto & name = description.sample_block.getByPosition(0).name; // MAY BE MOVE TO CLASS FIELDS
+            for (const auto& key : keys) {
+                insertKey(*((*columns)[0]), description.types[0].first, key.get(), name); // TODO(gleb777) handle null result
+            }
+
         }
 
         size_t getNumRows() const {
@@ -88,53 +95,54 @@ namespace
         }
     private:
 
-        void insertKey(IColumn& column, const ValueType type, const as_val* value, const as_record* record, const std::string& name) {
+        void insertKey(IColumn& column, const ValueType type, const as_key* key, const std::string& name) const {
             switch (type) {
                 case ValueType::UInt8:
-                    static_cast<ColumnVector<UInt8>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<UInt8>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::UInt16:
-                    static_cast<ColumnVector<UInt16>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<UInt16>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::UInt32:
-                    static_cast<ColumnVector<UInt32>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<UInt32>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::UInt64:
-                    static_cast<ColumnVector<UInt64>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<UInt64>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::Int8:
-                    static_cast<ColumnVector<Int8>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<Int8>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::Int16:
-                    static_cast<ColumnVector<Int16>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<Int16>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::Int32:
-                    static_cast<ColumnVector<Int32>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<Int32>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::Int64:
-                    static_cast<ColumnVector<Int64>&>(column).getData().push_back(record->key.value.integer.value);
+                    static_cast<ColumnVector<Int64>&>(column).getData().push_back(key->value.integer.value);
                     break;
                 case ValueType::String: {
-                    String str{record->key.value.string.value, record->key.value.string.len};
+                    String str{key->value.string.value, key->value.string.len};
                     static_cast<ColumnString&>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
                 }
                 case ValueType::Date:
                     static_cast<ColumnUInt16&>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                        static_cast<Int64>(record->key.value.integer.value))});
+                        static_cast<Int64>(key->value.integer.value))});
                     break;
                 case ValueType::DateTime:
                     static_cast<ColumnUInt32&>(column).getData().push_back(
-                        static_cast<Int64>(record->key.value.integer.value));
+                        static_cast<Int64>(key->value.integer.value));
                     break;
                 case ValueType::UUID: {
-                    String str{record->key.value.string.value, record->key.value.string.len};
+                    String str{key->value.string.value, key->value.string.len};
                     static_cast<ColumnUInt128&>(column).getData().push_back(parse<UUID>(str));
                     break;
                 }
                 default:
+                    std::string invalid_type = "bad"; // toString(as_val_type(&(key->value))); // TODO:FIX_ME(glebx777)
                     throw Exception{
-                        "Type mismatch, expected String (UUID), got type id = " + toString(value->type) +
+                        "Type mismatch, expected String (UUID), got type id = " + invalid_type +
                         " for column "
                         + name,
                         ErrorCodes::TYPE_MISMATCH};
@@ -142,20 +150,19 @@ namespace
         }
 
         template <typename T>
-        void insertNumberValue(IColumn & column, const as_record * record, const std::string & name) {
-            (void)name;
-            switch(as_val_type(&(record->bins.entries[0].value))) {
+        void insertNumberValue(IColumn & column, const as_bin_value * value, const std::string & name) {
+            switch(as_val_type(value)) {
                 case AS_INTEGER:
-                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.integer.value);
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(value->integer.value);
                     break;
                 case AS_DOUBLE:
-                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.dbl.value);
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(value->dbl.value);
                     break;
                 /*case AS_STRING:
-                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.string.value);
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(value->string.value);
                     break; NOBODY USE IT */
                 default:
-                    std::string type = "bad"; // toString(as_val_type(&(record->bins.entries[0].value))); // TODO:FIX_ME(glebx777)
+                    std::string type = "bad"; // toString(as_val_type(&(value)); // TODO:FIX_ME(glebx777)
                     throw Exception(
                         "Type mismatch, expected a number, got type id = " + type + " for column " + name,
                         ErrorCodes::TYPE_MISMATCH);
@@ -163,53 +170,54 @@ namespace
 
         }
 
-        void insertValue(IColumn& column, const ValueType type, const as_val* value, const as_record * record, const std::string& name) {
+        void insertValue(IColumn& column, const ValueType type, const as_bin_value * value, const std::string& name) {
             switch (type) {
                 case ValueType::UInt8:
-                    insertNumberValue<UInt8>(column, record, name);
+                    insertNumberValue<UInt8>(column, value, name);
                     break;
                 case ValueType::UInt16:
-                    insertNumberValue<UInt16>(column, record, name);
+                    insertNumberValue<UInt16>(column, value, name);
                     break;
                 case ValueType::UInt32:
-                    insertNumberValue<UInt32>(column, record, name);
+                    insertNumberValue<UInt32>(column, value, name);
                     break;
                 case ValueType::UInt64:
-                    insertNumberValue<UInt64>(column, record, name);
+                    insertNumberValue<UInt64>(column, value, name);
                     break;
                 case ValueType::Int8:
-                    insertNumberValue<Int8>(column, record, name);
+                    insertNumberValue<Int8>(column, value, name);
                     break;
                 case ValueType::Int16:
-                    insertNumberValue<Int16>(column, record, name);
+                    insertNumberValue<Int16>(column, value, name);
                     break;
                 case ValueType::Int32:
-                    insertNumberValue<Int32>(column, record, name);
+                    insertNumberValue<Int32>(column, value, name);
                     break;
                 case ValueType::Int64:
-                    insertNumberValue<Int64>(column, record, name);
+                    insertNumberValue<Int64>(column, value, name);
                     break;
                 case ValueType::String: {
-                    String str{record->bins.entries[0].value.string.value, record->bins.entries[0].value.string.len};
+                    String str{value->string.value, value->string.len};
                     static_cast<ColumnString&>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
                 }
                 case ValueType::Date:
                     static_cast<ColumnUInt16&>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                        static_cast<Int64>(record->bins.entries[0].value.integer.value))});
+                        static_cast<Int64>(value->integer.value))});
                     break;
                 case ValueType::DateTime:
                     static_cast<ColumnUInt32&>(column).getData().push_back(
-                        static_cast<Int64>(record->bins.entries[0].value.integer.value));
+                        static_cast<Int64>(value->integer.value));
                     break;
                 case ValueType::UUID: {
-                    String str{record->bins.entries[0].value.string.value, record->bins.entries[0].value.string.len};
+                    String str{value->string.value, value->string.len};
                     static_cast<ColumnUInt128&>(column).getData().push_back(parse<UUID>(str));
                     break;
                 }
                 default:
+                    std::string invalid_type = "bad"; // toString(as_val_type(&(value)); // TODO:FIX_ME(glebx777)
                     throw Exception{
-                        "Type mismatch, expected String (UUID), got type id = " + toString(value->type) +
+                        "Type mismatch, expected String (UUID), got type id = " + toString(invalid_type) +
                         " for column "
                         + name,
                         ErrorCodes::TYPE_MISMATCH};
@@ -240,6 +248,20 @@ namespace
     };
 }
 
+void InitializeBatchKey(as_key* new_key, const char* namespace_name, const char* set_name, const std::unique_ptr<as_key>& base_key) {
+    switch(as_val_type(&base_key->value)) {
+        case AS_INTEGER:
+            as_key_init_int64(new_key, namespace_name, set_name, base_key->value.integer.value);
+            break;
+        case AS_STRING:
+            as_key_init_str(new_key, namespace_name, set_name, base_key->value.string.value);
+            break;
+        default:
+            const as_bytes& bytes = base_key->value.bytes;
+            as_key_init_raw(new_key, "ns", "set", bytes.value, bytes.size);
+            break;
+    }
+}
 
 Block AerospikeBlockInputStream::readImpl()
 {
@@ -256,12 +278,15 @@ Block AerospikeBlockInputStream::readImpl()
     for (const auto i : ext::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
+    size_t current_block_size = std::min(max_block_size, keys.size());
     as_batch batch;
-    as_batch_inita(&batch, max_block_size);
+    as_batch_inita(&batch, current_block_size);
 
     TemporaryName recordsHandler(&columns, description, cursor);
-    for (UInt32 i = 0; i < std::min(max_block_size, keys.size()); ++i) {
-        as_key_init_value(as_batch_keyat(&batch, i), "namespace", "set", &keys[cursor + i].value);
+    for (UInt32 i = 0; i < current_block_size; ++i) {
+        // fprintf(stderr, "KEY VALUE: %s \n", keys[cursor + i]->value.string.value);
+        InitializeBatchKey(as_batch_keyat(&batch, i), "test", "test_set", keys[cursor + i]);
+        // fprintf(stderr, "KEY VALUE: %s \n", as_batch_keyat(&batch, i)->value.string.value);
     }
 
     const auto batchReadCallback = [] (const as_batch_read* results, uint32_t size, void* records_handler_) {
@@ -270,17 +295,17 @@ Block AerospikeBlockInputStream::readImpl()
 
         for (uint32_t i = 0; i < size; i++) {
             if (results[i].result == AEROSPIKE_OK) {
-                records_handler->HandleRecord(results[i].record);
-                printf("  AEROSPIKE_OK");
+                records_handler->HandleRecordBins(results[i].record);
+                fprintf(stderr, "  AEROSPIKE_OK");
                 n_found++;
             }
             else if (results[i].result == AEROSPIKE_ERR_RECORD_NOT_FOUND) {
                 // The transaction succeeded but the record doesn't exist.
-                printf("  AEROSPIKE_ERR_RECORD_NOT_FOUND");
+                fprintf(stderr, "  AEROSPIKE_ERR_RECORD_NOT_FOUND");
             }
             else {
                 // The transaction didn't succeed.
-                printf("  error %d", results[i].result);
+                fprintf(stderr, "  error %d", results[i].result);
             }
         }
 
@@ -290,9 +315,10 @@ Block AerospikeBlockInputStream::readImpl()
 
     as_error err;
     if (aerospike_batch_get(&client, &err, nullptr, &batch, batchReadCallback, static_cast<void*>(&recordsHandler)) != AEROSPIKE_OK) {
-        printf("aerospike_batch_get() returned %d - %s", err.code, err.message);
+        fprintf(stderr, "aerospike_batch_get() returned %d - %s", err.code, err.message);
         exit(-1);
     }
+    recordsHandler.HandleKeys(keys);
 
     size_t num_rows = recordsHandler.getNumRows();
     cursor += num_rows;
