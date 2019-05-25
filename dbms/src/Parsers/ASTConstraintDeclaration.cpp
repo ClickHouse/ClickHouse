@@ -1,6 +1,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 
-namespace DB {
+namespace DB
+{
 
 ASTPtr ASTConstraintDeclaration::clone() const
 {
