@@ -176,8 +176,6 @@ LIFETIME(MIN 10, MAX 100);
 SELECT dictGetUInt32('test.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.0')));
 SELECT dictGetString('test.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.32.0')));
 
--- TODO(s-mx): next query get queryCancelation error. bad
--- SELECT dictGetUInt8('test.dict_with_complex_key', 'third_column', tuple(toUInt8(2), toUInt8(2)));
 
 -- TODO(s-mx): add here following checks:
 -- 1) dict functions
