@@ -1,5 +1,5 @@
 #include <DataStreams/copyData.h>
-#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/executeQuery.h>
@@ -353,8 +353,16 @@ void MySQLHandler::comQuery(const String & payload)
     std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
         with_output = true;
     };
-    ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
-    executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
+
+    String query = payload.substr(1);
+
+    // Translate query from MySQL to ClickHouse.
+    // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
+    if (query == "select @@version_comment limit 1")  // MariaDB client starts session with that query
+        query = "select ''";
+
+    ReadBufferFromString buf(query);
+    executeQuery(buf, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
