@@ -170,7 +170,7 @@ Pool::Entry Pool::tryGet()
 
 void Pool::Entry::disconnect()
 {
-    if(data)
+    if (data)
     {
         decrementRefCount();
         data->conn.disconnect();
