@@ -203,6 +203,12 @@ bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             .parse(pos, node, expected);
 }
 
+bool ParserConstraintDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserConstraintDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
+
 bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;

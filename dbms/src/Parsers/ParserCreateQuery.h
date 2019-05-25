@@ -246,9 +246,6 @@ protected:
 
 class ParserConstraintDeclaration : public IParserBase
 {
-public:
-    ParserConstraintDeclaration() {}
-
 protected:
     const char * getName() const override { return "constraint declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
