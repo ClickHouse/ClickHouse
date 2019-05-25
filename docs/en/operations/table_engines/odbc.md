@@ -11,8 +11,8 @@ This engine supports the [Nullable](../../data_types/nullable.md) data type.
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1],
+    name2 [type2],
     ...
 )
 ENGINE = ODBC(connection_settings, external_database, external_table)
