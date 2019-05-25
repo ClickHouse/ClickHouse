@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 exec 2>&1
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_constraints;"
