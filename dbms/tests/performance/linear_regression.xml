@@ -21,17 +21,17 @@
     <fill_query>INSERT INTO train_dataset values (2.0, 1.0, 6.0), (3.0, -1.0, 6.0), (4.0, 2.0, 11.0), (-2.0, 1.0, -2.0)</fill_query>
     <fill_query>INSERT INTO test_dataset values (1.0, 1.0), (5.0, -3.0)</fill_query>
 
-<!--    Проверяем, как работает fit-->
+<!--    Check model fit-->
     <query>with (SELECT linearRegressionState(0.001)(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
 
-<!--    Проверяем fit с Momentum -->
+<!--    Check fit with Momentum -->
     <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Momentum')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
 
-<!--    Проверяем fit с Nesterov-->
+<!--    Check fit with Nesterov-->
     <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Nesterov')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
 
 
-    <!--    Проверяем, как работает predict-->
+<!--    Check model predict-->
     <query>with (SELECT state FROM test_model) as model select evalMLMethod(model, p1, p2) from test_dataset</query>
 
     <drop_query>DROP TABLE IF EXISTS train_dataset</drop_query>
