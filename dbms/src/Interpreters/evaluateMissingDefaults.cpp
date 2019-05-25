@@ -72,14 +72,14 @@ void evaluateMissingDefaults(Block & block,
     {
         if (std::find(required_source_columns.begin(), required_source_columns.end(), delete_column.name) == required_source_columns.end())
         {
-             copy_block.erase(delete_column.name);
+            copy_block.erase(delete_column.name);
         }
     }
 
     if (copy_block.columns() == 0)
     {
         // Add column to indicate block size in execute()
-        copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy__ __column__"});
+        copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy"});
     }
 
     expression_analyzer.getActions(true)->execute(copy_block);
