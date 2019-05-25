@@ -683,7 +683,7 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
+    The `index` attribute is not used in ClickHouse. The only reason for this attribute is to allow some other programs to use the same configuraton.
 
 - `session_timeout_ms` — Maximum timeout for client session in milliseconds (default: 30000).
 - `operation_timeout_ms` — Maximum timeout for operation in milliseconds (default: 10000).
