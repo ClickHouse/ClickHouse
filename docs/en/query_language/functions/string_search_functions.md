@@ -108,7 +108,7 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceC
 
 ## ngramEntry(haystack, needle)
 
-Same as `ngramDistance` but calculates non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus common number of n-grams normalized by the number of `needle` n-grams. Can be useful for fuzzy string search.
+Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Can be useful for fuzzy string search.
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramEntryCaseInsensitive, ngramEntryUTF8, ngramEntryCaseInsensitiveUTF8`.
 
