@@ -30,6 +30,12 @@
 
 #ifndef HAVE_READPASSPHRASE
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+
 #define RPP_ECHO_OFF    0x00		/* Turn off echo (default). */
 #define RPP_ECHO_ON     0x01		/* Leave echo on. */
 #define RPP_REQUIRE_TTY 0x02		/* Fail if there is no tty. */
@@ -39,6 +45,11 @@
 #define RPP_STDIN       0x20		/* Read from stdin, not /dev/tty */
 
 char * readpassphrase(const char *, char *, size_t, int);
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif /* HAVE_READPASSPHRASE */
 

@@ -1,23 +1,18 @@
-
-# wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.c -O readpassphrase.cpp
-# wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.h
-
 set(CLICKHOUSE_CLIENT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Client.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionParameters.cpp
 )
 
 set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
-set(CLICKHOUSE_CLIENT_INCLUDE SYSTEM PRIVATE ${READLINE_INCLUDE_DIR})
+set(CLICKHOUSE_CLIENT_INCLUDE SYSTEM PRIVATE ${READLINE_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 include(CheckSymbolExists)
 check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)
-configure_file(includes.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/includes.h)
-list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include/)
-if (NOT HAVE_READPASSPHRASE)
-    # to allow #include <readpassphrase.h>
-    list(APPEND CLICKHOUSE_CLIENT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/readpassphrase.cpp)
-    list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE .)
+configure_file(config_client.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_client.h)
+
+if(NOT HAVE_READPASSPHRASE)
+    add_subdirectory(readpassphrase)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 endif()
 
 clickhouse_program_add(client)
