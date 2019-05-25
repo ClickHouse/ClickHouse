@@ -1463,6 +1463,16 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
             }
         }
 
+        query_info.do_not_steal_task = false;
+        query_info.read_in_pk_order = true;
+        if (order_direction == -1)
+        {
+            query_info.read_in_reverse_order = true;
+            pipeline.transform([&](auto & stream)
+            {
+                stream = std::make_shared<ReverseBlockInputStream>(stream);
+            });
+        }
         if (need_sorting)
         {
             if (!prefix_order_descr.empty())
@@ -1494,16 +1504,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
             }
         }
 
-        // in order to read blocks in fixed order
-        query_info.do_not_steal_task = true;
-        query_info.read_in_pk_order = true;
-        if (order_direction == -1)
-        {
-            pipeline.transform([&](auto & stream)
-            {
-                stream = std::make_shared<ReverseBlockInputStream>(stream);
-            });
-        }
         executeUnion(pipeline);
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
             pipeline.firstStream(), order_descr, settings.max_block_size, limit,
