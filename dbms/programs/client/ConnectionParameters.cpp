@@ -13,29 +13,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-/*
-/// Print string to screen even if stdout/stderr redirected
-static void tryPrintTTY(const std::string & string)
-{
-    if (isatty(STDERR_FILENO))
-    {
-        std::cerr << string;
-        return;
-    }
-
-    std::ofstream ostrm("/dev/tty");
-    if (ostrm.good())
-    {
-        ostrm << string;
-        return;
-    }
-}
-*/
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
 {
