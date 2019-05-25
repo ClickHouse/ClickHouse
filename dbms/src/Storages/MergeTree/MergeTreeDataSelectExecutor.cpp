@@ -43,6 +43,7 @@ namespace std
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/SummingSortedBlockInputStream.h>
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
+#include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -839,7 +840,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrd
 
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
     {
-        RangesInDataPart & part = parts[part_index];
+        size_t index = part_index;
+        if (query_info.read_in_reverse_order)
+            index = parts.size() - part_index - 1;
+
+        RangesInDataPart & part = parts[index];
 
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeSelectBlockInputStream>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
