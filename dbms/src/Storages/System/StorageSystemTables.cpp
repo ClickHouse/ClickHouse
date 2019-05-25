@@ -45,6 +45,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"sorting_key", std::make_shared<DataTypeString>()},
         {"primary_key", std::make_shared<DataTypeString>()},
         {"sampling_key", std::make_shared<DataTypeString>()},
+        {"storage_policy", std::make_shared<DataTypeString>()},
     }));
 }
 
@@ -149,6 +150,9 @@ protected:
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -305,6 +309,15 @@ protected:
                 {
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto policy = table->getStoragePolicy();
+                    if (policy)
+                        res_columns[res_index++]->insert(policy->getName());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

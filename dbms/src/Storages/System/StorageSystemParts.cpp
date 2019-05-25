@@ -42,6 +42,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
+        {"disk_name",                                  std::make_shared<DataTypeString>()}, ///@TODO_IGR ASK is is OK?
         {"path",                                       std::make_shared<DataTypeString>()},
     }
     )
@@ -95,6 +96,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(info.database);
         columns[i++]->insert(info.table);
         columns[i++]->insert(info.engine);
+        columns[i++]->insert(part->disk->getName());
         columns[i++]->insert(part->getFullPath());
 
         if (has_state_column)

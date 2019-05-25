@@ -335,6 +335,9 @@ public:
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
+    /// Returns storage policy if table supports it
+    virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
 

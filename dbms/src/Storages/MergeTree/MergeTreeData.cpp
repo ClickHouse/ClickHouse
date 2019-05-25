@@ -114,7 +114,7 @@ MergeTreeData::MergeTreeData(
     ttl_table_ast(ttl_table_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    schema(context_.getSchema(settings.storage_schema_name)),
+    storage_policy(context_.getStoragePolicy(settings.storage_policy_name)),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name)),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
@@ -187,9 +187,8 @@ MergeTreeData::MergeTreeData(
 
     /// If not choose any
     if (version_file_path.empty())
-        version_file_path = getFullPathOnDisk(schema.getAnyDisk()) + "format_version.txt";
+        version_file_path = getFullPathOnDisk(storage_policy->getAnyDisk()) + "format_version.txt";
 
-    ///@TODO_IGR ASK LOGIC
     bool version_file_exists = Poco::File(version_file_path).exists();
 
     // When data path or file not exists, ignore the format_version check
@@ -199,7 +198,7 @@ MergeTreeData::MergeTreeData(
         WriteBufferFromFile buf(version_file_path);
         writeIntText(format_version.toUnderType(), buf);
     }
-    else if (version_file_exists)
+    else
     {
         ReadBufferFromFile buf(version_file_path);
         UInt32 read_format_version;
@@ -208,8 +207,6 @@ MergeTreeData::MergeTreeData(
         if (!buf.eof())
             throw Exception("Bad version file: " + version_file_path, ErrorCodes::CORRUPTED_DATA);
     }
-    else
-        format_version = 0;
 
     if (format_version < min_format_version)
     {
@@ -769,7 +766,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
     Poco::DirectoryIterator end;
 
-    auto disks = schema.getDisks();
+    auto disks = storage_policy->getDisks();
 
     for (auto disk_ptr : disks)
     {
@@ -1126,7 +1123,7 @@ void MergeTreeData::rename(const String & /*new_path_to_db*/, const String & new
     auto old_file_table_name = escapeForFileName(table_name);
     auto new_file_table_name = escapeForFileName(new_table_name);
 
-    auto disks = schema.getDisks();
+    auto disks = storage_policy->getDisks();
 
     for (const auto & disk : disks)
     {
@@ -2607,13 +2604,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
-    constexpr UInt64 SIZE_1MB = 1ull << 20u; ///@TODO_IGR ASK Is it OK?
-    constexpr UInt64 MAGIC_CONST = 1;
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; ///@TODO_IGR ASK Is it OK?
+    constexpr UInt64 RESERVATION_MULTIPLY_ESTIMATION_FACTOR = 1;
 
-    if (expected_size < SIZE_1MB)
-        expected_size = SIZE_1MB;
+    if (expected_size < RESERVATION_MIN_ESTIMATION_SIZE)
+        expected_size = RESERVATION_MIN_ESTIMATION_SIZE;
 
-    auto reservation = reserveSpaceAtDisk(expected_size * MAGIC_CONST);
+    auto reservation = reserveSpace(expected_size * RESERVATION_MULTIPLY_ESTIMATION_FACTOR);
     if (reservation)
         return reservation;
 
@@ -2821,9 +2818,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     return dst_data_part;
 }
 
-DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expected_size)
+DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
 {
-    return schema.reserve(expected_size);
+    return storage_policy->reserve(expected_size);
+}
+
+DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(const DiskPtr & disk, UInt64 expected_size)
+{
+    return storage_policy->reserveAtDisk(disk, expected_size);
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
@@ -2834,7 +2836,7 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 Strings MergeTreeData::getDataPaths() const
 {
     Strings res;
-    auto disks = schema.getDisks();
+    auto disks = storage_policy->getDisks();
     for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
     return res;
