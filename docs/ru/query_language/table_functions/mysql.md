@@ -20,9 +20,9 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-At this time, simple `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
+At this time, simple `WHERE` clauses and elements of `AND` chain in `WHERE` clause such as `=, !=, >, >=, <, <=, LIKE, IN` with compatible functions are also pushed down for execution on the MySQL server.
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+The rest of the conditions and the `LIMIT` constraint are executed in ClickHouse only after the query to MySQL finishes.
 
 **Returned Value**
 
