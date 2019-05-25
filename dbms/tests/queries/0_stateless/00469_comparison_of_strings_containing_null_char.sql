@@ -1,3 +1,5 @@
+SET enable_parallel_reading=0;
+
 SELECT '**** constant-constant comparisons ****';
 
 SELECT 'ab\0c' < 'ab\0d', 'ab\0c' > 'ab\0d';

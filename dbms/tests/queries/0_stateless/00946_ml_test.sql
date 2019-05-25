@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults

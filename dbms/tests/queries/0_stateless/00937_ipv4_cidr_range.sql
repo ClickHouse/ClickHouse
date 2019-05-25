@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 USE test;
 
 DROP TABLE IF EXISTS ipv4_range;

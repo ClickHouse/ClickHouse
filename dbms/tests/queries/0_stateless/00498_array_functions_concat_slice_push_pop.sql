@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 select 'const args';
 select 'concat';
 select arrayConcat(emptyArrayUInt8());

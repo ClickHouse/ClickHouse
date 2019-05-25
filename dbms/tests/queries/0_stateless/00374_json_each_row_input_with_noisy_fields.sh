@@ -15,7 +15,7 @@ echo '{"d1" : 1, "d2" : "ok"}
 {"d2":"ok","t1":[[[]],true, null, false, "1","2", 0.03, 1], "d1":"1", "t2":["1","2"]}
 {"d2":"ok","t1":{"a":{"b": {} ,"c":false},"b":[true,null, false]}, "t2":  { "a": [  ] } , "d1":1}
 {"t0" : -0.1, "t1" : +1, "t2" : 0, "t3" : [0.0, -0.1], "d2" : "ok", "d1" : 1}' \
-| $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO json_noisy FORMAT JSONEachRow"
+| $CLICKHOUSE_CLIENT --enable_parallel_reading=0 --input_format_skip_unknown_fields=1 -q "INSERT INTO json_noisy FORMAT JSONEachRow"
 
 $CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM json_noisy"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_noisy"

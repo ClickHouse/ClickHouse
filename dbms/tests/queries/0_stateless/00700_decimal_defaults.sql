@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 DROP TABLE IF EXISTS decimal;
 
 CREATE TABLE IF NOT EXISTS decimal

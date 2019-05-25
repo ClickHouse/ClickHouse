@@ -1,5 +1,5 @@
 -- https://stackoverflow.com/questions/53416531/clickhouse-moving-average
-
+SET enable_parallel_reading=0;
 DROP TABLE IF EXISTS bm;
 
 CREATE TABLE bm (amount float, business_dttm DateTime) engine Log;

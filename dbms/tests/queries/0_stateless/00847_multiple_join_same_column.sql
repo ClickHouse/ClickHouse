@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 drop table if exists t;
 drop table if exists s;
 drop table if exists y;

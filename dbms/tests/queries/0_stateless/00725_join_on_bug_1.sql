@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 DROP TABLE IF EXISTS a1;
 DROP TABLE IF EXISTS a2;
 

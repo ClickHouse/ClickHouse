@@ -1,3 +1,4 @@
+SET enable_parallel_reading=0;
 SET enable_debug_queries = 1;
 
 DROP TABLE IF EXISTS t1;
