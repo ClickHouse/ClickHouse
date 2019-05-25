@@ -308,7 +308,7 @@ bool OPTIMIZE(1) TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
             if (curr_position < prev_position)
                 throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-            if (isNumber(current_column_type) || isDateOrDateTime(current_column_type))
+            if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
             {
                 /// An empty string instead of a value.
                 if (curr_position == prev_position)

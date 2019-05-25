@@ -51,11 +51,16 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
 void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPart::State;
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
 
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    all_parts = info.getParts(all_parts_state, has_state_column);
+
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
+
         MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
