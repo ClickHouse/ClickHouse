@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int UNKNOWN_SCHEMA;
+    extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_DISK;
 }
 
@@ -197,7 +197,7 @@ public:
             valid = true;
         }
 
-        explicit operator bool() const noexcept {
+        bool isValid() const {
             return valid;
         }
 
@@ -270,19 +270,21 @@ public:
 
     void add(const DiskPtr & disk);
 
+    const auto & getDisksMap() const { return disks; }
+
 private:
     std::map<String, DiskPtr> disks;
 };
 
 
-class Schema
+class StoragePolicy
 {
 public:
     using Disks = std::vector<DiskPtr>;
 
     class Volume
     {
-        friend class Schema;
+        friend class StoragePolicy;
 
     public:
         Volume(std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
@@ -311,25 +313,28 @@ public:
             return *this;
         }
 
+        /// Returns valid reservation or null
         DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+        /// Returns valid reservation or null
+        DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
 
         UInt64 getMaxUnreservedFreeSpace() const;
 
-    private:
         UInt64 max_data_part_size = std::numeric_limits<decltype(max_data_part_size)>::max();
 
         Disks disks;
+
+    private:
         mutable std::atomic<size_t> last_used = 0;
     };
 
     using Volumes = std::vector<Volume>;
 
-    Schema(Volumes volumes_)
-        : volumes(std::move(volumes_))
-    {
-    }
+    StoragePolicy(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+           const DiskSelector & disks);
 
-    Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks);
+    StoragePolicy(const String & name_, Volumes volumes_) : volumes(std::move(volumes_)), name(name_) { }
 
     Disks getDisks() const;
 
@@ -337,25 +342,38 @@ public:
 
     UInt64 getMaxUnreservedFreeSpace() const;
 
+    const String & getName() const { return name; }
+
+    /// Returns valid reservation or null
     DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+    /// Returns valid reservation or null
+    DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size!!!
     DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() const;
 
+    const auto & getVolumes() const { return volumes; }
+
 private:
     Volumes volumes;
+    String name;
 };
 
-class SchemaSelector
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+
+class StoragePolicySelector
 {
 public:
-    SchemaSelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks);
+    StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks);
 
-    const Schema & operator[](const String & name) const;
+    const StoragePolicyPtr & operator[](const String & name) const;
+
+    const auto & getPoliciesMap() const { return policies; }
 
 private:
-    std::map<String, Schema> schemas;
+    std::map<String, StoragePolicyPtr> policies;
 };
 
 }
