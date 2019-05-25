@@ -180,7 +180,7 @@ private:
     /// @return table position to attach expression to or 0.
     size_t checkIdentifiers(const ASTIdentifier & left, const ASTIdentifier & right)
     {
-        /// {best_match, berst_table_pos}
+        /// {best_match, best_table_pos}
         std::pair<size_t, size_t> left_best{0, 0};
         std::pair<size_t, size_t> right_best{0, 0};
 
@@ -213,7 +213,7 @@ private:
     size_t checkIdentifier(const ASTIdentifier & identifier)
     {
         size_t best_match = 0;
-        size_t berst_table_pos = 0;
+        size_t best_table_pos = 0;
 
         for (size_t i = 0; i < tables.size(); ++i)
         {
@@ -221,12 +221,12 @@ private:
             if (match > best_match)
             {
                 best_match = match;
-                berst_table_pos = i;
+                best_table_pos = i;
             }
         }
 
-        if (best_match && tables[berst_table_pos].canAttachOnExpression())
-            return berst_table_pos;
+        if (best_match && tables[best_table_pos].canAttachOnExpression())
+            return best_table_pos;
         return 0;
     }
 };
