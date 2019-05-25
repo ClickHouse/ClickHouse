@@ -116,9 +116,10 @@ namespace DB
                 break;
             }
             default: {
-                /* void* v = cf_malloc(value_size);
-                memcpy(v, p, value_size);
-                *value = (as_val*)as_bytes_new_wrap(v, value_size, true); */
+                size_t value_size = key.value.string.len;
+                void* v = cf_malloc(value_size);
+                memcpy(v, key.value.bytes.value, value_size);
+                return std::unique_ptr<as_key>(as_key_new_rawp(default_namespace_name, default_set_name, (uint8_t*)v, value_size, true));
                 fprintf(stderr, "AllocateKey DEFAULT\n");
                 break;
             }
@@ -154,9 +155,8 @@ namespace DB
         };
 
         if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void*>(&keys)) != AEROSPIKE_OK) {
-            printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
+            fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
         }
-        fprintf(stderr, "KEY VALUE: %s \n", keys[0]->value.string.value);
         /* as_key key;
         as_key_init_raw(&key, "test", "test_set", keys[0]->value, keys[0]->size);
         fprintf(stderr, "KEY VALUE: %s \n", key.value.string.value); */
