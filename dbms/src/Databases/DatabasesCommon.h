@@ -18,6 +18,8 @@ class Context;
 
 using DictionariesMap = std::unordered_map<std::string, DictionaryPtr>;
 
+
+/// Copies list of dictionaries and iterates trough such snapshot.
 class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
 {
 private:
