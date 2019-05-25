@@ -15,3 +15,5 @@ CREATE DICTIONARY test.dict_with_ranges (`second_column` UInt8 DEFAULT 1 , `thir
 200
 17501
 NP
+CREATE DICTIONARY test.dict_with_attrs (`b` UInt64 DEFAULT 1 EXPRESSION \'rand64()\' HIERARCHICAL True INJECTIVE True IS_OBJECT_ID True, `c` UInt64 DEFAULT 1 ) PRIMARY KEY a SOURCE(CLICKHOUSE(HOST \'localhost\', PORT 9000, USER \'default\', PASSWORD \'\', DB \'test\', TABLE \'table_for_attrs\')) LIFETIME(MIN 1, MAX 10) LAYOUT(FLAT())
+222

@@ -1,11 +1,28 @@
+-- Note: General testing algorithm is following:
+-- 1) create a table
+-- 2) insert a data to table
+-- 3) create a dictionary with clickhouse source over local table
+-- 4) invoke dictGet on dictionary in order to check uploaded data
+--
+-- Not obvious statement that there are no race conditions in uploading data to the dictionary
+-- because we create dictionary after insertion to table and at dictionary creation
+-- data uploading proceeds synchronically.
+-- Race condition would be in case when we insert to table after dictionary creation
+-- because ExternalLoader sleeps some time before uploading new data to dictionary.
+-- And after dictionary creation data uploading proceeds asynchronically.
+
+
 CREATE DATABASE IF NOT EXISTS test;
+-- TODO: make right release order (reversed)
 DROP TABLE IF EXISTS test.table_for_dict;
 DROP TABLE IF EXISTS test.table;
 DROP TABLE IF EXISTS test.table_ip_trie;
+DROP TABLE IF EXISTS test.table_for_attrs;
 DROP DICTIONARY IF EXISTS test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
 DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
 DROP DICTIONARY IF EXISTS test.dict_ip_trie;
+DROP DICTIONARY IF EXISTS test.dict_with_attrs;
 
 -- It used for loading in dictionaries via ClickHouse source
 CREATE TABLE test.table_for_dict
@@ -177,6 +194,29 @@ SELECT dictGetUInt32('test.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.3
 SELECT dictGetString('test.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.32.0')));
 
 
+CREATE TABLE test.table_for_attrs
+(
+    a UInt64,
+    b UInt64,
+    c UInt64
+) engine = TinyLog();
+
+INSERT INTO TABLE test.table_for_attrs VALUES(1, 11, 111), (2, 22, 222);
+
+CREATE DICTIONARY test.dict_with_attrs
+(
+    b UInt64 DEFAULT 1 expression 'rand64()' hierarchical True injective True is_object_id True,
+    c UInt64 DEFAULT 1
+) PRIMARY KEY a
+SOURCE(CLICKHOUSE(host 'localhost', port 9000, user 'default', password '', db 'test', table 'table_for_attrs'))
+LAYOUT(FLAT())
+LIFETIME(MIN 1, MAX 10);
+
+SHOW CREATE DICTIONARY test.dict_with_attrs;
+
+SELECT dictGetUInt64('test.dict_with_attrs', 'c', toUInt64(2));
+
+
 -- TODO(s-mx): add here following checks:
 -- 1) dict functions
 -- 2) more tests
@@ -185,7 +225,9 @@ SELECT dictGetString('test.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.
 DROP TABLE test.table_for_dict;
 DROP TABLE test.table;
 DROP TABLE test.table_ip_trie;
+DROP TABLE test.table_for_attrs;
 DROP DICTIONARY test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
 DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
 DROP DICTIONARY IF EXISTS test.dict_ip_trie;
+DROP DICTIONARY IF EXISTS test.dict_with_attrs;
