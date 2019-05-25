@@ -2,14 +2,17 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import redis
 from tzlocal import get_localzone
 import datetime
 import os
+import dateutil.parser
+import time
 
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password):
+                 docker_hostname, docker_port, user, password, storage_type=None):
         self.name = name
         self.internal_hostname = internal_hostname
         self.internal_port = int(internal_port)
@@ -17,6 +20,7 @@ class ExternalSource(object):
         self.docker_port = int(docker_port)
         self.user = user
         self.password = password
+        self.storage_type = storage_type
 
     def get_source_str(self, table_name):
         raise NotImplementedError("Method {} is not implemented for {}".format(
@@ -33,6 +37,9 @@ class ExternalSource(object):
 
     def compatible_with_layout(self, layout):
         return True
+
+    def prepare_value_for_type(self, field, value):
+        return value
 
 
 class SourceMySQL(ExternalSource):
@@ -372,3 +379,62 @@ class SourceHTTP(SourceHTTPBase):
 class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
+
+
+class SourceRedis(ExternalSource):
+    def get_source_str(self, table_name):
+        return '''
+            <redis>
+                <host>{host}</host>
+                <port>{port}</port>
+                <db_index>0</db_index>
+                <storage_type>{storage_type}</storage_type>
+            </redis>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            storage_type=self.storage_type,  # simple or hash_map
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        self.client.flushdb()
+        for row in data:
+            for cell_name, cell_value in row.data.items():
+                value_type = "$"
+                if isinstance(cell_value, int):
+                    value_type = ":"
+                else:
+                    cell_value = '"' + str(cell_value).replace(' ', '\s') + '"'
+                cmd = "SET ${} {}{}".format(cell_name, value_type, cell_value)
+                print(cmd)
+                self.client.execute_command(cmd)
+
+    def load_kv_data(self, values):
+        self.client.flushdb()
+        if len(values[0]) == 2:
+            self.client.mset({value[0]: value[1] for value in values})
+        else:
+            for value in values:
+                self.client.hset(value[0], value[1], value[2])
+
+    def compatible_with_layout(self, layout):
+        if layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "hash_map":
+            return True
+        return False
+
+    def prepare_value_for_type(self, field, value):
+        if field.field_type == "Date":
+            dt = dateutil.parser.parse(value)
+            return int(time.mktime(dt.timetuple()) // 86400)
+        if field.field_type == "DateTime":
+            dt = dateutil.parser.parse(value)
+            return int(time.mktime(dt.timetuple()))
+        if field.field_type == "Float32":
+            return str(value)
+        if field.field_type == "Float64":
+            return str(value)
+        return value
