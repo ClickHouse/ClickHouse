@@ -195,4 +195,22 @@
 
 Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
 
+## max_partitions_per_insert_block
+
+Ограничивает максимальное количество партиций в одном вставленном блоке.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — неограниченное количество разделов.
+
+Значение по умолчанию: 100.
+
+**Подробности**
+
+При вставке данных, ClickHouse вычисляет количество разделов во вставленном блоке. Если число партиций больше, чем `max_partitions_per_insert_block`, ClickHouse генерирует исключение со следующим текстом:
+
+"Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->
+
