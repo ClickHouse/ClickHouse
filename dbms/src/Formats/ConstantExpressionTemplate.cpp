@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
@@ -12,9 +13,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
 #include <Formats/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Functions/FunctionsConversion.h>
 
 
 namespace DB
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_EXPRESSION_TEMPLATE;
     extern const int CANNOT_PARSE_EXPRESSION_USING_TEMPLATE;
     extern const int CANNOT_EVALUATE_EXPRESSION_TEMPLATE;
+    extern const int SYNTAX_ERROR;
 }
 
 class ReplaceLiteralsVisitor
@@ -52,6 +54,8 @@ public:
             return;
         if (auto function = ast->as<ASTFunction>())
             visit(*function);
+        else if (ast->as<ASTLiteral>())
+            throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
         else
             visitChildren(ast, {});
     }
@@ -85,7 +89,6 @@ private:
             return false;
         if (literal->begin && literal->end)
         {
-            // TODO ensure column_name is unique (there was no _dummy_x identifier in expression)
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name);
             ast = std::make_shared<ASTIdentifier>(column_name);
@@ -137,7 +140,7 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
             type = std::make_shared<DataTypeInt64>();
         else if (type_info.isNativeUInt())
             type = std::make_shared<DataTypeUInt64>();
-        else
+        else if (!type_info.isFloat())
             need_special_parser[i] = false;
 
         /// Allow literal to be NULL, if result column has nullable type
@@ -172,7 +175,8 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     size_t cur_column = 0;
     try
     {
-        ParserNumber parser;
+        ParserKeyword parser_null("NULL");
+        ParserNumber parser_number;
         size_t cur_token = 0;
         while (cur_column < literals.columns())
         {
@@ -188,22 +192,27 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
             const IDataType & type = *literals.getByPosition(cur_column).type;
             if (need_special_parser[cur_column])
             {
+                WhichDataType type_info(type);
+                bool nullable = type_info.isNullable();
+                if (nullable)
+                    type_info = WhichDataType(dynamic_cast<const DataTypeNullable &>(type).getNestedType());
+
                 Tokens tokens_number(istr.position(), istr.buffer().end());
                 TokenIterator iterator(tokens_number);
                 Expected expected;
                 ASTPtr ast;
-                if (!parser.parse(iterator, ast, expected))
+                if (nullable && parser_null.parse(iterator, ast, expected))
+                    ast = std::make_shared<ASTLiteral>(Field());
+                else if (!parser_number.parse(iterator, ast, expected))
                     throw DB::Exception("Cannot parse literal", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
                 istr.position() = const_cast<char *>(iterator->begin);
-                Field number = ast->as<ASTLiteral&>().value;
+                Field & number = ast->as<ASTLiteral&>().value;
 
-                WhichDataType type_info(type);
-                if (type_info.isNullable())
-                    type_info = WhichDataType(dynamic_cast<const DataTypeNullable &>(type).getNestedType());
                 // TODO also check type of Array(T), if T is arithmetic
                 if ((number.getType() == Field::Types::UInt64  && type_info.isUInt64())
                  || (number.getType() == Field::Types::Int64   && type_info.isInt64())
-                 || (number.getType() == Field::Types::Float64 && type_info.isFloat64()))
+                 || (number.getType() == Field::Types::Float64 && type_info.isFloat64())
+                 || nullable)
                 {
                     columns[cur_column]->insert(number);
                 }
