@@ -198,10 +198,7 @@ public:
             min->count = alpha + increment;
             min->error = alpha + error;
             percolate(min);
-
-            it->getSecond() = min;
-            it->getFirstMutable() = min->key;
-            counter_map.reinsert(it, hash);
+            counter_map[min->key] = min;
         }
     }
 

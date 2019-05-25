@@ -136,6 +136,8 @@ StringRef ColumnArray::getDataAt(size_t n) const
 
     size_t offset_of_first_elem = offsetAt(n);
     StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+    if (reinterpret_cast<uintptr_t>(first.data) == 0xffffffffffffffff)
+        throw Exception("getDataAt returns a StringRef with -1 pointer", ErrorCodes::BAD_GET);
 
     size_t array_size = sizeAt(n);
     if (array_size == 0)

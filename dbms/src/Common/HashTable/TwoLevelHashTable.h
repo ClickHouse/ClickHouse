@@ -242,6 +242,12 @@ public:
     }
 
 
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, DB::Arena & pool)
+    {
+        size_t hash_value = hash(x);
+        emplace(x, it, inserted, hash_value, pool);
+    }
+
     /// Same, but with a precalculated values of hash function.
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
@@ -251,6 +257,13 @@ public:
         it = iterator(this, buck, impl_it);
     }
 
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value, DB::Arena & pool)
+    {
+        size_t buck = getBucketFromHash(hash_value);
+        typename Impl::iterator impl_it;
+        impls[buck].emplace(x, impl_it, inserted, hash_value, pool);
+        it = iterator(this, buck, impl_it);
+    }
 
     iterator ALWAYS_INLINE find(Key x, size_t hash_value)
     {

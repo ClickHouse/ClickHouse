@@ -28,7 +28,6 @@ struct FixedHashTableCell
     {
         Key key;
 
-        value_type & getValueMutable() { return key; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };
@@ -54,9 +53,8 @@ struct FixedHashTableCell
 template <typename Key, typename Cell, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State
 {
-    static constexpr size_t BUFFER_SIZE = 1ULL << (sizeof(Key) * 8);
-
 protected:
+    static constexpr size_t BUFFER_SIZE = 1ULL << (sizeof(Key) * 8);
     friend class const_iterator;
     friend class iterator;
     friend class Reader;
@@ -133,6 +131,7 @@ protected:
         }
 
         auto getPtr() const { return ptr; }
+        Key getKey() const { return ptr - container->buf; }
         size_t getHash() const { return ptr - container->buf; }
         size_t getCollisionChainLength() const { return 0; }
         typename cell_type::CellExt cell;
@@ -280,19 +279,10 @@ protected:
 
 
 public:
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
-    {
-        std::pair<iterator, bool> res;
-        emplaceImpl(Cell::getKey(x), res.first, res.second);
-        if (res.second)
-            res.first.ptr->setMapped(x);
-
-        return res;
-    }
-
-
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted) { emplaceImpl(x, it, inserted); }
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t) { emplaceImpl(x, it, inserted); }
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, DB::Arena &) { emplaceImpl(x, it, inserted); }
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t, DB::Arena &) { emplaceImpl(x, it, inserted); }
 
     template <typename ObjectToCompareWith>
     iterator ALWAYS_INLINE find(ObjectToCompareWith x)
@@ -316,6 +306,18 @@ public:
     const_iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value) const
     {
         return !buf[hash_value].isZero(*this) ? const_iterator(this, &buf[hash_value]) : end();
+    }
+
+    template <typename Func>
+    void forEach(Func && func) const
+    {
+        auto this_buf = this->buf;
+        for (auto i = 0u; i < this->BUFFER_SIZE; ++i)
+        {
+            if (this_buf[i].isZero(*this))
+                continue;
+            func(i);
+        }
     }
 
     bool ALWAYS_INLINE has(Key x) const { return !buf[x].isZero(*this); }

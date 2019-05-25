@@ -1562,7 +1562,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.short_string_optimization);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1629,7 +1629,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.short_string_optimization);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1694,7 +1694,7 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
 
     const Settings & settings = context.getSettingsRef();
 
-    Aggregator::Params params(header, keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(header, keys, aggregates, overflow_row, settings.max_threads, settings.short_string_optimization);
 
     if (!settings.distributed_aggregation_memory_efficient)
     {
@@ -1745,7 +1745,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
     const Settings & settings = context.getSettingsRef();
 
-    Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row,
+                              settings.max_threads, settings.short_string_optimization);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1850,7 +1851,7 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.short_string_optimization);
 
     if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
@@ -1880,7 +1881,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
                               settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.short_string_optimization);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 

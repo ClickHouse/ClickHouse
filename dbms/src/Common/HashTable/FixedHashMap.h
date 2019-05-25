@@ -11,8 +11,8 @@ struct FixedHashMapCell
     using State = TState;
 
     using value_type = PairNoInit<Key, Mapped>;
-    bool full;
     Mapped mapped;
+    bool full;
 
     FixedHashMapCell() {}
     FixedHashMapCell(const Key &, const State &) : full(true) {}
@@ -53,11 +53,86 @@ class FixedHashMap : public FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, A
 {
 public:
     using Base = FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>;
+    using Self = FixedHashMap;
     using key_type = Key;
     using mapped_type = Mapped;
-    using value_type = typename Base::cell_type::value_type;
+    using Cell = typename Base::cell_type;
+    using value_type = typename Cell::value_type;
 
     using Base::Base;
+
+    /// Merge every cell's value of current map into the destination map.
+    ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
+    ///  Each filled cell in current map will invoke func once. If that map doesn't
+    ///  have a key equals to the given cell, a new cell gets emplaced into that map,
+    ///  and func is invoked with the third argument emplaced set to true. Otherwise
+    ///  emplaced is set to false.
+    template <typename Func>
+    void mergeToViaEmplace(Self & that, Func && func)
+    {
+        auto this_buf = this->buf;
+        auto that_buf = that.buf;
+        for (auto i = 0ul; i < this->BUFFER_SIZE; ++i)
+        {
+            if (this_buf[i].isZero(*this))
+                continue;
+            if (that_buf[i].isZero(that))
+            {
+                new (&that_buf[i]) Cell(i, that);
+                ++that.m_size;
+                func(that_buf[i].getSecond(), this_buf[i].getSecond(), true);
+            }
+            else
+                func(that_buf[i].getSecond(), this_buf[i].getSecond(), false);
+        }
+    }
+
+    /// Merge every cell's value of current map into the destination map via find.
+    ///  Func should have signature void(Mapped & dst, Mapped & src, bool exist).
+    ///  Each filled cell in current map will invoke func once. If that map doesn't
+    ///  have a key equals to the given cell, func is invoked with the third argument
+    ///  exist set to false. Otherwise exist is set to true.
+    template <typename Func>
+    void mergeToViaFind(Self & that, Func && func)
+    {
+        auto this_buf = this->buf;
+        auto that_buf = that.buf;
+        for (auto i = 0ul; i < this->BUFFER_SIZE; ++i)
+        {
+            if (this_buf[i].isZero(*this))
+                continue;
+            if (that_buf[i].isZero(that))
+                func(this_buf[i].getSecond(), this_buf[i].getSecond(), false);
+            else
+                func(that_buf[i].getSecond(), this_buf[i].getSecond(), true);
+        }
+    }
+
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        ValueHolder value;
+        auto this_buf = this->buf;
+        for (auto i = 0u; i < this->BUFFER_SIZE; ++i)
+        {
+            if (this_buf[i].isZero(*this))
+                continue;
+            value = {static_cast<Key>(i), &this_buf[i].getSecond()};
+            func(value);
+        }
+    }
+
+    template <typename Func>
+    void forEachMapped(Func && func)
+    {
+        auto this_buf = this->buf;
+        for (auto i = 0u; i < this->BUFFER_SIZE; ++i)
+        {
+            if (this_buf[i].isZero(*this))
+                continue;
+            func(this_buf[i].getSecond());
+        }
+    }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
@@ -69,4 +144,14 @@ public:
 
         return it->getSecond();
     }
+
+    struct ValueHolder
+    {
+        Key key;
+        mapped_type * mapped;
+        auto * operator-> () { return this; }
+        mapped_type & getSecond() { return *mapped; }
+        const mapped_type & getSecond() const { return *mapped; }
+        value_type getValue() const { return {key, *mapped}; }
+    };
 };
