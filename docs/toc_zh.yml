@@ -90,6 +90,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'JDBC': 'operations/table_engines/jdbc.md'
 
 - 'SQL语法':
   - 'hidden': 'query_language/index.md'

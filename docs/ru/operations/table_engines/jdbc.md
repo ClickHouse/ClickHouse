@@ -1,31 +1,32 @@
 # JDBC
 
-Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
+Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement the JDBC connection, ClickHouse uses the program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). You should run it as a daemon.
+Для реализации соединения по JDBC ClickHouse использует программу [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). Программу следует запускать как демон.
 
-This engine supports the [Nullable](../../data_types/nullable.md) data type.
+Движок поддерживает тип данных [Nullable](../../data_types/nullable.md).
 
-## Creating a Table
+## Создание таблицы
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
-**Engine Parameters**
+**Параметры движка**
 
-- `dbms_uri` — URI of an external DBMS.
+- `dbms_uri` — URI внешней СУБД.
 
-    Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
-    Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+    Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Database in an external DBMS.
-- `external_table` — The name of the table in `external_database`.
+- `external_database` — база данных во внешней СУБД.
 
-## Usage Example
+- `external_table` — таблица в `external_database`.
 
-Creating a table in MySQL (using the native MySQL engine):
+## Пример использования
+
+Создадим таблицу в MySQL (используя собственный движок MySQL):
 
 ```
 mysql> CREATE TABLE `test`.`test` (
@@ -48,7 +49,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Selecting data from the table in ClickHouse:
+Выбор данных из таблицы в ClickHouse:
 
 ```
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
@@ -76,6 +77,6 @@ FROM jdbc_table
 1 rows in set. Elapsed: 0.055 sec.
 ```
 
-## See Also
+## Смотрите также
 
-- [JDBC table function](../../query_language/table_functions/jdbc.md).
+- [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
