@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include "AggregateFunctionFactory.h"
@@ -149,14 +150,26 @@ void LinearModelData::predict(
     gradient_computer->predict(container, block, arguments, weights, bias, context);
 }
 
-void LinearModelData::return_weights(IColumn & to) const
+void LinearModelData::returnWeights(IColumn & to) const
 {
-    auto & column = static_cast<ColumnVector<Float64> &>(to);
+//    auto & column = static_cast<ColumnVector<Float64> &>(to);
+//    for (auto weight_value : weights)
+//    {
+//        column.getData().push_back(weight_value);
+//    }
+//    column.getData().push_back(bias);
+    auto & column = static_cast<ColumnArray &>(to);
+
+    Array weights_array;
+    weights_array.reserve(weights.size() + 1);
     for (auto weight_value : weights)
     {
-        column.getData().push_back(weight_value);
+        weights_array.push_back(weight_value);
     }
-    column.getData().push_back(bias);
+    weights_array.push_back(bias);
+
+//    column.getData().push_back(weights_array);
+    column.getData().insert(weights_array);
 }
 
 void LinearModelData::read(ReadBuffer & buf)

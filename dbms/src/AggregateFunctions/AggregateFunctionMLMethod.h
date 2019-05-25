@@ -218,7 +218,7 @@ public:
     void
     predict(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
-    void return_weights(IColumn & to) const;
+    void returnWeights(IColumn & to) const;
 private:
     std::vector<Float64> weights;
     Float64 bias{0.0};
@@ -307,7 +307,7 @@ public:
      */
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        this->data(place).return_weights(to);
+        this->data(place).returnWeights(to);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
