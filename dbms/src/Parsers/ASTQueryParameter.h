@@ -6,16 +6,18 @@
 namespace DB
 {
 
-/// Query parameter: name and type.
+/// Parameter in query with name and type of substitution ({name:type}).
+/// Example: SELECT * FROM table WHERE id = {pid:UInt16}.
 class ASTQueryParameter : public ASTWithAlias
 {
 public:
-    String name, type;
+    String name;
+    String type;
 
     ASTQueryParameter(const String & name_, const String & type_) : name(name_), type(type_) {}
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "QueryParameter" + (delim + name + delim + type); }
+    String getID(char delim) const override { return "QueryParameter" + (delim + name + ':' + type); }
 
     ASTPtr clone() const override { return std::make_shared<ASTQueryParameter>(*this); }
 

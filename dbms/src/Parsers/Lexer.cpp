@@ -174,9 +174,9 @@ Token Lexer::nextTokenImpl()
         case ']':
             return Token(TokenType::ClosingSquareBracket, token_begin, ++pos);
         case '{':
-            return Token(TokenType::OpeningFiguredBracket, token_begin, ++pos);
+            return Token(TokenType::OpeningCurlyBrace, token_begin, ++pos);
         case '}':
-            return Token(TokenType::ClosingFiguredBracket, token_begin, ++pos);
+            return Token(TokenType::ClosingCurlyBrace, token_begin, ++pos);
         case ',':
             return Token(TokenType::Comma, token_begin, ++pos);
         case ';':
