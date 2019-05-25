@@ -436,6 +436,8 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES = 446;
 }
 
 }

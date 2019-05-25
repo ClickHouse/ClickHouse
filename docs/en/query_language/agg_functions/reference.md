@@ -580,5 +580,41 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## simpleLinearRegression
+
+Performs simple (unidimensional) linear regression.
+
+```
+simpleLinearRegression(x, y)
+```
+
+Parameters:
+
+- `x` — Column with values of dependent variable.
+- `y` — Column with explanatory variable.
+
+Returned values:
+
+Parameters `(a, b)` of the resulting line `x = a*y + b`.
+
+**Examples**
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
