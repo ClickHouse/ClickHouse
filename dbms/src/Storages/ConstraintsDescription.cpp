@@ -36,4 +36,19 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+                                                              const DB::NamesAndTypesList & source_columns_) const
+{
+    ConstraintsExpressions res;
+    res.reserve(constraints.size());
+    for (const auto & constraint : constraints)
+    {
+        // SyntaxAnalyzer::analyze has query as non-const argument so to avoid accidental query changes we clone it
+        ASTPtr expr = constraint->expr->clone();
+        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, source_columns_);
+        res.push_back(ExpressionAnalyzer(constraint->expr->clone(), syntax_result, context).getActions(false));
+    }
+    return res;
+}
+
 }
