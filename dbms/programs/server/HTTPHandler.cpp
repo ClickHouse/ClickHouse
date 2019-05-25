@@ -514,8 +514,8 @@ void HTTPHandler::processQuery(
         else if (startsWith(it->first, "param_"))
         {
             /// Save name and values of substitution in dictionary.
-            String param_name = it->first.substr(strlen("param_"));
-            context.setParamSubstitution(param_name, it->second);
+            const String parameter_name = it->first.substr(strlen("param_"));
+            context.setParameterSubstitution(parameter_name, it->second);
         }
         else
         {

@@ -87,7 +87,7 @@ endif ()
 add_subdirectory (src)
 
 set(dbms_headers)
-set(dbms_sources src/Interpreters/ReplaceQueryParameterVisitor.cpp src/Interpreters/ReplaceQueryParameterVisitor.h)
+set(dbms_sources)
 
 include(../cmake/dbms_glob_sources.cmake)
 
@@ -133,6 +133,9 @@ list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctio
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
+
+list (APPEND dbms_sources src/Interpreters/ReplaceQueryParameterVisitor.cpp)
+list (APPEND dbms_headers src/Interpreters/ReplaceQueryParameterVisitor.h)
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 

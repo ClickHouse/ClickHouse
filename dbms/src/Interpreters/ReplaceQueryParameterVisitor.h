@@ -12,16 +12,16 @@ class ASTQueryParameter;
 class ReplaceQueryParameterVisitor
 {
 public:
-    ReplaceQueryParameterVisitor(const NameToNameMap & params)
-    :   params_substitution(params)
+    ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
+        : parameters_substitution(parameters)
     {}
 
     void visit(ASTPtr & ast);
 
 private:
-    const NameToNameMap params_substitution;
-    void visitQP(ASTPtr & ast);
+    const NameToNameMap parameters_substitution;
     String getParamValue(const String & name);
+    void visitQP(ASTPtr & ast);
 };
 
 }

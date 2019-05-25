@@ -242,10 +242,10 @@ private:
 };
 
 
-/** A substitution expression.
+/** Prepared statements.
   * Parse query with parameter expression {name:type}.
   */
-class ParserSubstitutionExpression : public IParserBase
+class ParserSubstitution : public IParserBase
 {
 protected:
     const char * getName() const { return "substitution"; }

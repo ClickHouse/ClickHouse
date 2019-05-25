@@ -1866,25 +1866,25 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 }
 
 
-bool Context::checkEmptyParamSubstitution() const
+bool Context::hasQueryParameters() const
 {
-    return params_substitution.empty();
+    return !parameters_substitution.empty();
 }
 
 
-void Context::setParamSubstitution(const String & name, const String & value)
+NameToNameMap Context::getParameterSubstitution() const
+{
+    if (hasQueryParameters())
+        return parameters_substitution;
+    throw Exception("Query without parameters", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+void Context::setParameterSubstitution(const String & name, const String & value)
 {
     auto lock = getLock();
-    if (!params_substitution.insert({name, value}).second)
-        throw Exception("Expected various names of parameter field --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
-}
-
-
-NameToNameMap Context::getParamSubstitution() const
-{
-    if (!params_substitution.empty())
-        return params_substitution;
-    throw Exception("Context haven't query parameters", ErrorCodes::LOGICAL_ERROR);
+    if (!parameters_substitution.insert({name, value}).second)
+        throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

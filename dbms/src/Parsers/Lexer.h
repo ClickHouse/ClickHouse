@@ -23,8 +23,8 @@ namespace DB
     M(OpeningSquareBracket) \
     M(ClosingSquareBracket) \
     \
-    M(OpeningFiguredBracket) \
-    M(ClosingFiguredBracket) \
+    M(OpeningCurlyBrace) \
+    M(ClosingCurlyBrace) \
     \
     M(Comma) \
     M(Semicolon) \

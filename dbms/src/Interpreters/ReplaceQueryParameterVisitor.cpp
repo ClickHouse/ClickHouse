@@ -12,13 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_IDENTIFIER;
-    extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     for (auto & child : ast->children)
@@ -32,11 +25,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 
 String ReplaceQueryParameterVisitor::getParamValue(const String & name)
 {
-    auto search = params_substitution.find(name);
-    if (search != params_substitution.end())
+    auto search = parameters_substitution.find(name);
+    if (search != parameters_substitution.end())
         return search->second;
     else
-        throw Exception("Expected same names in parameter field --param_{name}={value} and in query {name:type}", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Expected name " + name + " in argument --param_{name}", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
@@ -52,7 +45,7 @@ void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
 
     Field field = temp_column[0];
-    ast = std::make_shared<ASTLiteral>(field);
+    ast = std::make_shared<ASTLiteral>(std::move(field));
 }
 
 }

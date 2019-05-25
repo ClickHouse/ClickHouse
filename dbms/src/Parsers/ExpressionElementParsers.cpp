@@ -1200,16 +1200,23 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 
-bool ParserSubstitutionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type != TokenType::OpeningFiguredBracket)
+    if (pos->type != TokenType::OpeningCurlyBrace)
         return false;
 
-    auto old_pos = ++pos;
-    String s_name, s_type;
+    String name;
+    String type;
+    ++pos;
 
-    while (pos.isValid() && pos->type != TokenType::Colon)
-        ++pos;
+    if (pos->type != TokenType::BareWord)
+    {
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    name = String(pos->begin, pos->end);
+    ++pos;
 
     if (pos->type != TokenType::Colon)
     {
@@ -1217,21 +1224,25 @@ bool ParserSubstitutionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
         return false;
     }
 
-    s_name = String(old_pos->begin, pos->begin);
-    old_pos = ++pos;
+    ++pos;
 
-    while (pos.isValid() && pos->type != TokenType::ClosingFiguredBracket)
-        ++pos;
-
-    if (pos->type != TokenType::ClosingFiguredBracket)
+    if (pos->type != TokenType::BareWord)
     {
-        expected.add(pos, "closing figured bracket");
+        expected.add(pos, "string literal");
         return false;
     }
 
-    s_type = String(old_pos->begin, pos->begin);
+    type = String(pos->begin, pos->end);
     ++pos;
-    node = std::make_shared<ASTQueryParameter>(s_name, s_type);
+
+    if (pos->type != TokenType::ClosingCurlyBrace)
+    {
+        expected.add(pos, "closing curly brace");
+        return false;
+    }
+
+    ++pos;
+    node = std::make_shared<ASTQueryParameter>(name, type);
     return true;
 }
 
@@ -1256,7 +1267,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected)
-        || ParserSubstitutionExpression().parse(pos, node, expected);
+        || ParserSubstitution().parse(pos, node, expected);
 }
 
 
