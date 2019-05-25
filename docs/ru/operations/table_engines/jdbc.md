@@ -1,8 +1,8 @@
-# JDBC {#table_engine-jdbc}
+# JDBC
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement JDBC connection, ClickHouse uses the third-party program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). Installation instructions are in it's documentation. You should run it as a daemon.
+To implement JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). You should run it as a daemon.
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
