@@ -34,7 +34,7 @@ namespace
 
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
-            if (!isNumber(argument_types[i]))
+            if (!isNativeNumber(argument_types[i]))
                 throw Exception(
                     "Argument " + std::to_string(i) + " of type " + argument_types[i]->getName()
                         + " must be numeric for aggregate function " + name,
@@ -355,7 +355,7 @@ void LogisticRegression::predict(
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNumber(cur_col.type))
+        if (!isNativeNumber(cur_col.type))
         {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
         }
@@ -428,7 +428,7 @@ void LinearRegression::predict(
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNumber(cur_col.type))
+        if (!isNativeNumber(cur_col.type))
         {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
         }
