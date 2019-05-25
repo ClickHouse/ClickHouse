@@ -71,7 +71,7 @@ std::ostream & operator<<(std::ostream & stream, const Block & what)
 
 std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
-    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << *what.type.get() << ", column = ";
+    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << *what.type << ", column = ";
     return dumpValue(stream, what.column) << ")";
 }
 
@@ -156,7 +156,6 @@ std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & wh
         dumpValue(stream, what.array_join_name_to_alias);
         stream << "; ";
     }
-    //stream << "analyzed_join=" << what.analyzed_join << "; ";
     stream << "rewrite_subqueries=" << what.rewrite_subqueries << "; ";
     stream << "}";
 
