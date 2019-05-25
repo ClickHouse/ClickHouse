@@ -81,6 +81,7 @@ private:
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
+    const bool close_connection;
 };
 
 }
