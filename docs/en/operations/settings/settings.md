@@ -509,7 +509,7 @@ We can also assume that when sending a query to the same server, in the absence 
 load_balancing = in_order
 ```
 
-Replicas are accessed in the same order as they are specified. The number of errors does not matter.
+Replicas with the same number of errors are accessed in the same order as they are specified in configuration.
 This method is appropriate when you know exactly which replica is preferable.
 
 
