@@ -746,7 +746,7 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 
 ### Inserting and Selecting Data
 
-ClickHouse doesn't connect to [Hadoop Distributed File System](https://en.wikipedia.org/wiki/Apache_Hadoop) to get data from it. You should take the Parquet data file and then you can insert Parquet data into some ClickHouse table by the following command:
+You can insert Parquet data from a file into ClickHouse table by the following command:
 
 ```
 cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
@@ -757,6 +757,9 @@ You can select data from a ClickHouse table and save them into some file in the 
 ```
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
+
+Also look at the `HDFS` and `URL` storage engines to process data from the remote servers.
+
 
 ## Format Schema {#formatschema}
 
