@@ -852,13 +852,16 @@ bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only
     NameSet aggregated_names;
     for (const auto & column : aggregated_columns)
     {
-            step.required_output.push_back(column.name);
-            aggregated_names.insert(column.name);
+        step.required_output.push_back(column.name);
+        aggregated_names.insert(column.name);
     }
 
     for (const auto & child : select_query->limitBy()->children)
-        if (!aggregated_names.count(child->getColumnName()))
-            step.required_output.push_back(child->getColumnName());
+    {
+        auto child_name = child->getColumnName();
+        if (!aggregated_names.count(child_name))
+            step.required_output.push_back(std::move(child_name));
+    }
 
     return true;
 }
