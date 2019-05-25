@@ -689,7 +689,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        forgetPartAndMoveToDetached(part, "ignored_", true);
+        forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
 
