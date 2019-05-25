@@ -224,6 +224,10 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     if (handshake_response.auth_plugin_name != Authentication::SHA256)
     {
         packet_sender->sendPacket(AuthSwitchRequest(Authentication::SHA256, scramble + '\0'), true);
+        if (in->eof())
+            throw Exception(
+                "Client doesn't support authentication method " + String(Authentication::SHA256) + " used by ClickHouse",
+                ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
         packet_sender->receivePacket(response);
         auth_response = response.value;
         LOG_TRACE(log, "Authentication method mismatch.");
