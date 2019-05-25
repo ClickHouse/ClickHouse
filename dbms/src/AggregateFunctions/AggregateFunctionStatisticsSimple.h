@@ -145,10 +145,12 @@ struct VarMomentsDecimal
         NativeType tmp;
         if (common::mulOverflow(x, x, tmp) || common::addOverflow(getM(2), tmp, getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 3) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3)))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 4) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4)))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3)
+            if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4)
+            if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void merge(const VarMomentsDecimal & rhs)
@@ -158,10 +160,12 @@ struct VarMomentsDecimal
 
         if (common::addOverflow(getM(2), rhs.getM(2), getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 3) if (common::addOverflow(getM(3), rhs.getM(3), getM(3)))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 4) if (common::addOverflow(getM(4), rhs.getM(4), getM(4)))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3)
+            if (common::addOverflow(getM(3), rhs.getM(3), getM(3)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4)
+            if (common::addOverflow(getM(4), rhs.getM(4), getM(4)))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
