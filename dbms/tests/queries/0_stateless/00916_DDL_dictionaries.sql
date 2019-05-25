@@ -13,16 +13,19 @@
 
 
 CREATE DATABASE IF NOT EXISTS test;
--- TODO: make right release order (reversed)
+
+
+DROP DICTIONARY IF EXISTS test.dict_with_attrs;
+DROP DICTIONARY IF EXISTS test.dict_ip_trie;
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+DROP DICTIONARY IF EXISTS test.dict_with_ranges;
+DROP DICTIONARY IF EXISTS test.dict1;
+
 DROP TABLE IF EXISTS test.table_for_dict;
 DROP TABLE IF EXISTS test.table;
 DROP TABLE IF EXISTS test.table_ip_trie;
 DROP TABLE IF EXISTS test.table_for_attrs;
-DROP DICTIONARY IF EXISTS test.dict1;
-DROP DICTIONARY IF EXISTS test.dict_with_ranges;
-DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
-DROP DICTIONARY IF EXISTS test.dict_ip_trie;
-DROP DICTIONARY IF EXISTS test.dict_with_attrs;
+
 
 -- It used for loading in dictionaries via ClickHouse source
 CREATE TABLE test.table_for_dict
@@ -222,12 +225,13 @@ SELECT dictGetUInt64('test.dict_with_attrs', 'c', toUInt64(2));
 -- 2) more tests
 -- 3) ...
 
+DROP DICTIONARY IF EXISTS test.dict_with_attrs;
+DROP DICTIONARY IF EXISTS test.dict_ip_trie;
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+DROP DICTIONARY IF EXISTS test.dict_with_ranges;
+DROP DICTIONARY IF EXISTS test.dict1;
+
 DROP TABLE test.table_for_dict;
 DROP TABLE test.table;
 DROP TABLE test.table_ip_trie;
 DROP TABLE test.table_for_attrs;
-DROP DICTIONARY test.dict1;
-DROP DICTIONARY IF EXISTS test.dict_with_ranges;
-DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
-DROP DICTIONARY IF EXISTS test.dict_ip_trie;
-DROP DICTIONARY IF EXISTS test.dict_with_attrs;
