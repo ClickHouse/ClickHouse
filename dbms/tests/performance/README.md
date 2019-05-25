@@ -20,7 +20,7 @@ The most important part of test is `stop_conditions`. For `loop` test you should
 
 You can use `substitions`, `create`, `fill` and `drop` queries to prepare test. You can find examples in this folder.
 
-Take into account, that this tests will run in CI which consists of 56-cores and 512 RAM machines. Queries will be executed much faster than on local laptop.
+Take into account, that these tests will run in CI which consists of 56-cores and 512 RAM machines. Queries will be executed much faster than on local laptop.
 
 ### How to run performance test
 
