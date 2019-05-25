@@ -40,11 +40,11 @@ struct TestStats
 
     double avg_rows_speed_value = 0;
     double avg_rows_speed_first = 0;
-    static inline double avg_rows_speed_precision = 0.001;
+    static inline double avg_rows_speed_precision = 0.005;
 
     double avg_bytes_speed_value = 0;
     double avg_bytes_speed_first = 0;
-    static inline double avg_bytes_speed_precision = 0.001;
+    static inline double avg_bytes_speed_precision = 0.005;
 
     size_t number_of_rows_speed_info_batches = 0;
     size_t number_of_bytes_speed_info_batches = 0;

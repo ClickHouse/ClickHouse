@@ -2,14 +2,16 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Types.h>
-#include <Interpreters/ClientInfo.h>
 #include <Core/Settings.h>
+#include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Common/config.h>
+#include <Storages/IStorage_fwd.h>
 
 #include <atomic>
 #include <chrono>
@@ -65,14 +67,7 @@ struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
 class DDLWorker;
-class IStorage;
 class ITableFunction;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
-class IBlockInputStream;
-class IBlockOutputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
@@ -214,6 +209,10 @@ public:
     void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
+
+    /// Functions where we can lock the context manually
+    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
