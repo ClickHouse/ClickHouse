@@ -531,17 +531,17 @@ Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(�
 Performs simple linear regression.
 
 ```
-leastSqr(array_x, array_y)
+leastSqr(x, y)
 ```
 
 Parameters:
 
-- `array_x` — Values of dependent variable.
-- `array_y` — Values of explanatory variable.
+- `x` — Column with values of dependent variable.
+- `y` — Column with explanatory variable.
 
-Returned value:
+Returned values:
 
-Parameters `(a, b)` of the resulting line `x=a*y + b`.
+Parameters `(a, b)` of the resulting line `x = a*y + b`.
 
 **Examples**
 
