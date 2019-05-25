@@ -335,3 +335,4 @@ class Dictionary(object):
 
     def is_complex(self):
         return self.structure.layout.is_complex
+
