@@ -8,7 +8,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
     for (auto & constraint_expr: expressions)
         if (!checkConstraintOnBlock(block, constraint_expr))
-            throw Exception("Some constraints are not satisfied", ErrorCodes::QUERY_WAS_CANCELLED);
+            throw Exception{"Some constraints are not satisfied", ErrorCodes::QUERY_WAS_CANCELLED};
     output->write(block);
 }
 
