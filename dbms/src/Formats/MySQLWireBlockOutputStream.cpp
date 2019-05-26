@@ -1,4 +1,4 @@
-#include "MySQLBlockOutputStream.h"
+#include "MySQLWireBlockOutputStream.h"
 #include <Core/MySQLProtocol.h>
 #include <Interpreters/ProcessList.h>
 #include <iomanip>
@@ -9,15 +9,15 @@ namespace DB
 
 using namespace MySQLProtocol;
 
-MySQLBlockOutputStream::MySQLBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context)
+MySQLWireBlockOutputStream::MySQLWireBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context)
     : header(header)
     , context(context)
-    , packet_sender(new PacketSender(buf, context.sequence_id, "MySQLBlockOutputStream"))
+    , packet_sender(new PacketSender(buf, context.sequence_id, "MySQLWireBlockOutputStream"))
 {
     packet_sender->max_packet_size = context.max_packet_size;
 }
 
-void MySQLBlockOutputStream::writePrefix()
+void MySQLWireBlockOutputStream::writePrefix()
 {
     if (header.columns() == 0)
         return;
@@ -37,7 +37,7 @@ void MySQLBlockOutputStream::writePrefix()
     }
 }
 
-void MySQLBlockOutputStream::write(const Block & block)
+void MySQLWireBlockOutputStream::write(const Block & block)
 {
     size_t rows = block.rows();
 
@@ -57,7 +57,7 @@ void MySQLBlockOutputStream::write(const Block & block)
     }
 }
 
-void MySQLBlockOutputStream::writeSuffix()
+void MySQLWireBlockOutputStream::writeSuffix()
 {
     QueryStatus * process_list_elem = context.getProcessListElement();
     CurrentThread::finalizePerformanceCounters();
@@ -79,7 +79,7 @@ void MySQLBlockOutputStream::writeSuffix()
             packet_sender->sendPacket(EOF_Packet(0, 0), true);
 }
 
-void MySQLBlockOutputStream::flush()
+void MySQLWireBlockOutputStream::flush()
 {
     packet_sender->out->next();
 }
