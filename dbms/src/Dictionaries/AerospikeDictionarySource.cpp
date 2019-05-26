@@ -56,15 +56,15 @@ namespace DB
         as_config config;
         as_config_init(&config);
         as_config_add_host(&config, host.c_str(), port);
-        // std::vector<as_host> hosts;
-        // hosts.assign(static_cast<as_host *>(config->hosts->list), static_cast<as_host *>(config->hosts->list) + config->hosts->size);
         aerospike_init(&client, &config);
-        
         // Check connection
         as_error err;
-        if (aerospike_connect(&client, &err) != AEROSPIKE_OK) {
+        if (aerospike_connect(&client, &err) != AEROSPIKE_OK)
+        {
                 fprintf(stderr, "error(%d) %s at [%s:%d] \n", err.code, err.message, err.file, err.line);
-        } else {
+        }
+        else
+        {
                 fprintf(stderr, "Connected to Aerospike. Host: %s port: %u", host.c_str(), port);
         }
     }
@@ -96,9 +96,11 @@ namespace DB
     const static char* default_namespace_name = "test";
     const static char* default_set_name = "test_set";
 
-    std::unique_ptr<as_key> AllocateKey(const as_key& key) {
+    std::unique_ptr<as_key> AllocateKey(const as_key& key)
+    {
         std::unique_ptr<as_key> result;
-        switch (as_val_type(&key.value)) {
+        switch (as_val_type(&key.value))
+        {
             case AS_INTEGER: {
                 fprintf(stderr, "AllocateKey INTEGER\n");
                 return std::unique_ptr<as_key>(as_key_new_int64(default_namespace_name, default_set_name, key.value.integer.value));
@@ -129,19 +131,23 @@ namespace DB
 
     AerospikeDictionarySource::~AerospikeDictionarySource() = default;
 
-    BlockInputStreamPtr AerospikeDictionarySource::loadAll() {
+    BlockInputStreamPtr AerospikeDictionarySource::loadAll()
+    {
         as_scan scanner;
         as_scan_init(&scanner, "test", "test_set");
         as_error err;
         std::vector<std::unique_ptr<as_key>> keys;
 
-        auto scannerCallback = [] (const as_val * p_val, void * keys) {
-            if (!p_val) {
+        auto scannerCallback = [] (const as_val * p_val, void * keys)
+        {
+            if (!p_val)
+            {
                 printf("scan callback returned null - scan is complete");
                 return true;
             }
             as_record * record = as_record_fromval(p_val);
-            if (!record) {
+            if (!record)
+            {
                 printf("scan callback returned non-as_record object");
                 return false;
             }
@@ -149,22 +155,25 @@ namespace DB
             tmp.emplace_back(AllocateKey(record->key));
             return true;
         };
-
-        if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void*>(&keys)) != AEROSPIKE_OK) {
+        if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void*>(&keys)) != AEROSPIKE_OK)
+        {
             fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
         }
         return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
     
-    BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64> & ids) {
+    BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64> & ids)
+    {
         std::vector<std::unique_ptr<as_key>> keys;
-        for (UInt64 id : ids) {
+        for (UInt64 id : ids)
+        {
             keys.emplace_back(as_key_new_int64(default_namespace_name, default_set_name, id));
         }
         return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
 
-    std::string AerospikeDictionarySource::toString() const {
+    std::string AerospikeDictionarySource::toString() const
+    {
         return "Aerospike: "; // +  bla bla bla
     }
 }
