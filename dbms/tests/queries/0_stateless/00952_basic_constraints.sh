@@ -3,8 +3,6 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-exec 2>&1
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_constraints;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_constraints
@@ -20,7 +18,9 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (1, 2);"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
 
 # This one must throw and exception
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (3, 4), (1, 0);"
+EXCEPTION_TEXT="Some constraints are not satisfied"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (3, 4), (1, 0);" 2>&1 \
+    | grep -q "$EXCEPTION_TEXT" && echo "Exception ok" || echo "Did not thrown an exception"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_constraints;"
@@ -36,11 +36,15 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE test_constraints
 ENGINE = MergeTree ORDER BY (a);"
 
 # This one must throw an exception
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (1, 2);"
+EXCEPTION_TEXT="Some constraints are not satisfied"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (1, 2);" 2>&1 \
+    | grep -q "$EXCEPTION_TEXT" && echo "Exception ok" || echo "Did not thrown an exception"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
 
 # This one  must throw an exception
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (5, 16), (10, 11);"
+EXCEPTION_TEXT="Some constraints are not satisfied"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (5, 16), (10, 11);" 2>&1 \
+    | grep -q "$EXCEPTION_TEXT" && echo "Exception ok" || echo "Did not thrown an exception"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
 
 # This one must succeed

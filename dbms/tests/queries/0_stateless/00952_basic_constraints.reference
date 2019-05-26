@@ -1,10 +1,7 @@
 1	2
-Received exception from server (version 19.8.1):
-Code: 394. DB::Exception: Received from localhost:9001, ::1. DB::Exception: Some constraints are not satisfied. 
+Exception ok
 1	2
-Received exception from server (version 19.8.1):
-Code: 394. DB::Exception: Received from localhost:9001, ::1. DB::Exception: Some constraints are not satisfied. 
-Received exception from server (version 19.8.1):
-Code: 394. DB::Exception: Received from localhost:9001, ::1. DB::Exception: Some constraints are not satisfied. 
+Exception ok
+Exception ok
 0	11
 7	18
