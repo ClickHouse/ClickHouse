@@ -150,7 +150,7 @@ Block FinishSortingBlockInputStream::readImpl()
 
         if (!blocks.empty())
         {
-	    impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
             res = impl->read();
         }
     }
