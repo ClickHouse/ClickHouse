@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+    extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -57,17 +58,25 @@ StorageMerge::StorageMerge(
 }
 
 
-/// NOTE Structure of underlying tables as well as their set are not constant,
-///  so the results of these methods may become obsolete after the call.
+/// NOTE: structure of underlying tables as well as their set are not constant,
+///       so the results of these methods may become obsolete after the call.
+
+bool StorageMerge::isVirtualColumn(const String & column_name) const
+{
+    if (column_name != "_table")
+        return false;
+
+    return !IStorage::hasColumn(column_name);
+}
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
+    if (IStorage::hasColumn(column_name))
+        return IStorage::getColumn(column_name);
+
     /// virtual column of the Merge table itself
     if (column_name == "_table")
         return { column_name, std::make_shared<DataTypeString>() };
-
-    if (IStorage::hasColumn(column_name))
-        return IStorage::getColumn(column_name);
 
     /// virtual (and real) columns of the underlying tables
     auto first_table = getFirstTable([](auto &&) { return true; });
@@ -188,7 +197,7 @@ BlockInputStreams StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (column_name == "_table")
+        if (isVirtualColumn(column_name))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
@@ -210,6 +219,7 @@ BlockInputStreams StorageMerge::read(
         query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
 
     if (selected_tables.empty())
+        /// FIXME: do we support sampling in this case?
         return createSourceStreams(
             query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
@@ -225,6 +235,10 @@ BlockInputStreams StorageMerge::read(
 
         StoragePtr storage = it->first;
         TableStructureReadLockHolder struct_lock = it->second;
+
+        /// If sampling requested, then check that table supports it.
+        if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
+            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
         BlockInputStreams source_streams;
 
