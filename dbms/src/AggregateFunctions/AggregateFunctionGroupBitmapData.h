@@ -314,7 +314,8 @@ public:
     {
         if (isSmall())
         {
-            if (r1.isSmall()) {
+            if (r1.isSmall())
+            {
                 for (const auto & x : r1.small)
                     if (small.find(x.getValue()) != small.end())
                         return 1;
@@ -352,7 +353,8 @@ public:
                     if (small.find(x.getValue()) == small.end())
                         return 0;
             }
-            else {
+            else
+            {
                 UInt64 r1_size = r1.size();
 
                 if (r1_size > small.size())
