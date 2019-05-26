@@ -162,7 +162,7 @@ INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15',
 
 OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
 
-SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 
@@ -356,7 +356,7 @@ INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15',
 
 OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
 
-SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 

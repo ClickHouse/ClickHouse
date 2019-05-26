@@ -1,8 +1,11 @@
 #pragma once
 
-#include <string>
+#include <Columns/IColumn.h>
+#include <DataStreams/IBlockStream_fwd.h>
+
 #include <vector>
-#include <DataStreams/IBlockInputStream.h>
+#include <string>
+
 
 
 namespace DB

@@ -689,7 +689,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        forgetPartAndMoveToDetached(part, "ignored_", true);
+        forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
 
@@ -1529,8 +1529,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false);
-        if (!transaction)
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (!transaction->isValid())
             continue;
 
         updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);

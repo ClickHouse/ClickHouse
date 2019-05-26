@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
+#include <Core/Block.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include "DictionaryStructure.h"

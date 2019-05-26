@@ -1,28 +1,27 @@
 #pragma once
 
-#include <chrono>
-#include <memory>
+
 #include <Core/Field.h>
 #include <Core/Names.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <common/StringRef.h>
 #include "IDictionarySource.h"
 
+#include <chrono>
+#include <memory>
+
 namespace DB
 {
-class IDictionaryBase;
+struct IDictionaryBase;
 using DictionaryPtr = std::shared_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-
-
-class IDictionaryBase : public IExternalLoadable
+struct IDictionaryBase : public IExternalLoadable
 {
 public:
     using Key = UInt64;
