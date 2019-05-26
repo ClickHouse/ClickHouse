@@ -57,6 +57,15 @@ namespace DB
         using ValueType = ExternalResultDescription::ValueType;
         using RedisArray = Poco::Redis::Array;
 
+        bool isNull(const Poco::Redis::RedisType::Ptr & value)
+        {
+            if (value.isNull())
+                return true;
+            if (value->isBulkString())
+                return static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value().isNull();
+            return false;
+        }
+
         std::string getStringOrThrow(const Poco::Redis::RedisType::Ptr & value, const std::string & column_name)
         {
             LOG_INFO(&Logger::get("Redis"),
@@ -214,7 +223,7 @@ namespace DB
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
                 for (const auto & value : values)
                 {
-                    if (value.isNull())
+                    if (isNull(value))
                         insertDefaultValue(*columns[2], *description.sample_block.getByPosition(2).column);
                     else
                         insertValueByIdx(2, value);
@@ -251,7 +260,7 @@ namespace DB
             Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
             for (const auto & value : values)
             {
-                if (value.isNull())
+                if (isNull(value))
                     insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
                 else
                     insertValueByIdx(1, value);
