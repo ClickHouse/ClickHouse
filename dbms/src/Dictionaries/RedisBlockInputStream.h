@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace Poco
