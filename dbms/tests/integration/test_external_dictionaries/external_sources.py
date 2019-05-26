@@ -3,9 +3,13 @@ import warnings
 import pymysql.cursors
 import pymongo
 import redis
+import aerospike
+from tzlocal import get_localzone
 from tzlocal import get_localzone
 import datetime
 import os
+import dateutil.parser
+import time
 
 
 class ExternalSource(object):
@@ -420,3 +424,42 @@ class SourceRedis(ExternalSource):
         if layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "hash_map":
             return True
         return False
+
+
+class SourceAerospike(ExternalSource):
+    def get_source_str(self, table_name):
+        print("AEROSPIKE get source str")
+        return '''
+            <aerospike>
+                <host>{host}</host>
+                <port>{port}</port>
+                <db_index>0</db_index>
+                <storage_type>{storage_type}</storage_type>
+            </aerospike>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            storage_type=self.storage_type,  # simple or hash_map
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        config = {
+            'hosts': [ (self.internal_hostname, self.internal_port) ]
+        }
+        self.client = aerospike.client(config).connect()
+        self.prepared = True
+        print("PREPARED AEROSPIKE")
+        print(config)
+    
+    def compatible_with_layout(self, layout):
+        print("compatible AEROSPIKE")
+        print(layout)
+        return layout.is_simple and self.storage_type == "simple"
+    
+    def load_kv_data(self, values):
+        print("Load Data Aerospike")
+        print(values)
+
+    def load_data(self, data, table_name):
+        print("Load Data Aerospike")
+        print(data)

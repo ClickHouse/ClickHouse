@@ -6,7 +6,7 @@ import os
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed, SourceMongo
-from external_sources import SourceHTTP, SourceHTTPS, SourceRedis
+from external_sources import SourceHTTP, SourceHTTPS, SourceRedis, SourceAerospike
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -136,8 +136,9 @@ SOURCES = [
 ]
 
 KV_SOURCES = [
-    SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
+    # SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
     # SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
+    SourceAerospike("Aerospike", "localhost", "3000", "aerospike1", "3000", "", ""),
 ]
 
 DICTIONARIES = []
@@ -178,7 +179,6 @@ def setup_module(module):
                 DICTIONARIES.append(dictionary)
             else:
                 print "Source", source.name, "incompatible with layout", layout.name
-
         for kv_source in KV_SOURCES:
             if kv_source.compatible_with_layout(layout):
                 if layout.layout_type == "simple":
@@ -204,7 +204,7 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=False, with_mongo=True, with_redis=True)
+    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=False, with_mongo=True, with_aerospike=True)
     cluster.add_instance('clickhouse1')
 
 
@@ -221,7 +221,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
 
 def prepare_data(fields, values_by_row):
     return [Row(fields, values) for values in values_by_row]
@@ -252,8 +251,8 @@ def xtest_simple_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
-        for query in dct.get_hierarchical_queries(data[0]):
-            queries_with_answers.append((query, [1]))
+        # for query in dct.get_hierarchical_queries(data[0]):
+        #     queries_with_answers.append((query, [1]))
 
         for query in dct.get_hierarchical_queries(data[1]):
             queries_with_answers.append((query, [2, 1]))
