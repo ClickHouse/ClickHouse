@@ -42,7 +42,7 @@ public:
 
     /// @TODO(glebx777): fix it
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override {
-            throw Exception{"Method loadKeys is unsupported for AerospikeDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+            throw Exception{"Method loadIds is unsupported for AerospikeDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
     BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override

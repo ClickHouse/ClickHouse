@@ -170,6 +170,12 @@ namespace
 
         }
 
+        template <typename T>
+        inline void insert(IColumn & column, const String & stringValue)
+        {
+            static_cast<ColumnVector<T> &>(column).insertValue(parse<T>(stringValue));
+        }
+
         void insertValue(IColumn& column, const ValueType type, const as_bin_value * value, const std::string& name) {
             switch (type) {
                 case ValueType::UInt8:
@@ -196,22 +202,30 @@ namespace
                 case ValueType::Int64:
                     insertNumberValue<Int64>(column, value, name);
                     break;
+                case ValueType::Float32:
+                    insertNumberValue<Float32>(column, value, name);
+                    break;
+                case ValueType::Float64:
+                    insertNumberValue<Float64>(column, value, name);
+                    break;
                 case ValueType::String: {
                     String str{value->string.value, value->string.len};
                     static_cast<ColumnString&>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
                 }
-                case ValueType::Date:
-                    static_cast<ColumnUInt16&>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                        static_cast<Int64>(value->integer.value))});
+                case ValueType::Date: {
+                    String str{value->string.value, value->string.len};
+                    static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(str).getDayNum());
                     break;
-                case ValueType::DateTime:
-                    static_cast<ColumnUInt32&>(column).getData().push_back(
-                        static_cast<Int64>(value->integer.value));
+                }
+                case ValueType::DateTime: {
+                    String str{value->string.value, value->string.len};
+                    static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(str)));
                     break;
+                }
                 case ValueType::UUID: {
                     String str{value->string.value, value->string.len};
-                    static_cast<ColumnUInt128&>(column).getData().push_back(parse<UUID>(str));
+                    static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(str));
                     break;
                 }
                 default:
