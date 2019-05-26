@@ -202,8 +202,7 @@ private:
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
             LOG_INFO(
                 log,
-                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
-                                           << " fill queries");
+                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
@@ -370,7 +369,7 @@ try
     Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
     if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
+        std::cout << "Usage: " << argv[0] << " [options]\n";
         std::cout << desc << "\n";
         return 0;
     }

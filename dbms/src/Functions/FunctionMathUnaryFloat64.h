@@ -56,7 +56,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arg = arguments.front();
-        if (!isNumber(arg) && !isDecimal(arg))
+        if (!isNumber(arg))
             throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 

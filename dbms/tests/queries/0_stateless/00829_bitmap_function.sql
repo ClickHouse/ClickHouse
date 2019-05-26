@@ -9,6 +9,8 @@ SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
 SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
 SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
 SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
+SELECT bitmapAndCardinality(bitmapBuild([100, 200, 500]), bitmapBuild(CAST([100, 200], 'Array(UInt16)')));
+SELECT bitmapToArray(bitmapAnd(bitmapBuild([100, 200, 500]), bitmapBuild(CAST([100, 200], 'Array(UInt16)'))));
 
 DROP TABLE IF EXISTS bitmap_test;
 CREATE TABLE bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
@@ -86,11 +88,13 @@ ORDER BY t;
 
 INSERT INTO bitmap_column_expr_test VALUES (now(), bitmapBuild(cast([3,19,47] as Array(UInt32))));
 
-SELECT bitmapAndCardinality( bitmapBuild(cast([19,7] as Array(UInt32))), z) from bitmap_column_expr_test;
-SELECT bitmapAndCardinality( z, bitmapBuild(cast([19,7] as Array(UInt32))) ) from bitmap_column_expr_test;
+SELECT bitmapAndCardinality( bitmapBuild(cast([19,7] AS Array(UInt32))), z) FROM bitmap_column_expr_test;
+SELECT bitmapAndCardinality( z, bitmapBuild(cast([19,7] AS Array(UInt32))) ) FROM bitmap_column_expr_test;
 
-select bitmapCardinality(bitmapAnd(bitmapBuild(cast([19,7] as Array(UInt32))), z )) from bitmap_column_expr_test;
-select bitmapCardinality(bitmapAnd(z, bitmapBuild(cast([19,7] as Array(UInt32))))) from bitmap_column_expr_test;
+SELECT bitmapCardinality(bitmapAnd(bitmapBuild(cast([19,7] AS Array(UInt32))), z )) FROM bitmap_column_expr_test;
+SELECT bitmapCardinality(bitmapAnd(z, bitmapBuild(cast([19,7] AS Array(UInt32))))) FROM bitmap_column_expr_test;
+
+
 
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;

@@ -2,9 +2,10 @@
 
 set -x -e
 
-ccache -s ||:
+ccache --show-stats ||:
+ccache --zero-stats ||:
 build/release --no-pbuilder
 mv /*.deb /output
 mv *.changes /output
 mv *.buildinfo /output
-ccache -s ||:
+ccache --show-stats ||:

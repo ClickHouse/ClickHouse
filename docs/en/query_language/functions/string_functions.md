@@ -60,6 +60,32 @@ If the string contains a set of bytes that is not UTF-8, then the behavior is un
 
 Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
+## toValidUTF8
+
+Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
+
+```
+toValidUTF8( input_string )
+```
+
+Parameters:
+
+- input_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
+
+Returned value: Valid UTF-8 string.
+
+### Example
+
+```sql
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+```
+```text
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
+```
+
+
 ## reverse
 
 Reverses the string (as a sequence of bytes).
@@ -67,6 +93,24 @@ Reverses the string (as a sequence of bytes).
 ## reverseUTF8
 
 Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn't throw an exception).
+
+## format(pattern, s0, s1, ...)
+
+Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{` and `}}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
+
+```sql
+SELECT format('{1} {0} {1}', 'World', 'Hello')
+
+┌─format('{1} {0} {1}', 'World', 'Hello')─┐
+│ Hello World Hello                       │
+└─────────────────────────────────────────┘
+
+SELECT format('{} {}', 'Hello', 'World')
+
+┌─format('{} {}', 'Hello', 'World')─┐
+│ Hello World                       │
+└───────────────────────────────────┘
+```
 
 ## concat(s1, s2, ...)
 
