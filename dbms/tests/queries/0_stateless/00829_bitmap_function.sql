@@ -108,9 +108,9 @@ DROP TABLE IF EXISTS bitmap_column_expr_test;
 
 -- bitmapHasAny:
 ---- Empty
-SELECT bitmapHasAny(bitmapBuild([1, 2, 3, 5]), bitmapBuild(emptyArrayUInt32()));
+SELECT bitmapHasAny(bitmapBuild([1, 2, 3, 5]), bitmapBuild(emptyArrayUInt8()));
 SELECT bitmapHasAny(bitmapBuild(emptyArrayUInt32()), bitmapBuild(emptyArrayUInt32()));
-SELECT bitmapHasAny(bitmapBuild(emptyArrayUInt32()), bitmapBuild([1, 2, 3, 5]));
+SELECT bitmapHasAny(bitmapBuild(emptyArrayUInt16()), bitmapBuild([1, 2, 3, 500]));
 ---- Small x Small
 SELECT bitmapHasAny(bitmapBuild([1, 2, 3, 5]),bitmapBuild([0, 3, 7]));
 SELECT bitmapHasAny(bitmapBuild([1, 2, 3, 5]),bitmapBuild([0, 4, 7]));
@@ -122,7 +122,7 @@ select bitmapHasAny(bitmapBuild([100,200,500]),bitmapBuild([ 99, 101, 600,
 ---- Large x Small
 select bitmapHasAny(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]),bitmapBuild([ 99, 100, 101]));
+    100,200,230]),bitmapBuild([ 99, 100, 101]));
 select bitmapHasAny(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]),bitmapBuild([ 99, 101, 600]));
@@ -138,9 +138,9 @@ select bitmapHasAny(bitmapBuild([
 
 -- bitmapHasAll:
 ---- Empty
-SELECT bitmapHasAll(bitmapBuild([1, 2, 3, 5]), bitmapBuild(emptyArrayUInt32()));
+SELECT bitmapHasAll(bitmapBuild([1, 2, 3, 5]), bitmapBuild(emptyArrayUInt8()));
 SELECT bitmapHasAll(bitmapBuild(emptyArrayUInt32()), bitmapBuild(emptyArrayUInt32()));
-SELECT bitmapHasAll(bitmapBuild(emptyArrayUInt32()), bitmapBuild([1, 2, 3, 5]));
+SELECT bitmapHasAll(bitmapBuild(emptyArrayUInt16()), bitmapBuild([1, 2, 3, 500]));
 ---- Small x Small
 select bitmapHasAll(bitmapBuild([1,5,7,9]),bitmapBuild([5,7]));
 select bitmapHasAll(bitmapBuild([1,5,7,9]),bitmapBuild([5,7,2]));
