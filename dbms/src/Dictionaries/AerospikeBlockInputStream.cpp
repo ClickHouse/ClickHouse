@@ -268,12 +268,11 @@ Block AerospikeBlockInputStream::readImpl()
     if (all_read)
         return {};
 
-    MutableColumns columns(description.sample_block.columns());
-   // const size_t size = columns.size();
-
-    const size_t size = 2;
-    assert(size == description.sample_block.columns());
-
+    const size_t size = description.sample_block.columns();
+    MutableColumns columns(size);
+    if (size == 0) {
+        return description.sample_block.cloneWithColumns(std::move(columns));
+    }
 
     for (const auto i : ext::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
@@ -284,9 +283,7 @@ Block AerospikeBlockInputStream::readImpl()
 
     TemporaryName recordsHandler(&columns, description, cursor);
     for (UInt32 i = 0; i < current_block_size; ++i) {
-        // fprintf(stderr, "KEY VALUE: %s \n", keys[cursor + i]->value.string.value);
         InitializeBatchKey(as_batch_keyat(&batch, i), "test", "test_set", keys[cursor + i]);
-        // fprintf(stderr, "KEY VALUE: %s \n", as_batch_keyat(&batch, i)->value.string.value);
     }
 
     const auto batchReadCallback = [] (const as_batch_read* results, uint32_t size, void* records_handler_) {
