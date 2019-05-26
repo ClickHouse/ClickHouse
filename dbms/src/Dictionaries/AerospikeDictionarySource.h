@@ -41,9 +41,10 @@ public:
     bool supportsSelectiveLoad() const override { return true; }
 
     /// @TODO(glebx777): fix it
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override {
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override;
+    /* override {
             throw Exception{"Method loadIds is unsupported for AerospikeDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
-    }
+    } */
 
     BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
     {

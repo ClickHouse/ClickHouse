@@ -145,21 +145,22 @@ namespace DB
                 printf("scan callback returned non-as_record object");
                 return false;
             }
-            // std::vector<as_key>* tmp = reinterpret_cast<std::vector<as_key>*>(keys);
             std::vector<std::unique_ptr<as_key>>& tmp = *static_cast<std::vector<std::unique_ptr<as_key>>*>(keys);
-            // as_val * tmpValue = nullptr;
             tmp.emplace_back(AllocateKey(record->key));
-            // TRY THIS !!!!!!!! ::::: as_command_parse_value
-            // tmp.emplace_back(as_bytes_new_wrap(record->key.value.bytes.value, record->key.value.bytes.size, true)); // record->key -- correct object. FIXME: push_back and pointers casting
             return true;
         };
 
         if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void*>(&keys)) != AEROSPIKE_OK) {
             fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
         }
-        /* as_key key;
-        as_key_init_raw(&key, "test", "test_set", keys[0]->value, keys[0]->size);
-        fprintf(stderr, "KEY VALUE: %s \n", key.value.string.value); */
+        return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+    }
+    
+    BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64> & ids) {
+        std::vector<std::unique_ptr<as_key>> keys;
+        for (UInt64 id : ids) {
+            keys.emplace_back(as_key_new_int64(default_namespace_name, default_set_name, id));
+        }
         return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
 
