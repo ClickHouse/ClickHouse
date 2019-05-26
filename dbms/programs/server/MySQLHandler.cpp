@@ -40,7 +40,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     , public_key(public_key)
     , private_key(private_key)
 {
-    log->setLevel("information");
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
         server_capability_flags |= CLIENT_SSL;
@@ -101,7 +100,7 @@ void MySQLHandler::run()
         OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_sender->sendPacket(ok_packet, true);
 
-        for (;;)
+        while (true)
         {
             packet_sender->resetSequenceId();
             String payload = packet_sender->receivePacketPayload();
