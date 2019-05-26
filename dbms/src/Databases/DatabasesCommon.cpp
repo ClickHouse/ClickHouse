@@ -1,14 +1,16 @@
-#include <sstream>
+#include <Databases/DatabasesCommon.h>
 
-#include <Common/typeid_cast.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Databases/DatabasesCommon.h>
+#include <Common/typeid_cast.h>
+
+#include <sstream>
 
 
 namespace DB

@@ -15,12 +15,14 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
-    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_)
+    ReadBufferFromKafkaConsumer(
+        ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_)
         : ReadBuffer(nullptr, 0)
         , consumer(consumer_)
         , log(log_)
         , batch_size(max_batch_size)
         , poll_timeout(poll_timeout_)
+        , intermediate_commit(intermediate_commit_)
         , current(messages.begin())
     {
     }
@@ -39,6 +41,7 @@ private:
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     bool stalled = false;
+    bool intermediate_commit = true;
 
     Messages messages;
     Messages::const_iterator current;

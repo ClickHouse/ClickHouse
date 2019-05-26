@@ -1,11 +1,10 @@
 #include <Functions/IFunction.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/TableStructureLockHolder.h>
 
 namespace DB
 {
 class Context;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
