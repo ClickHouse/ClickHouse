@@ -2,7 +2,7 @@
 # wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.c
 # wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.h
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=unused-result")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-result -Wno-reserved-id-macro")
 
 configure_file(includes.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/includes.h)
 add_library(readpassphrase ${CMAKE_CURRENT_SOURCE_DIR}/readpassphrase.c)
