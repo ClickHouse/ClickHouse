@@ -148,8 +148,11 @@ Block FinishSortingBlockInputStream::readImpl()
             blocks.push_back(block);
         }
 
-        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
-        res = impl->read();
+        if (!blocks.empty())
+	{
+	    impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+            res = impl->read();
+	}
     }
 
     if (res)
