@@ -29,6 +29,6 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-<query>SELECT CounterID FROM test.hits ORDER BY CounterID, EventDate LIMIT 50</query>
+<query>SELECT CounterID FROM test.hits ORDER BY CounterID, EventDate DESC LIMIT 50</query>
 
 </test>
