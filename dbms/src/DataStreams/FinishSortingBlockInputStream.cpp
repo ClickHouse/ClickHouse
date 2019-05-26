@@ -50,7 +50,7 @@ struct Less
 
     bool operator() (size_t a, size_t b) const
     {
-        for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end(); ++it, ++jt)
+        for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end() && jt != right_columns.end(); ++it, ++jt)
         {
             int res = it->second.direction * it->first->compareAt(a, b, *jt->first, it->second.nulls_direction);
             if (res < 0)
