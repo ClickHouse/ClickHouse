@@ -159,17 +159,9 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
 
 void PerformanceTest::prepare() const
 {
-    for (const auto & query : test_info.create_queries)
+    for (const auto & query : test_info.create_and_fill_queries)
     {
-        LOG_INFO(log, "Executing create query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
-        LOG_INFO(log, "Query finished");
-    }
-
-    for (const auto & query : test_info.fill_queries)
-    {
-        LOG_INFO(log, "Executing fill query \"" << query << '\"');
+        LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
         connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");

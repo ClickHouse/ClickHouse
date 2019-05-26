@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -81,10 +80,13 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
     }
 
     /// Go through the list of parts.
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
+    all_parts = info.getParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
@@ -106,7 +108,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             }
             columns[j++]->insert(part->name);
             columns[j++]->insert(part_state == State::Committed);
-            columns[j++]->insert(part->marks_count);
+            columns[j++]->insert(part->getMarksCount());
 
             columns[j++]->insert(part->rows_count);
             columns[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));

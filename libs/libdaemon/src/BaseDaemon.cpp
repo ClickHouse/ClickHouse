@@ -25,8 +25,7 @@
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/Ext/LevelFilterChannel.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/TaskManager.h>
@@ -128,7 +127,7 @@ static void call_default_signal_handler(int sig)
 }
 
 
-using ThreadNumber = decltype(Poco::ThreadNumber::get());
+using ThreadNumber = decltype(getThreadNumber());
 static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(ThreadNumber);
 
 using signal_function = void(int, siginfo_t*, void*);
@@ -169,7 +168,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
-    DB::writeBinary(Poco::ThreadNumber::get(), out);
+    DB::writeBinary(getThreadNumber(), out);
 
     out.next();
 
@@ -556,7 +555,7 @@ static void terminate_handler()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(Poco::ThreadNumber::get(), out);
+    DB::writeBinary(getThreadNumber(), out);
     DB::writeBinary(log_message, out);
     out.next();
 
@@ -1084,7 +1083,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// Create pid file.
-    if (is_daemon && config().has("pid"))
+    if (config().has("pid"))
         pid.seed(config().getString("pid"));
 
     /// Change path for logging.

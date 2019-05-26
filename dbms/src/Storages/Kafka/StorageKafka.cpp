@@ -71,7 +71,8 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, char row_delimiter_, const String & schema_name_,
-    size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken_)
+    size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken_,
+    bool intermediate_commit_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), global_context(context_),
     topics(global_context.getMacros()->expand(topics_)),
@@ -81,8 +82,8 @@ StorageKafka::StorageKafka(
     row_delimiter(row_delimiter_),
     schema_name(global_context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_), mutex(), consumers(),
-    skip_broken(skip_broken_)
+    semaphore(0, num_consumers_),
+    skip_broken(skip_broken_), intermediate_commit(intermediate_commit_)
 {
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
     task->deactivate();
@@ -124,13 +125,16 @@ void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        // Create a consumer and subscribe to topics
-        auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-        consumer->subscribe(topics);
-
-        // Make consumer available
-        pushConsumer(consumer);
-        ++num_created_consumers;
+        // Make buffer available
+        try
+        {
+            pushBuffer(createBuffer());
+            ++num_created_consumers;
+        }
+        catch (const cppkafka::Exception &)
+        {
+            tryLogCurrentException(log);
+        }
     }
 
     // Start the reader thread
@@ -146,8 +150,8 @@ void StorageKafka::shutdown()
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto consumer = claimConsumer();
-        // FIXME: not sure if really close consumers here, and if we really need to close them here.
+        auto buffer = claimBuffer();
+        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
     LOG_TRACE(log, "Waiting for cleanup");
@@ -203,14 +207,31 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     return conf;
 }
 
-ConsumerPtr StorageKafka::claimConsumer()
+BufferPtr StorageKafka::createBuffer()
 {
-    return tryClaimConsumer(-1L);
+    // Create a consumer and subscribe to topics
+    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+    consumer->subscribe(topics);
+
+    // Limit the number of batched messages to allow early cancellations
+    const Settings & settings = global_context.getSettingsRef();
+    size_t batch_size = max_block_size;
+    if (!batch_size)
+        batch_size = settings.max_block_size.value;
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+
+    return std::make_shared<DelimitedReadBuffer>(
+        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
 }
 
-ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
+BufferPtr StorageKafka::claimBuffer()
 {
-    // Wait for the first free consumer
+    return tryClaimBuffer(-1L);
+}
+
+BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
+{
+    // Wait for the first free buffer
     if (wait_ms >= 0)
     {
         if (!semaphore.tryWait(wait_ms))
@@ -219,17 +240,17 @@ ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
     else
         semaphore.wait();
 
-    // Take the first available consumer from the list
+    // Take the first available buffer from the list
     std::lock_guard lock(mutex);
-    auto consumer = consumers.back();
-    consumers.pop_back();
-    return consumer;
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
 }
 
-void StorageKafka::pushConsumer(ConsumerPtr consumer)
+void StorageKafka::pushBuffer(BufferPtr buffer)
 {
     std::lock_guard lock(mutex);
-    consumers.push_back(consumer);
+    buffers.push_back(buffer);
     semaphore.set();
 }
 
@@ -303,7 +324,6 @@ bool StorageKafka::streamToViews()
     insert->table = table_name;
     insert->no_destination = true; // Only insert into dependent views
 
-    // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
     if (block_size == 0)
@@ -369,6 +389,7 @@ void registerStorageKafka(StorageFactory & factory)
           * - Number of consumers
           * - Max block size for background consumption
           * - Skip (at least) unreadable messages number
+          * - Do intermediate commits when the batch consumed and handled
           */
 
         // Check arguments and settings
@@ -403,6 +424,8 @@ void registerStorageKafka(StorageFactory & factory)
         CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers)
         CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size)
         CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages)
+        CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch)
+
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         // Get and check broker list
@@ -587,9 +610,27 @@ void registerStorageKafka(StorageFactory & factory)
             skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
         }
 
+        bool intermediate_commit = true;
+        if (args_count >= 10)
+        {
+            const auto * ast = engine_args[9]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                intermediate_commit = static_cast<bool>(safeGet<UInt64>(ast->value));
+            }
+            else
+            {
+                throw Exception("Flag for committing every batch must be 0 or 1", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+        else if (kafka_settings.kafka_commit_every_batch.changed)
+        {
+            intermediate_commit = static_cast<bool>(kafka_settings.kafka_commit_every_batch);
+        }
+
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken);
+            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
     });
 }
 

@@ -217,11 +217,12 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
-            context.setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
+        for (auto && setting : context.getSettingsRef())
+        {
+            const String & name = setting.getName().toString();
+            if (config().has(name) && !setting.isChanged())
+                setting.setValue(config().getString(name));
+        }
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
@@ -479,6 +480,17 @@ private:
         }
         else
         {
+            /// This is intended for testing purposes.
+            if (config().getBool("always_load_suggestion_data", false))
+            {
+#if USE_READLINE
+                SCOPE_EXIT({ Suggest::instance().finalize(); });
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+#else
+                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
+#endif
+            }
+
             query_id = config().getString("query_id", "");
             nonInteractive();
 
@@ -805,8 +817,7 @@ private:
             {
                 if (!old_settings)
                     old_settings.emplace(context.getSettingsRef());
-                for (const auto & change : settings_ast.as<ASTSetQuery>()->changes)
-                    context.setSetting(change.name, change.value);
+                context.applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
             };
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
@@ -836,7 +847,7 @@ private:
                     if (change.name == "profile")
                         current_profile = change.value.safeGet<String>();
                     else
-                        context.setSetting(change.name, change.value);
+                        context.applySettingChange(change);
                 }
             }
 
@@ -855,7 +866,7 @@ private:
             std::cout << std::endl
                 << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
-            if (progress.rows >= 1000)
+            if (progress.read_rows >= 1000)
                 writeFinalProgress();
 
             std::cout << std::endl << std::endl;
@@ -1409,23 +1420,23 @@ private:
             << " Progress: ";
 
         message
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             message << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             message << ". ";
 
         written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-        if (progress.total_rows > 0)
+        if (progress.total_rows_to_read > 0)
         {
-            size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
+            size_t total_rows_corrected = std::max(progress.read_rows, progress.total_rows_to_read);
 
             /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
             ///  and the query is less than halfway done.
@@ -1433,7 +1444,7 @@ private:
             if (elapsed_ns > 500000000)
             {
                 /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
-                if (progress.rows * 2 < total_rows_corrected)
+                if (progress.read_rows * 2 < total_rows_corrected)
                     show_progress_bar = true;
 
                 if (show_progress_bar)
@@ -1441,7 +1452,7 @@ private:
                     ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
-                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
+                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
                         message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
                             message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
@@ -1450,7 +1461,7 @@ private:
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            message << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
         }
 
         message << ENABLE_LINE_WRAPPING;
@@ -1463,14 +1474,14 @@ private:
     void writeFinalProgress()
     {
         std::cout << "Processed "
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             std::cout << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             std::cout << ". ";
     }
@@ -1604,8 +1615,6 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
-
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
@@ -1629,6 +1638,7 @@ public:
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
             ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+            ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
@@ -1647,9 +1657,9 @@ public:
             ("compression", po::value<bool>(), "enable or disable compression")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-            APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
-#undef DECLARE_SETTING
+
+        context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description("External tables options");
@@ -1665,6 +1675,8 @@ public:
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
+        po::notify(options);
+
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1715,15 +1727,14 @@ public:
             }
         }
 
-        /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
-        if (options.count(#NAME))                                        \
-        {                                                                \
-            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
-            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        /// Copy settings-related program options to config.
+        /// TODO: Is this code necessary?
+        for (const auto & setting : context.getSettingsRef())
+        {
+            const String name = setting.getName().toString();
+            if (options.count(name))
+                config().setString(name, options[name].as<std::string>());
         }
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
 
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
@@ -1782,6 +1793,13 @@ public:
             server_logs_file = options["server_logs_file"].as<std::string>();
         if (options.count("disable_suggestion"))
             config().setBool("disable_suggestion", true);
+        if (options.count("always_load_suggestion_data"))
+        {
+            if (options.count("disable_suggestion"))
+                throw Exception("Command line parameters disable_suggestion (-A) and always_load_suggestion_data cannot be specified simultaneously",
+                    ErrorCodes::BAD_ARGUMENTS);
+            config().setBool("always_load_suggestion_data", true);
+        }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     }

@@ -62,6 +62,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings
         break;
     case LoadBalancing::RANDOM:
         break;
+    case LoadBalancing::FIRST_OR_RANDOM:
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
+        break;
     }
 
     return Base::get(try_get_entry, get_priority);
@@ -133,6 +136,9 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         get_priority = [](size_t i) { return i; };
         break;
     case LoadBalancing::RANDOM:
+        break;
+    case LoadBalancing::FIRST_OR_RANDOM:
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
     }
 

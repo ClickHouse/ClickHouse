@@ -15,24 +15,24 @@ function perform()
     fi
 }
 
-perform "DROP TABLE IF EXISTS test.alter"
-perform "CREATE TABLE test.alter (d Date, a Enum8('foo'=1), b DateTime, c DateTime) ENGINE=MergeTree(d, (a, b, toTime(c)), 8192)"
+perform "DROP TABLE IF EXISTS alter"
+perform "CREATE TABLE alter (d Date, a Enum8('foo'=1), b DateTime, c DateTime) ENGINE=MergeTree(d, (a, b, toTime(c)), 8192)"
 
-perform "INSERT INTO test.alter VALUES ('2017-02-09', 'foo', '2017-02-09 00:00:00', '2017-02-09 00:00:00')"
+perform "INSERT INTO alter VALUES ('2017-02-09', 'foo', '2017-02-09 00:00:00', '2017-02-09 00:00:00')"
 
 # Must fail because d is used as as a date column in MergeTree
-perform "ALTER TABLE test.alter MODIFY COLUMN d UInt16"
+perform "ALTER TABLE alter MODIFY COLUMN d UInt16"
 
-perform "ALTER TABLE test.alter MODIFY COLUMN a Enum8('foo'=1, 'bar'=2)"
-perform "ALTER TABLE test.alter MODIFY COLUMN b UInt32"
+perform "ALTER TABLE alter MODIFY COLUMN a Enum8('foo'=1, 'bar'=2)"
+perform "ALTER TABLE alter MODIFY COLUMN b UInt32"
 
 # Must fail because column c is used in primary key via an expression.
-perform "ALTER TABLE test.alter MODIFY COLUMN c UInt32"
+perform "ALTER TABLE alter MODIFY COLUMN c UInt32"
 
-perform "INSERT INTO test.alter VALUES ('2017-02-09', 'bar', 1486598400, '2017-02-09 00:00:00')"
+perform "INSERT INTO alter VALUES ('2017-02-09', 'bar', 1486598400, '2017-02-09 00:00:00')"
 
-perform "SELECT d FROM test.alter WHERE a = 'bar'"
+perform "SELECT d FROM alter WHERE a = 'bar'"
 
-perform "SELECT a, b, b = toUnixTimestamp(c) FROM test.alter ORDER BY a FORMAT TSV"
+perform "SELECT a, b, b = toUnixTimestamp(c) FROM alter ORDER BY a FORMAT TSV"
 
-perform "DROP TABLE test.alter"
+perform "DROP TABLE alter"

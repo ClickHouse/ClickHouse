@@ -8,7 +8,7 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -163,7 +163,7 @@ private:
     struct InputData
     {
         BlockInputStreamPtr in;
-        size_t i;        /// The source number (for debugging).
+        size_t i = 0;      /// The source number (for debugging).
 
         InputData() {}
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}

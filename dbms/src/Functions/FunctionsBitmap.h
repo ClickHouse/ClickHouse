@@ -369,6 +369,13 @@ public:
             throw Exception(
                 "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
+            throw Exception(
+                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
+                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
@@ -406,7 +413,12 @@ private:
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+            else
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -482,6 +494,13 @@ public:
             throw Exception(
                 "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
+            throw Exception(
+                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
+                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return arguments[0];
     }
 
@@ -511,7 +530,12 @@ private:
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+            else
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        }
 
         auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
 

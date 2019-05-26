@@ -422,6 +422,11 @@ namespace ErrorCodes
     extern const int CANNOT_MPROTECT = 445;
     extern const int FUNCTION_NOT_ALLOWED = 446;
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT = 447;
+    extern const int BROTLI_READ_FAILED = 448;
+    extern const int BROTLI_WRITE_FAILED = 449;
+    extern const int BAD_TTL_EXPRESSION = 450;
+    extern const int BAD_TTL_FILE = 451;
+    extern const int SETTING_CONSTRAINT_VIOLATION = 452;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
@@ -431,6 +436,8 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES = 446;
 }
 
 }

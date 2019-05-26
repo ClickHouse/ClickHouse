@@ -12,10 +12,10 @@ namespace DB
   * Mixed constant/non-constant columns is prohibited in tuple
   *  for implementation simplicity.
   */
-class ColumnTuple final : public COWPtrHelper<IColumn, ColumnTuple>
+class ColumnTuple final : public COWHelper<IColumn, ColumnTuple>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnTuple>;
+    friend class COWHelper<IColumn, ColumnTuple>;
 
     using TupleColumns = std::vector<WrappedPtr>;
     TupleColumns columns;
@@ -30,7 +30,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWPtrHelper<IColumn, ColumnTuple>;
+    using Base = COWHelper<IColumn, ColumnTuple>;
     static Ptr create(const Columns & columns);
     static Ptr create(const TupleColumns & columns);
     static Ptr create(Columns && arg) { return create(arg); }

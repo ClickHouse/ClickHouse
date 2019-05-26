@@ -12,8 +12,7 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
@@ -271,7 +270,7 @@ private:
     void initBlockInput();
     void initBlockLogsInput();
 
-    void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
 }

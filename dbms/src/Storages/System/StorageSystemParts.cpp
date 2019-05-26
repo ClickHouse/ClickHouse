@@ -6,8 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemParts.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -53,11 +51,16 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
 void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPart::State;
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
 
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    all_parts = info.getParts(all_parts_state, has_state_column);
+
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
+
         MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
@@ -68,7 +71,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         }
         columns[i++]->insert(part->name);
         columns[i++]->insert(part_state == State::Committed);
-        columns[i++]->insert(part->marks_count);
+        columns[i++]->insert(part->getMarksCount());
         columns[i++]->insert(part->rows_count);
         columns[i++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
         columns[i++]->insert(columns_size.data_compressed);

@@ -8,8 +8,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/StorageFactory.h>
 
@@ -26,6 +29,10 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
+static inline String generateInnerTableName(const String & table_name)
+{
+    return ".inner." + table_name;
+}
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
@@ -66,7 +73,7 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 
 static void checkAllowedQueries(const ASTSelectQuery & query)
 {
-    if (query.prewhere_expression || query.final() || query.sample_size())
+    if (query.prewhere() || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
     ASTPtr subquery = extractTableExpression(query, 0);
@@ -128,7 +135,7 @@ StorageMaterializedView::StorageMaterializedView(
     else
     {
         target_database_name = database_name;
-        target_table_name = ".inner." + table_name;
+        target_table_name = generateInnerTableName(table_name);
         has_inner_table = true;
     }
 
@@ -263,6 +270,53 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 {
     checkStatementCanBeForwarded();
     getTargetTable()->mutate(commands, context);
+}
+
+static void executeRenameQuery(Context & global_context, const String & database_name, const String & table_original_name, const String & new_table_name)
+{
+    if (global_context.tryGetTable(database_name, table_original_name))
+    {
+            auto rename = std::make_shared<ASTRenameQuery>();
+
+            ASTRenameQuery::Table from;
+            from.database = database_name;
+            from.table = table_original_name;
+
+            ASTRenameQuery::Table to;
+            to.database = database_name;
+            to.table = new_table_name;
+
+            ASTRenameQuery::Element elem;
+            elem.from = from;
+            elem.to = to;
+
+            rename->elements.emplace_back(elem);
+
+            InterpreterRenameQuery(rename, global_context).execute();
+    }
+}
+
+
+void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name)
+{
+    if (has_inner_table && tryGetTargetTable())
+    {
+        String new_target_table_name = generateInnerTableName(new_table_name);
+        executeRenameQuery(global_context, target_database_name, target_table_name, new_target_table_name);
+        target_table_name = new_target_table_name;
+    }
+
+    auto lock = global_context.getLock();
+
+    global_context.removeDependencyUnsafe(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
+
+    table_name = new_table_name;
+
+    global_context.addDependencyUnsafe(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
 }
 
 void StorageMaterializedView::shutdown()

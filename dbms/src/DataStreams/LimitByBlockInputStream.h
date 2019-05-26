@@ -18,7 +18,7 @@ namespace DB
 class LimitByBlockInputStream : public IBlockInputStream
 {
 public:
-    LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns);
+    LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_length_, size_t group_offset_, const Names & columns);
 
     String getName() const override { return "LimitBy"; }
 
@@ -34,7 +34,8 @@ private:
     using MapHashed = HashMap<UInt128, UInt64, UInt128TrivialHash>;
 
     const Names columns_names;
-    const size_t group_size;
+    const size_t group_length;
+    const size_t group_offset;
     MapHashed keys_counts;
 };
 
