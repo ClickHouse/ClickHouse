@@ -106,7 +106,12 @@ Calculates the 4-gram distance between `haystack` and `needle`: counts the symme
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 
-**Note: For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte -- this works for Latin and mostly for all Cyrillic letters.**
+## ngramEntry(haystack, needle)
 
+Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Can be useful for fuzzy string search.
+
+For case-insensitive search or/and in UTF-8 format use functions `ngramEntryCaseInsensitive, ngramEntryUTF8, ngramEntryCaseInsensitiveUTF8`.
+
+**Note: For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one -- this works for Latin and mostly for all Cyrillic letters.**
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->
