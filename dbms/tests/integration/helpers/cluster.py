@@ -193,7 +193,7 @@ class ClickHouseCluster:
 	if with_aerospike and not self.with_aerospike:
             self.with_aerospike = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_aerospike.yml')])
-            self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+            self.base_aerospike_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_aerospike.yml')]
 
 
