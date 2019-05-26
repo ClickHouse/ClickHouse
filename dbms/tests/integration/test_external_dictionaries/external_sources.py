@@ -427,14 +427,19 @@ class SourceRedis(ExternalSource):
 
 
 class SourceAerospike(ExternalSource):
+    def __init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password, storage_type=None):
+        ExternalSource.__init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password, storage_type)
+        self.namespace = "test"
+        self.set = "test_set"
+
     def get_source_str(self, table_name):
         print("AEROSPIKE get source str")
         return '''
             <aerospike>
                 <host>{host}</host>
                 <port>{port}</port>
-                <db_index>0</db_index>
-                <storage_type>{storage_type}</storage_type>
             </aerospike>
         '''.format(
             host=self.docker_hostname,
@@ -453,13 +458,39 @@ class SourceAerospike(ExternalSource):
     
     def compatible_with_layout(self, layout):
         print("compatible AEROSPIKE")
-        print(layout)
-        return layout.is_simple and self.storage_type == "simple"
-    
+        return layout.is_simple
+
+    def _flush_aerospike_db(self):
+        keys = []
+        
+        def handle_record((key, metadata, record)):
+            print("Handle record {} {}".format(key, record))
+            keys.append(key)
+
+        def print_record((key, metadata, record)):
+            print("Print record {} {}".format(key, record))
+
+        scan = self.client.scan(self.namespace, self.set)
+        scan.foreach(handle_record)
+
+        [self.client.remove(key) for key in keys]
+
+
     def load_kv_data(self, values):
-        print("Load Data Aerospike")
-        print(values)
+        self._flush_aerospike_db()
+
+        print("Load KV Data Aerospike")
+        if len(values[0]) == 2:
+            for value in values:
+                key = (self.namespace, self.set, value[0])
+                print(key)
+                self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
+                assert self.client.exists(key)
+        else:
+            assert("VALUES SIZE != 2")
+
+        # print(values)
 
     def load_data(self, data, table_name):
         print("Load Data Aerospike")
-        print(data)
+        # print(data)
