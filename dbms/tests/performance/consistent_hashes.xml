@@ -4,8 +4,8 @@
 
     <stop_conditions>
         <any_of>
-            <max_speed_not_changing_for_ms>1000</max_speed_not_changing_for_ms>
-            <total_time_ms>5000</total_time_ms>
+            <average_speed_not_changing_for_ms>6000</average_speed_not_changing_for_ms>
+            <total_time_ms>15000</total_time_ms>
         </any_of>
     </stop_conditions>
 

@@ -438,7 +438,7 @@ FROM <left_subquery>
 
 The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md) engine – an array prepared for joining.
 
-**Supported types of `JOIN`**
+#### Supported Types of `JOIN`
 
 - `INNER JOIN` (or `JOIN`)
 - `LEFT JOIN` (or `LEFT OUTER JOIN`)
@@ -448,14 +448,34 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
-**ANY or ALL strictness**
+#### Multiple JOIN
+
+Performing queries, ClickHouse rewrites multiple joins into the combination of two-table joins and processes them sequentially. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
+
+If a query contains `WHERE` clause, ClickHouse tries to push down filters from this clause into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+
+We recommend the `JOIN ON` or `JOIN USING` syntax for creating a query. For example:
+
+```
+SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
+```
+
+Also, you can use comma separated list of tables for join. Works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting.
+
+    For example, `SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a`
+
+Don't mix these syntaxes.
+
+ClickHouse doesn't support the syntax with commas directly, so we don't recommend to use it. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER` `JOIN` clauses and then proceeds the query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats comma as an `INNER JOIN` clause and converts it to `CROSS JOIN` when the algorithm cannot guaranty that `INNER JOIN` returns required data.
+
+#### ANY or ALL Strictness
 
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
-**GLOBAL JOIN**
+#### GLOBAL JOIN
 
 When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 
@@ -463,7 +483,7 @@ When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calc
 
 Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#select-distributed-subqueries).
 
-**Usage Recommendations**
+#### Usage Recommendations
 
 All columns that are not needed for the `JOIN` are deleted from the subquery.
 

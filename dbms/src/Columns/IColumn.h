@@ -141,6 +141,7 @@ public:
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
+    /// All data will be inserted as single element
     virtual void insertData(const char * pos, size_t length) = 0;
 
     /// Appends "default value".
