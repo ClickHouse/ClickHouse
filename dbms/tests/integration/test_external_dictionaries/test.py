@@ -115,9 +115,9 @@ VALUES = {
 }
 
 LAYOUTS = [
+    Layout("flat"),
     Layout("hashed"),
     Layout("cache"),
-    Layout("flat"),
     Layout("complex_key_hashed"),
     Layout("complex_key_cache"),
     Layout("range_hashed"),
@@ -138,7 +138,7 @@ SOURCES = [
 KV_SOURCES = [
     # SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
     # SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
-    SourceAerospike("Aerospike", "localhost", "3000", "aerospike1", "3000", "", ""),
+    # SourceAerospike("Aerospike", "localhost", "3000", "aerospike1", "3000", "", ""),
 ]
 
 DICTIONARIES = []
