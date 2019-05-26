@@ -13,7 +13,7 @@ void checkFulfilledConditionsAndUpdate(
     TestStats & statistics, TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener)
 {
-    statistics.add(progress.rows, progress.bytes);
+    statistics.add(progress.read_rows, progress.read_bytes);
 
     stop_conditions.reportRowsRead(statistics.total_rows_read);
     stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);

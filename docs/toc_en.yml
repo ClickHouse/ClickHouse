@@ -96,7 +96,8 @@ nav:
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
-
+    - 'ODBC': 'operations/table_engines/odbc.md'
+    
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
@@ -148,7 +149,9 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
+    - 'odbc': 'query_language/table_functions/odbc.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
