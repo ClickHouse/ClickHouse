@@ -26,8 +26,7 @@ void MySQLWireBlockOutputStream::writePrefix()
 
     for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
     {
-        ColumnDefinition column_definition(column.name, CharacterSet::binary, std::numeric_limits<uint32_t>::max(),
-                                           ColumnType::MYSQL_TYPE_STRING, 0, 0);
+        ColumnDefinition column_definition(column.name, CharacterSet::binary, 0, ColumnType::MYSQL_TYPE_STRING, 0, 0);
         packet_sender->sendPacket(column_definition);
     }
 

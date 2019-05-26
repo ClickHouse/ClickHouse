@@ -163,7 +163,6 @@ public:
         , out(&out)
         , log(&Poco::Logger::get(logger_name))
     {
-        log->setLevel("information");
     }
 
     /// For writing.
@@ -173,7 +172,6 @@ public:
         , out(&out)
         , log(&Poco::Logger::get(logger_name))
     {
-        log->setLevel("information");
     }
 
     String receivePacketPayload()

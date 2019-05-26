@@ -89,8 +89,7 @@ void MySQLHandlerFactory::readRSAKeys()
         SCOPE_EXIT(fclose(fp));
 
         private_key.reset(PEM_read_RSAPrivateKey(fp, nullptr, nullptr, nullptr));
-
-        if (private_key.get() == nullptr)
+        if (!private_key)
             throw Exception("Failed to read RSA private key from " + privateKeyFile + ". Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
     }
 }
@@ -98,8 +97,8 @@ void MySQLHandlerFactory::readRSAKeys()
 void MySQLHandlerFactory::generateRSAKeys()
 {
     LOG_INFO(log, "Generating new RSA key.");
-    RSAPtr rsa(RSA_new());
-    if (rsa == nullptr)
+    public_key.reset(RSA_new());
+    if (!public_key)
         throw Exception("Failed to allocate RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
 
     BIGNUM * e = BN_new();
@@ -107,12 +106,10 @@ void MySQLHandlerFactory::generateRSAKeys()
         throw Exception("Failed to allocate BIGNUM. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
     SCOPE_EXIT(BN_free(e));
 
-    if (!BN_set_word(e, 65537) || !RSA_generate_key_ex(rsa.get(), 2048, e, nullptr))
+    if (!BN_set_word(e, 65537) || !RSA_generate_key_ex(public_key.get(), 2048, e, nullptr))
         throw Exception("Failed to generate RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
 
-    public_key = std::move(rsa);
     private_key.reset(RSAPrivateKey_dup(public_key.get()));
-
     if (!private_key)
         throw Exception("Failed to copy RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
 }
