@@ -19,12 +19,14 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
-#include <Common/config.h>
-#include <Common/typeid_cast.h>
-
 #if USE_MYSQL
 #include <Dictionaries/Embedded/TechDataHierarchy.h>
 #endif
+
+#include <IO/WriteHelpers.h>
+
+#include <Common/config.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -34,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -141,10 +144,10 @@ struct SEHierarchyImpl
   */
 struct RegionsHierarchyGetter
 {
-    using Src = RegionsHierarchies;
-    using Dst = RegionsHierarchy;
+    using Src = const RegionsHierarchies;
+    using Dst = const RegionsHierarchy;
 
-    static const Dst & get(const Src & src, const std::string & key)
+    static Dst & get(Src & src, const std::string & key)
     {
         return src.get(key);
     }
@@ -155,10 +158,10 @@ struct RegionsHierarchyGetter
 template <typename Dict>
 struct IdentityDictionaryGetter
 {
-    using Src = Dict;
-    using Dst = Dict;
+    using Src = const Dict;
+    using Dst = const Dict;
 
-    static const Dst & get(const Src & src, const std::string & key)
+    static Dst & get(Src & src, const std::string & key)
     {
         if (key.empty())
             return src;
@@ -184,7 +187,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -218,7 +221,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -240,16 +245,17 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<T>>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnVector<T>::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<T>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            typename ColumnVector<T>::Container & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -275,7 +281,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -311,7 +317,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -338,49 +346,52 @@ public:
 
         if (col_vec1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_vec1 && col_const2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const T const_from2 = col_const2->template getValue<T>();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_const1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnUInt8::create();
 
             const T const_from1 = col_const1->template getValue<T>();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from2.size();
             vec_to.resize(size);
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else if (col_const1 && col_const2)
         {
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_const1->size(),
                 toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
         else
@@ -408,7 +419,7 @@ public:
     : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -442,7 +453,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -464,14 +477,13 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_values = std::make_shared<ColumnVector<T>>();
-            auto col_array = std::make_shared<ColumnArray>(col_values);
-            block.getByPosition(result).column = col_array;
+            auto col_values = ColumnVector<T>::create();
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
 
-            ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
-            typename ColumnVector<T>::Container_t & res_values = col_values->getData();
+            auto & res_offsets = col_offsets->getData();
+            auto & res_values = col_values->getData();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             res_offsets.resize(size);
             res_values.reserve(size * 4);
@@ -486,11 +498,13 @@ public:
                 }
                 res_offsets[i] = res_values.size();
             }
+
+            block.getByPosition(result).column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of first argument of function " + name,
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of first argument of function " + name,
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -670,14 +684,14 @@ public:
     }
 
 private:
-    const std::shared_ptr<RegionsNames> owned_dict;
+    const MultiVersion<RegionsNames>::Version owned_dict;
 
 public:
-    FunctionRegionToName(const std::shared_ptr<RegionsNames> & owned_dict_)
+    FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -715,7 +729,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         RegionsNames::Language language = RegionsNames::Language::RU;
 
@@ -734,16 +750,17 @@ public:
 
         if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const ColumnUInt32::Container_t & region_ids = col_from->getData();
+            const ColumnUInt32::Container & region_ids = col_from->getData();
 
             for (size_t i = 0; i < region_ids.size(); ++i)
             {
                 const StringRef & name_ref = dict.getRegionName(region_ids[i], language);
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -752,4 +769,4 @@ public:
     }
 };
 
-};
+}

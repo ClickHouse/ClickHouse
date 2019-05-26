@@ -84,14 +84,34 @@ size_t NamesAndTypesList::sizeOfDifference(const NamesAndTypesList & rhs) const
     return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 }
 
+void NamesAndTypesList::getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const
+{
+    NamesAndTypes lhs_vector(begin(), end());
+    std::sort(lhs_vector.begin(), lhs_vector.end());
+    NamesAndTypes rhs_vector(rhs.begin(), rhs.end());
+    std::sort(rhs_vector.begin(), rhs_vector.end());
+
+    std::set_difference(lhs_vector.begin(), lhs_vector.end(), rhs_vector.begin(), rhs_vector.end(),
+        std::back_inserter(deleted));
+    std::set_difference(rhs_vector.begin(), rhs_vector.end(), lhs_vector.begin(), lhs_vector.end(),
+        std::back_inserter(added));
+}
+
 Names NamesAndTypesList::getNames() const
 {
     Names res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-    {
         res.push_back(column.name);
-    }
+    return res;
+}
+
+DataTypes NamesAndTypesList::getTypes() const
+{
+    DataTypes res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.push_back(column.type);
     return res;
 }
 
@@ -114,7 +134,7 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE It's better to make a map in `IStorage` than to create it here every time again.
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
+    GOOGLE_NAMESPACE::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
     types.set_empty_key(StringRef());
 
     for (const NameAndTypePair & column : *this)
@@ -126,9 +146,19 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
         auto it = types.find(name);
         if (it == types.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.push_back(NameAndTypePair(name, *it->second));
+        res.emplace_back(name, *it->second);
     }
     return res;
+}
+
+bool NamesAndTypesList::contains(const String & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.name == name)
+            return true;
+    }
+    return false;
 }
 
 }

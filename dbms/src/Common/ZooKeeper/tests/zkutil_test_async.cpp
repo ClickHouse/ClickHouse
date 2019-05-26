@@ -9,6 +9,12 @@ try
 
     auto nodes = zookeeper.getChildren("/tmp");
 
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program num_threads\n";
+        return 1;
+    }
+
     size_t num_threads = DB::parse<size_t>(argv[1]);
     std::vector<std::thread> threads;
     for (size_t i = 0; i < num_threads; ++i)
@@ -17,12 +23,12 @@ try
         {
             while (true)
             {
-                std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+                std::vector<std::future<Coordination::GetResponse>> futures;
                 for (auto & node : nodes)
-                    futures.push_back(zookeeper.asyncTryGet("/tmp/" + node));
+                    futures.push_back(zookeeper.asyncGet("/tmp/" + node));
 
                 for (auto & future : futures)
-                    std::cerr << (future.get().value.empty() ? ',' : '.');
+                    std::cerr << (future.get().data.empty() ? ',' : '.');
             }
         });
     }
@@ -35,5 +41,5 @@ try
 catch (const Poco::Exception & e)
 {
     std::cout << e.message() << std::endl;
-    throw;
+    return 1;
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,28 +12,20 @@ class Context;
 
 /** Implements `databases` system table, which allows you to get information about all databases.
   */
-class StorageSystemDatabases : public ext::shared_ptr_helper<StorageSystemDatabases>, public IStorage
+class StorageSystemDatabases : public ext::shared_ptr_helper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
 {
-friend class ext::shared_ptr_helper<StorageSystemDatabases>;
 public:
-    std::string getName() const override { return "SystemDatabases"; }
-    std::string getTableName() const override { return name; }
+    std::string getName() const override
+    {
+        return "SystemDatabases";
+    }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    static NamesAndTypesList getNamesAndTypes();
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-private:
-    const std::string name;
-    NamesAndTypesList columns;
-
-    StorageSystemDatabases(const std::string & name_);
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const override;
 };
 
 }

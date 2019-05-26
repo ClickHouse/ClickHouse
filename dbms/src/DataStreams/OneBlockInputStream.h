@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -9,12 +9,20 @@ namespace DB
 /** A stream of blocks from which you can read one block.
   * Also see BlocksListBlockInputStream.
   */
-class OneBlockInputStream : public IProfilingBlockInputStream
+class OneBlockInputStream : public IBlockInputStream
 {
 public:
     OneBlockInputStream(const Block & block_) : block(block_) {}
 
     String getName() const override { return "One"; }
+
+    Block getHeader() const override
+    {
+        Block res;
+        for (const auto & elem : block)
+            res.insert({ elem.column->cloneEmpty(), elem.type, elem.name });
+        return res;
+    }
 
 protected:
     Block readImpl() override

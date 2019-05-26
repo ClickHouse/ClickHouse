@@ -1,11 +1,13 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Columns/IColumn.h>
+#include <DataStreams/IBlockStream_fwd.h>
+
 #include <vector>
+
 
 namespace DB
 {
-
 class IDictionarySource;
 using DictionarySourcePtr = std::unique_ptr<IDictionarySource>;
 
@@ -18,6 +20,9 @@ class IDictionarySource
 public:
     /// Returns an input stream with all the data available from this source.
     virtual BlockInputStreamPtr loadAll() = 0;
+
+    /// Returns an input stream with updated data available from this source.
+    virtual BlockInputStreamPtr loadUpdatedAll() = 0;
 
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.
@@ -33,11 +38,13 @@ public:
       * `requested_rows` contains indices of all rows containing unique keys.
       * It must be guaranteed, that 'requested_rows' array will live at least until all data will be read from returned stream.
       */
-    virtual BlockInputStreamPtr loadKeys(
-        const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
+    virtual BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
 
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;
+
+    /// Returns true if update field is defined
+    virtual bool hasUpdateField() const = 0;
 
     virtual DictionarySourcePtr clone() const = 0;
 

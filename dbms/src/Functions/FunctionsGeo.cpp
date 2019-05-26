@@ -1,19 +1,27 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsGeo.h>
 #include <Functions/GeoUtils.h>
-#include <Functions/ObjectPool.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnTuple.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+
+#include <string>
+#include <memory>
+
 
 namespace ProfileEvents
 {
@@ -26,7 +34,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -84,7 +92,7 @@ public:
 
     static const char * name;
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>();
     }
@@ -108,7 +116,7 @@ public:
     {
         if (arguments.size() < 2)
         {
-            throw Exception("Too few arguments", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
+            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
 
         auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
@@ -130,7 +138,7 @@ public:
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!elements[j]->isNumeric())
+                if (!isNativeNumber(elements[j]))
                 {
                     throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -141,7 +149,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
 
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
@@ -156,21 +164,20 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        const auto & tuple_block = tuple_col->getData();
-        const auto & x = tuple_block.safeGetByPosition(0);
-        const auto & y = tuple_block.safeGetByPosition(1);
+        const auto & tuple_columns = tuple_col->getColumns();
+        const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
-        bool use_float64 = checkDataType<DataTypeFloat64>(x.type.get()) || checkDataType<DataTypeFloat64>(y.type.get());
+        bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();
 
         auto & result_column = block.safeGetByPosition(result).column;
 
         if (use_float64)
-            result_column = executeForType<Float64>(*x.column, *y.column, block, arguments);
+            result_column = executeForType<Float64>(*tuple_columns[0], *tuple_columns[1], block, arguments);
         else
-            result_column = executeForType<Float32>(*x.column, *y.column, block, arguments);
+            result_column = executeForType<Float32>(*tuple_columns[0], *tuple_columns[1], block, arguments);
 
         if (const_tuple_col)
-            result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
+            result_column = ColumnConst::create(result_column, const_tuple_col->size());
     }
 
 private:
@@ -209,9 +216,9 @@ private:
             if (!tuple_col)
                 throw Exception(getMsgPrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
 
-            const auto & tuple_block = tuple_col->getData();
-            const auto & column_x = tuple_block.safeGetByPosition(0).column;
-            const auto & column_y = tuple_block.safeGetByPosition(1).column;
+            const auto & tuple_columns = tuple_col->getColumns();
+            const auto & column_x = tuple_columns[0];
+            const auto & column_y = tuple_columns[1];
 
             if (!polygon.outer().empty())
                 polygon.inners().emplace_back();
@@ -244,31 +251,192 @@ private:
 
 };
 
+const size_t GEOHASH_MAX_TEXT_LENGTH = 16;
+
+// geohashEncode(lon float32/64, lat float32/64, length UInt8) => string
+class FunctionGeohashEncode : public IFunction
+{
+public:
+    static constexpr auto name = "geohashEncode";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashEncode>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        validateArgumentType(*this, arguments, 0, isFloat, "float");
+        validateArgumentType(*this, arguments, 1, isFloat, "float");
+        if (arguments.size() == 3)
+        {
+            validateArgumentType(*this, arguments, 2, isInteger, "integer");
+        }
+        if (arguments.size() > 3)
+        {
+            throw Exception("Too many arguments for function " + getName() +
+                            " expected at most 3",
+                            ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    template <typename LonType, typename LatType>
+    bool tryExecute(const IColumn * lon_column, const IColumn * lat_column, UInt64 precision_value, ColumnPtr & result)
+    {
+        const ColumnVector<LonType> * longitude = checkAndGetColumn<ColumnVector<LonType>>(lon_column);
+        const ColumnVector<LatType> * latitude = checkAndGetColumn<ColumnVector<LatType>>(lat_column);
+        if (!latitude || !longitude)
+            return false;
+
+        auto col_str = ColumnString::create();
+        ColumnString::Chars & out_vec = col_str->getChars();
+        ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+        const size_t size = lat_column->size();
+
+        out_offsets.resize(size);
+        out_vec.resize(size * (GEOHASH_MAX_TEXT_LENGTH + 1));
+
+        char * begin = reinterpret_cast<char *>(out_vec.data());
+        char * pos = begin;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const Float64 longitude_value = longitude->getElement(i);
+            const Float64 latitude_value = latitude->getElement(i);
+
+            const size_t encoded_size = GeoUtils::geohashEncode(longitude_value, latitude_value, precision_value, pos);
+
+            pos += encoded_size;
+            *pos = '\0';
+            out_offsets[i] = ++pos - begin;
+        }
+        out_vec.resize(pos - begin);
+
+        if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
+            throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+
+        result = std::move(col_str);
+
+        return true;
+
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const IColumn * longitude = block.getByPosition(arguments[0]).column.get();
+        const IColumn * latitude = block.getByPosition(arguments[1]).column.get();
+
+        const UInt64 precision_value = std::min(GEOHASH_MAX_TEXT_LENGTH,
+                arguments.size() == 3 ? block.getByPosition(arguments[2]).column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
+
+        ColumnPtr & res_column = block.getByPosition(result).column;
+
+        if (tryExecute<Float32, Float32>(longitude, latitude, precision_value, res_column) ||
+            tryExecute<Float64, Float32>(longitude, latitude, precision_value, res_column) ||
+            tryExecute<Float32, Float64>(longitude, latitude, precision_value, res_column) ||
+            tryExecute<Float64, Float64>(longitude, latitude, precision_value, res_column))
+            return;
+
+        const char sep[] = ", ";
+        std::string arguments_description = "";
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            arguments_description += block.getByPosition(arguments[i]).column->getName() + sep;
+        }
+        if (arguments_description.size() > sizeof(sep))
+        {
+            arguments_description.erase(arguments_description.size() - sizeof(sep) - 1);
+        }
+
+        throw Exception("Unsupported argument types: " + arguments_description +
+                        + " for function " + getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+// geohashDecode(string) => (lon float64, lat float64)
+class FunctionGeohashDecode : public IFunction
+{
+public:
+    static constexpr auto name = "geohashDecode";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashDecode>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        validateArgumentType(*this, arguments, 0, isStringOrFixedString, "string or fixed string");
+
+        return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
+    }
+
+    template <typename ColumnTypeEncoded>
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column)
+    {
+        const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
+        if (!encoded)
+            return false;
+
+        const size_t count = encoded->size();
+
+        auto latitude = ColumnFloat64::create(count);
+        auto longitude = ColumnFloat64::create(count);
+
+        ColumnFloat64::Container & lon_data = longitude->getData();
+        ColumnFloat64::Container & lat_data = latitude->getData();
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            StringRef encoded_string = encoded->getDataAt(i);
+            GeoUtils::geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
+        }
+
+        MutableColumns result;
+        result.emplace_back(std::move(longitude));
+        result.emplace_back(std::move(latitude));
+        result_column = ColumnTuple::create(std::move(result));
+
+        return true;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const IColumn * encoded = block.getByPosition(arguments[0]).column.get();
+        ColumnPtr & res_column = block.getByPosition(result).column;
+
+        if (tryExecute<ColumnString>(encoded, res_column) ||
+            tryExecute<ColumnFixedString>(encoded, res_column))
+            return;
+
+        throw Exception("Unsupported argument type:" + block.getByPosition(arguments[0]).column->getName()
+                        + " of argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
 template <typename Type>
 using Point = boost::geometry::model::d2::point_xy<Type>;
 
 template <typename Type>
-using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Point<Type>>;
-template <typename Type>
-using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Point<Type>>;
-template <typename Type>
-using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Point<Type>>;
-
-template <typename Type>
-using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy<Type>, Type>;
-template <typename Type>
-using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy<Type>, Type>;
-template <typename Type>
-using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy<Type>, Type>;
-template <typename Type>
 using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
 
-template <>
-const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygonCrossing";
-template <>
-const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolygonWinding";
-template <>
-const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
 
@@ -277,9 +445,8 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionGreatCircleDistance>();
     factory.registerFunction<FunctionPointInEllipses>();
 
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
+    factory.registerFunction<FunctionGeohashEncode>();
+    factory.registerFunction<FunctionGeohashDecode>();
 }
 }

@@ -15,11 +15,14 @@ struct NoInitTag {};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
-struct PairNoInit
+class PairNoInit
 {
     First first;
     Second second;
+    template <typename, typename, typename, typename>
+    friend class HashMapCell;
 
+public:
     PairNoInit() {}
 
     template <typename First_>
@@ -29,6 +32,11 @@ struct PairNoInit
     template <typename First_, typename Second_>
     PairNoInit(First_ && first_, Second_ && second_)
         : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
+
+    First & getFirstMutable() { return first; }
+    const First & getFirst() const { return first; }
+    Second & getSecond() { return second; }
+    const Second & getSecond() const { return second; }
 };
 
 
@@ -42,23 +50,28 @@ struct HashMapCell
     value_type value;
 
     HashMapCell() {}
-    HashMapCell(const Key & key_, const State & state) : value(key_, NoInitTag()) {}
-    HashMapCell(const value_type & value_, const State & state) : value(value_) {}
+    HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
+    HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
-    value_type & getValue()                { return value; }
+    Key & getFirstMutable() { return value.first; }
+    const Key & getFirst() const { return value.first; }
+    Mapped & getSecond() { return value.second; }
+    const Mapped & getSecond() const { return value.second; }
+
+    value_type & getValueMutable() { return value; }
     const value_type & getValue() const { return value; }
 
-    static Key & getKey(value_type & value)    { return value.first; }
     static const Key & getKey(const value_type & value) { return value.first; }
 
     bool keyEquals(const Key & key_) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return value.first == key_; }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return value.first == key_; }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return value.first == key_; }
 
-    void setHash(size_t hash_value) {}
+    void setHash(size_t /*hash_value*/) {}
     size_t getHash(const Hash & hash) const { return hash(value.first); }
 
     bool isZero(const State & state) const { return isZero(value.first, state); }
-    static bool isZero(const Key & key, const State & state) { return ZeroTraits::check(key); }
+    static bool isZero(const Key & key, const State & /*state*/) { return ZeroTraits::check(key); }
 
     /// Set the key value to zero.
     void setZero() { ZeroTraits::set(value.first); }
@@ -110,11 +123,12 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
+    bool keyEquals(const Key & key_) const { return this->value.getFirst() == key_; }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.getFirst() == key_; }
+    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
-    size_t getHash(const Hash & hash) const { return saved_hash; }
+    size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
 
@@ -156,9 +170,9 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new(&it->second) mapped_type();
+            new(&it->getSecond()) mapped_type();
 
-        return it->second;
+        return it->getSecond();
     }
 };
 

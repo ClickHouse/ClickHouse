@@ -5,26 +5,27 @@
 #include <Common/Exception.h>
 
 
-/** ErrorHandler для потоков, который в случае неперехваченного исключения,
-  * выводит ошибку в лог и завершает демон.
+/** ErrorHandler for Poco::Thread,
+  *  that in case of unhandled exception,
+  *  logs exception message and terminates the process.
   */
 class KillingErrorHandler : public Poco::ErrorHandler
 {
 public:
-    void exception(const Poco::Exception & e)     { std::terminate(); }
-    void exception(const std::exception & e)    { std::terminate(); }
-    void exception()                            { std::terminate(); }
+    void exception(const Poco::Exception &) { std::terminate(); }
+    void exception(const std::exception &)  { std::terminate(); }
+    void exception()                        { std::terminate(); }
 };
 
 
-/** Выводит информацию об исключении в лог.
+/** Log exception message.
   */
 class ServerErrorHandler : public Poco::ErrorHandler
 {
 public:
-    void exception(const Poco::Exception & e)     { logException(); }
-    void exception(const std::exception & e)    { logException(); }
-    void exception()                            { logException(); }
+    void exception(const Poco::Exception &) { logException(); }
+    void exception(const std::exception &)  { logException(); }
+    void exception()                        { logException(); }
 
 private:
     Logger * log = &Logger::get("ServerErrorHandler");

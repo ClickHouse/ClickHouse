@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
+
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/MemoryTracker.h>
@@ -21,7 +23,7 @@ template
     UInt8 K,
     typename Hash = IntHash32<Key>,
     typename DenominatorType = double>
-class HyperLogLogWithSmallSetOptimization
+class HyperLogLogWithSmallSetOptimization : private boost::noncopyable
 {
 private:
     using Small = SmallSet<Key, small_set_size>;
@@ -43,12 +45,14 @@ private:
         Large * tmp_large = new Large;
 
         for (const auto & x : small)
-            tmp_large->insert(x);
+            tmp_large->insert(x.getValue());
 
         large = tmp_large;
     }
 
 public:
+    using value_type = Key;
+
     ~HyperLogLogWithSmallSetOptimization()
     {
         if (isLarge())
@@ -78,7 +82,7 @@ public:
             large->insert(value);
     }
 
-    UInt32 size() const
+    UInt64 size() const
     {
         return !isLarge() ? small.size() : large->size();
     }
@@ -95,7 +99,7 @@ public:
         else
         {
             for (const auto & x : rhs.small)
-                insert(x);
+                insert(x.getValue());
         }
     }
 

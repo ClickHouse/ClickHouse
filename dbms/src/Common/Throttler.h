@@ -5,7 +5,15 @@
 #include <memory>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
+#include <port/clock.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event ThrottlerSleepMicroseconds;
+}
 
 
 namespace DB
@@ -27,6 +35,9 @@ namespace ErrorCodes
 class Throttler
 {
 public:
+    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent = nullptr)
+            : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent) {}
+
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const std::shared_ptr<Throttler> & parent = nullptr)
         : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent) {}
@@ -37,7 +48,7 @@ public:
         UInt64 elapsed_ns = 0;
 
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (max_speed)
             {
@@ -65,10 +76,14 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
-                timespec sleep_ts;
+                ::timespec sleep_ts;
                 sleep_ts.tv_sec = sleep_ns / 1000000000;
                 sleep_ts.tv_nsec = sleep_ns % 1000000000;
-                nanosleep(&sleep_ts, nullptr);    /// NOTE Returns early in case of a signal. This is considered normal.
+
+                /// NOTE: Returns early in case of a signal. This is considered normal.
+                ::nanosleep(&sleep_ts, nullptr);
+
+                ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }
         }
 
@@ -76,10 +91,24 @@ public:
             parent->add(amount);
     }
 
+    /// Not thread safe
+    void setParent(const std::shared_ptr<Throttler> & parent_)
+    {
+        parent = parent_;
+    }
+
+    void reset()
+    {
+        std::lock_guard lock(mutex);
+
+        count = 0;
+        watch.reset();
+    }
+
 private:
-    size_t max_speed = 0;
     size_t count = 0;
-    size_t limit = 0;        /// 0 - not limited.
+    const size_t max_speed = 0;
+    const UInt64 limit = 0;        /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;

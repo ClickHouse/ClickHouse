@@ -6,10 +6,13 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/callOnTypeIndex.h>
 
 
 namespace DB
 {
+
+class IFunction;
 
 /// Methods, that helps dispatching over real column types.
 
@@ -18,13 +21,6 @@ const Type * checkAndGetDataType(const IDataType * data_type)
 {
     return typeid_cast<const Type *>(data_type);
 }
-
-template <typename Type>
-bool checkDataType(const IDataType * data_type)
-{
-    return checkAndGetDataType<Type>(data_type);
-}
-
 
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn * column)
@@ -42,7 +38,7 @@ bool checkColumn(const IColumn * column)
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column->isConst())
+    if (!column || !column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -59,17 +55,16 @@ const Type * checkAndGetColumnConstData(const IColumn * column)
     const ColumnConst * res = checkAndGetColumnConst<Type>(column);
 
     if (!res)
-        return res;
+        return {};
 
-    return &res->getDataColumn();
+    return static_cast<const Type *>(&res->getDataColumn());
 }
 
 template <typename Type>
-const bool checkColumnConst(const IColumn * column)
+bool checkColumnConst(const IColumn * column)
 {
     return checkAndGetColumnConst<Type>(column);
 }
-
 
 /// Returns non-nullptr if column is ColumnConst with ColumnString or ColumnFixedString inside.
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column);
@@ -77,22 +72,33 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-inline Field toField(const T & x)
+inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
 {
-    return Field(typename NearestFieldType<T>::Type(x));
+    return Field(NearestFieldType<T>(x));
+}
+
+template <typename T>
+inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
+{
+    return Field(NearestFieldType<T>(x, scale));
 }
 
 
-ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column);
+Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
 
 /// Returns the copy of a given block in which each column specified in
 /// the "arguments" parameter is replaced with its respective nested
 /// column if it is nullable.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args);
 
 /// Similar function as above. Additionally transform the result type if needed.
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
+/// Checks argument type at specified index with predicate.
+/// throws if there is no argument at specified index or if predicate returns false.
+void validateArgumentType(const IFunction & func, const DataTypes & arguments,
+        size_t argument_index, bool (* validator_func)(const IDataType &),
+        const char * expected_type_description);
 
 }

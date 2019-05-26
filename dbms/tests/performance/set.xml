@@ -1,0 +1,44 @@
+<test>
+    <name>set_lookup_random</name>
+    <type>once</type>
+    <tags>
+        <tag>long</tag>
+    </tags>
+
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>10000</total_time_ms>
+        </all_of>
+        <any_of>
+            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
+            <total_time_ms>20000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <avg_rows_per_second/>
+    </main_metric>
+
+    <substitutions>
+       <substitution>
+           <name>table</name>
+           <values>
+               <value>system.numbers</value>
+               <value>system.numbers_mt</value>
+           </values>
+       </substitution>
+       <substitution>
+           <name>size</name>
+           <values>
+               <value>1</value>
+               <value>16</value>
+               <value>1024</value>
+               <value>16384</value>
+               <value>1048576</value>
+               <value>10000000</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM {table} WHERE rand64() IN (SELECT number FROM system.numbers LIMIT {size})</query>
+</test>

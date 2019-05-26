@@ -4,7 +4,16 @@
 get_property (dirs1 TARGET dbms PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
+get_property (dirs1 TARGET clickhouse_common_io PROPERTY INCLUDE_DIRECTORIES)
+list(APPEND dirs ${dirs1})
+
 get_property (dirs1 TARGET common PROPERTY INCLUDE_DIRECTORIES)
+list(APPEND dirs ${dirs1})
+
+get_property (dirs1 TARGET cityhash PROPERTY INCLUDE_DIRECTORIES)
+list(APPEND dirs ${dirs1})
+
+get_property (dirs1 TARGET roaring PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
 if (USE_INTERNAL_BOOST_LIBRARY)

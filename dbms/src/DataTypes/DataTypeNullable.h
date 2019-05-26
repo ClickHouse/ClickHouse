@@ -13,32 +13,48 @@ class DataTypeNullable final : public IDataType
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeNullable(const DataTypePtr & nested_data_type_);
-    std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
+    explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
+    std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
-    bool isNullable() const override { return true; }
+    TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
-    bool isNumeric() const override { return nested_data_type->isNumeric(); }    /// TODO Absolutely wrong.
-    bool isNumericNotNullable() const override { return false; }
-    bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }    /// TODO Absolutely wrong.
-    bool canBeInsideNullable() const override { return false; }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
+    void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
 
-    /// Bulk serialization and deserialization is processing only nested columns. You should process null byte map separately.
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void serializeBinaryBulkStateSuffix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+            const IColumn & column,
+            size_t offset,
+            size_t limit,
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+            IColumn & column,
+            size_t limit,
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
     void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     /** It is questionable, how NULL values could be represented in CSV. There are three variants:
       * 1. \N
@@ -47,24 +63,47 @@ public:
       * Now we support only first.
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    ColumnPtr createColumn() const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override { return Null(); }
 
-    size_t getSizeOfField() const override { return nested_data_type->getSizeOfField(); }    /// TODO Absolutely wrong.
+    bool equals(const IDataType & rhs) const override;
 
-    DataTypePtr & getNestedType() { return nested_data_type; }
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return true; }
+    bool cannotBeStoredInTables() const override { return nested_data_type->cannotBeStoredInTables(); }
+    bool shouldAlignRightInPrettyFormats() const override { return nested_data_type->shouldAlignRightInPrettyFormats(); }
+    bool textCanContainOnlyValidUTF8() const override { return nested_data_type->textCanContainOnlyValidUTF8(); }
+    bool isComparable() const override { return nested_data_type->isComparable(); }
+    bool canBeComparedWithCollation() const override { return nested_data_type->canBeComparedWithCollation(); }
+    bool canBeUsedAsVersion() const override { return false; }
+    bool isSummable() const override { return nested_data_type->isSummable(); }
+    bool canBeUsedInBooleanContext() const override { return nested_data_type->canBeUsedInBooleanContext(); }
+    bool haveMaximumSizeOfValue() const override { return nested_data_type->haveMaximumSizeOfValue(); }
+    size_t getMaximumSizeOfValueInMemory() const override { return 1 + nested_data_type->getMaximumSizeOfValueInMemory(); }
+    bool isNullable() const override { return true; }
+    size_t getSizeOfValueInMemory() const override;
+    bool onlyNull() const override;
+    bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
+
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
 private:
     DataTypePtr nested_data_type;
 };
+
+
+DataTypePtr makeNullable(const DataTypePtr & type);
+DataTypePtr removeNullable(const DataTypePtr & type);
 
 }

@@ -195,7 +195,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     /// At exit update shared error counts with error counts occured during this call.
     SCOPE_EXIT(
     {
-        std::lock_guard<std::mutex> lock(pool_states_mutex);
+        std::lock_guard lock(pool_states_mutex);
         for (const ShuffledPool & pool: shuffled_pools)
             shared_pool_states[pool.index].error_count += pool.error_count;
     });
@@ -300,12 +300,12 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
     {
         if (nested_pools[i]->contains(entry))
         {
-            std::lock_guard<std::mutex> lock(pool_states_mutex);
+            std::lock_guard lock(pool_states_mutex);
             ++shared_pool_states[i].error_count;
             return;
         }
     }
-    throw DB::Exception("Can't find pool to report error.");
+    throw DB::Exception("Can't find pool to report error", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename TNestedPool>
@@ -338,7 +338,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
     result.reserve(nested_pools.size());
 
     {
-        std::lock_guard<std::mutex> lock(pool_states_mutex);
+        std::lock_guard lock(pool_states_mutex);
 
         for (auto & state : shared_pool_states)
             state.randomize();

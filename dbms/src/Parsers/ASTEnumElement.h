@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
+#include "IAST.h"
+#include <Core/Field.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -14,14 +15,14 @@ public:
     String name;
     Field value;
 
-    ASTEnumElement(const StringRange range, const String & name, const Field & value)
-        : IAST{range}, name{name}, value {value} {}
+    ASTEnumElement(const String & name, const Field & value)
+        : name{name}, value {value} {}
 
-    String getID() const override { return "EnumElement"; }
+    String getID(char) const override { return "EnumElement"; }
 
     ASTPtr clone() const override
     {
-        return std::make_shared<ASTEnumElement>(StringRange(), name, value);
+        return std::make_shared<ASTEnumElement>(name, value);
     }
 
 protected:

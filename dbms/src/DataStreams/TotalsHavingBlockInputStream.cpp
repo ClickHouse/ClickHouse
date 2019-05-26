@@ -1,57 +1,60 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/finalizeBlock.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/AggregateDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
+
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-}
 
 
 TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
     const BlockInputStreamPtr & input_,
     bool overflow_row_, const ExpressionActionsPtr & expression_,
-    const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
+    const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_, bool final_)
     : overflow_row(overflow_row_),
     expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
-    auto_include_threshold(auto_include_threshold_)
+    auto_include_threshold(auto_include_threshold_), final(final_)
 {
     children.push_back(input_);
-}
 
+    /// Initialize current totals with initial state.
 
-String TotalsHavingBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TotalsHavingBlockInputStream(" << children.back()->getID()
-        << "," << filter_column_name << ")";
-    return res.str();
-}
+    arena = std::make_shared<Arena>();
+    Block source_header = children.at(0)->getHeader();
 
-
-static void finalize(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
+    current_totals.reserve(source_header.columns());
+    for (const auto & elem : source_header)
     {
-        ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        ColumnAggregateFunction * unfinalized_column = typeid_cast<ColumnAggregateFunction *>(&*current.column);
-        if (unfinalized_column)
+        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
         {
-            current.type = unfinalized_column->getAggregateFunction()->getReturnType();
-            current.column = unfinalized_column->convertToValues();
+            /// Create ColumnAggregateFunction with initial aggregate function state.
+
+            IAggregateFunction * function = column->getAggregateFunction().get();
+            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
+            AggregateDataPtr data = arena->alignedAlloc(function->sizeOfData(), function->alignOfData());
+            function->create(data);
+            target->getData().push_back(data);
+            current_totals.emplace_back(std::move(target));
+        }
+        else
+        {
+
+            /// Not an aggregate function state. Just create a column with default value.
+
+            MutableColumnPtr new_column = elem.type->createColumn();
+            elem.type->insertDefaultInto(*new_column);
+            current_totals.emplace_back(std::move(new_column));
         }
     }
 }
 
 
-const Block & TotalsHavingBlockInputStream::getTotals()
+Block TotalsHavingBlockInputStream::getTotals()
 {
     if (!totals)
     {
@@ -64,17 +67,28 @@ const Block & TotalsHavingBlockInputStream::getTotals()
                 || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
                 || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
                     && static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
-                addToTotals(current_totals, overflow_aggregates, nullptr);
+                addToTotals(overflow_aggregates, nullptr);
         }
 
-        finalize(current_totals);
-        totals = current_totals;
+        totals = children.at(0)->getHeader().cloneWithColumns(std::move(current_totals));
+        finalizeBlock(totals);
     }
 
     if (totals && expression)
         expression->execute(totals);
 
     return totals;
+}
+
+
+Block TotalsHavingBlockInputStream::getHeader() const
+{
+    Block res = children.at(0)->getHeader();
+    if (final)
+        finalizeBlock(res);
+    if (expression)
+        expression->execute(res);
+    return res;
 }
 
 
@@ -98,13 +112,14 @@ Block TotalsHavingBlockInputStream::readImpl()
             return finalized;
 
         finalized = block;
-        finalize(finalized);
+        if (final)
+            finalizeBlock(finalized);
 
         total_keys += finalized.rows();
 
         if (filter_column_name.empty())
         {
-            addToTotals(current_totals, block, nullptr);
+            addToTotals(block, nullptr);
         }
         else
         {
@@ -112,24 +127,15 @@ Block TotalsHavingBlockInputStream::readImpl()
             expression->execute(finalized);
 
             size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
-            ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column;
+            ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column->convertToFullColumnIfConst();
 
-            if (auto converted = filter_column_ptr->convertToFullColumnIfConst())
-                filter_column_ptr = converted;
-
-            ColumnUInt8 * filter_column = typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
-            if (!filter_column)
-                throw Exception("Filter column must have type UInt8, found " +
-                    finalized.safeGetByPosition(filter_column_pos).type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
-
-            IColumn::Filter & filter = filter_column->getData();
+            FilterDescription filter_description(*filter_column_ptr);
 
             /// Add values to `totals` (if it was not already done).
             if (totals_mode == TotalsMode::BEFORE_HAVING)
-                addToTotals(current_totals, block, nullptr);
+                addToTotals(block, nullptr);
             else
-                addToTotals(current_totals, block, &filter);
+                addToTotals(block, filter_description.data);
 
             /// Filter the block by expression in HAVING.
             size_t columns = finalized.columns();
@@ -137,7 +143,7 @@ Block TotalsHavingBlockInputStream::readImpl()
             for (size_t i = 0; i < columns; ++i)
             {
                 ColumnWithTypeAndName & current_column = finalized.safeGetByPosition(i);
-                current_column.column = current_column.column->filter(filter, -1);
+                current_column.column = current_column.column->filter(*filter_description.data, -1);
                 if (current_column.column->empty())
                 {
                     finalized.clear();
@@ -154,66 +160,35 @@ Block TotalsHavingBlockInputStream::readImpl()
     }
 }
 
-void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, const IColumn::Filter * filter)
+
+void TotalsHavingBlockInputStream::addToTotals(const Block & block, const IColumn::Filter * filter)
 {
-    bool init = !totals;
-
-    ArenaPtr arena;
-    if (init)
-        arena = std::make_shared<Arena>();
-
-    for (size_t i = 0; i < block.columns(); ++i)
+    for (size_t i = 0, num_columns = block.columns(); i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(&*current.column);
+        const ColumnWithTypeAndName & current = block.getByPosition(i);
 
-        if (!column)
+        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(current.column.get()))
         {
-            if (init)
+            auto & target = typeid_cast<ColumnAggregateFunction &>(*current_totals[i]);
+            IAggregateFunction * function = target.getAggregateFunction().get();
+            AggregateDataPtr data = target.getData()[0];
+
+            /// Accumulate all aggregate states into that value.
+
+            const ColumnAggregateFunction::Container & vec = column->getData();
+            size_t size = vec.size();
+
+            if (filter)
             {
-                ColumnPtr new_column = current.type->createColumn();
-                current.type->insertDefaultInto(*new_column);
-                totals.insert(ColumnWithTypeAndName(new_column, current.type, current.name));
+                for (size_t j = 0; j < size; ++j)
+                    if ((*filter)[j])
+                        function->merge(data, vec[j], arena.get());
             }
-            continue;
-        }
-
-        IAggregateFunction * function;
-        AggregateDataPtr data;
-
-        if (init)
-        {
-            function = column->getAggregateFunction().get();
-            auto target = std::make_shared<ColumnAggregateFunction>(column->getAggregateFunction(), Arenas(1, arena));
-            totals.insert(ColumnWithTypeAndName(target, current.type, current.name));
-
-            data = arena->alloc(function->sizeOfData());
-            function->create(data);
-            target->getData().push_back(data);
-        }
-        else
-        {
-            auto target = typeid_cast<ColumnAggregateFunction *>(totals.safeGetByPosition(i).column.get());
-            if (!target)
-                throw Exception("Unexpected type of column: " + totals.safeGetByPosition(i).column->getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-            function = target->getAggregateFunction().get();
-            data = target->getData()[0];
-        }
-
-        const ColumnAggregateFunction::Container_t & vec = column->getData();
-        size_t size = vec.size();
-
-        if (filter)
-        {
-            for (size_t j = 0; j < size; ++j)
-                if ((*filter)[j])
+            else
+            {
+                for (size_t j = 0; j < size; ++j)
                     function->merge(data, vec[j], arena.get());
-        }
-        else
-        {
-            for (size_t j = 0; j < size; ++j)
-                function->merge(data, vec[j], arena.get());
+            }
         }
     }
 }

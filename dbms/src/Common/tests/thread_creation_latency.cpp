@@ -5,7 +5,7 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 
 int x = 0;
@@ -20,6 +20,15 @@ void     f()         { ++x; }
 }*/
 
 void *     g(void *)     { f(); return {}; }
+
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int PTHREAD_ERROR;
+    }
+}
 
 
 template <typename F>
@@ -80,9 +89,9 @@ int main(int argc, char ** argv)
     {
         pthread_t thread;
         if (pthread_create(&thread, nullptr, g, nullptr))
-            DB::throwFromErrno("Cannot create thread.");
+            DB::throwFromErrno("Cannot create thread.", DB::ErrorCodes::PTHREAD_ERROR);
         if (pthread_join(thread, nullptr))
-            DB::throwFromErrno("Cannot join thread.");
+            DB::throwFromErrno("Cannot join thread.", DB::ErrorCodes::PTHREAD_ERROR);
     });
 
     test(n, "Create and destroy std::thread each iteration", []

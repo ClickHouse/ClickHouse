@@ -6,8 +6,8 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
 
@@ -48,13 +48,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-class ParserTypeInCastExpression : public ParserIdentifierWithOptionalParameters
-{
-protected:
-    const char * getName() const { return "type in cast expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
 
 template <typename NameParser>
 class IParserNameTypePair : public IParserBase
@@ -75,14 +68,12 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
 
-    Pos begin = pos;
-
     ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
-        auto name_type_pair = std::make_shared<ASTNameTypePair>(StringRange(begin, pos));
-        name_type_pair->name = typeid_cast<const ASTIdentifier &>(*name).name;
+        auto name_type_pair = std::make_shared<ASTNameTypePair>();
+        getIdentifierName(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
         node = name_type_pair;
@@ -104,9 +95,19 @@ protected:
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
+public:
+    explicit IParserColumnDeclaration(bool require_type_ = true) : require_type(require_type_)
+    {
+    }
+
 protected:
+    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
+
     const char * getName() const { return "column declaration"; }
+
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+    bool require_type = true;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -120,9 +121,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
+    ParserKeyword s_comment{"COMMENT"};
+    ParserKeyword s_codec{"CODEC"};
+    ParserKeyword s_ttl{"TTL"};
     ParserTernaryOperatorExpression expr_parser;
-
-    const auto begin = pos;
+    ParserStringLiteral string_literal_parser;
+    ParserCodec codec_parser;
+    ParserExpression expression_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -130,26 +135,27 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
+      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
-    const auto fallback_pos = pos;
-    if (!s_default.check(pos, expected) &&
-        !s_materialized.check(pos, expected) &&
-        !s_alias.check(pos, expected))
-    {
-        type_parser.parse(pos, type, expected);
-    }
-    else
-        pos = fallback_pos;
-
-    /// parse {DEFAULT, MATERIALIZED, ALIAS}
     String default_specifier;
     ASTPtr default_expression;
+    ASTPtr comment_expression;
+    ASTPtr codec_expression;
+    ASTPtr ttl_expression;
+
+    if (!s_default.check_without_moving(pos, expected) &&
+        !s_materialized.check_without_moving(pos, expected) &&
+        !s_alias.check_without_moving(pos, expected) &&
+        !s_comment.check_without_moving(pos, expected) &&
+        !s_codec.check_without_moving(pos, expected))
+    {
+        if (!type_parser.parse(pos, type, expected))
+            return false;
+    }
+
     Pos pos_before_specifier = pos;
-    if (s_default.ignore(pos, expected) ||
-        s_materialized.ignore(pos, expected) ||
-        s_alias.ignore(pos, expected))
+    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
     {
         default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
@@ -157,12 +163,34 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!expr_parser.parse(pos, default_expression, expected))
             return false;
     }
-    else if (!type)
-        return false; /// reject sole column name without type
 
-    const auto column_declaration = std::make_shared<ASTColumnDeclaration>(StringRange{begin, pos});
+    if (require_type && !type && !default_expression)
+        return false; /// reject column name without type
+
+
+    if (s_comment.ignore(pos, expected))
+    {
+        /// should be followed by a string literal
+        if (!string_literal_parser.parse(pos, comment_expression, expected))
+            return false;
+    }
+
+    if (s_codec.ignore(pos, expected))
+    {
+        if (!codec_parser.parse(pos, codec_expression, expected))
+            return false;
+    }
+
+    if (s_ttl.ignore(pos, expected))
+    {
+        if (!expression_parser.parse(pos, ttl_expression, expected))
+            return false;
+    }
+
+    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
-    column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
+    getIdentifierName(name, column_declaration->name);
+
     if (type)
     {
         column_declaration->type = type;
@@ -176,6 +204,24 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(default_expression));
     }
 
+    if (comment_expression)
+    {
+        column_declaration->comment = comment_expression;
+        column_declaration->children.push_back(std::move(comment_expression));
+    }
+
+    if (codec_expression)
+    {
+        column_declaration->codec = codec_expression;
+        column_declaration->children.push_back(std::move(codec_expression));
+    }
+
+    if (ttl_expression)
+    {
+        column_declaration->ttl = ttl_expression;
+        column_declaration->children.push_back(std::move(ttl_expression));
+    }
+
     return true;
 }
 
@@ -187,7 +233,45 @@ protected:
 };
 
 
-/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
+/** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
+class ParserIndexDeclaration : public IParserBase
+{
+public:
+    ParserIndexDeclaration() {}
+
+protected:
+    const char * getName() const override { return "index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserColumnAndIndexDeclaraion : public IParserBase
+{
+protected:
+    const char * getName() const override { return "column or index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserIndexDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "index declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserColumnsOrIndicesDeclarationList : public IParserBase
+{
+    protected:
+    const char * getName() const override { return "columns or indices declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/**
+  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  */
 class ParserStorage : public IParserBase
 {
 protected:
@@ -202,6 +286,8 @@ protected:
   *     name1 type1,
   *     name2 type2,
   *     ...
+  *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
+  *     ...
   * ) ENGINE = engine
   *
   * Or:
@@ -214,7 +300,7 @@ protected:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Or:
-  * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+  * CREATE [OR REPLACE]|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {

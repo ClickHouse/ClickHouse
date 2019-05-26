@@ -2,9 +2,14 @@
 
 #include <Core/Types.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <thread>
+
 #include <map>
+#include <unordered_map>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -20,12 +25,18 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    ~ReplicatedMergeTreeCleanupThread();
+    void start() { task->activateAndSchedule(); }
+
+    void wakeup() { task->schedule(); }
+
+    void stop() { task->deactivate(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
+    pcg64 rng;
 
     void run();
     void iterate();
@@ -33,18 +44,27 @@ private:
     /// Remove old records from ZooKeeper.
     void clearOldLogs();
 
-    /// Remove old block hashes from ZooKeeper. This makes a leading replica.
+    /// The replica is marked as "lost" if it is inactive and its log pointer
+    ///  is far behind and we are not going to keep logs for it.
+    /// Lost replicas will use different strategy for repair.
+    void markLostReplicas(const std::unordered_map<String, UInt32> & host_versions_lost_replicas,
+                          const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
+                          size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
 
-    class NodesStatCache;
-    struct NodeWithStat;
-    std::unique_ptr<NodesStatCache> cached_block_stats;
+    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
+    void clearOldMutations();
 
-    /// Returns list of blocks (with their stat) sorted by ctime in descending order
-    void getBlocksSortedByTime(std::shared_ptr<zkutil::ZooKeeper> & zookeeper, std::vector<NodeWithStat> & timed_blocks);
+    using NodeCTimeCache = std::map<String, Int64>;
+    NodeCTimeCache cached_block_stats;
+
+    struct NodeWithStat;
+    /// Returns list of blocks (with their stat) sorted by ctime in descending order.
+    void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
-    /// TODO Removing old nonincrement_block_numbers
 };
 
 

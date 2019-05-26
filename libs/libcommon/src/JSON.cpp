@@ -1,11 +1,11 @@
+#include <string>
 #include <string.h>
 
 #include <Poco/UTF8Encoding.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
-#include <common/find_first_symbols.h>
-#include <common/exp10.h>
+#include <common/find_symbols.h>
+#include <common/preciseExp10.h>
 
 #include <iostream>
 
@@ -56,7 +56,7 @@ static UInt64 readUIntText(const char * buf, const char * end)
 static Int64 readIntText(const char * buf, const char * end)
 {
     bool negative = false;
-    Int64 x = 0;
+    UInt64 x = 0;
 
     if (buf == end)
         throw JSONException("JSON: cannot parse signed integer: unexpected end of data.");
@@ -90,10 +90,8 @@ static Int64 readIntText(const char * buf, const char * end)
         }
         ++buf;
     }
-    if (negative)
-        x = -x;
 
-    return x;
+    return negative ? -x : x;
 }
 
 
@@ -147,7 +145,7 @@ static double readFloatText(const char * buf, const char * end)
             {
                 ++buf;
                 Int32 exponent = readIntText(buf, end);
-                x *= exp10(exponent);
+                x *= preciseExp10(exponent);
 
                 run = false;
                 break;
@@ -418,7 +416,7 @@ JSON::Pos JSON::skipElement() const
         case TYPE_OBJECT:
             return skipObject();
         default:
-            throw JSONException("Logical error in JSON: unknown element type: " + Poco::NumberFormatter::format(type));
+            throw JSONException("Logical error in JSON: unknown element type: " + std::to_string(type));
     }
 }
 
@@ -456,7 +454,7 @@ JSON JSON::operator[] (size_t n) const
         ++it, ++i;
 
     if (i != n)
-        throw JSONException("JSON: array index " + Poco::NumberFormatter::format(Poco::UInt64(n)) + " out of bounds.");
+        throw JSONException("JSON: array index " + std::to_string(n) + " out of bounds.");
 
     return *it;
 }
@@ -636,7 +634,7 @@ std::string JSON::getString() const
                         int res = utf8.convert(unicode,
                             reinterpret_cast<unsigned char *>(const_cast<char*>(buf.data())) + buf.size() - 6, 6);
                         if (!res)
-                            throw JSONException("JSON: cannot convert unicode " + Poco::NumberFormatter::format(unicode)
+                            throw JSONException("JSON: cannot convert unicode " + std::to_string(unicode)
                                 + " to UTF8.");
                         buf.resize(buf.size() - 6 + res);
                         break;

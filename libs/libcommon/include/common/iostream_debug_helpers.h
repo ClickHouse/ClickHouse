@@ -1,187 +1,163 @@
 #pragma once
+
+#include "demangle.h"
+#include "getThreadNumber.h"
+#include <type_traits>
+#include <tuple>
+#include <iomanip>
 #include <iostream>
 
-// TODO: https://stackoverflow.com/questions/16464032/how-to-enhance-this-variable-dumping-debug-macro-to-be-variadic
-#define DUMPS(VAR) #VAR " = " << VAR
-#define DUMPHEAD std::cerr << __FILE__ << ":" << __LINE__ << " "
-#define DUMP(V1) DUMPHEAD << DUMPS(V1) << "\n";
-#define DUMP2(V1, V2) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << "\n";
-#define DUMP3(V1, V2, V3) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3) << "\n";
-#define DUMP4(V1, V2, V3, V4) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << "\n";
-#define DUMP5(V1, V2, V3, V4, V5) DUMPHEAD << DUMPS(V1) << ", " << DUMPS(V2) << ", " << DUMPS(V3)<< ", " << DUMPS(V4) << ", " << DUMPS(V5) << "\n";
+/** Usage:
+  *
+  * DUMP(variable...)
+  */
 
 
-#include <utility>
+template <typename Out, typename T>
+Out & dumpValue(Out &, T &&);
 
-template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, const std::pair<K, V> & what)
+
+/// Catch-all case.
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == -1, Out> & dumpImpl(Out & out, T &&)
 {
-    stream << "pair{" << what.first << ", " << what.second << "}";
-    return stream;
+    return out << "{...}";
 }
 
-
-template <typename T>
-void dumpContainer(std::ostream & stream, const T & container)
+/// An object, that could be output with operator <<.
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 0, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::declval<Out &>() << std::declval<T>())> * = nullptr)
 {
-    stream << "{";
+    return out << x;
+}
+
+/// A pointer-like object.
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 1
+    /// Protect from the case when operator * do effectively nothing (function pointer).
+    && !std::is_same_v<std::decay_t<T>, std::decay_t<decltype(*std::declval<T>())>>
+    , Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(*std::declval<T>())> * = nullptr)
+{
+    if (!x)
+        return out << "nullptr";
+    return dumpValue(out, *x);
+}
+
+/// Container.
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 2, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::begin(std::declval<T>()))> * = nullptr)
+{
     bool first = true;
-    for (const auto & elem : container)
+    out << "{";
+    for (const auto & elem : x)
     {
-        if (!first)
-            stream << ", ";
-        first = false;
-        stream << elem;
+        if (first)
+            first = false;
+        else
+            out << ", ";
+        dumpValue(out, elem);
     }
-    stream << "}";
+    return out << "}";
 }
 
 
-#include <vector>
+/// string and const char * - output not as container or pointer.
 
-template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::vector<T> & what)
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 3 && (std::is_same_v<std::decay_t<T>, std::string> || std::is_same_v<std::decay_t<T>, const char *>), Out> &
+dumpImpl(Out & out, T && x)
 {
-    stream << "vector(size = " << what.size() << ", capacity = " << what.capacity() << ")";
-    dumpContainer(stream, what);
-    return stream;
+    return out << std::quoted(x);
+}
+
+/// UInt8 - output as number, not char.
+
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 3 && std::is_same_v<std::decay_t<T>, unsigned char>, Out> &
+dumpImpl(Out & out, T && x)
+{
+    return out << int(x);
 }
 
 
-#include <array>
 
-template <typename T, size_t N>
-std::ostream & operator<<(std::ostream & stream, const std::array<T, N> & what)
+/// Tuple, pair
+template <size_t N, typename Out, typename T>
+Out & dumpTupleImpl(Out & out, T && x)
 {
-    stream << "array<" << what.size() << ">";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <map>
-
-template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, const std::map<K, V> & what)
-{
-    stream << "map(size = " << what.size() << ")";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <unordered_map>
-
-template <typename K, typename V>
-std::ostream & operator<<(std::ostream & stream, const std::unordered_map<K, V> & what)
-{
-    stream << "unordered_map(size = " << what.size() << ")";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <set>
-
-template <typename K>
-std::ostream & operator<<(std::ostream & stream, const std::set<K> & what)
-{
-    stream << "set(size = " << what.size() << ")";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <unordered_set>
-
-template <typename K>
-std::ostream & operator<<(std::ostream & stream, const std::unordered_set<K> & what)
-{
-    stream << "unordered_set(size = " << what.size() << ")";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <list>
-
-template <typename K>
-std::ostream & operator<<(std::ostream & stream, const std::list<K> & what)
-{
-    stream << "list(size = " << what.size() << ")";
-    dumpContainer(stream, what);
-    return stream;
-}
-
-
-#include <ratio>
-
-template <std::intmax_t Num, std::intmax_t Denom>
-std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
-{
-    stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
-    return stream;
-}
-
-#include <chrono>
-template <typename clock, typename duration>
-std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<clock, duration> & what)
-{
-    stream << "chrono::duration<clock=" << clock() << ", duration=" << duration() << ">{" << what.count() << "}";
-    return stream;
-}
-
-template <typename clock, typename duration>
-std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
-{
-    stream << "chrono::time_point{" << what.time_since_epoch() << "}";
-    return stream;
-}
-
-
-#include <memory>
-
-template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
-{
-    stream << "shared_ptr("<< what.get() <<", use_count = " << what.use_count() << ") {";
-    if (what)
-        stream << *what;
+    if constexpr (N == 0)
+        out << "{";
     else
-        stream << "nullptr";
-    stream << "}";
-    return stream;
-}
+        out << ", ";
 
-template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what)
-{
-    stream << "unique_ptr("<< what.get() <<") {";
-    if (what)
-        stream << *what;
+    dumpValue(out, std::get<N>(x));
+
+    if constexpr (N + 1 == std::tuple_size_v<std::decay_t<T>>)
+        out << "}";
     else
-        stream << "nullptr";
-    stream << "}";
-    return stream;
+        dumpTupleImpl<N + 1>(out, x);
+
+    return out;
 }
 
-
-#include <experimental/optional>
-
-template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
+template <int priority, typename Out, typename T>
+std::enable_if_t<priority == 4, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::get<0>(std::declval<T>()))> * = nullptr)
 {
-    stream << "optional{";
-    if (what)
-        stream << *what;
-    else
-        stream << "empty";
-    stream << "}";
-    return stream;
+    return dumpTupleImpl<0>(out, x);
 }
 
 
-namespace std { class exception; }
-std::ostream & operator<<(std::ostream & stream, const std::exception & what);
+template <int priority, typename Out, typename T>
+Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<priority>(std::declval<Out &>(), std::declval<T>()))> *)
+{
+    return dumpImpl<priority>(out, x);
+}
 
-// TODO: add more types
+struct LowPriority { LowPriority(void *) {} };
+
+template <int priority, typename Out, typename T>
+Out & dumpDispatchPriorities(Out & out, T && x, LowPriority)
+{
+    return dumpDispatchPriorities<priority - 1>(out, x, nullptr);
+}
+
+
+template <typename Out, typename T>
+Out & dumpValue(Out & out, T && x)
+{
+    return dumpDispatchPriorities<5>(out, x, nullptr);
+}
+
+
+template <typename Out, typename T>
+Out & dump(Out & out, const char * name, T && x)
+{
+    out << demangle(typeid(x).name()) << " " << name << " = ";
+    return dumpValue(out, x);
+}
+
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#endif
+
+#define DUMPVAR(VAR) dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
+#define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " [ " << getThreadNumber() << " ] ";
+#define DUMPTAIL std::cerr << '\n';
+
+#define DUMP1(V1) do { DUMPHEAD DUMPVAR(V1) DUMPTAIL } while(0)
+#define DUMP2(V1, V2) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPTAIL } while(0)
+#define DUMP3(V1, V2, V3) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPTAIL } while(0)
+#define DUMP4(V1, V2, V3, V4) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPTAIL } while(0)
+#define DUMP5(V1, V2, V3, V4, V5) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPTAIL } while(0)
+#define DUMP6(V1, V2, V3, V4, V5, V6) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPVAR(V6) DUMPTAIL } while(0)
+
+/// https://groups.google.com/forum/#!searchin/kona-dev/variadic$20macro%7Csort:date/kona-dev/XMA-lDOqtlI/GCzdfZsD41sJ
+
+#define VA_NUM_ARGS_IMPL(x1, x2, x3, x4, x5, x6, N, ...) N
+#define VA_NUM_ARGS(...) VA_NUM_ARGS_IMPL(__VA_ARGS__, 6, 5, 4, 3, 2, 1)
+
+#define MAKE_VAR_MACRO_IMPL_CONCAT(PREFIX, NUM_ARGS) PREFIX ## NUM_ARGS
+#define MAKE_VAR_MACRO_IMPL(PREFIX, NUM_ARGS) MAKE_VAR_MACRO_IMPL_CONCAT(PREFIX, NUM_ARGS)
+#define MAKE_VAR_MACRO(PREFIX, ...) MAKE_VAR_MACRO_IMPL(PREFIX, VA_NUM_ARGS(__VA_ARGS__))
+
+#define DUMP(...) MAKE_VAR_MACRO(DUMP, __VA_ARGS__)(__VA_ARGS__)

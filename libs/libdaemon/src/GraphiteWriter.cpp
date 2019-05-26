@@ -16,18 +16,26 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
     timeout = config.getDouble(config_name + ".timeout", 0.1);
 
     root_path = config.getString(config_name + ".root_path", "one_min");
-    if (!root_path.empty())
-        root_path += ".";
 
-    std::string hostname_in_path = getFQDNOrHostName();
+    if (config.getBool(config_name + ".hostname_in_path", true))
+    {
+        if (!root_path.empty())
+            root_path += ".";
 
-    /// Заменяем точки на подчёркивания, чтобы Graphite не интерпретировал их, как разделители пути.
-    std::replace(std::begin(hostname_in_path), std::end(hostname_in_path), '.', '_');
+        std::string hostname_in_path = getFQDNOrHostName();
 
-    root_path += hostname_in_path;
+        /// Replace dots to underscores so that Graphite does not interpret them as path separators
+        std::replace(std::begin(hostname_in_path), std::end(hostname_in_path), '.', '_');
+
+        root_path += hostname_in_path;
+    }
 
     if (sub_path.size())
-        root_path += "." + sub_path;
+    {
+        if (!root_path.empty())
+            root_path += ".";
+        root_path += sub_path;
+    }
 }
 
 

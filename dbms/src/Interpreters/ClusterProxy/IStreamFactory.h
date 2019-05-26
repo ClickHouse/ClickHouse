@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Client/ConnectionPool.h>
 #include <Interpreters/Cluster.h>
 #include <Parsers/IAST.h>
-#include <Storages/IStorage.h>
-#include <Client/ConnectionPool.h>
 
 namespace DB
 {
@@ -25,8 +24,8 @@ public:
 
     virtual void createForShard(
             const Cluster::ShardInfo & shard_info,
-            const String & query, const ASTPtr & query_ast, const Context & context,
-            const ThrottlerPtr & throttler,
+            const String & query, const ASTPtr & query_ast,
+            const Context & context, const ThrottlerPtr & throttler,
             BlockInputStreams & res) = 0;
 };
 

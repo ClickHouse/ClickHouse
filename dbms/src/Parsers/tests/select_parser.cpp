@@ -3,10 +3,9 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -18,17 +17,16 @@ try
         " GROUP BY UniqID"
         " HAVING SUM(Refresh) > 100"
         " ORDER BY Visits, PageViews"
-        " LIMIT 1000, 10"
+        " LIMIT LENGTH('STRING OF 20 SYMBOLS') - 20 + 1000, 10.05 / 5.025 * 5"
         " INTO OUTFILE 'test.out'"
         " FORMAT TabSeparated";
 
     ParserQueryWithOutput parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     std::cout << "Success." << std::endl;
     formatAST(*ast, std::cerr);
     std::cout << std::endl;
-    std::cout << std::endl << ast->getTreeID() << std::endl;
 
     return 0;
 }

@@ -7,6 +7,10 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+class Context;
+
 
 /// Parse and execute a query.
 void executeQuery(
@@ -14,7 +18,8 @@ void executeQuery(
     WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     Context & context,                  /// DB, tables, data types, storage engines, functions, aggregate functions...
-    std::function<void(const String &)> set_content_type /// If non-empty callback is passed, it will be called with the Content-Type of the result.
+    std::function<void(const String &)> set_content_type, /// If non-empty callback is passed, it will be called with the Content-Type of the result.
+    std::function<void(const String &)> set_query_id /// If non-empty callback is passed, it will be called with the query id.
     );
 
 
@@ -36,7 +41,8 @@ BlockIO executeQuery(
     const String & query,    /// Query text without INSERT data. The latter must be written to BlockIO::out.
     Context & context,        /// DB, tables, data types, storage engines, functions, aggregate functions...
     bool internal = false,    /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
+    bool may_have_embedded_data = false /// If insert query may have embedded data
     );
 
 }

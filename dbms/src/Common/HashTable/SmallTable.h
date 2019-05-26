@@ -3,6 +3,15 @@
 #include <Common/HashTable/HashMap.h>
 
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int INCORRECT_DATA;
+    }
+}
+
+
 /** Replacement of the hash table for a small number (<10) of keys.
   * Implemented as an array with linear search.
   * The array is located inside the object.
@@ -13,7 +22,6 @@
   *  you should check if the table is not full,
   *  and do a `fallback` in this case (for example, use a real hash table).
   */
-
 template
 <
     typename Key,
@@ -29,7 +37,7 @@ protected:
     friend class iterator;
     friend class Reader;
 
-    using Self = SmallTable<Key, Cell, capacity>;
+    using Self = SmallTable;
     using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements.
@@ -86,7 +94,7 @@ public:
                 DB::readVarUInt(size, in);
 
                 if (size > capacity)
-                    throw DB::Exception("Illegal size");
+                    throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
                 is_initialized = true;
             }
@@ -140,8 +148,8 @@ public:
             return *this;
         }
 
-        value_type & operator* () const { return ptr->getValue(); }
-        value_type * operator->() const { return &ptr->getValue(); }
+        Cell & operator* () const { return *ptr; }
+        Cell * operator->() const { return ptr; }
 
         Cell * getPtr() const { return ptr; }
     };
@@ -168,8 +176,8 @@ public:
             return *this;
         }
 
-        const value_type & operator* () const { return ptr->getValue(); }
-        const value_type * operator->() const { return &ptr->getValue(); }
+        const Cell & operator* () const { return *ptr; }
+        const Cell * operator->() const { return ptr; }
 
         const Cell * getPtr() const { return ptr; }
     };
@@ -306,7 +314,7 @@ public:
         DB::readVarUInt(new_size, rb);
 
         if (new_size > capacity)
-            throw DB::Exception("Illegal size");
+            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
         for (size_t i = 0; i < new_size; ++i)
             buf[i].read(rb);
@@ -324,7 +332,7 @@ public:
         DB::readText(new_size, rb);
 
         if (new_size > capacity)
-            throw DB::Exception("Illegal size");
+            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
         for (size_t i = 0; i < new_size; ++i)
         {
@@ -348,7 +356,7 @@ public:
 
     void clear()
     {
-        if (!std::is_trivially_destructible<Cell>::value)
+        if (!std::is_trivially_destructible_v<Cell>)
             for (iterator it = begin(); it != end(); ++it)
                 it.ptr->~Cell();
 
@@ -391,8 +399,8 @@ public:
         typename SmallMapTable::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        new(&it->second) mapped_type();
-        return it->second;
+        new(&it->getSecond()) mapped_type();
+        return it->getSecond();
     }
 };
 

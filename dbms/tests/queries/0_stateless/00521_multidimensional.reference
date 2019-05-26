@@ -1,0 +1,9 @@
+1	[['Hello','World'],['Goodbye'],[]]
+1	[['Hello','World'],['Goodbye'],[]]	('',[],(0,'0000-00-00'))
+0	[]	('Hello',['World',NULL],(123,'2000-01-01'))
+1	[['Hello','World'],['Goodbye'],[]]	('',[],(0,'0000-00-00'))
+0	[]	('Hello',['World',NULL],(123,'2000-01-01'))
+1	[['Hello','World'],['Goodbye'],[]]	('Hello',['World',NULL],(123,'2000-01-01'))
+1	[['Hello','World'],['Goodbye'],[]]	('Hello',['World',NULL],(123,'2000-01-01'))
+1	[['Hello','World'],['Goodbye'],[]]	('Hello',['World',NULL],(123,'2000-01-01'))
+1	[['Hello','World'],['Goodbye'],[]]	('Hello',['World',NULL],(123,'2000-01-01'))

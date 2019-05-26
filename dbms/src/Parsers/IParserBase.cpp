@@ -17,8 +17,6 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool res = parseImpl(pos, node, expected);
 
-    /// TODO expected
-
     if (!res)
     {
         node = nullptr;

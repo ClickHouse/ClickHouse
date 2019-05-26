@@ -1,11 +1,15 @@
 #include <DataStreams/LimitByBlockInputStream.h>
+#include <Common/SipHash.h>
+
 
 namespace DB
 {
 
-LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns)
+LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input,
+    size_t group_length_, size_t group_offset_, const Names & columns)
     : columns_names(columns)
-    , group_size(group_size_)
+    , group_length(group_length_)
+    , group_offset(group_offset_)
 {
     children.push_back(input);
 }
@@ -20,7 +24,7 @@ Block LimitByBlockInputStream::readImpl()
         if (!block)
             return Block();
 
-        const ConstColumnPlainPtrs column_ptrs(getKeyColumns(block));
+        const ColumnRawPtrs column_ptrs(getKeyColumns(block));
         const size_t rows = block.rows();
         IColumn::Filter filter(rows);
         size_t inserted_count = 0;
@@ -35,7 +39,8 @@ Block LimitByBlockInputStream::readImpl()
 
             hash.get128(key.low, key.high);
 
-            if (keys_counts[key]++ < group_size)
+            auto count = keys_counts[key]++;
+            if (count >= group_offset && count < group_length + group_offset)
             {
                 inserted_count++;
                 filter[i] = 1;
@@ -56,9 +61,9 @@ Block LimitByBlockInputStream::readImpl()
     }
 }
 
-ConstColumnPlainPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
+ColumnRawPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
 {
-    ConstColumnPlainPtrs column_ptrs;
+    ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(columns_names.size());
 
     for (const auto & name : columns_names)
@@ -66,7 +71,7 @@ ConstColumnPlainPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
         auto & column = block.getByName(name).column;
 
         /// Ignore all constant columns.
-        if (!column->isConst())
+        if (!column->isColumnConst())
             column_ptrs.emplace_back(column.get());
     }
 

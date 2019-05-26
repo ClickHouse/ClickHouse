@@ -104,7 +104,7 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 }
 
 template <typename T>
-inline typename std::enable_if<!std::is_same<T, UInt64>::value, void>::type
+inline std::enable_if_t<!std::is_same_v<T, UInt64>, void>
 readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
@@ -113,18 +113,20 @@ readVarUInt(T & x, ReadBuffer & istr)
 }
 
 
-inline void throwReadAfterEOF()
+[[noreturn]] inline void throwReadAfterEOF()
 {
     throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+template <bool fast>
+inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
     for (size_t i = 0; i < 9; ++i)
     {
-        if (istr.eof())
-            throwReadAfterEOF();
+        if constexpr (!fast)
+            if (istr.eof())
+                throwReadAfterEOF();
 
         UInt64 byte = *istr.position();
         ++istr.position();
@@ -133,6 +135,13 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
         if (!(byte & 0x80))
             return;
     }
+}
+
+inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 9)
+        return readVarUIntImpl<true>(x, istr);
+    return readVarUIntImpl<false>(x, istr);
 }
 
 

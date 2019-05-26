@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/AlignedBuffer.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ namespace DB
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
   *
-  * Table with graphite data has at least the folowing columns (accurate to the name):
+  * Table with graphite data has at least the following columns (accurate to the name):
   * Path, Time, Value, Version
   *
   * Path - name of metric (sensor);
@@ -26,8 +27,21 @@ namespace DB
   *
   * Each row in a table correspond to one value of one sensor.
   *
+  * Pattern should contain function, retention scheme, or both of them. The order of patterns does mean as well:
+  *   * Aggregation OR retention patterns should be first
+  *   * Then aggregation AND retention full patterns have to be placed
+  *   * default pattern without regexp must be the last
+  *
   * Rollup rules are specified in the following way:
   *
+  * pattern
+  *     regexp
+  *     function
+  * pattern
+  *     regexp
+  *     age -> precision
+  *     age -> precision
+  *     ...
   * pattern
   *     regexp
   *     function
@@ -52,6 +66,10 @@ namespace DB
   * Example:
   *
   * <graphite_rollup>
+  *     <pattern>
+  *         <regexp>\.max$</regexp>
+  *         <function>max</function>
+  *     </pattern>
   *     <pattern>
   *         <regexp>click_cost</regexp>
   *         <function>any</function>
@@ -95,20 +113,27 @@ namespace Graphite
     struct Pattern
     {
         std::shared_ptr<OptimizedRegularExpression> regexp;
+        std::string regexp_str;
         AggregateFunctionPtr function;
         Retentions retentions;    /// Must be ordered by 'age' descending.
+        enum { TypeUndef, TypeRetention, TypeAggregation, TypeAll } type = TypeAll; /// The type of defined pattern, filled automatically
     };
 
     using Patterns = std::vector<Pattern>;
+    using RetentionPattern = Pattern;
+    using AggregationPattern = Pattern;
 
     struct Params
     {
+        String config_name;
         String path_column_name;
         String time_column_name;
         String value_column_name;
         String version_column_name;
         Graphite::Patterns patterns;
     };
+
+    using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
 }
 
 /** Merges several sorted streams into one.
@@ -126,36 +151,15 @@ class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStrea
 {
 public:
     GraphiteRollupSortedBlockInputStream(
-        BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_,
-        const Graphite::Params & params, time_t time_of_merge)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-        params(params), time_of_merge(time_of_merge)
-    {
-    }
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        const Graphite::Params & params, time_t time_of_merge);
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "GraphiteRollupSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
-    ~GraphiteRollupSortedBlockInputStream()
+    ~GraphiteRollupSortedBlockInputStream() override
     {
         if (aggregate_state_created)
-            current_pattern->function->destroy(place_for_aggregate_state.data());
+            std::get<1>(current_rule)->function->destroy(place_for_aggregate_state.data());
     }
 
 protected:
@@ -176,34 +180,60 @@ private:
 
     time_t time_of_merge;
 
+    /// No data has been read.
+    bool is_first = true;
+
     /// All data has been read.
     bool finished = false;
 
-    RowRef current_selected_row;        /// Last row with maximum version for current primary key.
-    UInt64 current_max_version = 0;
+    /* | path | time | rounded_time | version | value | unmodified |
+     * -----------------------------------------------------------------------------------
+     * | A    | 11   | 10           | 1       | 1     | a          |                     |
+     * | A    | 11   | 10           | 3       | 2     | b          |> subgroup(A, 11)    |
+     * | A    | 11   | 10           | 2       | 3     | c          |                     |> group(A, 10)
+     * ----------------------------------------------------------------------------------|>
+     * | A    | 12   | 10           | 0       | 4     | d          |                     |> Outputs (A, 10, avg(2, 5), a)
+     * | A    | 12   | 10           | 1       | 5     | e          |> subgroup(A, 12)    |
+     * -----------------------------------------------------------------------------------
+     * | A    | 21   | 20           | 1       | 6     | f          |
+     * | B    | 11   | 10           | 1       | 7     | g          |
+     * ...
+     */
 
-    bool is_first = true;
-    StringRef current_path;
+    /// Path name of current bucket
+    StringRef current_group_path;
+
+    /// Last row with maximum version for current primary key (time bucket).
+    RowRef current_subgroup_newest_row;
+
+    /// Time of last read row
     time_t current_time = 0;
     time_t current_time_rounded = 0;
 
-    const Graphite::Pattern * current_pattern = nullptr;
-    std::vector<char> place_for_aggregate_state;
-    bool aggregate_state_created = false; /// Invariant: if true then current_pattern is not NULL.
+    Graphite::RollupRule current_rule = {nullptr, nullptr};
+    AlignedBuffer place_for_aggregate_state;
+    bool aggregate_state_created = false; /// Invariant: if true then current_rule is not NULL.
 
-    const Graphite::Pattern * selectPatternForPath(StringRef path) const;
+    const Graphite::Pattern undef_pattern =
+    { /// temporary empty pattern for selectPatternForPath
+        nullptr,
+        "",
+        nullptr,
+        DB::Graphite::Retentions(),
+        undef_pattern.TypeUndef,
+    };
+    Graphite::RollupRule selectPatternForPath(StringRef path) const;
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
 
 
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
     template <typename TSortCursor>
-    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
+    void startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor, Graphite::RollupRule next_pattern);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
-    void finishCurrentRow(ColumnPlainPtrs & merged_columns);
+    void finishCurrentGroup(MutableColumns & merged_columns);
 
     /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);

@@ -9,7 +9,7 @@ namespace DB
 
 
 /** Base class for ReadBuffer and WriteBuffer.
-  * Contains mutual types, variables, and functions.
+  * Contains common types, variables, and functions.
   *
   * ReadBuffer and WriteBuffer are similar to istream and ostream, respectively.
   * They have to be used, because using iostreams it is impossible to effectively implement some operations.
@@ -38,7 +38,7 @@ public:
 
         inline Position begin() const { return begin_pos; }
         inline Position end() const { return end_pos; }
-        inline size_t size() const { return end_pos - begin_pos; }
+        inline size_t size() const { return size_t(end_pos - begin_pos); }
         inline void resize(size_t size) { end_pos = begin_pos + size; }
 
         inline void swap(Buffer & other)
@@ -56,7 +56,7 @@ public:
       * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
     BufferBase(Position ptr, size_t size, size_t offset)
-        : internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
+        : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
     void set(Position ptr, size_t size, size_t offset)
     {
@@ -72,10 +72,20 @@ public:
     inline Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; };
+    inline Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return pos - working_buffer.begin(); }
+    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
+
+    /// How many bytes are available for read/write
+    inline size_t available() const { return size_t(working_buffer.end() - pos); }
+
+    inline void swap(BufferBase & other)
+    {
+        internal_buffer.swap(other.internal_buffer);
+        working_buffer.swap(other.working_buffer);
+        std::swap(pos, other.pos);
+    }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const
@@ -89,9 +99,19 @@ public:
         return pos != working_buffer.end();
     }
 
+    bool isPadded() const
+    {
+        return padded;
+    }
+
 protected:
-    /// A reference to a piece of memory for the buffer.
-    Buffer internal_buffer;
+    /// Read/write position.
+    Position pos;
+
+    /** How many bytes have been read/written, not counting those that are now in the buffer.
+      * (counting those that were already used and "removed" from the buffer)
+      */
+    size_t bytes = 0;
 
     /** A piece of memory that you can use.
       * For example, if internal_buffer is 1MB, and from a file for reading it was loaded into the buffer
@@ -100,13 +120,11 @@ protected:
       */
     Buffer working_buffer;
 
-    /// Read/write position.
-    Position pos;
+    /// A reference to a piece of memory for the buffer.
+    Buffer internal_buffer;
 
-    /** How many bytes have been read/written, not counting those that are now in the buffer.
-      * (counting those that were already used and "removed" from the buffer)
-      */
-    size_t bytes = 0;
+    /// Indicator of 15 bytes pad_right
+    bool padded{false};
 };
 
 

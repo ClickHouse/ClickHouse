@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IndicesDescription.h>
+#include <Common/ThreadPool.h>
 
-
-class ThreadPool;
 
 namespace DB
 {
@@ -12,8 +13,6 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 
 /** Allows to create new table or database,
@@ -28,11 +27,9 @@ public:
 
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
-    static ASTPtr formatColumns(
-        NamesAndTypesList columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults);
+    static ASTPtr formatColumns(const ColumnsDescription & columns);
+
+    static ASTPtr formatIndices(const IndicesDescription & indices);
 
     void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
     {
@@ -44,24 +41,22 @@ public:
         has_force_restore_data_flag = has_force_restore_data_flag_;
     }
 
-    struct ColumnsInfo
+    void setInternal(bool internal_)
     {
-        NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
-        NamesAndTypesList materialized_columns;
-        NamesAndTypesList alias_columns;
-        ColumnDefaults column_defaults;
-    };
+        internal = internal_;
+    }
 
-    /// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
-    static ColumnsInfo getColumnsInfo(const ASTExpressionList & columns, const Context & context);
+    /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
 
 private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.
-    ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
     void setEngine(ASTCreateQuery & create) const;
+    void checkAccess(const ASTCreateQuery & create);
 
     ASTPtr query_ptr;
     Context & context;
@@ -71,7 +66,7 @@ private:
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;
+    /// Is this an internal query - not from the user.
+    bool internal = false;
 };
-
-
 }

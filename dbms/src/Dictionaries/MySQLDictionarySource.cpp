@@ -1,55 +1,117 @@
-#include <IO/WriteBufferFromString.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
+#include "MySQLDictionarySource.h"
+
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/config.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
 
-#if USE_MYSQL
-
-#include <common/logger_useful.h>
-
-#include <Dictionaries/MySQLDictionarySource.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
-#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+void registerDictionarySourceMysql(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & /* context */) -> DictionarySourcePtr {
+#if USE_MYSQL
+        return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        throw Exception{"Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    };
+    factory.registerSource("mysql", createTableSource);
+}
+
+}
 
 
-static const size_t max_block_size = 8192;
+#if USE_MYSQL
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/WriteHelpers.h>
+#    include <common/LocalDateTime.h>
+#    include <common/logger_useful.h>
+#    include <Formats/MySQLBlockInputStream.h>
+#    include "readInvalidateQuery.h"
+
+namespace DB
+{
+static const UInt64 max_block_size = 8192;
 
 
-MySQLDictionarySource::MySQLDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+MySQLDictionarySource::MySQLDictionarySource(
+    const DictionaryStructure & dict_struct_,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
     const Block & sample_block)
-    : log(&Logger::get("MySQLDictionarySource")),
-    dict_struct{dict_struct_},
-    db{config.getString(config_prefix + ".db", "")},
-    table{config.getString(config_prefix + ".table")},
-    where{config.getString(config_prefix + ".where", "")},
-    dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)},
-    sample_block{sample_block},
-    pool{config, config_prefix},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{query_builder.composeLoadAllQuery()},
-    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
+    : log(&Logger::get("MySQLDictionarySource"))
+    , update_time{std::chrono::system_clock::from_time_t(0)}
+    , dict_struct{dict_struct_}
+    , db{config.getString(config_prefix + ".db", "")}
+    , table{config.getString(config_prefix + ".table")}
+    , where{config.getString(config_prefix + ".where", "")}
+    , update_field{config.getString(config_prefix + ".update_field", "")}
+    , dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)}
+    , sample_block{sample_block}
+    , pool{config, config_prefix}
+    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , load_all_query{query_builder.composeLoadAllQuery()}
+    , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
+    , close_connection{config.getBool(config_prefix + ".close_connection", false)}
 {
 }
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(&Logger::get("MySQLDictionarySource")),
-    dict_struct{other.dict_struct},
-    db{other.db},
-    table{other.table},
-    where{other.where},
-    dont_check_update_time{other.dont_check_update_time},
-    sample_block{other.sample_block},
-    pool{other.pool},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
-    load_all_query{other.load_all_query}, last_modification{other.last_modification},
-    invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
+    : log(&Logger::get("MySQLDictionarySource"))
+    , update_time{other.update_time}
+    , dict_struct{other.dict_struct}
+    , db{other.db}
+    , table{other.table}
+    , where{other.where}
+    , update_field{other.update_field}
+    , dont_check_update_time{other.dont_check_update_time}
+    , sample_block{other.sample_block}
+    , pool{other.pool}
+    , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
+    , load_all_query{other.load_all_query}
+    , last_modification{other.last_modification}
+    , invalidate_query{other.invalidate_query}
+    , invalidate_query_response{other.invalidate_query_response}
+    , close_connection{other.close_connection}
 {
+}
+
+std::string MySQLDictionarySource::getUpdateFieldAndDate()
+{
+    if (update_time != std::chrono::system_clock::from_time_t(0))
+    {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
+        std::string str_time = std::to_string(LocalDateTime(hr_time));
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        std::string str_time("0000-00-00 00:00:00"); ///for initial load
+        return query_builder.composeUpdateQuery(update_field, str_time);
+    }
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
@@ -57,7 +119,16 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     last_modification = getLastModification();
 
     LOG_TRACE(log, load_all_query);
-    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size);
+    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size, close_connection);
+}
+
+BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
+{
+    last_modification = getLastModification();
+
+    std::string load_update_query = getUpdateFieldAndDate();
+    LOG_TRACE(log, load_update_query);
+    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_update_query, sample_block, max_block_size, close_connection);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -65,16 +136,15 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);
+    return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size, close_connection);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockInputStreamPtr MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size);
+    return std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size, close_connection);
 }
 
 bool MySQLDictionarySource::isModified() const
@@ -97,6 +167,11 @@ bool MySQLDictionarySource::isModified() const
 bool MySQLDictionarySource::supportsSelectiveLoad() const
 {
     return true;
+}
+
+bool MySQLDictionarySource::hasUpdateField() const
+{
+    return !update_field.empty();
 }
 
 DictionarySourcePtr MySQLDictionarySource::clone() const
@@ -128,10 +203,10 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
 
 LocalDateTime MySQLDictionarySource::getLastModification() const
 {
-    LocalDateTime update_time{std::time(nullptr)};
+    LocalDateTime modification_time{std::time(nullptr)};
 
     if (dont_check_update_time)
-        return update_time;
+        return modification_time;
 
     try
     {
@@ -151,8 +226,8 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
 
             if (!update_time_value.isNull())
             {
-                update_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got update time: " << update_time);
+                modification_time = update_time_value.getDateTime();
+                LOG_TRACE(log, "Got modification time: " << modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error
@@ -172,19 +247,18 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     }
 
     /// we suppose failure to get modification time is not an error, therefore return current time
-    return update_time;
+    return modification_time;
 }
 
 std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    Block sample_block;
-    ColumnPtr column(std::make_shared<ColumnString>());
-    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream block_input_stream(pool.Get(), request, sample_block, 1);
+    Block invalidate_sample_block;
+    ColumnPtr column(ColumnString::create());
+    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    MySQLBlockInputStream block_input_stream(pool.Get(), request, invalidate_sample_block, 1, close_connection);
     return readInvalidateQuery(block_input_stream);
 }
 
 }
 
 #endif
-

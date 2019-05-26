@@ -19,7 +19,7 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 
 struct RenameDescription
 {
-    RenameDescription(const ASTRenameQuery::Element & elem, const String & path, const String & current_database) :
+    RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
         from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
         from_table_name(elem.from.table),
         to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
@@ -36,10 +36,19 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
-    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
+    const auto & rename = query_ptr->as<ASTRenameQuery &>();
 
     if (!rename.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+    {
+        NameSet databases;
+        for (const auto & elem : rename.elements)
+        {
+            databases.emplace(elem.from.database);
+            databases.emplace(elem.to.database);
+        }
+
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
+    }
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
@@ -68,12 +77,12 @@ BlockIO InterpreterRenameQuery::execute()
 
     std::set<UniqueTableName> unique_tables_from;
 
-    /// Don't allow to drop tables (that we are renaming); do't allow to create tables in places where tables will be renamed.
+    /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
     for (const auto & elem : rename.elements)
     {
-        descriptions.emplace_back(elem, path, current_database);
+        descriptions.emplace_back(elem, current_database);
 
         UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
         UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);
@@ -81,26 +90,18 @@ BlockIO InterpreterRenameQuery::execute()
         unique_tables_from.emplace(from);
 
         if (!table_guards.count(from))
-            table_guards.emplace(from,
-                context.getDDLGuard(
-                    from.database_name,
-                    from.table_name,
-                    "Table " + from.database_name + "." + from.table_name + " is being renamed right now"));
+            table_guards.emplace(from, context.getDDLGuard(from.database_name, from.table_name));
 
         if (!table_guards.count(to))
-            table_guards.emplace(to,
-                context.getDDLGuard(
-                    to.database_name,
-                    to.table_name,
-                    "Some table right now is being renamed to " + to.database_name + "." + to.table_name));
+            table_guards.emplace(to, context.getDDLGuard(to.database_name, to.table_name));
     }
 
-    std::vector<TableFullWriteLock> locks;
+    std::vector<TableStructureWriteLockHolder> locks;
     locks.reserve(unique_tables_from.size());
 
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockForAlter(__PRETTY_FUNCTION__));
+            locks.emplace_back(table->lockExclusively(context.getCurrentQueryId()));
 
     /** All tables are locked. If there are more than one rename in chain,
       *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.

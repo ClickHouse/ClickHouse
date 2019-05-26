@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -22,10 +22,11 @@ try
     size_t size = strlen(s) + 1;
     DataTypeString data_type;
 
+
     {
-        std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
-        ColumnString::Chars_t & data = column->getChars();
-        ColumnString::Offsets_t & offsets = column->getOffsets();
+        auto column = ColumnString::create();
+        ColumnString::Chars & data = column->getChars();
+        ColumnString::Offsets & offsets = column->getOffsets();
 
         data.resize(n * size);
         offsets.resize(n);
@@ -37,20 +38,31 @@ try
 
         WriteBufferFromFile out_buf("test");
 
+        IDataType::SerializeBinaryBulkSettings settings;
+        IDataType::SerializeBinaryBulkStatePtr state;
+        settings.getter = [&](const IDataType::SubstreamPath &){ return &out_buf; };
+
         stopwatch.restart();
-        data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
+        data_type.serializeBinaryBulkStatePrefix(settings, state);
+        data_type.serializeBinaryBulkWithMultipleStreams(*column, 0, 0, settings, state);
+        data_type.serializeBinaryBulkStateSuffix(settings, state);
         stopwatch.stop();
 
         std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
     }
 
     {
-        std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
+        auto column = ColumnString::create();
 
         ReadBufferFromFile in_buf("test");
 
+        IDataType::DeserializeBinaryBulkSettings settings;
+        IDataType::DeserializeBinaryBulkStatePtr state;
+        settings.getter = [&](const IDataType::SubstreamPath &){ return &in_buf; };
+
         stopwatch.restart();
-        data_type.deserializeBinaryBulk(*column, in_buf, n, 0);
+        data_type.deserializeBinaryBulkStatePrefix(settings, state);
+        data_type.deserializeBinaryBulkWithMultipleStreams(*column, n, settings, state);
         stopwatch.stop();
 
         std::cout << "Reading, elapsed: " << stopwatch.elapsedSeconds() << std::endl;

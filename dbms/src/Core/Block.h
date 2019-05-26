@@ -1,16 +1,15 @@
 #pragma once
 
 #include <vector>
+#include <list>
+#include <set>
 #include <map>
 #include <initializer_list>
 
-#include <Common/Exception.h>
 #include <Core/BlockInfo.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/ColumnNumbers.h>
-#include <Common/Exception.h>
 
 
 
@@ -21,7 +20,7 @@ namespace DB
   * This is unit of data processing.
   * Also contains metadata - data types of columns and their names
   *  (either original names from a table, or generated names during temporary calculations).
-  * Allows to insert, remove columns in arbitary position, to change order of columns.
+  * Allows to insert, remove columns in arbitrary position, to change order of columns.
   */
 
 class Context;
@@ -53,10 +52,10 @@ public:
     void insertUnique(ColumnWithTypeAndName && elem);
     /// remove the column at the specified position
     void erase(size_t position);
+    /// remove the columns at the specified positions
+    void erase(const std::set<size_t> & positions);
     /// remove the column with the specified name
     void erase(const String & name);
-    /// Adds missing columns to the block with default values
-    void addDefaults(const NamesAndTypesList & required_columns);
 
     /// References are invalidated after calling functions above.
 
@@ -69,12 +68,21 @@ public:
     ColumnWithTypeAndName & getByName(const std::string & name);
     const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
+    Container::iterator begin() { return data.begin(); }
+    Container::iterator end() { return data.end(); }
+    Container::const_iterator begin() const { return data.begin(); }
+    Container::const_iterator end() const { return data.end(); }
+    Container::const_iterator cbegin() const { return data.cbegin(); }
+    Container::const_iterator cend() const { return data.cend(); }
+
     bool has(const std::string & name) const;
 
     size_t getPositionByName(const std::string & name) const;
 
-    ColumnsWithTypeAndName getColumns() const;
-    NamesAndTypesList getColumnsList() const;
+    const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
+    NamesAndTypesList getNamesAndTypesList() const;
+    Names getNames() const;
+    DataTypes getDataTypes() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -90,8 +98,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !data.empty(); }
-    bool operator!() const { return data.empty(); }
+    operator bool() const { return !!columns(); }
+    bool operator!() const { return !this->operator bool(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -102,25 +110,26 @@ public:
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
+    Columns getColumns() const;
+    void setColumns(const Columns & columns);
+    Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
+
+    /** Get empty columns with the same types as in block. */
+    MutableColumns cloneEmptyColumns() const;
+
+    /** Get columns from block for mutation. Columns in block will be nullptr. */
+    MutableColumns mutateColumns();
+
+    /** Replace columns in a block */
+    void setColumns(MutableColumns && columns);
+    Block cloneWithColumns(MutableColumns && columns) const;
+
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
-    /** Replaces the offset columns within the nested tables by one common for the table.
-     *  Throws an exception if these offsets suddenly turn out to be different.
-     */
-    void optimizeNestedArraysOffsets();
-    /** The same, only without changing the offsets. */
-    void checkNestedArraysOffsets() const;
-
     void clear();
     void swap(Block & other) noexcept;
-
-    /** Some column implementations (ColumnArray) may have shared parts between different columns
-      * (common array sizes of elements of nested data structures).
-      * Before doing mutating operations on such columns, you must unshare that parts.
-      * Also unsharing columns, if whole columns are shared_ptrs pointing to same instances.
-      */
-    void unshareColumns();
 
     /** Updates SipHash of the Block, using update method of columns.
       * Returns hash for block, that could be used to differentiate blocks
@@ -137,28 +146,13 @@ using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 
 
-/// Compare column types for blocks. The order of the columns matters. Names do not matter.
+/// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
-/// Calculate difference in structure of blocks and write description into output strings.
+/// Throw exception when blocks are different.
+void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description);
+
+/// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
-
-
-/** Additional data to the blocks. They are only needed for a query
-  * DESCRIBE TABLE with Distributed tables.
-  */
-struct BlockExtraInfo
-{
-    BlockExtraInfo() {}
-    operator bool() const { return is_valid; }
-    bool operator!() const { return !is_valid; }
-
-    std::string host;
-    std::string resolved_address;
-    std::string user;
-    UInt16 port = 0;
-
-    bool is_valid = false;
-};
 
 }

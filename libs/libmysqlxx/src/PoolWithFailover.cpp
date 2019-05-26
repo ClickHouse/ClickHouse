@@ -1,4 +1,3 @@
-#include <Poco/NumberFormatter.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -95,7 +94,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (e.displayText() == "mysqlxx::Pool is full") /// NOTE: String comparison is trashy code.
+                    if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos) /// NOTE: String comparison is trashy code.
                     {
                         full_pool = &pool;
                     }
@@ -108,7 +107,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
             }
         }
 
-        app.logger().error("Connection to all replicas failed " + Poco::NumberFormatter::format(Poco::UInt64(try_no + 1)) + " times");
+        app.logger().error("Connection to all replicas failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)

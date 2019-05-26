@@ -11,20 +11,26 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
 
-    size_t limit = std::stol(argv[1]);
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program limit < in > out\n";
+        return 1;
+    }
+
+    UInt64 limit = std::stol(argv[1]);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
     writeCString("--- first ---\n", out);
     {
-        LimitReadBuffer limit_in(in, limit);
+        LimitReadBuffer limit_in(in, limit, false);
         copyData(limit_in, out);
     }
 
     writeCString("\n--- second ---\n", out);
     {
-        LimitReadBuffer limit_in(in, limit);
+        LimitReadBuffer limit_in(in, limit, false);
         copyData(limit_in, out);
     }
 

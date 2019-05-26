@@ -1,4 +1,0 @@
-arrayMap(lambda(tuple(_lambda1_arg0), arrayElement(_lambda1_arg0, _lambda0_arg1)), arr3)
-arrayMap(lambda(tuple(_lambda0_arg0, _lambda0_arg1), plus(_lambda0_arg0, arrayMap(lambda(tuple(_lambda1_arg0), arrayElement(_lambda1_arg0, _lambda0_arg1)), arr3))), arr1, arr2)
-
-SELECT arrayMap((_lambda0_arg0, _lambda0_arg1) -> (_lambda0_arg0 + arrayMap(_lambda1_arg0 -> _lambda1_arg0[_lambda0_arg1], arr3)), arr1, arr2)

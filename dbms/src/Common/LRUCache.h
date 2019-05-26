@@ -16,7 +16,7 @@ namespace DB
 template <typename T>
 struct TrivialWeightFunction
 {
-    size_t operator()(const T & x) const
+    size_t operator()(const T &) const
     {
         return 1;
     }
@@ -48,7 +48,7 @@ public:
 
     MappedPtr get(const Key & key)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         auto res = getImpl(key, lock);
         if (res)
@@ -61,7 +61,7 @@ public:
 
     void set(const Key & key, const MappedPtr & mapped)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         setImpl(key, mapped, lock);
     }
@@ -79,7 +79,7 @@ public:
     {
         InsertTokenHolder token_holder;
         {
-            std::lock_guard<std::mutex> cache_lock(mutex);
+            std::lock_guard cache_lock(mutex);
 
             auto val = getImpl(key, cache_lock);
             if (val)
@@ -97,7 +97,7 @@ public:
 
         InsertToken * token = token_holder.token.get();
 
-        std::lock_guard<std::mutex> token_lock(token->mutex);
+        std::lock_guard token_lock(token->mutex);
 
         token_holder.cleaned_up = token->cleaned_up;
 
@@ -111,55 +111,79 @@ public:
         ++misses;
         token->value = load_func();
 
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
+        bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
+        {
             setImpl(key, token->value, cache_lock);
+            result = true;
+        }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, true);
+        return std::make_pair(token->value, result);
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         out_hits = hits;
         out_misses = misses;
     }
 
     size_t weight() const
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         return current_size;
     }
 
     size_t count() const
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         return cells.size();
     }
 
     void reset()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         queue.clear();
         cells.clear();
         insert_tokens.clear();
         current_size = 0;
         hits = 0;
         misses = 0;
-        current_weight_lost = 0;
     }
 
-protected:
-    /// Total weight of evicted values. This value is reset every time it is sent to profile events.
-    size_t current_weight_lost = 0;
+    virtual ~LRUCache() {}
 
+protected:
+    using LRUQueue = std::list<Key>;
+    using LRUQueueIterator = typename LRUQueue::iterator;
+
+    struct Cell
+    {
+        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
+        {
+            return (delay == Delay::zero()) ||
+                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
+        }
+
+        MappedPtr value;
+        size_t size;
+        LRUQueueIterator queue_iterator;
+        Timestamp timestamp;
+    };
+
+    using Cells = std::unordered_map<Key, Cell, HashFunction>;
+
+    Cells cells;
+
+    mutable std::mutex mutex;
 private:
 
     /// Represents pending insertion attempt.
@@ -188,14 +212,14 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & cache_lock)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & cache_lock)
+        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -210,12 +234,12 @@ private:
             if (cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> token_lock(token->mutex);
+            std::lock_guard token_lock(token->mutex);
 
             if (token->cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> cache_lock(token->cache.mutex);
+            std::lock_guard cache_lock(token->cache.mutex);
 
             --token->refcount;
             if (token->refcount == 0)
@@ -225,42 +249,22 @@ private:
 
     friend struct InsertTokenHolder;
 
-    using LRUQueue = std::list<Key>;
-    using LRUQueueIterator = typename LRUQueue::iterator;
-
-    struct Cell
-    {
-        bool expired(const Timestamp & last_timestamp, const Delay & expiration_delay) const
-        {
-            return (expiration_delay == Delay::zero()) ||
-                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > expiration_delay));
-        }
-
-        MappedPtr value;
-        size_t size;
-        LRUQueueIterator queue_iterator;
-        Timestamp timestamp;
-    };
-
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
     InsertTokenById insert_tokens;
 
     LRUQueue queue;
-    Cells cells;
 
     /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
     const Delay expiration_delay;
 
-    mutable std::mutex mutex;
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
 
     WeightFunction weight_function;
 
-    MappedPtr getImpl(const Key & key, std::lock_guard<std::mutex> & cache_lock)
+    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -277,7 +281,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & cache_lock)
+    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto res = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -312,6 +316,7 @@ private:
 
     void removeOverflow(const Timestamp & last_timestamp)
     {
+        size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
         while ((current_size > max_size) && (queue_size > 1))
         {
@@ -336,12 +341,17 @@ private:
             --queue_size;
         }
 
+        onRemoveOverflowWeightLoss(current_weight_lost);
+
         if (current_size > (1ull << 63))
         {
             LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
     }
+
+    /// Override this method if you want to track how much weight was lost in removeOverflow method.
+    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
 };
 
 

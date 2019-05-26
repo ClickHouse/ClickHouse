@@ -1,8 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
-
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
@@ -12,28 +11,17 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
+class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorageSystemOneBlock<StorageSystemEvents>
 {
-friend class ext::shared_ptr_helper<StorageSystemEvents>;
 public:
     std::string getName() const override { return "SystemEvents"; }
-    std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    static NamesAndTypesList getNamesAndTypes();
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-private:
-    const std::string name;
-    NamesAndTypesList columns;
-
-    StorageSystemEvents(const std::string & name_);
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

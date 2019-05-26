@@ -1,13 +1,13 @@
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <dlfcn.h>
-
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
-#include <IO/WriteBufferFromVector.h>
+#include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <port/unistd.h>
+#include <csignal>
 
 
 namespace DB
@@ -28,37 +28,29 @@ namespace
 {
     struct Pipe
     {
-        union
-        {
-            int fds[2];
-            struct
-            {
-                int read_fd;
-                int write_fd;
-            };
-        };
+        int fds_rw[2];
 
         Pipe()
         {
             #ifndef __APPLE__
-            if (0 != pipe2(fds, O_CLOEXEC))
+            if (0 != pipe2(fds_rw, O_CLOEXEC))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
             #else
-            if (0 != pipe(fds))
+            if (0 != pipe(fds_rw))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds[0], F_SETFD, FD_CLOEXEC))
+            if (0 != fcntl(fds_rw[0], F_SETFD, FD_CLOEXEC))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds[1], F_SETFD, FD_CLOEXEC))
+            if (0 != fcntl(fds_rw[1], F_SETFD, FD_CLOEXEC))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
             #endif
         }
 
         ~Pipe()
         {
-            if (read_fd >= 0)
-                close(read_fd);
-            if (write_fd >= 0)
-                close(write_fd);
+            if (fds_rw[0] >= 0)
+                close(fds_rw[0]);
+            if (fds_rw[1] >= 0)
+                close(fds_rw[1]);
         }
     };
 
@@ -76,13 +68,27 @@ namespace
 namespace DB
 {
 
+ShellCommand::ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_)
+    : pid(pid)
+    , terminate_in_destructor(terminate_in_destructor_)
+    , log(&Poco::Logger::get("ShellCommand"))
+    , in(in_fd)
+    , out(out_fd)
+    , err(err_fd) {}
+
 ShellCommand::~ShellCommand()
 {
-    if (!wait_called)
+    if (terminate_in_destructor)
+    {
+        int retcode = kill(pid, SIGTERM);
+        if (retcode != 0)
+            LOG_WARNING(log, "Cannot kill pid " << pid << " errno '" << errnoToString(retcode) << "'");
+    }
+    else if (!wait_called)
         tryWait();
 }
 
-std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
+std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)
 {
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of characters in the shared library
@@ -111,15 +117,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
         /// Replace the file descriptors with the ends of our pipes.
-        if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
+        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
             _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!pipe_stdin_only)
         {
-            if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
+            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
-            if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
+            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
@@ -129,32 +135,32 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.write_fd, pipe_stdout.read_fd, pipe_stderr.read_fd));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
     /// Now the ownership of the file descriptors is passed to the result.
-    pipe_stdin.write_fd = -1;
-    pipe_stdout.read_fd = -1;
-    pipe_stderr.read_fd = -1;
+    pipe_stdin.fds_rw[1] = -1;
+    pipe_stdout.fds_rw[0] = -1;
+    pipe_stderr.fds_rw[0] = -1;
 
     return res;
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only)
+std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command, bool pipe_stdin_only, bool terminate_in_destructor)
 {
     /// Arguments in non-constant chunks of memory (as required for `execv`).
     /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
-    std::vector<char> argv0("sh", "sh" + strlen("sh") + 1);
-    std::vector<char> argv1("-c", "-c" + strlen("-c") + 1);
+    std::vector<char> argv0("sh", &("sh"[3]));
+    std::vector<char> argv1("-c", &("-c"[3]));
     std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
 
     char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
 
-    return executeImpl("/bin/sh", argv, pipe_stdin_only);
+    return executeImpl("/bin/sh", argv, pipe_stdin_only, terminate_in_destructor);
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & path, const std::vector<std::string> & arguments)
+std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor)
 {
     size_t argv_sum_size = path.size() + 1;
     for (const auto & arg : arguments)
@@ -175,7 +181,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
     argv[arguments.size() + 1] = nullptr;
 
-    return executeImpl(path.data(), argv.data(), false);
+    return executeImpl(path.data(), argv.data(), false, terminate_in_destructor);
 }
 
 

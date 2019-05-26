@@ -2,7 +2,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
@@ -22,21 +21,9 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     auto res = std::make_shared<ASTTableExpression>();
 
-    if (ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true)
-        .parse(pos, res->subquery, expected))
-    {
-    }
-    else if (ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true)
-        .parse(pos, res->table_function, expected))
-    {
-        static_cast<ASTFunction &>(*res->table_function).kind = ASTFunction::TABLE_FUNCTION;
-    }
-    else if (ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true)
-        .parse(pos, res->database_and_table_name, expected))
-    {
-        static_cast<ASTIdentifier &>(*res->database_and_table_name).kind = ASTIdentifier::Table;
-    }
-    else
+    if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true).parse(pos, res->subquery, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true).parse(pos, res->table_function, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true).parse(pos, res->database_and_table_name, expected))
         return false;
 
     /// FINAL
@@ -120,13 +107,13 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 {
     auto res = std::make_shared<ASTTablesInSelectQueryElement>();
 
-    if (ParserArrayJoin().parse(pos, res->array_join, expected))
-    {
-    }
-    else if (is_first)
+    if (is_first)
     {
         if (!ParserTableExpression().parse(pos, res->table_expression, expected))
             return false;
+    }
+    else if (ParserArrayJoin().parse(pos, res->array_join, expected))
+    {
     }
     else
     {
@@ -148,6 +135,10 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->strictness = ASTTableJoin::Strictness::Any;
             else if (ParserKeyword("ALL").ignore(pos))
                 table_join->strictness = ASTTableJoin::Strictness::All;
+            else if (ParserKeyword("ASOF").ignore(pos))
+                table_join->strictness = ASTTableJoin::Strictness::Asof;
+            else
+                table_join->strictness = ASTTableJoin::Strictness::Unspecified;
 
             if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;
@@ -161,8 +152,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = ASTTableJoin::Kind::Cross;
             else
             {
-                /// Maybe need use INNER by default as in another DBMS.
-                return false;
+                /// Use INNER by default as in another DBMS.
+                table_join->kind = ASTTableJoin::Kind::Inner;
             }
 
             if (table_join->strictness != ASTTableJoin::Strictness::Unspecified

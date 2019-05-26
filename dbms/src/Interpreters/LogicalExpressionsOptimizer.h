@@ -16,6 +16,7 @@ struct Settings;
 class ASTFunction;
 class ASTSelectQuery;
 
+
 /** This class provides functions for optimizing boolean expressions within queries.
   *
   * For simplicity, we call a homogeneous OR-chain any expression having the following structure:
@@ -24,9 +25,18 @@ class ASTSelectQuery;
   */
 class LogicalExpressionsOptimizer final
 {
+    struct ExtractedSettings
+    {
+        const UInt64 optimize_min_equality_disjunction_chain_length;
+
+        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
+        :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
+        {}
+    };
+
 public:
     /// Constructor. Accepts the root of the query DAG.
-    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_);
+    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_);
 
     /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
       * on the expressions `expr` IN (x1, ..., xN).
@@ -41,11 +51,10 @@ private:
     */
     struct OrWithExpression
     {
-        OrWithExpression(ASTFunction * or_function_, const IAST::Hash & expression_,
-            const std::string & alias_);
+        OrWithExpression(const ASTFunction * or_function_, const IAST::Hash & expression_, const std::string & alias_);
         bool operator<(const OrWithExpression & rhs) const;
 
-        ASTFunction * or_function;
+        const ASTFunction * or_function;
         const IAST::Hash expression;
         const std::string alias;
     };
@@ -85,12 +94,12 @@ private:
 
 private:
     using ParentNodes = std::vector<IAST *>;
-    using FunctionParentMap = std::unordered_map<IAST *, ParentNodes>;
-    using ColumnToPosition = std::unordered_map<IAST *, size_t>;
+    using FunctionParentMap = std::unordered_map<const IAST *, ParentNodes>;
+    using ColumnToPosition = std::unordered_map<const IAST *, size_t>;
 
 private:
     ASTSelectQuery * select_query;
-    const Settings & settings;
+    const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;
     /// Number of processed OR-chains.

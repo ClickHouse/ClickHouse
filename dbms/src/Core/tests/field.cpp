@@ -3,10 +3,9 @@
 #include <sstream>
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <Common/Stopwatch.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -31,12 +30,14 @@ int main(int argc, char ** argv)
     field2 = field;
     std::cerr << applyVisitor(to_string, field2) << std::endl;
 
-    Array array;
-    array.push_back(UInt64(123));
-    array.push_back(Int64(-123));
-    array.push_back(String("Hello"));
-    field = array;
-    std::cerr << applyVisitor(to_string, field) << std::endl;
+    {
+        Array array;
+        array.push_back(UInt64(123));
+        array.push_back(Int64(-123));
+        array.push_back(String("Hello"));
+        field = array;
+        std::cerr << applyVisitor(to_string, field) << std::endl;
+    }
 
     get<Array &>(field).push_back(field);
     std::cerr << applyVisitor(to_string, field) << std::endl;
@@ -55,7 +56,7 @@ int main(int argc, char ** argv)
             Array array(n);
 
             {
-                Stopwatch watch;
+                watch.restart();
 
                 for (size_t i = 0; i < n; ++i)
                     array[i] = String(i % 32, '!');
@@ -68,7 +69,7 @@ int main(int argc, char ** argv)
             }
 
             {
-                Stopwatch watch;
+                watch.restart();
 
                 size_t sum = 0;
                 for (size_t i = 0; i < n; ++i)

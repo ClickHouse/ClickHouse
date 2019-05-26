@@ -1,25 +1,53 @@
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
-ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
-ARG version=\*
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
+ARG version=19.8.1.*
+ARG gosu_ver=1.10
 
-RUN apt-get update && \
-    apt-get install -y apt-transport-https tzdata && \
-    mkdir -p /etc/apt/sources.list.d && \
-    echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
-    apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-server-common=$version clickhouse-server-base=$version && \
-    rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
-    apt-get clean
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        apt-transport-https \
+        dirmngr \
+        gnupg \
+    && mkdir -p /etc/apt/sources.list.d \
+    && apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 \
+    && echo $repository > /etc/apt/sources.list.d/clickhouse.list \
+    && apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --allow-unauthenticated --yes --no-install-recommends \
+            clickhouse-common-static=$version \
+            clickhouse-client=$version \
+            clickhouse-server=$version \
+            libgcc-7-dev \
+            locales \
+            tzdata \
+            wget \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
 
-RUN sed -i 's,<listen_host>127.0.0.1</listen_host>,<listen_host>0.0.0.0</listen_host>,' /etc/clickhouse-server/config.xml && \
-    sed -i 's,<listen_host>::1</listen_host>,,' /etc/clickhouse-server/config.xml
-RUN chown -R clickhouse /etc/clickhouse-server/
+ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
 
-USER clickhouse
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
+RUN mkdir /docker-entrypoint-initdb.d
+
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x \
+    /entrypoint.sh \
+    /bin/gosu
+
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse
 
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
-ENTRYPOINT exec /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}
+ENTRYPOINT ["/entrypoint.sh"]
+

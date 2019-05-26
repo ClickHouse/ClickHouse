@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <type_traits>
+#include <vector>
 
 #include <mysqlxx/Types.h>
 #include <mysqlxx/Row.h>

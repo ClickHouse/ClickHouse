@@ -3,10 +3,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Common/ColumnsHashing.h>
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
+#include <Common/HashTable/FixedClearableHashSet.h>
+#include <Common/HashTable/FixedHashSet.h>
 #include <Common/UInt128.h>
 
 
@@ -27,33 +30,7 @@ struct SetMethodOneNumber
 
     Data data;
 
-    /// To use one `Method` in different threads, use different `State`.
-    struct State
-    {
-        const FieldType * vec;
-
-        /** Called at the start of each block processing.
-          * Sets the variables required for the other methods called in internal loops.
-          */
-        void init(const ConstColumnPlainPtrs & key_columns)
-        {
-            vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
-        }
-
-        /// Get key from key columns for insertion into hash table.
-        Key getKey(
-            const ConstColumnPlainPtrs & key_columns,    /// Key columns.
-            size_t keys_size,                            /// Number of key columns.
-            size_t i,                        /// From what row of the block I get the key.
-            const Sizes & key_sizes) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
-        {
-            return unionCastToUInt64(vec[i]);
-        }
-    };
-
-    /** Place additional data, if necessary, in case a new key was inserted into the hash table.
-      */
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type, void, FieldType>;
 };
 
 /// For the case where there is one string key.
@@ -65,35 +42,7 @@ struct SetMethodString
 
     Data data;
 
-    struct State
-    {
-        const ColumnString::Offsets_t * offsets;
-        const ColumnString::Chars_t * chars;
-
-        void init(const ConstColumnPlainPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
-        }
-
-        Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            return StringRef(
-                &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
-    {
-        value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, true, false>;
 };
 
 /// For the case when there is one fixed-length string key.
@@ -105,33 +54,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    struct State
-    {
-        size_t n;
-        const ColumnFixedString::Chars_t * chars;
-
-        void init(const ConstColumnPlainPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
-            n = column_string.getN();
-            chars = &column_string.getChars();
-        }
-
-        Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            return StringRef(&(*chars)[i * n], n);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
-    {
-        value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, true, false>;
 };
 
 namespace set_impl
@@ -148,18 +71,18 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
 
         for (const auto & col : key_columns)
         {
-            if (col->isNullable())
+            if (col->isColumnNullable())
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(nullable_col.getNestedColumn().get());
-                null_maps.push_back(nullable_col.getNullMapColumn().get());
+                actual_columns.push_back(&nullable_col.getNestedColumn());
+                null_maps.push_back(&nullable_col.getNullMapColumn());
             }
             else
             {
@@ -172,7 +95,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ConstColumnPlainPtrs & getActualColumns() const
+    inline const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -201,8 +124,8 @@ protected:
     }
 
 private:
-    ConstColumnPlainPtrs actual_columns;
-    ConstColumnPlainPtrs null_maps;
+    ColumnRawPtrs actual_columns;
+    ColumnRawPtrs null_maps;
 };
 
 /// Case where nullable keys are not supported.
@@ -210,19 +133,19 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ColumnRawPtrs &)
     {
         throw Exception{"Internal error: calling init() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    const ConstColumnPlainPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         throw Exception{"Internal error: calling getActualColumns() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    KeysNullMap<Key> createBitmap(size_t row) const
+    KeysNullMap<Key> createBitmap(size_t) const
     {
         throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
             " is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -241,34 +164,7 @@ struct SetMethodKeysFixed
 
     Data data;
 
-    class State : private set_impl::BaseStateKeysFixed<Key, has_nullable_keys>
-    {
-    public:
-        using Base = set_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
-
-        void init(const ConstColumnPlainPtrs & key_columns)
-        {
-            if (has_nullable_keys)
-                Base::init(key_columns);
-        }
-
-        Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            if (has_nullable_keys)
-            {
-                auto bitmap = Base::createBitmap(i);
-                return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
-            }
-            else
-                return packFixed<Key>(i, keys_size, key_columns, key_sizes);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, void, has_nullable_keys, false>;
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -280,23 +176,7 @@ struct SetMethodHashed
 
     Data data;
 
-    struct State
-    {
-        void init(const ConstColumnPlainPtrs & key_columns)
-        {
-        }
-
-        Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            return hash128(i, keys_size, key_columns);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
 };
 
 
@@ -304,9 +184,8 @@ struct SetMethodHashed
   */
 struct NonClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>            key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>         key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedHashSet<UInt8>>>                                             key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashSet<UInt16>>>                                           key16;
 
     /** Also for the experiment was tested the ability to use SmallSet,
       *  as long as the number of elements in the set is small (and, if necessary, converted to a full-fledged HashSet).
@@ -331,9 +210,8 @@ struct NonClearableSet
 
 struct ClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, ClearableHashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>       key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, ClearableHashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>    key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedClearableHashSet<UInt8>>>                                        key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedClearableHashSet<UInt16>>>                                      key16;
 
     std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>                        key32;
     std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                        key64;
@@ -387,7 +265,7 @@ struct SetVariantsTemplate: public Variant
 
     bool empty() const { return type == Type::EMPTY; }
 
-    static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     void init(Type type_);
 

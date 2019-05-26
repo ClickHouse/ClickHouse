@@ -1,34 +1,34 @@
 #pragma once
 
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <ext/range.h>
-#include <numeric>
-#include <vector>
-#include <string>
+
 #include <map>
-#include <experimental/optional>
+#include <optional>
+#include <string>
+#include <vector>
 
 
 namespace DB
 {
-
 enum class AttributeUnderlyingType
 {
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
     Int64,
     Float32,
     Float64,
+    Decimal32,
+    Decimal64,
+    Decimal128,
     String
 };
 
@@ -53,6 +53,7 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
 *    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
+*    - is_object_id, used in mongo dictionary, converts string key to objectid
 */
 struct DictionaryAttribute final
 {
@@ -63,6 +64,7 @@ struct DictionaryAttribute final
     const Field null_value;
     const bool hierarchical;
     const bool injective;
+    const bool is_object_id;
 };
 
 
@@ -74,15 +76,22 @@ struct DictionarySpecialAttribute final
     DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
 
+struct DictionaryTypedSpecialAttribute final
+{
+    const std::string name;
+    const std::string expression;
+    const DataTypePtr type;
+};
+
 
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-    std::experimental::optional<DictionarySpecialAttribute> id;
-    std::experimental::optional<std::vector<DictionaryAttribute>> key;
+    std::optional<DictionarySpecialAttribute> id;
+    std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::experimental::optional<DictionarySpecialAttribute> range_min;
-    std::experimental::optional<DictionarySpecialAttribute> range_max;
+    std::optional<DictionaryTypedSpecialAttribute> range_min;
+    std::optional<DictionaryTypedSpecialAttribute> range_max;
     bool has_expressions = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
@@ -94,8 +103,10 @@ struct DictionaryStructure final
 
 private:
     std::vector<DictionaryAttribute> getAttributes(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-        const bool hierarchy_allowed = true, const bool allow_null_values = true);
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const bool hierarchy_allowed = true,
+        const bool allow_null_values = true);
 };
 
 }

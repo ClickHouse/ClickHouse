@@ -1,0 +1,27 @@
+#include <Dictionaries/ComplexKeyCacheDictionary.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
+using TYPE = @NAME@;
+
+void ComplexKeyCacheDictionary::get@NAME@(const std::string & attribute_name,
+      const Columns & key_columns,
+      const DataTypes & key_types,
+      const PaddedPODArray<TYPE> & def,
+      ResultArrayType<TYPE> & out) const
+{
+    dict_struct.validateKeyTypes(key_types);
+
+    auto & attribute = getAttribute(attribute_name);
+    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::@NAME@))
+        throw Exception {name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                         ErrorCodes::TYPE_MISMATCH};
+
+    getItemsNumber<TYPE>(attribute, key_columns, out, [&](const size_t row) { return def[row]; });
+}
+}

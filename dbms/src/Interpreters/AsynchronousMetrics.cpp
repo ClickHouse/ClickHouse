@@ -1,8 +1,10 @@
 #include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include <Common/config.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -10,10 +12,12 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
+#if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
+#endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h>
+    #include <gperftools/malloc_extension.h> // Y_IGNORE
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer
@@ -25,6 +29,10 @@
     } malloc_extension_initializer;
 #endif
 
+#if USE_JEMALLOC
+    #include <jemalloc/jemalloc.h>
+#endif
+
 
 namespace DB
 {
@@ -34,7 +42,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
     try
     {
         {
-            std::lock_guard<std::mutex> lock{wait_mutex};
+            std::lock_guard lock{wait_mutex};
             quit = true;
         }
 
@@ -50,14 +58,14 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetrics::Container AsynchronousMetrics::getValues() const
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     return container;
 }
 
 
 void AsynchronousMetrics::set(const std::string & name, Value value)
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     container[name] = value;
 }
 
@@ -66,7 +74,7 @@ void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
 
-    std::unique_lock<std::mutex> lock{wait_mutex};
+    std::unique_lock lock{wait_mutex};
 
     /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
     const auto get_next_minute = []
@@ -126,6 +134,13 @@ void AsynchronousMetrics::update()
         }
     }
 
+#if USE_EMBEDDED_COMPILER
+    {
+        if (auto compiled_expression_cache = context.getCompiledExpressionCache())
+            set("CompiledExpressionCacheCount", compiled_expression_cache->count());
+    }
+#endif
+
     set("Uptime", context.getUptimeSeconds());
 
     {
@@ -149,8 +164,8 @@ void AsynchronousMetrics::update()
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
-                StorageMergeTree * table_merge_tree = typeid_cast<StorageMergeTree *>(table.get());
-                StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get());
+                StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
+                StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
                 if (table_replicated_merge_tree)
                 {
@@ -176,12 +191,12 @@ void AsynchronousMetrics::update()
                             "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                     }
 
-                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getMaxPartsCountForPartition());
                 }
 
                 if (table_merge_tree)
                 {
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
                 }
             }
         }
@@ -224,6 +239,36 @@ void AsynchronousMetrics::update()
             if (malloc_extension.GetNumericProperty(malloc_metric, &value))
                 set(malloc_metric, value);
         }
+    }
+#endif
+
+#if USE_JEMALLOC
+    {
+    #define FOR_EACH_METRIC(M) \
+        M("allocated", size_t) \
+        M("active", size_t) \
+        M("metadata", size_t) \
+        M("metadata_thp", size_t) \
+        M("resident", size_t) \
+        M("mapped", size_t) \
+        M("retained", size_t) \
+        M("background_thread.num_threads", size_t) \
+        M("background_thread.num_runs", uint64_t) \
+        M("background_thread.run_interval", uint64_t) \
+
+    #define GET_METRIC(NAME, TYPE) \
+        do \
+        { \
+            TYPE value{}; \
+            size_t size = sizeof(value); \
+            mallctl("stats." NAME, &value, &size, nullptr, 0); \
+            set("jemalloc." NAME, value); \
+        } while (0);
+
+        FOR_EACH_METRIC(GET_METRIC)
+
+    #undef GET_METRIC
+    #undef FOR_EACH_METRIC
     }
 #endif
 

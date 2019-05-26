@@ -1,6 +1,7 @@
 import os.path as p
 import subprocess
 import time
+import os
 
 import docker
 
@@ -85,6 +86,9 @@ class PartitionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.heal_all()
 
+    def __del__(self):
+        self.heal_all()
+
 
 class PartitionManagerDisbaler:
     def __init__(self, manager):
@@ -158,7 +162,7 @@ class _NetworkManager:
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
-        self._docker_client = docker.from_env()
+        self._docker_client = docker.from_env(version=os.environ.get("DOCKER_API_VERSION"))
 
         try:
             self._image = self._docker_client.images.get(image_name)

@@ -2,8 +2,10 @@
 
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -18,7 +20,7 @@ class Service final : public InterserverIOEndpoint
 {
 public:
     Service(MergeTreeData & data_, StoragePtr & storage_) : data(data_),
-        owned_storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+        storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
@@ -28,11 +30,10 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
-    MergeTreeData::DataPartPtr findShardedPart(const String & name, size_t shard_no);
 
 private:
     MergeTreeData & data;
-    StoragePtr owned_storage;
+    StorageWeakPtr storage;
     Logger * log;
 };
 
@@ -52,19 +53,15 @@ public:
         const String & replica_path,
         const String & host,
         int port,
-        bool to_detached = false);
+        const ConnectionTimeouts & timeouts,
+        const String & user,
+        const String & password,
+        const String & interserver_scheme,
+        bool to_detached = false,
+        const String & tmp_prefix_ = "");
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
-
-private:
-    MergeTreeData::MutableDataPartPtr fetchPartImpl(
-        const String & part_name,
-        const String & replica_path,
-        const String & host,
-        int port,
-        const String & shard_no,
-        bool to_detached);
 
 private:
     MergeTreeData & data;

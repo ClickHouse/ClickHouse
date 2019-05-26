@@ -20,7 +20,6 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
@@ -28,19 +27,15 @@ public:
     std::string getName() const override { return "TinyLog"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
-
-    void drop() override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -53,12 +48,15 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() { return path + escapeForFileName(name) + '/';}
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
+
+    void truncate(const ASTPtr &, const Context &) override;
 
 private:
     String path;
     String name;
-    NamesAndTypesListPtr columns;
 
     size_t max_compress_block_size;
 
@@ -68,17 +66,16 @@ private:
 
     Logger * log;
 
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+    void addFiles(const String & column_name, const IDataType & type);
+
+protected:
     StorageTinyLog(
         const std::string & path_,
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+        size_t max_compress_block_size_);
 };
 
 }

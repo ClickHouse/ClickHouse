@@ -8,16 +8,12 @@
 #include <string>
 #include <limits>
 
-#include <common/exp10.h>
+#include <common/preciseExp10.h>
 #include <common/Types.h>
 #include <common/DateLUT.h>
 
 #include <mysqlxx/Types.h>
 #include <common/LocalDateTime.h>
-
-
-/// Обрезать длинный запрос до указанной длины для текста исключения.
-#define MYSQLXX_QUERY_PREVIEW_LENGTH 1000
 
 
 namespace mysqlxx
@@ -73,7 +69,7 @@ public:
         if (unlikely(isNull()))
             throwException("Value is NULL");
 
-        return readUIntText(m_data, m_length);;
+        return readUIntText(m_data, m_length);
     }
 
     /// Получить целое со знаком или дату или дату-время (в unix timestamp согласно текущей тайм-зоне).
@@ -194,7 +190,7 @@ private:
 
     Int64 getIntImpl() const
     {
-        return readIntText(m_data, m_length);;
+        return readIntText(m_data, m_length);
     }
 
 

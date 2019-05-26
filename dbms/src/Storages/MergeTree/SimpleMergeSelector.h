@@ -16,7 +16,7 @@ public:
 
         /** Minimum ratio of size of one part to all parts in set of parts to merge (for usual cases).
           * For example, if all parts have equal size, it means, that at least 'base' number of parts should be merged.
-          * If parts has non-uniform sizes, then minumum number of parts to merge is effectively increased.
+          * If parts has non-uniform sizes, then minimum number of parts to merge is effectively increased.
           * This behaviour balances merge-tree workload.
           * It called 'base', because merge-tree depth could be estimated as logarithm with that base.
           *
@@ -29,8 +29,8 @@ public:
 
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *
-          * 1. Total number of parts in partition. If too much - then base is lowered.
-          * It means: when too much parts - do merges more urgently.
+          * 1. Total number of parts in partition. If too many - then base is lowered.
+          * It means: when too many parts - do merges more urgently.
           *
           * 2. Minimum age of parts participating in merge. If higher age - then base is lowered.
           * It means: do less wide merges only rarely.

@@ -1,9 +1,5 @@
 #pragma once
 
-#define DBMS_NAME "ClickHouse"
-#define DBMS_VERSION_MAJOR 1
-#define DBMS_VERSION_MINOR 1
-
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
@@ -18,13 +14,6 @@
 
 /// The size of the I/O buffer by default.
 #define DBMS_DEFAULT_BUFFER_SIZE 1048576ULL
-
-/// When writing data, a buffer of `max_compress_block_size` size is allocated for compression. When the buffer overflows or if into the buffer
-/// more or equal data is written than `min_compress_block_size`, then with the next mark, the data will also compressed
-/// As a result, for small columns (numbers 1-8 bytes), with index_granularity = 8192, the block size will be 64 KB.
-/// And for large columns (Title - string ~100 bytes), the block size will be ~819 KB. Due to this, the compression ratio almost does not get worse.
-#define DEFAULT_MIN_COMPRESS_BLOCK_SIZE 65536
-#define DEFAULT_MAX_COMPRESS_BLOCK_SIZE 1048576
 
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
@@ -43,45 +32,62 @@
   */
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
-#define DEFAULT_MAX_QUERY_SIZE 262144
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
-#define DEFAULT_MAX_DISTRIBUTED_CONNECTIONS 1024
-#define DEFAULT_INTERACTIVE_DELAY 100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD (2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
-#define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 5000 /// Maximum waiting time in the request queue.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE 16
-
-/// Used in the `reserve` method, when the number of rows is known, but their dimensions are unknown.
-#define DBMS_APPROX_STRING_SIZE 64
-
-/// Name suffix for the column containing the array offsets.
-#define ARRAY_SIZES_COLUMN_NAME_SUFFIX ".size"
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_INFO 54032
 #define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE 54058
 #define DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO 54060
 #define DBMS_MIN_REVISION_WITH_TABLES_STATUS 54226
+#define DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE 54337
+#define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
+#define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
+#define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
+#define DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA 54415
+/// Minimum revision with exactly the same set of aggregation methods and rules to select them.
+/// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
+/// (keys will be placed in different buckets and result will not be fully aggregated).
+#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
+#define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
+
+#define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
+
+#define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54421
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
 
-#define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS 100
-
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
-#define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS 7500
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
+/// Maximum namber of http-connections between two endpoints
+/// the number is unmotivated
+#define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
-#define ALWAYS_INLINE __attribute__((__always_inline__))
-#define NO_INLINE __attribute__((__noinline__))
+#define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
-#define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
+// more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
-#if !defined(__x86_64__) && !defined(__aarch64__)
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+    #define NO_INLINE static __declspec(noinline)
+    #define MAY_ALIAS
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+    #define NO_INLINE __attribute__((__noinline__))
+    #define MAY_ALIAS __attribute__((__may_alias__))
+#endif
+
+
+#define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
+
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
 //    #error PLATFORM_NOT_SUPPORTED
 #endif
 
@@ -101,3 +107,25 @@
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
 #endif
+
+/// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
+/// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
+/// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+#else
+    /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
+    #define NO_SANITIZE_UNDEFINED
+    #define NO_SANITIZE_ADDRESS
+#endif
+
+#if defined __GNUC__ && !defined __clang__
+    #define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+    #define OPTIMIZE(x)
+#endif
+
+/// This number is only used for distributed version compatible.
+/// It could be any magic number.
+#define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE

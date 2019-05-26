@@ -1,18 +1,21 @@
+#if defined(__linux__) || defined(__FreeBSD__)
+
 #include <IO/ReadBufferAIO.h>
+#include <IO/AIOContextPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 
-#include <experimental/optional>
+#include <optional>
 
 
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileOpenFailed;
     extern const Event ReadBufferAIORead;
     extern const Event ReadBufferAIOReadBytes;
 }
@@ -50,7 +53,6 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     fd = ::open(filename.c_str(), open_flags);
     if (fd == -1)
     {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
         throwFromErrno("Cannot open file " + filename, error_code);
     }
@@ -83,12 +85,12 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 bool ReadBufferAIO::nextImpl()
 {
- /// If the end of the file has already been reached by calling this function,
- /// then the current call is wrong.
+    /// If the end of the file has already been reached by calling this function,
+    /// then the current call is wrong.
     if (is_eof)
         return false;
 
-    std::experimental::optional<Stopwatch> watch;
+    std::optional<Stopwatch> watch;
     if (profile_callback)
         watch.emplace(clock_type);
 
@@ -113,16 +115,24 @@ bool ReadBufferAIO::nextImpl()
 
     /// If the end of the file is just reached, do nothing else.
     if (is_eof)
-        return true;
+        return bytes_read != 0;
 
     /// Create an asynchronous request.
     prepare();
 
+#if defined(__FreeBSD__)
+    request.aio.aio_lio_opcode = LIO_READ;
+    request.aio.aio_fildes = fd;
+    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
+    request.aio.aio_nbytes = region_aligned_size;
+    request.aio.aio_offset = region_aligned_begin;
+#else
     request.aio_lio_opcode = IOCB_CMD_PREAD;
     request.aio_fildes = fd;
     request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
     request.aio_nbytes = region_aligned_size;
     request.aio_offset = region_aligned_begin;
+#endif
 
     /// Send the request.
     try
@@ -177,6 +187,9 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
             pos = working_buffer.end();
             first_unread_pos_in_file = new_pos_in_file;
 
+            /// If we go back, than it's not eof
+            is_eof = false;
+
             /// We can not use the result of the current asynchronous request.
             skip();
         }
@@ -187,7 +200,7 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 
 void ReadBufferAIO::synchronousRead()
 {
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
 
     prepare();
     bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
@@ -223,7 +236,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
     if (is_eof || !is_pending_read)
         return false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
 
     bytes_read = future_bytes_read.get();
     is_pending_read = false;
@@ -289,9 +302,9 @@ void ReadBufferAIO::finalize()
         is_eof = true;
 
     /// Swap the main and duplicate buffers.
-    internalBuffer().swap(fill_buffer.internalBuffer());
-    buffer().swap(fill_buffer.buffer());
-    std::swap(position(), fill_buffer.position());
+    swap(fill_buffer);
 }
 
 }
+
+#endif

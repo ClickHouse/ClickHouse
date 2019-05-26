@@ -3,6 +3,12 @@
 #include <Interpreters/SystemLog.h>
 
 
+namespace ProfileEvents
+{
+    class Counters;
+}
+
+
 namespace DB
 {
 
@@ -53,10 +59,16 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    std::vector<UInt32> thread_numbers;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<Settings> query_settings;
+
     static std::string name() { return "QueryLog"; }
 
     static Block createBlock();
     void appendToBlock(Block & block) const;
+
+    static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
 
 

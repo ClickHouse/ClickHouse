@@ -4,7 +4,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageMaterializedView.h>
 
 
@@ -19,30 +18,18 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
+    PushingToViewsBlockOutputStream(
+        const String & database, const String & table, const StoragePtr & storage_,
+        const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
+    Block getHeader() const override { return storage->getSampleBlock(); }
     void write(const Block & block) override;
 
-    void flush() override
-    {
-        if (output)
-            output->flush();
-    }
-
-    void writePrefix() override
-    {
-        if (output)
-            output->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        if (output)
-            output->writeSuffix();
-    }
+    void flush() override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
-
     StoragePtr storage;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
@@ -50,8 +37,18 @@ private:
     const Context & context;
     ASTPtr query_ptr;
 
-    std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
+    struct ViewInfo
+    {
+        ASTPtr query;
+        String database;
+        String table;
+        BlockOutputStreamPtr out;
+    };
+
+    std::vector<ViewInfo> views;
     std::unique_ptr<Context> views_context;
+
+    void process(const Block & block, size_t view_num);
 };
 
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -10,29 +10,30 @@ namespace DB
   * This is needed, for example, to read from a table that will be populated
   *  after creation of LazyBlockInputStream object, but before the first `read` call.
   */
-class LazyBlockInputStream : public IProfilingBlockInputStream
+class LazyBlockInputStream : public IBlockInputStream
 {
 public:
     using Generator = std::function<BlockInputStreamPtr()>;
 
-    LazyBlockInputStream(Generator generator_)
-        : generator(std::move(generator_))
+    LazyBlockInputStream(const Block & header_, Generator generator_)
+        : header(header_), generator(std::move(generator_))
     {
     }
 
-    LazyBlockInputStream(const char * name_, Generator generator_)
-        : name(name_)
-        , generator(std::move(generator_))
+    LazyBlockInputStream(const char * name_, const Block & header_, Generator generator_)
+        : name(name_), header(header_), generator(std::move(generator_))
     {
     }
 
     String getName() const override { return name; }
 
-    void cancel() override
+    Block getHeader() const override
     {
-        std::lock_guard<std::mutex> lock(cancel_mutex);
-        IProfilingBlockInputStream::cancel();
+        return header;
     }
+
+    /// We call readPrefix lazily. Suppress default behaviour.
+    void readPrefix() override {}
 
 protected:
     Block readImpl() override
@@ -44,7 +45,7 @@ protected:
             if (!input)
                 return Block();
 
-            auto * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get());
+            auto * p_input = dynamic_cast<IBlockInputStream *>(input.get());
 
             if (p_input)
             {
@@ -58,29 +59,10 @@ protected:
             input->readPrefix();
 
             {
-                std::lock_guard<std::mutex> lock(cancel_mutex);
-
-                /** TODO Data race here. See IProfilingBlockInputStream::collectAndSendTotalRowsApprox.
-                    Assume following pipeline:
-
-                    RemoteBlockInputStream
-                     AsynchronousBlockInputStream
-                      LazyBlockInputStream
-
-                    RemoteBlockInputStream calls AsynchronousBlockInputStream::readPrefix
-                     and AsynchronousBlockInputStream spawns a thread and returns.
-
-                    The separate thread will call LazyBlockInputStream::read
-                     LazyBlockInputStream::read will add more children to itself
-
-                    In the same moment, in main thread, RemoteBlockInputStream::read is called,
-                     then IProfilingBlockInputStream::collectAndSendTotalRowsApprox is called
-                     and iterates over set of children.
-                  */
-                children.push_back(input);
+                addChild(input);
 
                 if (isCancelled() && p_input)
-                    p_input->cancel();
+                    p_input->cancel(is_killed);
             }
         }
 
@@ -89,11 +71,10 @@ protected:
 
 private:
     const char * name = "Lazy";
+    Block header;
     Generator generator;
 
     BlockInputStreamPtr input;
-
-    std::mutex cancel_mutex;
 };
 
 }

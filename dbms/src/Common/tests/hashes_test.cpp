@@ -1,17 +1,17 @@
 #include <iostream>
 #include <iomanip>
-
 #include <city.h>
-#include <openssl/md5.h>
-
 #include <Common/Stopwatch.h>
-
 #include <Common/SipHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <Common/config.h>
+#if USE_SSL
+#   include <openssl/md5.h>
+#endif
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using Strings = std::vector<std::string>;
     using Hashes = std::vector<char>;
@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(hashes.data(), hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "CityHash64 (check = " << check << ")"
@@ -73,12 +73,12 @@ int main(int argc, char ** argv)
                 reinterpret_cast<unsigned char *>(&hashes[i * 16]),
                 reinterpret_cast<const unsigned char *>(strings[i].data()),
                 strings[i].size(),
-                reinterpret_cast<const unsigned char *>(&seed[0]));
+                reinterpret_cast<const unsigned char *>(seed.data()));
         }
 
         watch.stop();
 
-        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(hashes.data(), hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "SipHash (check = " << check << ")"
@@ -99,7 +99,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(hashes.data(), hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "SipHash, stream (check = " << check << ")"
@@ -108,6 +108,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
+#if USE_SSL
     {
         Stopwatch watch;
 
@@ -121,7 +122,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(hashes.data(), hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "MD5 (check = " << check << ")"
@@ -129,6 +130,7 @@ int main(int argc, char ** argv)
             << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
+#endif
 
     return 0;
 }

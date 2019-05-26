@@ -17,25 +17,22 @@ class Context;
   */
 class StorageSystemOne : public ext::shared_ptr_helper<StorageSystemOne>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemOne>;
 public:
     std::string getName() const override { return "SystemOne"; }
     std::string getTableName() const override { return name; }
-
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
 
+protected:
     StorageSystemOne(const std::string & name_);
 };
 

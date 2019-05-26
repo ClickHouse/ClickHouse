@@ -29,20 +29,6 @@ int main(int argc, char ** argv)
     {
         size_t n = 10;
         using T = std::string;
-        DB::AutoArray<T> arr(n, DB::DontInitElemsTag());
-
-        for (size_t i = 0; i < arr.size(); ++i)
-            new (arr.place(i)) std::string("Hello, world! " + DB::toString(i));
-
-        for (size_t i = 0; i < arr.size(); ++i)
-            std::cerr << arr[i] << std::endl;
-    }
-
-    std::cerr << std::endl;
-
-    {
-        size_t n = 10;
-        using T = std::string;
         using Arr = DB::AutoArray<T>;
         Arr arr;
 
@@ -147,43 +133,14 @@ int main(int argc, char ** argv)
         }
     }
 
-    size_t n = 5;
-    size_t map_size = 1000000;
-    using T = DB::Field;
-    T field = std::string("Hello, world");
-
     if (argc == 2 && !strcmp(argv[1], "1"))
     {
-        using Arr = DB::AutoArray<T>;
-        using Map = HashMap<UInt64, Arr>;
+        size_t n = 5;
+        size_t map_size = 1000000;
 
-        Stopwatch watch;
+        using T = DB::Field;
+        T field = std::string("Hello, world");
 
-        Map map;
-        for (size_t i = 0; i < map_size; ++i)
-        {
-            Map::iterator it;
-            bool inserted;
-
-            map.emplace(rand(), it, inserted);
-            if (inserted)
-            {
-                new(&it->second) Arr(n, DB::DontInitElemsTag());
-
-                for (size_t j = 0; j < n; ++j)
-                    new (it->second.place(j)) T(field);
-            }
-        }
-
-        std::cerr << std::fixed << std::setprecision(2)
-            << "AutoArray. Elapsed: " << watch.elapsedSeconds()
-            << " (" << map_size / watch.elapsedSeconds() << " rows/sec., "
-            << "sizeof(Map::value_type) = " << sizeof(Map::value_type)
-            << std::endl;
-    }
-
-    if (argc == 2 && !strcmp(argv[1], "2"))
-    {
         using Arr = std::vector<T>;
         using Map = HashMap<UInt64, Arr>;
 
@@ -198,10 +155,10 @@ int main(int argc, char ** argv)
             map.emplace(rand(), it, inserted);
             if (inserted)
             {
-                new(&it->second) Arr(n);
+                new(&it->getSecond()) Arr(n);
 
                 for (size_t j = 0; j < n; ++j)
-                    it->second[j] = field;
+                    it->getSecond()[j] = field;
             }
         }
 
@@ -229,7 +186,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl
-            << "&arr1[0]: " << &arr1[0] << ", &arr2[0]: " << &arr2[0] << std::endl
+            << "arr1.data(): " << arr1.data() << ", arr2.data(): " << arr2.data() << std::endl
             << "arr1[0]: " << arr1[0] << ", arr2[0]: " << arr2[0] << std::endl;
     }
 

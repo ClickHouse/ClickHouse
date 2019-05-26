@@ -60,7 +60,7 @@ private:
         std::chrono::nanoseconds cur_timeout = timeout;
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-        std::unique_lock<std::mutex> lock(mutex);
+        std::unique_lock lock(mutex);
 
         while (true)
         {
@@ -109,7 +109,7 @@ public:
         ~HandleImpl()
         {
             {
-                std::lock_guard<std::mutex> lock(parent.mutex);
+                std::lock_guard lock(parent.mutex);
                 --value.second;
             }
             parent.condvar.notify_all();
@@ -132,7 +132,7 @@ public:
         if (0 == priority)
             return {};
 
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         auto it = container.emplace(priority, 0).first;
         ++it->second;
         return std::make_shared<HandleImpl>(*this, *it);

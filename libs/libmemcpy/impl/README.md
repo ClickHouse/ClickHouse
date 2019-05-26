@@ -20,7 +20,7 @@ Reference
 
 [Using Block Prefetch for Optimized Memory Performance](http://files.rsdn.ru/23380/AMD_block_prefetch_paper.pdf)
 
-The artical only focused on aligned huge memory copy. You need handle other conditions by your self.
+The article only focused on aligned huge memory copy. You need handle other conditions by your self.
 
 
 Results

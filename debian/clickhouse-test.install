@@ -1,0 +1,6 @@
+usr/bin/clickhouse-test
+usr/bin/clickhouse-test-server
+usr/bin/clickhouse-performance-test
+usr/share/clickhouse-test/*
+etc/clickhouse-client/client-test.xml
+etc/clickhouse-server/server-test.xml

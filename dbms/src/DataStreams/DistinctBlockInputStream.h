@@ -1,7 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <Interpreters/Limits.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/SetVariants.h>
 
 namespace DB
@@ -14,28 +13,26 @@ namespace DB
   * set limit_hint to non zero value. So we stop emitting new rows after
   * count of already emitted rows will reach the limit_hint.
   */
-class DistinctBlockInputStream : public IProfilingBlockInputStream
+class DistinctBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns);
+    DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "Distinct"; }
 
-    String getID() const override;
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;
 
 private:
-    bool checkLimits() const;
-
-    ConstColumnPlainPtrs getKeyColumns(const Block & block) const;
+    ColumnRawPtrs getKeyColumns(const Block & block) const;
 
     template <typename Method>
     void buildFilter(
         Method & method,
-        const ConstColumnPlainPtrs & key_columns,
+        const ColumnRawPtrs & key_columns,
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variants) const;
@@ -44,12 +41,12 @@ private:
     Names columns_names;
     SetVariants data;
     Sizes key_sizes;
-    size_t limit_hint;
+    UInt64 limit_hint;
+
+    bool no_more_rows = false;
 
     /// Restrictions on the maximum size of the output data.
-    size_t max_rows;
-    size_t max_bytes;
-    OverflowMode overflow_mode;
+    SizeLimits set_size_limits;
 };
 
 }

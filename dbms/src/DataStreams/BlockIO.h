@@ -1,7 +1,8 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
+
+#include <functional>
 
 
 namespace DB
@@ -11,18 +12,18 @@ class ProcessListEntry;
 
 struct BlockIO
 {
+    BlockIO() = default;
+    BlockIO(const BlockIO &) = default;
+    ~BlockIO() = default;
+
     /** process_list_entry should be destroyed after in and after out,
-      *  since in and out contain pointer to an object inside process_list_entry
-      *  (MemoryTracker * current_memory_tracker),
+      *  since in and out contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
       *  which could be used before destroying of in and out.
       */
     std::shared_ptr<ProcessListEntry> process_list_entry;
 
-    BlockInputStreamPtr in;
     BlockOutputStreamPtr out;
-
-    Block in_sample;    /// Example of a block to be read from `in`.
-    Block out_sample;   /// Example of a block to be written to `out`.
+    BlockInputStreamPtr in;
 
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
@@ -43,24 +44,22 @@ struct BlockIO
 
     BlockIO & operator= (const BlockIO & rhs)
     {
-        /// We provide the correct order of destruction.
-        out                     = nullptr;
-        in                      = nullptr;
-        process_list_entry      = nullptr;
+        if (this == &rhs)
+            return *this;
+
+        out.reset();
+        in.reset();
+        process_list_entry.reset();
 
         process_list_entry      = rhs.process_list_entry;
         in                      = rhs.in;
         out                     = rhs.out;
-        in_sample               = rhs.in_sample;
-        out_sample              = rhs.out_sample;
 
         finish_callback         = rhs.finish_callback;
         exception_callback      = rhs.exception_callback;
 
         return *this;
     }
-
-    ~BlockIO();
 };
 
 }

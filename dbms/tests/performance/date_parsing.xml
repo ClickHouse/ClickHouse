@@ -1,0 +1,25 @@
+<test>
+    <name>date_parsing</name>
+    <type>loop</type>
+
+    <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>50</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <min_time/>
+    </main_metric>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(toDate(toString(EventDate)))</query>
+</test>

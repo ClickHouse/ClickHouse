@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Check that table exists. Return single row with single column "result" of type UInt8 and value 0 or 1.
@@ -21,11 +20,12 @@ public:
 
     BlockIO execute() override;
 
+    static Block getSampleBlock();
+
 private:
     ASTPtr query_ptr;
     const Context & context;
 
-    Block getSampleBlock();
     BlockInputStreamPtr executeImpl();
 };
 

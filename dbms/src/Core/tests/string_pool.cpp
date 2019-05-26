@@ -17,6 +17,12 @@
 
 int main(int argc, char ** argv)
 {
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program n\n";
+        return 1;
+    }
+
     std::cerr << std::fixed << std::setprecision(3);
     std::ofstream devnull("/dev/null");
 
@@ -27,8 +33,8 @@ int main(int argc, char ** argv)
     using Vec = std::vector<std::string>;
     using Set = std::unordered_map<std::string, int>;
     using RefsSet = std::unordered_map<StringRef, int, StringRefHash>;
-    using DenseSet = google::dense_hash_map<std::string, int>;
-    using RefsDenseSet = google::dense_hash_map<StringRef, int, StringRefHash>;
+    using DenseSet = GOOGLE_NAMESPACE::dense_hash_map<std::string, int>;
+    using RefsDenseSet = GOOGLE_NAMESPACE::dense_hash_map<StringRef, int, StringRefHash>;
     using RefsHashMap = HashMap<StringRef, int, StringRefHash>;
     Vec vec;
 
@@ -216,7 +222,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->getFirst().data, it->getFirst().size);
             devnull << std::endl;
         }
 
@@ -243,7 +249,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->getFirst().data, it->getFirst().size);
             devnull << std::endl;
         }
     }

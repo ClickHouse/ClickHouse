@@ -1,0 +1,1 @@
+SELECT \n    a, \n    b\nFROM a 

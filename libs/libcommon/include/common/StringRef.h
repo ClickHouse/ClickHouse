@@ -10,10 +10,14 @@
 
 #include <city.h>
 
-#if __SSE2__
+#if defined(__SSE2__)
     #include <emmintrin.h>
 #endif
 
+#if defined(__SSE4_2__)
+    #include <smmintrin.h>
+    #include <nmmintrin.h>
+#endif
 
 
 /// The thing to avoid creating strings to find substrings in the hash table.
@@ -35,7 +39,7 @@ struct StringRef
 using StringRefs = std::vector<StringRef>;
 
 
-#if __SSE2__
+#if defined(__SSE2__)
 
 /** Compare strings for equality.
   * The approach is controversial and does not win in all cases.
@@ -85,9 +89,9 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 
     switch ((size % 64) / 16)
     {
-        case 3: if (!compareSSE2(p1 + 32, p2 + 32)) return false;
-        case 2: if (!compareSSE2(p1 + 16, p2 + 16)) return false;
-        case 1: if (!compareSSE2(p1     , p2     )) return false;
+        case 3: if (!compareSSE2(p1 + 32, p2 + 32)) return false; [[fallthrough]];
+        case 2: if (!compareSSE2(p1 + 16, p2 + 16)) return false; [[fallthrough]];
+        case 1: if (!compareSSE2(p1     , p2     )) return false; [[fallthrough]];
         case 0: break;
     }
 
@@ -96,21 +100,22 @@ inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 
     switch (size % 16)
     {
-        case 15: if (p1[14] != p2[14]) return false;
-        case 14: if (p1[13] != p2[13]) return false;
-        case 13: if (p1[12] != p2[12]) return false;
-        case 12: if (reinterpret_cast<const uint32_t *>(p1)[2] == reinterpret_cast<const uint32_t *>(p2)[2]) goto l8; else return false;
-        case 11: if (p1[10] != p2[10]) return false;
-        case 10: if (p1[9] != p2[9]) return false;
+        case 15: if (p1[14] != p2[14]) return false; [[fallthrough]];
+        case 14: if (p1[13] != p2[13]) return false; [[fallthrough]];
+        case 13: if (p1[12] != p2[12]) return false; [[fallthrough]];
+        case 12: if (unalignedLoad<uint32_t>(p1 + 8) == unalignedLoad<uint32_t>(p2 + 8)) goto l8; else return false;
+        case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
+        case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
         case 9:  if (p1[8] != p2[8]) return false;
-        l8: case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false;
-        case 6:  if (p1[5] != p2[5]) return false;
-        case 5:  if (p1[4] != p2[4]) return false;
-        case 4:  return reinterpret_cast<const uint32_t *>(p1)[0] == reinterpret_cast<const uint32_t *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false;
-        case 2:  return reinterpret_cast<const uint16_t *>(p1)[0] == reinterpret_cast<const uint16_t *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false;
+        l8: [[fallthrough]];
+        case 8:  return unalignedLoad<uint64_t>(p1) == unalignedLoad<uint64_t>(p2);
+        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4:  return unalignedLoad<uint32_t>(p1) == unalignedLoad<uint32_t>(p2);
+        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2:  return unalignedLoad<uint16_t>(p1) == unalignedLoad<uint16_t>(p2);
+        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
         case 0:  break;
     }
 
@@ -128,7 +133,7 @@ inline bool operator== (StringRef lhs, StringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if __SSE2__
+#if defined(__SSE2__)
     return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
 #else
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
@@ -169,9 +174,7 @@ struct StringRefHash64
     }
 };
 
-#if __SSE4_2__
-
-#include <smmintrin.h>
+#if defined(__SSE4_2__)
 
 /// Parts are taken from CityHash.
 
@@ -265,10 +268,10 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
-    };
+    }
 };
 
 struct StringRefHash : StringRefHash64 {};
@@ -287,7 +290,7 @@ namespace ZeroTraits
 {
     inline bool check(StringRef x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
-};
+}
 
 
 inline bool operator==(StringRef lhs, const char * rhs)

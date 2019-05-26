@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOutput.h>
 #include <Core/Names.h>
 
 
@@ -13,77 +12,86 @@ struct ASTTablesInSelectQueryElement;
 
 /** SELECT query
   */
-class ASTSelectQuery : public ASTQueryWithOutput
+class ASTSelectQuery : public IAST
 {
 public:
-    ASTSelectQuery() = default;
-    ASTSelectQuery(const StringRange range_);
+    enum class Expression : UInt8
+    {
+        WITH,
+        SELECT,
+        TABLES,
+        PREWHERE,
+        WHERE,
+        GROUP_BY,
+        HAVING,
+        ORDER_BY,
+        LIMIT_BY_OFFSET,
+        LIMIT_BY_LENGTH,
+        LIMIT_BY,
+        LIMIT_OFFSET,
+        LIMIT_LENGTH,
+        SETTINGS
+    };
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "SelectQuery"; };
-
-    /// Check for the presence of the `arrayJoin` function. (Not capital `ARRAY JOIN`.)
-    static bool hasArrayJoin(const ASTPtr & ast);
-
-    /// Does the query contain an asterisk?
-    bool hasAsterisk() const;
-
-    /// Rename the query columns to the same names as in the original query.
-    void renameColumns(const ASTSelectQuery & source);
-
-    /// Rewrites select_expression_list to return only the required columns in the correct order.
-    void rewriteSelectExpressionList(const Names & required_column_names);
-
-    bool isUnionAllHead() const { return (prev_union_all == nullptr) && next_union_all != nullptr; }
+    String getID(char) const override { return "SelectQuery"; }
 
     ASTPtr clone() const override;
 
-    /// Get a deep copy of the first SELECT query tree.
-    std::shared_ptr<ASTSelectQuery> cloneFirstSelect() const;
-
-private:
-    std::shared_ptr<ASTSelectQuery> cloneImpl(bool traverse_union_all) const;
-
-public:
     bool distinct = false;
-    ASTPtr with_expression_list;
-    ASTPtr select_expression_list;
-    ASTPtr tables;
-    ASTPtr prewhere_expression;
-    ASTPtr where_expression;
-    ASTPtr group_expression_list;
     bool group_by_with_totals = false;
-    ASTPtr having_expression;
-    ASTPtr order_expression_list;
-    ASTPtr limit_by_value;
-    ASTPtr limit_by_expression_list;
-    ASTPtr limit_offset;
-    ASTPtr limit_length;
-    ASTPtr settings;
+    bool group_by_with_rollup = false;
+    bool group_by_with_cube = false;
+
+    ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
+    ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
+    ASTPtr & refPrewhere()  { return getExpression(Expression::PREWHERE); }
+    ASTPtr & refWhere()     { return getExpression(Expression::WHERE); }
+    ASTPtr & refHaving()    { return getExpression(Expression::HAVING); }
+
+    const ASTPtr with()           const { return getExpression(Expression::WITH); }
+    const ASTPtr select()         const { return getExpression(Expression::SELECT); }
+    const ASTPtr tables()         const { return getExpression(Expression::TABLES); }
+    const ASTPtr prewhere()       const { return getExpression(Expression::PREWHERE); }
+    const ASTPtr where()          const { return getExpression(Expression::WHERE); }
+    const ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
+    const ASTPtr having()         const { return getExpression(Expression::HAVING); }
+    const ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
+    const ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
+    const ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
+    const ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
+    const ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
+    const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
+    const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
+
+    /// Set/Reset/Remove expression.
+    void setExpression(Expression expr, ASTPtr && ast);
+
+    ASTPtr getExpression(Expression expr, bool clone = false) const
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+            return clone ? children[it->second]->clone() : children[it->second];
+        return {};
+    }
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr database() const;
-    ASTPtr table() const;
     ASTPtr sample_size() const;
     ASTPtr sample_offset() const;
+    ASTPtr array_join_expression_list(bool & is_left) const;
     ASTPtr array_join_expression_list() const;
     const ASTTablesInSelectQueryElement * join() const;
-    bool array_join_is_left() const;
     bool final() const;
-    void setDatabaseIfNeeded(const String & database_name);
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
-
-    /// A double-linked list of SELECT queries inside a UNION ALL query.
-
-    /// The next SELECT query in the UNION ALL chain, if there is one
-    ASTPtr next_union_all;
-    /// Previous SELECT query in the UNION ALL chain (not inserted into children and not cloned)
-    /// The pointer is null for the following reasons:
-    /// 1. to prevent the occurrence of cyclic dependencies and, hence, memory leaks;
-    IAST * prev_union_all = nullptr;
+    void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+private:
+    std::unordered_map<Expression, size_t> positions;
+
+    ASTPtr & getExpression(Expression expr);
 };
 
 }

@@ -37,6 +37,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
 #include <stdlib.h>
 #include <libunwind.h>
+#include <libunwind-ppc64.h>
 
 #include "elf64.h"
 #include "mempool.h"

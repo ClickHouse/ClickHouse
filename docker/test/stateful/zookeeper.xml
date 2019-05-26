@@ -1,0 +1,16 @@
+<yandex>
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>yandex.ru</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>111.0.1.2</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
+</yandex>

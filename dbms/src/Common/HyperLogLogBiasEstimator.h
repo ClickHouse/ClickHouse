@@ -70,12 +70,12 @@ public:
 private:
     /// Static checks.
     using TRawEstimatesRef = decltype(BiasData::getRawEstimates());
-    using TRawEstimates = typename std::remove_reference<TRawEstimatesRef>::type;
+    using TRawEstimates = std::remove_reference_t<TRawEstimatesRef>;
 
     using TBiasDataRef = decltype(BiasData::getBiases());
-    using TBiasData = typename std::remove_reference<TBiasDataRef>::type;
+    using TBiasData = std::remove_reference_t<TBiasDataRef>;
 
-    static_assert(std::is_same<TRawEstimates, TBiasData>::value, "Bias estimator data have inconsistent types");
+    static_assert(std::is_same_v<TRawEstimates, TBiasData>, "Bias estimator data have inconsistent types");
     static_assert(std::tuple_size<TRawEstimates>::value > 0, "Bias estimator has no raw estimate data");
     static_assert(std::tuple_size<TBiasData>::value > 0, "Bias estimator has no bias data");
     static_assert(std::tuple_size<TRawEstimates>::value == std::tuple_size<TBiasData>::value,
@@ -101,7 +101,7 @@ struct TrivialBiasEstimator
         return 0.0;
     }
 
-    static double getBias(double raw_estimate)
+    static double getBias(double /*raw_estimate*/)
     {
         return 0.0;
     }

@@ -1,19 +1,20 @@
 #include <IO/ReadBufferFromString.h>
-
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTIdentifier.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-
 #include <Common/typeid_cast.h>
-
 #include <iomanip>
+#include <sstream>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 
 InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_)
@@ -24,11 +25,14 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
-    const ASTShowTablesQuery & query = typeid_cast<const ASTShowTablesQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTShowTablesQuery &>();
 
     /// SHOW DATABASES
     if (query.databases)
         return "SELECT name FROM system.databases";
+
+    if (query.temporary && !query.from.empty())
+        throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
     String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 
@@ -39,7 +43,12 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     context.assertDatabaseExists(database, false);
 
     std::stringstream rewritten_query;
-    rewritten_query << "SELECT name FROM system.tables WHERE database = " << std::quoted(database, '\'');
+    rewritten_query << "SELECT name FROM system.tables WHERE ";
+
+    if (query.temporary)
+        rewritten_query << "is_temporary";
+    else
+        rewritten_query << "database = " << std::quoted(database, '\'');
 
     if (!query.like.empty())
         rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');

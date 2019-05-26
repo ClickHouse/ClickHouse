@@ -1,8 +1,6 @@
-#include <Common/ConfigProcessor.h>
-#include <Interpreters/Users.h>
-
+#include <Common/Config/ConfigProcessor.h>
+#include <Interpreters/UsersManager.h>
 #include <boost/filesystem.hpp>
-
 #include <vector>
 #include <string>
 #include <tuple>
@@ -10,8 +8,8 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <unistd.h>
 #include <cstdlib>
+#include <port/unistd.h>
 
 namespace
 {
@@ -163,11 +161,6 @@ TestSet test_set =
     }
 };
 
-std::string createTmpPath(const std::string & filename);
-void createFile(const std::string & filename, const char * data);
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor);
-auto runTestSet(const TestSet & test_set);
-
 std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
@@ -186,16 +179,16 @@ void createFile(const std::string & filename, const char * data)
     ofs << data;
 }
 
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
+void runOneTest(const TestDescriptor & test_descriptor)
 {
     const auto path_name = createTmpPath("users.xml");
     createFile(path_name, test_descriptor.config_content);
 
-    ConfigurationPtr config;
+    DB::ConfigurationPtr config;
 
     try
     {
-        config = ConfigProcessor{}.loadConfig(path_name).configuration;
+        config = DB::ConfigProcessor(path_name).loadConfig().configuration;
     }
     catch (const Poco::Exception & ex)
     {
@@ -204,11 +197,11 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
         throw std::runtime_error(os.str());
     }
 
-    DB::Users users;
+    DB::UsersManager users_manager;
 
     try
     {
-        users.loadFromConfig(*config);
+        users_manager.loadFromConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {
@@ -223,7 +216,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
 
         try
         {
-            res = users.isAllowedDatabase(entry.user_name, entry.database_name);
+            res = users_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
         }
         catch (const Poco::Exception &)
         {
@@ -243,7 +236,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
     fs::remove_all(fs::path(path_name).parent_path().string());
 }
 
-auto runTestSet(const TestSet & test_set)
+auto runTestSet()
 {
     size_t test_num = 1;
     size_t failure_count = 0;
@@ -252,7 +245,7 @@ auto runTestSet(const TestSet & test_set)
     {
         try
         {
-            runOneTest(test_num, test_descriptor);
+            runOneTest(test_descriptor);
             std::cout << "Test " << test_num << " passed\n";
         }
         catch (const std::runtime_error & ex)
@@ -279,7 +272,7 @@ int main()
     size_t test_count;
     size_t failure_count;
 
-    std::tie(test_count, failure_count) = runTestSet(test_set);
+    std::tie(test_count, failure_count) = runTestSet();
 
     std::cout << (test_count - failure_count) << " test(s) passed out of " << test_count << "\n";
 

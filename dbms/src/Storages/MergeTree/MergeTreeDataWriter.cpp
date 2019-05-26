@@ -1,10 +1,14 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Common/escapeForFileName.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/Exception.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/File.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -19,13 +23,20 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_PARTS;
+}
+
 namespace
 {
 
 void buildScatterSelector(
-        const ConstColumnPlainPtrs & columns,
+        const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
-        IColumn::Selector & selector)
+        IColumn::Selector & selector,
+        size_t max_parts)
 {
     /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
@@ -42,8 +53,11 @@ void buildScatterSelector(
 
         if (inserted)
         {
+            if (max_parts && partitions_count >= max_parts)
+                throw Exception("Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).", ErrorCodes::TOO_MANY_PARTS);
+
             partition_num_to_first_row.push_back(i);
-            it->second = partitions_count;
+            it->getSecond() = partitions_count;
 
             ++partitions_count;
 
@@ -56,13 +70,41 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->second;
+            selector[i] = it->getSecond();
     }
 }
 
+/// Computes ttls and updates ttl infos
+void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
+{
+    if (!block.has(ttl_entry.result_column))
+        ttl_entry.expression->execute(block);
+
+    auto & ttl_info = (column_name.empty() ? ttl_infos.table_ttl : ttl_infos.columns_ttl[column_name]);
+
+    const auto & current = block.getByName(ttl_entry.result_column);
+
+    const IColumn * column = current.column.get();
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+    {
+        const auto & date_lut = DateLUT::instance();
+        for (const auto & val : column_date->getData())
+            ttl_info.update(date_lut.fromDayNum(DayNum(val)));
+    }
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+    {
+        for (const auto & val : column_date_time->getData())
+            ttl_info.update(val);
+    }
+    else
+        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+
+    ttl_infos.updatePartMinTTL(ttl_info.min);
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
+}
+
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -71,23 +113,23 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.check(block, true);
     block.checkNumberOfRows();
 
-    if (!data.partition_expr) /// Table is not partitioned.
+    if (!data.partition_key_expr) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
     }
 
     Block block_copy = block;
-    data.partition_expr->execute(block_copy);
+    data.partition_key_expr->execute(block_copy);
 
-    ConstColumnPlainPtrs partition_columns;
-    partition_columns.reserve(data.partition_expr_columns.size());
-    for (const String & name : data.partition_expr_columns)
-        partition_columns.emplace_back(block_copy.getByName(name).column.get());
+    ColumnRawPtrs partition_columns;
+    partition_columns.reserve(data.partition_key_sample.columns());
+    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -103,7 +145,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     if (partitions_count == 1)
     {
         /// A typical case is when there is one partition (you do not need to split anything).
-        result.emplace_back(std::move(block_copy), get_partition(0));
+        /// NOTE: returning a copy of the original block so that calculated partition key columns
+        /// do not interfere with possible calculated primary key columns of the same name.
+        result.emplace_back(Block(block), get_partition(0));
         return result;
     }
 
@@ -112,7 +156,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        Columns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
@@ -134,20 +178,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(partition.getID(data), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(data.partition_key_sample), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
-        DayNum_t max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum min_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 
-        DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
-        DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+        DayNum min_month = date_lut.toFirstDayNumOfMonth(DayNum(min_date));
+        DayNum max_month = date_lut.toFirstDayNumOfMonth(DayNum(max_date));
 
         if (min_month != max_month)
-            throw Exception("Logical error: part spans more than one month.");
+            throw Exception("Logical error: part spans more than one month.", ErrorCodes::LOGICAL_ERROR);
 
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
@@ -172,34 +216,46 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     dir.createDirectories();
 
-    /// If you need to calculate some columns to sort, we do it.
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-        data.getPrimaryExpression()->execute(block);
+    /// If we need to calculate some columns to sort.
+    if (data.hasSortingKey() || data.hasSkipIndices())
+        data.sorting_key_and_skip_indices_expr->execute(block);
 
-    SortDescription sort_descr = data.getSortDescription();
+    Names sort_columns = data.sorting_key_columns;
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(block.getPositionByName(sort_columns[i]), 1, 1);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
     /// Sort.
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (!sort_description.empty())
     {
-        if (!isAlreadySorted(block, sort_descr))
+        if (!isAlreadySorted(block, sort_description))
         {
-            stableGetPermutation(block, sort_descr, perm);
+            stableGetPermutation(block, sort_description, perm);
             perm_ptr = &perm;
         }
         else
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
+    if (data.hasTableTTL())
+        updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, block, "");
+
+    for (const auto & [name, ttl_entry] : data.ttl_entries_by_name)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, block, name);
+
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_settings = data.context.chooseCompressionSettings(0, 0);
+    auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
-    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_settings);
+    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
@@ -207,7 +263,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
+    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->bytes_on_disk);
 
     return new_data_part;
 }

@@ -52,18 +52,40 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         }
     }
 
+    /// Sanity check
+    if (partition_id.empty())
+    {
+        return false;
+    }
+
     Int64 min_block_num = 0;
     Int64 max_block_num = 0;
     UInt32 level = 0;
+    UInt32 mutation = 0;
 
     if (!tryReadIntText(min_block_num, in)
         || !checkChar('_', in)
         || !tryReadIntText(max_block_num, in)
         || !checkChar('_', in)
-        || !tryReadIntText(level, in)
-        || !in.eof())
+        || !tryReadIntText(level, in))
     {
         return false;
+    }
+
+    /// Sanity check
+    if (min_block_num > max_block_num)
+    {
+        return false;
+    }
+
+    if (!in.eof())
+    {
+        if (!checkChar('_', in)
+            || !tryReadIntText(mutation, in)
+            || !in.eof())
+        {
+            return false;
+        }
     }
 
     if (part_info)
@@ -72,13 +94,14 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         part_info->min_block = min_block_num;
         part_info->max_block = max_block_num;
         part_info->level = level;
+        part_info->mutation = mutation;
     }
 
     return true;
 }
 
 
-void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, DayNum_t & min_date, DayNum_t & max_date)
+void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, DayNum & min_date, DayNum & max_date)
 {
     UInt32 min_yyyymmdd = 0;
     UInt32 max_yyyymmdd = 0;
@@ -97,8 +120,8 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, Da
     min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
     max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
 
-    DayNum_t min_month = date_lut.toFirstDayNumOfMonth(min_date);
-    DayNum_t max_month = date_lut.toFirstDayNumOfMonth(max_date);
+    DayNum min_month = date_lut.toFirstDayNumOfMonth(min_date);
+    DayNum max_month = date_lut.toFirstDayNumOfMonth(max_date);
 
     if (min_month != max_month)
         throw Exception("Part name " + dir_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
@@ -125,11 +148,17 @@ String MergeTreePartInfo::getPartName() const
     writeChar('_', wb);
     writeIntText(level, wb);
 
+    if (mutation)
+    {
+        writeChar('_', wb);
+        writeIntText(mutation, wb);
+    }
+
     return wb.str();
 }
 
 
-String MergeTreePartInfo::getPartNameV0(DayNum_t left_date, DayNum_t right_date) const
+String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) const
 {
     const auto & date_lut = DateLUT::instance();
 
@@ -149,6 +178,12 @@ String MergeTreePartInfo::getPartNameV0(DayNum_t left_date, DayNum_t right_date)
     writeIntText(max_block, wb);
     writeChar('_', wb);
     writeIntText(level, wb);
+
+    if (mutation)
+    {
+        writeChar('_', wb);
+        writeIntText(mutation, wb);
+    }
 
     return wb.str();
 }

@@ -43,7 +43,7 @@ protected:
     friend class iterator;
 
     using HashValue = size_t;
-    using Self = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable>;
+    using Self = TwoLevelHashTable;
 public:
     using Impl = ImplTable;
 
@@ -98,7 +98,7 @@ public:
         /// It is assumed that the zero key (stored separately) is first in iteration order.
         if (it != src.end() && it.getPtr()->isZero(src))
         {
-            insert(*it);
+            insert(it->getValue());
             ++it;
         }
 
@@ -141,8 +141,8 @@ public:
             return *this;
         }
 
-        value_type & operator* () const { return *current_it; }
-        value_type * operator->() const { return &*current_it; }
+        Cell & operator* () const { return *current_it; }
+        Cell * operator->() const { return current_it.getPtr(); }
 
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
@@ -179,8 +179,8 @@ public:
             return *this;
         }
 
-        const value_type & operator* () const { return *current_it; }
-        const value_type * operator->() const { return &*current_it; }
+        const Cell & operator* () const { return *current_it; }
+        const Cell * operator->() const { return current_it->getPtr(); }
 
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
@@ -252,9 +252,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x)
+    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
     {
-        size_t hash_value = hash(x);
         size_t buck = getBucketFromHash(hash_value);
 
         typename Impl::iterator found = impls[buck].find(x, hash_value);
@@ -264,9 +263,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
-        size_t hash_value = hash(x);
         size_t buck = getBucketFromHash(hash_value);
 
         typename Impl::const_iterator found = impls[buck].find(x, hash_value);
@@ -274,6 +272,10 @@ public:
             ? const_iterator(this, buck, found)
             : end();
     }
+
+
+    iterator ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
+    const_iterator ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
 
     void write(DB::WriteBuffer & wb) const

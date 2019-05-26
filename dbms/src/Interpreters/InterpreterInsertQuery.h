@@ -4,7 +4,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-
+#include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
@@ -15,7 +15,7 @@ namespace DB
 class InterpreterInsertQuery : public IInterpreter
 {
 public:
-    InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_);
+    InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -24,13 +24,16 @@ public:
       */
     BlockIO execute() override;
 
-private:
-    StoragePtr getTable();
+    std::pair<String, String> getDatabaseTable() const;
 
-    Block getSampleBlock();
+private:
+    StoragePtr getTable(const ASTInsertQuery & query);
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);
+    void checkAccess(const ASTInsertQuery & query);
 
     ASTPtr query_ptr;
     const Context & context;
+    bool allow_materialized;
 };
 
 

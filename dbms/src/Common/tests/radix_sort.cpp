@@ -16,7 +16,7 @@ void NO_INLINE sort1(Key * data, size_t size)
 
 void NO_INLINE sort2(Key * data, size_t size)
 {
-    radixSort(data, size);
+    radixSortLSD(data, size);
 }
 
 void NO_INLINE sort3(Key * data, size_t size)
@@ -31,12 +31,18 @@ void NO_INLINE sort3(Key * data, size_t size)
 
 int main(int argc, char ** argv)
 {
+    if (argc < 3)
+    {
+        std::cerr << "Usage: program n method\n";
+        return 1;
+    }
+
     size_t n = DB::parse<size_t>(argv[1]);
     size_t method = DB::parse<size_t>(argv[2]);
 
     std::vector<Key> data(n);
 
-//    srand(time(0));
+//    srand(time(nullptr));
 
     {
         Stopwatch watch;
@@ -65,9 +71,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        if (method == 1)    sort1(&data[0], n);
-        if (method == 2)    sort2(&data[0], n);
-        if (method == 3)    sort3(&data[0], n);
+        if (method == 1)    sort1(data.data(), n);
+        if (method == 2)    sort2(data.data(), n);
+        if (method == 3)    sort3(data.data(), n);
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();

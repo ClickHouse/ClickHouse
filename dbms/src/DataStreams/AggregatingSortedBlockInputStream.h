@@ -1,16 +1,20 @@
 #pragma once
 
 #include <common/logger_useful.h>
+#include <memory>
 
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/AlignedBuffer.h>
 
 
 namespace DB
 {
+
+class Arena;
 
 /** Merges several sorted streams to one.
   * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
@@ -21,33 +25,12 @@ namespace DB
 class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-    AggregatingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
-    {
-    }
+    AggregatingSortedBlockInputStream(
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_);
 
     String getName() const override { return "AggregatingSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "AggregatingSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
 
 protected:
     /// Can return 1 more records than max_block_size.
@@ -59,10 +42,13 @@ private:
     /// Read finished.
     bool finished = false;
 
+    struct SimpleAggregateDescription;
+
     /// Columns with which numbers should be aggregated.
     ColumnNumbers column_numbers_to_aggregate;
     ColumnNumbers column_numbers_not_to_aggregate;
     std::vector<ColumnAggregateFunction *> columns_to_aggregate;
+    std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
 
     RowRef current_key;        /// The current primary key.
     RowRef next_key;           /// The primary key of the next row.
@@ -70,13 +56,64 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /** Extract all states of aggregate functions and merge them with the current group.
       */
-    template <typename TSortCursor>
-    void addRow(TSortCursor & cursor);
+    void addRow(SortCursor & cursor);
+
+    /** Insert all values of current row for simple aggregate functions
+     */
+    void insertSimpleAggregationResult(MutableColumns & merged_columns);
+
+    /// Does SimpleAggregateFunction allocates memory in arena?
+    bool allocatesMemoryInArena = false;
+    /// Memory pool for SimpleAggregateFunction
+    /// (only when allocatesMemoryInArena == true).
+    std::unique_ptr<Arena> arena;
+
+    /// Stores information for aggregation of SimpleAggregateFunction columns
+    struct SimpleAggregateDescription
+    {
+        /// An aggregate function 'anyLast', 'sum'...
+        AggregateFunctionPtr function;
+        IAggregateFunction::AddFunc add_function;
+        size_t column_number;
+        AlignedBuffer state;
+        bool created = false;
+
+        SimpleAggregateDescription(const AggregateFunctionPtr & function_, const size_t column_number_) : function(function_), column_number(column_number_)
+        {
+            add_function = function->getAddressOfAddFunction();
+            state.reset(function->sizeOfData(), function->alignOfData());
+        }
+
+        void createState()
+        {
+            if (created)
+                return;
+            function->create(state.data());
+            created = true;
+        }
+
+        void destroyState()
+        {
+            if (!created)
+                return;
+            function->destroy(state.data());
+            created = false;
+        }
+
+        /// Explicitly destroy aggregation state if the stream is terminated
+        ~SimpleAggregateDescription()
+        {
+            destroyState();
+        }
+
+        SimpleAggregateDescription() = default;
+        SimpleAggregateDescription(SimpleAggregateDescription &&) = default;
+        SimpleAggregateDescription(const SimpleAggregateDescription &) = delete;
+    };
 };
 
 }

@@ -41,6 +41,7 @@ public:
       */
     ReadBuffer(Position ptr, size_t size, size_t offset) : BufferBase(ptr, size, offset) {}
 
+    // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
     /** read next data and fill a buffer with it; set position to the beginning;
@@ -85,7 +86,7 @@ public:
         if (!eof())
             ++pos;
         else
-            throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throwReadAfterEOF();
     }
 
     void ignore(size_t n)
@@ -98,7 +99,7 @@ public:
         }
 
         if (n)
-            throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throwReadAfterEOF();
     }
 
     /// You could call this method `ignore`, and `ignore` call `ignoreStrict`.
@@ -114,6 +115,22 @@ public:
         }
 
         return bytes_ignored;
+    }
+
+    /** Reads a single byte. */
+    bool ALWAYS_INLINE read(char & c)
+    {
+        if (eof())
+            return false;
+        c = *pos++;
+        return true;
+    }
+
+    void ALWAYS_INLINE readStrict(char & c)
+    {
+        if (read(c))
+            return;
+        throwReadAfterEOF();
     }
 
     /** Reads as many as there are, no more than n bytes. */
@@ -135,8 +152,9 @@ public:
     /** Reads n bytes, if there are less - throws an exception. */
     void readStrict(char * to, size_t n)
     {
-        if (n != read(to, n))
-            throw Exception("Cannot read all data", ErrorCodes::CANNOT_READ_ALL_DATA);
+        auto read_bytes = read(to, n);
+        if (n != read_bytes)
+            throw Exception("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
     /** A method that can be more efficiently implemented in successors, in the case of reading large enough blocks.
@@ -159,7 +177,12 @@ private:
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
-    virtual bool nextImpl() { return false; };
+    virtual bool nextImpl() { return false; }
+
+    [[noreturn]] void throwReadAfterEOF()
+    {
+        throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+    }
 };
 
 

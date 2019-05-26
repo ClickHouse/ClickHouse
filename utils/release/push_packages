@@ -1,0 +1,234 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import argparse
+import subprocess
+import os
+import logging
+import shutil
+import base64
+
+
+# Do nothing if keys are not provided
+class GpgKey(object):
+    gnupg_dir = os.path.expanduser('~/.gnupg')
+    TEMPGNUPG_DIR = os.path.expanduser('~/.local/tempgnupg')
+
+    def __init__(self, secret_key_path, public_key_path):
+        if secret_key_path and public_key_path:
+            with open(secret_key_path, 'r') as sec, open(public_key_path, 'r') as pub:
+                self._secret_key = sec.read()
+                self._public_key = pub.read()
+        else:
+            self._secret_key = None
+            self._public_key = None
+
+    def __enter__(self):
+        if self._secret_key and self._public_key:
+            if os.path.exists(self.gnupg_dir):
+                shutil.move(self.gnupg_dir, self.TEMPGNUPG_DIR)
+            os.mkdir(self.gnupg_dir)
+            open(os.path.join(self.gnupg_dir, 'secring.gpg'), 'wb').write(base64.b64decode(self._secret_key))
+            open(os.path.join(self.gnupg_dir, 'pubring.gpg'), 'wb').write(base64.b64decode(self._public_key))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._secret_key and self._public_key:
+            shutil.rmtree(self.gnupg_dir)
+            if os.path.exists(self.TEMPGNUPG_DIR):
+                shutil.move(self.TEMPGNUPG_DIR, self.gnupg_dir)
+
+
+class DebRelease(object):
+
+    DUPLOAD_CONF_TEMPLATE = '\n\t'.join((
+        "$cfg{{'{title}'}} = {{",
+        'fqdn => "{fqdn}",',
+        'method => "{method}",',
+        'login => "{login}",',
+        'incoming => "{incoming}",',
+        'options => "{options}",',
+        'dinstall_runs => {dinstall_runs},\n}};',))
+    DUPLOAD_CONF_PATH = os.path.expanduser('~/.dupload.conf')
+    DUPLOAD_CONF_TMP_PATH = os.path.expanduser('~/.local/tmp_dupload.cnf')
+
+    def __init__(self, dupload_config, login, ssh_key_path):
+        self.__config = {}
+        for repo, conf in dupload_config.iteritems():
+            d = {
+                "fqdn": conf["fqdn"],
+                "method": "scpb",
+                "login": login,
+                "incoming": conf["incoming"],
+                "dinstall_runs": 0,
+                "options": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectionAttempts=3",
+            }
+            d.update(conf)
+            self.__config[repo] = d
+        print self.__config
+        self.ssh_key_path = ssh_key_path
+
+    def __enter__(self):
+        if os.path.exists(self.DUPLOAD_CONF_PATH):
+            shutil.move(self.DUPLOAD_CONF_PATH, self.DUPLOAD_CONF_TMP_PATH)
+        self.__dupload_conf = open(self.DUPLOAD_CONF_PATH, 'w')
+        self.__dupload_conf.write('package config;\n\n$default_host = undef;\n\n' + '\n\n'.join([
+            self.DUPLOAD_CONF_TEMPLATE.format(title=title, **values)
+            for title, values in self.__config.iteritems()]))
+        self.__dupload_conf.write('\n')
+        self.__dupload_conf.close()
+        if self.ssh_key_path:
+            subprocess.check_call("ssh-add {}".format(self.ssh_key_path), shell=True)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if os.path.exists(self.DUPLOAD_CONF_TMP_PATH):
+            shutil.move(self.DUPLOAD_CONF_TMP_PATH, self.DUPLOAD_CONF_PATH)
+        else:
+            os.unlink(self.DUPLOAD_CONF_PATH)
+
+
+class SSHConnection(object):
+    def __init__(self, user, host, ssh_key=None):
+        if ssh_key:
+            key_str = "-i {}".format(ssh_key)
+        else:
+            key_str = ""
+
+        self.base_cmd = "ssh {key} {user}@{host}".format(
+            key=key_str, user=user, host=host)
+
+    def execute(self, cmd):
+        logging.info("Executing remote cmd %s", cmd)
+        subprocess.check_call(self.base_cmd + ' "{cmd}"'.format(cmd=cmd),
+                              shell=True)
+
+
+def debsign(path, gpg_passphrase, gpg_sec_key_path, gpg_pub_key_path, gpg_user):
+    try:
+        with GpgKey(gpg_sec_key_path, gpg_pub_key_path):
+            cmd = ('debsign -k {key} -p"gpg --verbose --no-use-agent --batch '
+                   '--no-tty --passphrase {passphrase}" {path}/*.changes').format(
+                       key=gpg_user, passphrase=gpg_passphrase, path=path)
+            logging.info("Build debsign cmd '%s'", cmd)
+            subprocess.check_call(cmd, shell=True)
+            logging.info("debsign finished")
+    except Exception as ex:
+        logging.error("Cannot debsign packages on path %s, with user key", path)
+        raise ex
+
+
+def transfer_packages_scp(ssh_key, path, repo_user, repo_url, incoming_directory):
+    logging.info("Transferring packages via scp to %s", repo_url)
+    if ssh_key:
+        key_str = "-i {}".format(ssh_key)
+    else:
+        key_str = ""
+    subprocess.check_call('scp {key_str} {path}/* {user}@{repo}:{incoming}'.format(
+        path=path, user=repo_user, repo=repo_url, key_str=key_str, incoming=incoming_directory), shell=True)
+    logging.info("Transfer via scp finished")
+
+def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_directory):
+    repo_short_name = repo_url.split('.')[0]
+    config = {
+        repo_short_name: {
+            "fqdn": repo_url,
+            "incoming": incoming_directory,
+        }
+    }
+    with DebRelease(config, repo_user, ssh_key):
+        logging.info("Duploading")
+        subprocess.check_call("dupload --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
+        logging.info("Dupload finished")
+
+
+def clear_old_incoming_packages(ssh_connection, user):
+    for pkg in ('deb', 'rpm', 'tgz'):
+        for release_type in ('stable', 'testing'):
+            try:
+                ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
+                    user=user, pkg=pkg, release_type=release_type))
+            except Exception:
+                logging.info("rm is not required")
+
+
+def _get_incoming_path(repo_url, user=None, pkg_type=None, release_type=None):
+    if repo_url == 'repo.mirror.yandex.net':
+        return "/home/{user}/incoming/clickhouse/{pkg}/{release_type}".format(
+            user=user, pkg=pkg_type, release_type=release_type)
+    else:
+        return "/repo/{0}/mini-dinstall/incoming/".format(repo_url.split('.')[0])
+
+
+def _fix_args(args):
+
+    if args.gpg_sec_key_path and not os.path.isabs(args.gpg_sec_key_path):
+        args.gpg_sec_key_path = os.path.join(os.getcwd(), args.gpg_sec_key_path)
+
+    if args.gpg_pub_key_path and not os.path.isabs(args.gpg_pub_key_path):
+        args.gpg_pub_key_path = os.path.join(os.getcwd(), args.gpg_pub_key_path)
+
+    if args.ssh_key_path and not os.path.isabs(args.ssh_key_path):
+        args.ssh_key_path = os.path.join(os.getcwd(), args.ssh_key_path)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    parser = argparse.ArgumentParser(description="Programm to push clickhouse packages to repository")
+    parser.add_argument('--deb-directory')
+    parser.add_argument('--rpm-directory')
+    parser.add_argument('--tgz-directory')
+    parser.add_argument('--release-type', choices=('testing', 'stable',), default='testing')
+    parser.add_argument('--ssh-key-path')
+    parser.add_argument('--gpg-passphrase', required=True)
+    parser.add_argument('--gpg-sec-key-path')
+    parser.add_argument('--gpg-pub-key-path')
+    parser.add_argument('--gpg-key-user', default='robot-clickhouse')
+    parser.add_argument('--repo-url', default='repo.mirror.yandex.net')
+    parser.add_argument('--repo-user', default='buildfarm')
+
+    args = parser.parse_args()
+    if args.deb_directory is None and args.rpm_directory is None and args.tgz_directory is None:
+        parser.error('At least one package directory required')
+
+    _fix_args(args)
+
+    is_open_source = args.repo_url == 'repo.mirror.yandex.net'
+    ssh_connection = SSHConnection(args.repo_user, args.repo_url, args.ssh_key_path)
+
+    packages = []
+    if args.deb_directory:
+        debsign(args.deb_directory, args.gpg_passphrase, args.gpg_sec_key_path, args.gpg_pub_key_path, args.gpg_key_user)
+        packages.append((args.deb_directory, 'deb'))
+
+    if args.rpm_directory:
+        if not is_open_source:
+            raise Exception("Cannot upload .rpm package to {}".format(args.repo_url))
+        packages.append((args.rpm_directory, 'rpm'))
+
+    if args.tgz_directory:
+        if not is_open_source:
+            raise Exception("Cannot upload .tgz package to {}".format(args.repo_url))
+        packages.append((args.tgz_directory, 'tgz'))
+
+    if is_open_source:
+        logging.info("Clearing old directory with incoming packages on buildfarm")
+        clear_old_incoming_packages(ssh_connection, args.repo_user)
+        logging.info("Incoming directory cleared")
+
+        for package_path, package_type in packages:
+            logging.info("Processing path '%s' with package type %s", package_path, package_type)
+            incoming_directory = _get_incoming_path(args.repo_url, args.repo_user, package_type, args.release_type)
+            if package_type == "deb":
+                transfer_packages_dupload(args.ssh_key_path, package_path, args.repo_user, args.repo_url, incoming_directory)
+            else:
+                transfer_packages_scp(args.ssh_key_path, package_path, args.repo_user, args.repo_url, incoming_directory)
+
+            logging.info("Running clickhouse install (it takes about (20-30 minutes)")
+            ssh_connection.execute("sudo /usr/sbin/ya-clickhouse-{0}-install".format(package_type))
+            logging.info("Clickhouse installed")
+            logging.info("Pushing clickhouse to repo")
+            ssh_connection.execute("/usr/sbin/push2publicrepo.sh clickhouse")
+            logging.info("Push finished")
+            logging.info("Package '%s' pushed", package_type)
+    else:
+        transfer_packages_dupload(args.ssh_key_path, args.deb_directory, args.repo_user, args.repo_url, _get_incoming_path(args.repo_url))
