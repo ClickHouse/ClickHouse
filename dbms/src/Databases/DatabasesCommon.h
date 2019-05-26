@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Parsers/IAST.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
 
 #include <tuple>

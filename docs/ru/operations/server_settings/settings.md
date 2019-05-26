@@ -669,30 +669,57 @@ TCP порт для защищённого обмена данными с кли
 
 Конфигурация серверов ZooKeeper.
 
+Содержит параметры для взаимодействия ClickHouse с кластером [ZooKeeper](http://zookeeper.apache.org/).
+
 ClickHouse использует ZooKeeper для хранения метаданных о репликах при использовании реплицированных таблиц.
 
 Параметр можно не указывать, если реплицированные таблицы не используются.
 
-Подробно читайте в разделе "[Репликация](../../operations/table_engines/replication.md)".
+Содержит следующие параметры:
+
+- `node` — нода ZooKeeper. Может содержать несколько узлов.
+
+    Пример:
+
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    Аттрибут `index` не используется в ClickHouse. Он присутствует в примере в связи с тем, что на серверах могут быть установлены другие программы, которые могут считывать тот же конфигурационный файл.
+
+- `session_timeout_ms` — максимальный таймаут для сессии в миллисекундах (default: 30000).
+- `operation_timeout_ms` — максимальный таймаут для операции в миллисекундах (default: 10000).
+- `root` — корневая znode, которая используется сервером ClickHouse для всех остальных znode. Опционально.
+- `identity` — пара `usename:password` для авторизации в кластере ZooKeeper. Опционально.
 
 **Пример**
 
 ```xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
-        <host>example3</host>
-        <port>2181</port>
-    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
 </zookeeper>
 ```
+
+**См. также:**
+
+- [Репликация](../../operations/table_engines/replication.md).
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 

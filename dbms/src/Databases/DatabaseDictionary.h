@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace Poco

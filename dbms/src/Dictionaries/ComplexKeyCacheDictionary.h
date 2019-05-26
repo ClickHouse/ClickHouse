@@ -20,6 +20,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace ProfileEvents

@@ -7,6 +7,10 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+class Context;
+
 
 /// Parse and execute a query.
 void executeQuery(

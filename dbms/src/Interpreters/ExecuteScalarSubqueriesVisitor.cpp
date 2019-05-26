@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB

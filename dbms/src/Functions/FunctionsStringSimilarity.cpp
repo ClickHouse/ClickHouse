@@ -32,7 +32,7 @@ namespace DB
   * calculation. If the right string size is big (more than 2**15 bytes),
   * the strings are not similar at all and we return 1.
   */
-template <size_t N, class CodePoint, bool UTF8, bool CaseInsensitive>
+template <size_t N, class CodePoint, bool UTF8, bool CaseInsensitive, bool Symmetric>
 struct NgramDistanceImpl
 {
     using ResultType = Float32;
@@ -138,6 +138,7 @@ struct NgramDistanceImpl
             }
 
             /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
+            /// And first bit of first byte if there are two bytes.
             /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrrilic letters also does.
             /// For others, we don't care now. Lowering UTF is not a cheap operation.
             if constexpr (CaseInsensitive)
@@ -151,6 +152,7 @@ struct NgramDistanceImpl
                         res &= ~(1u << (5 + 2 * CHAR_BIT));
                         [[fallthrough]];
                     case 2:
+                        res &= ~(1u);
                         res &= ~(1u << (5 + CHAR_BIT));
                         [[fallthrough]];
                     default:
@@ -222,9 +224,10 @@ struct NgramDistanceImpl
             for (; iter + N <= found; ++iter)
             {
                 UInt16 hash = hash_functor(cp + iter);
+                /// For symmetric version we should add when we can't subtract to get symmetric difference.
                 if (static_cast<Int16>(ngram_stats[hash]) > 0)
                     --distance;
-                else
+                else if constexpr (Symmetric)
                     ++distance;
                 if constexpr (ReuseStats)
                     ngram_storage[ngram_cnt] = hash;
@@ -267,7 +270,8 @@ struct NgramDistanceImpl
         if (data_size <= max_string_size)
         {
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
-            res = distance * 1.f / std::max(first_size + second_size, size_t(1));
+            /// For !Symmetric version we should not use first_size.
+            res = distance * 1.f / std::max(Symmetric * first_size + second_size, size_t(1));
         }
         else
         {
@@ -326,7 +330,10 @@ struct NgramDistanceImpl
                     --common_stats[needle_ngram_storage[j]];
 
                 /// For now, common stats is a zero array.
-                res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+
+
+                /// For !Symmetric version we should not use haystack_stats_size.
+                res[i] = distance * 1.f / std::max(Symmetric * haystack_stats_size + needle_stats_size, size_t(1));
             }
             else
             {
@@ -337,6 +344,71 @@ struct NgramDistanceImpl
 
             prev_needle_offset = needle_offsets[i];
             prev_haystack_offset = haystack_offsets[i];
+        }
+    }
+
+    static void constant_vector(
+        std::string haystack,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offsets,
+        PaddedPODArray<Float32> & res)
+    {
+        /// For symmetric version it is better to use vector_constant
+        if constexpr (Symmetric)
+        {
+            vector_constant(needle_data, needle_offsets, std::move(haystack), res);
+        }
+        else
+        {
+            const size_t haystack_size = haystack.size();
+            haystack.resize(haystack_size + default_padding);
+
+            /// For logic explanation see vector_vector function.
+            const size_t needle_offsets_size = needle_offsets.size();
+            size_t prev_offset = 0;
+
+            NgramStats common_stats = {};
+
+            std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
+            std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
+
+            for (size_t i = 0; i < needle_offsets_size; ++i)
+            {
+                const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
+                const size_t needle_size = needle_offsets[i] - prev_offset - 1;
+
+                if (needle_size <= max_string_size && haystack_size <= max_string_size)
+                {
+                    const size_t needle_stats_size = dispatchSearcher(
+                        calculateNeedleStats<true>,
+                        needle,
+                        needle_size,
+                        common_stats,
+                        needle_ngram_storage.get());
+
+                    size_t distance = needle_stats_size;
+
+                    dispatchSearcher(
+                        calculateHaystackStatsAndMetric<true>,
+                        haystack.data(),
+                        haystack_size,
+                        common_stats,
+                        distance,
+                        haystack_ngram_storage.get());
+
+                    for (size_t j = 0; j < needle_stats_size; ++j)
+                        --common_stats[needle_ngram_storage[j]];
+
+                    res[i] = distance * 1.f / std::max(needle_stats_size, size_t(1));
+                }
+                else
+                {
+                    res[i] = 1.f;
+                }
+
+                prev_offset = needle_offsets[i];
+            }
+
         }
     }
 
@@ -373,7 +445,8 @@ struct NgramDistanceImpl
                     haystack_size, common_stats,
                     distance,
                     ngram_storage.get());
-                res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+                /// For !Symmetric version we should not use haystack_stats_size.
+                res[i] = distance * 1.f / std::max(Symmetric * haystack_stats_size + needle_stats_size, size_t(1));
             }
             else
             {
@@ -391,7 +464,6 @@ struct NameNgramDistance
 {
     static constexpr auto name = "ngramDistance";
 };
-
 struct NameNgramDistanceCaseInsensitive
 {
     static constexpr auto name = "ngramDistanceCaseInsensitive";
@@ -407,10 +479,34 @@ struct NameNgramDistanceUTF8CaseInsensitive
     static constexpr auto name = "ngramDistanceCaseInsensitiveUTF8";
 };
 
-using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false>, NameNgramDistance>;
-using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true>, NameNgramDistanceCaseInsensitive>;
-using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false>, NameNgramDistanceUTF8>;
-using FunctionNgramDistanceCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
+struct NameNgramEntry
+{
+    static constexpr auto name = "ngramEntry";
+};
+struct NameNgramEntryCaseInsensitive
+{
+    static constexpr auto name = "ngramEntryCaseInsensitive";
+};
+struct NameNgramEntryUTF8
+{
+    static constexpr auto name = "ngramEntryUTF8";
+};
+
+struct NameNgramEntryUTF8CaseInsensitive
+{
+    static constexpr auto name = "ngramEntryCaseInsensitiveUTF8";
+};
+
+using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, true>, NameNgramDistance>;
+using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
+using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, true>, NameNgramDistanceUTF8>;
+using FunctionNgramDistanceCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
+
+using FunctionNgramEntry = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, false>, NameNgramEntry>;
+using FunctionNgramEntryCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramEntryCaseInsensitive>;
+using FunctionNgramEntryUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramEntryUTF8>;
+using FunctionNgramEntryCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramEntryUTF8CaseInsensitive>;
+
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)
 {
@@ -418,6 +514,11 @@ void registerFunctionsStringSimilarity(FunctionFactory & factory)
     factory.registerFunction<FunctionNgramDistanceCaseInsensitive>();
     factory.registerFunction<FunctionNgramDistanceUTF8>();
     factory.registerFunction<FunctionNgramDistanceCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionNgramEntry>();
+    factory.registerFunction<FunctionNgramEntryCaseInsensitive>();
+    factory.registerFunction<FunctionNgramEntryUTF8>();
+    factory.registerFunction<FunctionNgramEntryCaseInsensitiveUTF8>();
 }
 
 }
