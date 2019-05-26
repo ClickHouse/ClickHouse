@@ -18,13 +18,50 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <variant>
 #include <common/constexpr_helpers.h>
 
 
 namespace DB
 {
+
+namespace JoinStuff
+{
+
+/// Base class with optional flag attached that's needed to implement RIGHT and FULL JOINs.
+template <typename T, bool with_used>
+struct WithFlags;
+
+template <typename T>
+struct WithFlags<T, true> : T
+{
+    using Base = T;
+    using T::T;
+
+    mutable std::atomic<bool> used {};
+    void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
+    bool getUsed() const { return used; }
+};
+
+template <typename T>
+struct WithFlags<T, false> : T
+{
+    using Base = T;
+    using T::T;
+
+    void setUsed() const {}
+    bool getUsed() const { return true; }
+};
+
+using MappedAny =       WithFlags<RowRef, false>;
+using MappedAll =       WithFlags<RowRefList, false>;
+using MappedAnyFull =   WithFlags<RowRef, true>;
+using MappedAllFull =   WithFlags<RowRefList, true>;
+using MappedAsof =      WithFlags<AsofRowRefs, false>;
+
+}
+
 /** Data structure for implementation of JOIN.
   * It is just a hash table: keys -> rows of joined ("right") table.
   * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
@@ -132,38 +169,7 @@ public:
 
     ASTTableJoin::Kind getKind() const { return kind; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
-    AsofRowRefs::LookupLists & getAsofData() { return asof_lookup_lists; }
-    const AsofRowRefs::LookupLists & getAsofData() const { return asof_lookup_lists; }
-
-    /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
-      * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
-      * with_used is for implementation of RIGHT and FULL JOINs.
-      * overwrite is for implementation of StorageJoin with overwrite setting enabled
-      * NOTE: It is possible to store the flag in one bit of pointer to block or row_num. It seems not reasonable, because memory saving is minimal.
-      */
-    template <bool with_used, bool overwrite_, typename Base>
-    struct WithFlags;
-
-    template <bool overwrite_, typename Base>
-    struct WithFlags<true, overwrite_, Base> : Base
-    {
-        static constexpr bool overwrite = overwrite_;
-        mutable std::atomic<bool> used {};
-        using Base::Base;
-        using Base_t = Base;
-        void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
-        bool getUsed() const { return used; }
-    };
-
-    template <bool overwrite_, typename Base>
-    struct WithFlags<false, overwrite_, Base> : Base
-    {
-        static constexpr bool overwrite = overwrite_;
-        using Base::Base;
-        using Base_t = Base;
-        void setUsed() const {}
-        bool getUsed() const { return true; }
-    };
+    bool anyTakeLastRow() const { return any_take_last_row; }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -259,13 +265,11 @@ public:
         }
     };
 
-    using MapsAny = MapsTemplate<WithFlags<false, false, RowRef>>;
-    using MapsAnyOverwrite = MapsTemplate<WithFlags<false, true, RowRef>>;
-    using MapsAll = MapsTemplate<WithFlags<false, false, RowRefList>>;
-    using MapsAnyFull = MapsTemplate<WithFlags<true, false, RowRef>>;
-    using MapsAnyFullOverwrite = MapsTemplate<WithFlags<true, true, RowRef>>;
-    using MapsAllFull = MapsTemplate<WithFlags<true, false, RowRefList>>;
-    using MapsAsof = MapsTemplate<WithFlags<false, false, AsofRowRefs>>;
+    using MapsAny =             MapsTemplate<JoinStuff::MappedAny>;
+    using MapsAll =             MapsTemplate<JoinStuff::MappedAll>;
+    using MapsAnyFull =         MapsTemplate<JoinStuff::MappedAnyFull>;
+    using MapsAllFull =         MapsTemplate<JoinStuff::MappedAllFull>;
+    using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
     template <ASTTableJoin::Kind KIND>
     struct KindTrait
@@ -278,13 +282,14 @@ public:
         static constexpr bool fill_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
     };
 
-    template <bool fill_right, typename ASTTableJoin::Strictness, bool overwrite>
+    template <bool fill_right, typename ASTTableJoin::Strictness>
     struct MapGetterImpl;
 
-    template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, bool overwrite>
-    using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness, overwrite>::Map;
+    template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness>
+    using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness>::Map;
 
-    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
+    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES
+        = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
     static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
         = {ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Full, ASTTableJoin::Kind::Right};
 
@@ -300,12 +305,12 @@ public:
                 if (kind == KINDS[i] && strictness == ASTTableJoin::Strictness::Any)
                 {
                     if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], ASTTableJoin::Strictness::Any, true>();
+                        maps = Map<KINDS[i], ASTTableJoin::Strictness::Any>();
                     else
                         func(
                             std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
                             std::integral_constant<ASTTableJoin::Strictness, ASTTableJoin::Strictness::Any>(),
-                            std::get<Map<KINDS[i], ASTTableJoin::Strictness::Any, true>>(maps));
+                            std::get<Map<KINDS[i], ASTTableJoin::Strictness::Any>>(maps));
                     return true;
                 }
                 return false;
@@ -322,12 +327,12 @@ public:
                 if (kind == KINDS[i] && strictness == STRICTNESSES[j])
                 {
                     if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], STRICTNESSES[j], false>();
+                        maps = Map<KINDS[i], STRICTNESSES[j]>();
                     else
                         func(
                             std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
                             std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
-                            std::get<Map<KINDS[i], STRICTNESSES[j], false>>(maps));
+                            std::get<Map<KINDS[i], STRICTNESSES[j]>>(maps));
                     return true;
                 }
                 return false;
@@ -361,7 +366,7 @@ private:
       */
     BlocksList blocks;
 
-    std::variant<MapsAny, MapsAnyOverwrite, MapsAll, MapsAnyFull, MapsAnyFullOverwrite, MapsAllFull, MapsAsof> maps;
+    std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof> maps;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
@@ -369,7 +374,6 @@ private:
 private:
     Type type = Type::EMPTY;
     std::optional<AsofRowRefs::Type> asof_type;
-    AsofRowRefs::LookupLists asof_lookup_lists;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
@@ -424,32 +428,32 @@ private:
 using JoinPtr = std::shared_ptr<Join>;
 using Joins = std::vector<JoinPtr>;
 
-template <bool overwrite_>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::Any, overwrite_>
+template <>
+struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::Any>
 {
-    using Map = std::conditional_t<overwrite_, MapsAnyOverwrite, MapsAny>;
-};
-
-template <bool overwrite_>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::Any, overwrite_>
-{
-    using Map = std::conditional_t<overwrite_, MapsAnyFullOverwrite, MapsAnyFull>;
+    using Map = MapsAny;
 };
 
 template <>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::All, false>
+struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::Any>
+{
+    using Map = MapsAnyFull;
+};
+
+template <>
+struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::All>
 {
     using Map = MapsAll;
 };
 
 template <>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All, false>
+struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All>
 {
     using Map = MapsAllFull;
 };
 
 template <bool fill_right>
-struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof, false>
+struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof>
 {
     using Map = MapsAsof;
 };

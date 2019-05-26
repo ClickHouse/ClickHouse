@@ -126,7 +126,7 @@ bool hasArrayJoin(const ASTPtr & ast)
 /// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
 void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 {
-    ASTs & elements = select_query->select_expression_list->children;
+    ASTs & elements = select_query->select()->children;
 
     std::set<String> all_column_names;
     std::set<String> assigned_column_names;
@@ -159,7 +159,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are inpossible.
 void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
-    ASTs & elements = select_query->select_expression_list->children;
+    ASTs & elements = select_query->select()->children;
 
     std::map<String, size_t> required_columns_with_duplicate_count;
 
@@ -255,7 +255,7 @@ const std::unordered_set<String> possibly_injective_function_names
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
-    if (!select_query->group_expression_list)
+    if (!select_query->groupBy())
         return;
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
@@ -263,7 +263,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         return ast->as<ASTLiteral>();
     };
 
-    auto & group_exprs = select_query->group_expression_list->children;
+    auto & group_exprs = select_query->groupBy()->children;
 
     /// removes expression at index idx by making it last one and calling .pop_back()
     const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
@@ -347,22 +347,22 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
             unused_column_name = toString(unused_column);
         }
 
-        select_query->group_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->group_expression_list->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
+        select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
     }
 }
 
 /// Remove duplicate items from ORDER BY.
 void optimizeOrderBy(const ASTSelectQuery * select_query)
 {
-    if (!select_query->order_expression_list)
+    if (!select_query->orderBy())
         return;
 
     /// Make unique sorting conditions.
     using NameAndLocale = std::pair<String, String>;
     std::set<NameAndLocale> elems_set;
 
-    ASTs & elems = select_query->order_expression_list->children;
+    ASTs & elems = select_query->orderBy()->children;
     ASTs unique_elems;
     unique_elems.reserve(elems.size());
 
@@ -376,18 +376,18 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
     }
 
     if (unique_elems.size() < elems.size())
-        elems = unique_elems;
+        elems = std::move(unique_elems);
 }
 
 /// Remove duplicate items from LIMIT BY.
 void optimizeLimitBy(const ASTSelectQuery * select_query)
 {
-    if (!select_query->limit_by_expression_list)
+    if (!select_query->limitBy())
         return;
 
     std::set<String> elems_set;
 
-    ASTs & elems = select_query->limit_by_expression_list->children;
+    ASTs & elems = select_query->limitBy()->children;
     ASTs unique_elems;
     unique_elems.reserve(elems.size());
 
@@ -398,7 +398,7 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
     }
 
     if (unique_elems.size() < elems.size())
-        elems = unique_elems;
+        elems = std::move(unique_elems);
 }
 
 /// Remove duplicated columns from USING(...).
@@ -710,9 +710,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
                                 (storage ? storage->getColumns().getOrdinary().getNames() : source_columns_list), source_columns_set,
                                 result.analyzed_join.columns_from_joined_table);
 
-        /// Depending on the user's profile, check for the execution rights
-        /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
-        InJoinSubqueriesPreprocessor(context).process(select_query);
+        /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
+        InJoinSubqueriesPreprocessor(context).visit(query);
 
         /// Optimizes logical expressions.
         LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();

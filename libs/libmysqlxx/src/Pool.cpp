@@ -168,13 +168,22 @@ Pool::Entry Pool::tryGet()
 }
 
 
+void Pool::Entry::disconnect()
+{
+    if (data)
+    {
+        decrementRefCount();
+        data->conn.disconnect();
+    }
+}
+
+
 void Pool::Entry::forceConnected() const
 {
     if (data == nullptr)
         throw Poco::RuntimeException("Tried to access NULL database connection.");
 
     Poco::Util::Application & app = Poco::Util::Application::instance();
-
     if (data->conn.ping())
         return;
 

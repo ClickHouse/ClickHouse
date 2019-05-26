@@ -8,44 +8,44 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
-DROP TABLE IF EXISTS test.view;
-DROP TABLE IF EXISTS test.null;
+DROP TABLE IF EXISTS view;
+DROP TABLE IF EXISTS null;
 
-CREATE TABLE test.null (x UInt8) ENGINE = MergeTree ORDER BY tuple();
-CREATE MATERIALIZED VIEW test.view ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM test.null;
+CREATE TABLE null (x UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW view ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM null;
 
-INSERT INTO test.null SELECT * FROM numbers(100);
-SELECT count(), min(x), max(x) FROM test.null;
-SELECT count(), min(x), max(x) FROM test.view;
+INSERT INTO null SELECT * FROM numbers(100);
+SELECT count(), min(x), max(x) FROM null;
+SELECT count(), min(x), max(x) FROM view;
 
-ALTER TABLE test.null DELETE WHERE x % 2 = 0;"
+ALTER TABLE null DELETE WHERE x % 2 = 0;"
 
 wait_for_mutation null mutation_2.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
-SELECT count(), min(x), max(x) FROM test.null;
-SELECT count(), min(x), max(x) FROM test.view;
+SELECT count(), min(x), max(x) FROM null;
+SELECT count(), min(x), max(x) FROM view;
 
-ALTER TABLE test.view DELETE WHERE x % 2 = 0;
+ALTER TABLE view DELETE WHERE x % 2 = 0;
 "
 
 wait_for_mutation .inner.view mutation_2.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
-SELECT count(), min(x), max(x) FROM test.null;
-SELECT count(), min(x), max(x) FROM test.view;
+SELECT count(), min(x), max(x) FROM null;
+SELECT count(), min(x), max(x) FROM view;
 
-ALTER TABLE test.null DELETE WHERE x % 2 = 1;
-ALTER TABLE test.view DELETE WHERE x % 2 = 1;
+ALTER TABLE null DELETE WHERE x % 2 = 1;
+ALTER TABLE view DELETE WHERE x % 2 = 1;
 "
 
 wait_for_mutation null mutation_3.txt
 wait_for_mutation .inner.view mutation_3.txt
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
-SELECT count(), min(x), max(x) FROM test.null;
-SELECT count(), min(x), max(x) FROM test.view;
+SELECT count(), min(x), max(x) FROM null;
+SELECT count(), min(x), max(x) FROM view;
 
-DROP TABLE test.view;
-DROP TABLE test.null;
+DROP TABLE view;
+DROP TABLE null;
 "

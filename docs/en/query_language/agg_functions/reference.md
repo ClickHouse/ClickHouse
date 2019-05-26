@@ -301,6 +301,60 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
+## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+timeSeriesGroupSum can aggregate different time series that sample timestamp not alignment.
+It will use linear interpolation between two sample timestamp and then sum time-series together.
+
+`uid` is the time series unique id, UInt64.
+`timestamp` is Int64 type in order to support millisecond or microsecond.
+`value` is the metric.
+
+Before use this function, timestamp should be in ascend order
+
+Example:
+```
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+```
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+And the result will be:
+```
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate of time-series and then sum rates together.
+Also, timestamp should be in ascend order before use this function.
+
+Use this function, the result above case will be:
+```
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
 ## avg(x) {#agg_function-avg}
 
 Calculates the average.
@@ -369,9 +423,12 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
-## groupUniqArray(x)
+## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
+For example, `groupUniqArray (1) (x)` is equivalent to `[any (x)]`.
 
 ## quantile(level)(x)
 
@@ -523,5 +580,41 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## simpleLinearRegression
+
+Performs simple (unidimensional) linear regression.
+
+```
+simpleLinearRegression(x, y)
+```
+
+Parameters:
+
+- `x` — Column with values of dependent variable.
+- `y` — Column with explanatory variable.
+
+Returned values:
+
+Parameters `(a, b)` of the resulting line `x = a*y + b`.
+
+**Examples**
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

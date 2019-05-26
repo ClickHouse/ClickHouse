@@ -55,34 +55,34 @@ ALTER TABLE test.alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-
 
 DROP TABLE IF EXISTS test.alter_bad_codec;
 
-DROP TABLE IF EXISTS test.large_alter_table;
-DROP TABLE IF EXISTS test.store_of_hash;
+DROP TABLE IF EXISTS test.large_alter_table_00804;
+DROP TABLE IF EXISTS test.store_of_hash_00804;
 
-CREATE TABLE test.large_alter_table (
+CREATE TABLE test.large_alter_table_00804 (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
 
-INSERT INTO test.large_alter_table SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
+INSERT INTO test.large_alter_table_00804 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 
-CREATE TABLE test.store_of_hash (hash UInt64) ENGINE = Memory();
+CREATE TABLE test.store_of_hash_00804 (hash UInt64) ENGINE = Memory();
 
-INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+INSERT INTO test.store_of_hash_00804 SELECT sum(cityHash64(*)) FROM test.large_alter_table_00804;
 
-ALTER TABLE test.large_alter_table MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
+ALTER TABLE test.large_alter_table_00804 MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
 
-OPTIMIZE TABLE test.large_alter_table;
+OPTIMIZE TABLE test.large_alter_table_00804;
 
-SELECT compression_codec FROM system.columns WHERE database = 'test' AND table = 'large_alter_table' AND name = 'data';
+SELECT compression_codec FROM system.columns WHERE database = 'test' AND table = 'large_alter_table_00804' AND name = 'data';
 
-DETACH TABLE test.large_alter_table;
-ATTACH TABLE test.large_alter_table;
+DETACH TABLE test.large_alter_table_00804;
+ATTACH TABLE test.large_alter_table_00804;
 
-INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+INSERT INTO test.store_of_hash_00804 SELECT sum(cityHash64(*)) FROM test.large_alter_table_00804;
 
-SELECT COUNT(hash) FROM test.store_of_hash;
-SELECT COUNT(DISTINCT hash) FROM test.store_of_hash;
+SELECT COUNT(hash) FROM test.store_of_hash_00804;
+SELECT COUNT(DISTINCT hash) FROM test.store_of_hash_00804;
 
-DROP TABLE IF EXISTS test.large_alter_table;
-DROP TABLE IF EXISTS test.store_of_hash;
+DROP TABLE IF EXISTS test.large_alter_table_00804;
+DROP TABLE IF EXISTS test.store_of_hash_00804;

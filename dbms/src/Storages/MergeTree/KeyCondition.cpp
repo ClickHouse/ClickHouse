@@ -285,19 +285,19 @@ KeyCondition::KeyCondition(
 
     /// Trasform WHERE section to Reverse Polish notation
     const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (select.where_expression)
+    if (select.where())
     {
-        traverseAST(select.where_expression, context, block_with_constants);
+        traverseAST(select.where(), context, block_with_constants);
 
-        if (select.prewhere_expression)
+        if (select.prewhere())
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
+            traverseAST(select.prewhere(), context, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
-    else if (select.prewhere_expression)
+    else if (select.prewhere())
     {
-        traverseAST(select.prewhere_expression, context, block_with_constants);
+        traverseAST(select.prewhere(), context, block_with_constants);
     }
     else
     {
@@ -706,7 +706,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
+            || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

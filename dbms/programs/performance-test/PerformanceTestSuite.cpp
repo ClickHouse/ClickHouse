@@ -61,6 +61,7 @@ public:
         const std::string & default_database_,
         const std::string & user_,
         const std::string & password_,
+        const Settings & cmd_settings,
         const bool lite_output_,
         const std::string & profiles_file_,
         Strings && input_files_,
@@ -87,6 +88,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -109,10 +111,6 @@ public:
         processTestsConfigurations(input_files);
 
         return 0;
-    }
-    void setContextSetting(const String & name, const std::string & value)
-    {
-        global_context.setSetting(name, value);
     }
 
 private:
@@ -204,8 +202,7 @@ private:
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
             LOG_INFO(
                 log,
-                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
-                                           << " fill queries");
+                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
@@ -298,6 +295,8 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
+    if (options.empty())
+        return result;
     for (size_t i = 0; i < options.size() - 1; ++i)
     {
         const auto & opt = options[i];
@@ -324,7 +323,6 @@ try
     using Strings = DB::Strings;
 
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
@@ -346,9 +344,10 @@ try
         ("input-files", value<Strings>()->multitoken(), "Input .xml files")
         ("query-indexes", value<std::vector<size_t>>()->multitoken(), "Input query indexes")
         ("recursive,r", "Recurse in directories to find all xml's")
-    APPLY_FOR_SETTINGS(DECLARE_SETTING);
-#undef DECLARE_SETTING
+    ;
 
+    DB::Settings cmd_settings;
+    cmd_settings.addProgramOptions(desc);
 
     po::options_description cmdline_options;
     cmdline_options.add(desc);
@@ -370,7 +369,7 @@ try
     Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
     if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
+        std::cout << "Usage: " << argv[0] << " [options]\n";
         std::cout << desc << "\n";
         return 0;
     }
@@ -395,6 +394,7 @@ try
         options["database"].as<std::string>(),
         options["user"].as<std::string>(),
         options["password"].as<std::string>(),
+        cmd_settings,
         options.count("lite") > 0,
         options["profiles-file"].as<std::string>(),
         std::move(input_files),
@@ -406,15 +406,6 @@ try
         std::move(skip_names_regexp),
         queries_with_indexes,
         timeouts);
-    /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    if (options.count(#NAME)) \
-    { \
-        performance_test_suite.setContextSetting(#NAME, options[#NAME].as<std::string>()); \
-    }
-    APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
-
     return performance_test_suite.run();
 }
 catch (...)
