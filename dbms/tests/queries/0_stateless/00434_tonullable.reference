@@ -1,1 +1,1 @@
-\N	Hello	1	\N	Hello	1	Null	Nullable(String)	Nullable(UInt8)	Null	Nullable(String)	Nullable(UInt8)
+\N	Hello	1	\N	Hello	1	Nullable(Nothing)	Nullable(String)	Nullable(UInt8)	Nullable(Nothing)	Nullable(String)	Nullable(UInt8)

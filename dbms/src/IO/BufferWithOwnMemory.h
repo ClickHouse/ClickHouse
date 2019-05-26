@@ -24,9 +24,13 @@ namespace DB
   * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
   * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
   */
-struct Memory : boost::noncopyable, Allocator<false>
+template <typename Allocator = Allocator<false>>
+struct Memory : boost::noncopyable, Allocator
 {
-    size_t m_capacity = 0;
+    /// Padding is needed to allow usage of 'memcpySmallAllowReadWriteOverflow15' function with this buffer.
+    static constexpr size_t pad_right = 15;
+
+    size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;
     char * m_data = nullptr;
     size_t alignment = 0;
@@ -69,20 +73,21 @@ struct Memory : boost::noncopyable, Allocator<false>
     {
         if (0 == m_capacity)
         {
-            m_size = m_capacity = new_size;
+            m_size = new_size;
+            m_capacity = new_size;
             alloc();
         }
-        else if (new_size < m_capacity)
+        else if (new_size <= m_size)
         {
             m_size = new_size;
             return;
         }
         else
         {
-            new_size = align(new_size, alignment);
-            m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
-            m_capacity = new_size;
-            m_size = m_capacity;
+            size_t new_capacity = align(new_size + pad_right, alignment);
+            m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
+            m_capacity = new_capacity;
+            m_size = m_capacity - pad_right;
         }
     }
 
@@ -103,13 +108,15 @@ private:
             return;
         }
 
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
+        size_t padded_capacity = m_capacity + pad_right;
 
-        size_t new_capacity = align(m_capacity, alignment);
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, padded_capacity);
+
+        size_t new_capacity = align(padded_capacity, alignment);
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
         m_capacity = new_capacity;
-        m_size = m_capacity;
+        m_size = m_capacity - pad_right;
     }
 
     void dealloc()
@@ -130,13 +137,14 @@ template <typename Base>
 class BufferWithOwnMemory : public Base
 {
 protected:
-    Memory memory;
+    Memory<> memory;
 public:
     /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
     BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);
+        Base::padded = !existing_memory;
     }
 };
 

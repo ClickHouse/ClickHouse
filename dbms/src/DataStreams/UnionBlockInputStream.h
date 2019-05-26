@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/ConcurrentBoundedQueue.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 
 
@@ -16,39 +16,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-template <StreamUnionMode mode>
-struct OutputData;
-
-/// A block or an exception.
-template <>
-struct OutputData<StreamUnionMode::Basic>
-{
-    Block block;
-    std::exception_ptr exception;
-
-    OutputData() {}
-    OutputData(Block & block_) : block(block_) {}
-    OutputData(std::exception_ptr & exception_) : exception(exception_) {}
-};
-
-/// Block + additional information or an exception.
-template <>
-struct OutputData<StreamUnionMode::ExtraInfo>
-{
-    Block block;
-    BlockExtraInfo extra_info;
-    std::exception_ptr exception;
-
-    OutputData() {}
-    OutputData(Block & block_, BlockExtraInfo & extra_info_) : block(block_), extra_info(extra_info_) {}
-    OutputData(std::exception_ptr & exception_) : exception(exception_) {}
-};
-
-}
-
 /** Merges several sources into one.
   * Blocks from different sources are interleaved with each other in an arbitrary way.
   * You can specify the number of threads (max_threads),
@@ -58,20 +25,24 @@ struct OutputData<StreamUnionMode::ExtraInfo>
   * - with the help of ParallelInputsProcessor in several threads it takes out blocks from the sources;
   * - the completed blocks are added to a limited queue of finished blocks;
   * - the main thread takes out completed blocks from the queue of finished blocks;
-  * - if the StreamUnionMode::ExtraInfo mode is specified, in addition to the UnionBlockInputStream
-  *   extracts blocks information; In this case all sources should support such mode.
   */
-
-template <StreamUnionMode mode = StreamUnionMode::Basic>
-class UnionBlockInputStream final : public IProfilingBlockInputStream
+class UnionBlockInputStream final : public IBlockInputStream
 {
+private:
+    /// A block or an exception.
+    struct OutputData
+    {
+        Block block;
+        std::exception_ptr exception;
+
+        OutputData() {}
+        OutputData(Block & block_) : block(block_) {}
+        OutputData(std::exception_ptr & exception_) : exception(exception_) {}
+    };
+
 public:
     using ExceptionCallback = std::function<void()>;
 
-private:
-    using Self = UnionBlockInputStream<mode>;
-
-public:
     UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
         ExceptionCallback exception_callback_ = ExceptionCallback()) :
         output_queue(std::min(inputs.size(), max_threads)),
@@ -82,36 +53,24 @@ public:
         children = inputs;
         if (additional_input_at_end)
             children.push_back(additional_input_at_end);
+
+        size_t num_children = children.size();
+        if (num_children > 1)
+        {
+            Block header = children.at(0)->getHeader();
+            for (size_t i = 1; i < num_children; ++i)
+                assertBlocksHaveEqualStructure(children[i]->getHeader(), header, "UNION");
+        }
     }
 
     String getName() const override { return "Union"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Union(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Order does not matter.
-        std::sort(children_ids.begin(), children_ids.end());
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
-
 
     ~UnionBlockInputStream() override
     {
         try
         {
             if (!all_read)
-                cancel();
+                cancel(false);
 
             finalize();
         }
@@ -124,20 +83,20 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       * skipping failed by execution.
       */
-    void cancel() override
+    void cancel(bool kill) override
     {
+        if (kill)
+            is_killed = true;
+
         bool old_val = false;
         if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
             return;
 
         //std::cerr << "cancelling\n";
-        processor.cancel();
+        processor.cancel(kill);
     }
 
-    BlockExtraInfo getBlockExtraInfo() const override
-    {
-        return doGetBlockExtraInfo();
-    }
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     void finalize()
@@ -153,7 +112,7 @@ protected:
             /** Let's read everything up to the end, so that ParallelInputsProcessor is not blocked when trying to insert into the queue.
               * Maybe there is an exception in the queue.
               */
-            OutputData<mode> res;
+            OutputData res;
             while (true)
             {
                 //std::cerr << "popping\n";
@@ -227,7 +186,7 @@ protected:
     void readSuffix() override
     {
         //std::cerr << "readSuffix\n";
-        if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+        if (!all_read && !isCancelled())
             throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
         finalize();
@@ -237,24 +196,9 @@ protected:
     }
 
 private:
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr) const
-    {
-        return received_payload.extra_info;
-    }
-
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr) const
-    {
-        throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
-            ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-private:
-    using Payload = OutputData<mode>;
+    using Payload = OutputData;
     using OutputQueue = ConcurrentBoundedQueue<Payload>;
 
-private:
     /** The queue of the finished blocks. Also, you can put an exception instead of a block.
       * When data is run out, an empty block is inserted into the queue.
       * Sooner or later, an empty block is always inserted into the queue (even after exception or query cancellation).
@@ -265,35 +209,23 @@ private:
 
     struct Handler
     {
-        Handler(Self & parent_) : parent(parent_) {}
+        Handler(UnionBlockInputStream & parent_) : parent(parent_) {}
 
-        template <StreamUnionMode mode2 = mode>
-        void onBlock(Block & block, size_t thread_num,
-            typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr)
+        void onBlock(Block & block, size_t /*thread_num*/)
         {
-            //std::cerr << "pushing block\n";
             parent.output_queue.push(Payload(block));
-        }
-
-        template <StreamUnionMode mode2 = mode>
-        void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num,
-            typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr)
-        {
-            //std::cerr << "pushing block with extra info\n";
-            parent.output_queue.push(Payload(block, extra_info));
         }
 
         void onFinish()
         {
-            //std::cerr << "pushing end\n";
             parent.output_queue.push(Payload());
         }
 
-        void onFinishThread(size_t thread_num)
+        void onFinishThread(size_t /*thread_num*/)
         {
         }
 
-        void onException(std::exception_ptr & exception, size_t thread_num)
+        void onException(std::exception_ptr & exception, size_t /*thread_num*/)
         {
             //std::cerr << "pushing exception\n";
 
@@ -302,14 +234,14 @@ private:
             ///  and the exception is lost.
 
             parent.output_queue.push(exception);
-            parent.cancel();    /// Does not throw exceptions.
+            parent.cancel(false);    /// Does not throw exceptions.
         }
 
-        Self & parent;
+        UnionBlockInputStream & parent;
     };
 
     Handler handler;
-    ParallelInputsProcessor<Handler, mode> processor;
+    ParallelInputsProcessor<Handler> processor;
 
     ExceptionCallback exception_callback;
 

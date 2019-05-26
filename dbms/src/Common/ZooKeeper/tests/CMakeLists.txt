@@ -1,20 +1,23 @@
 add_executable(zkutil_test_commands zkutil_test_commands.cpp)
-target_link_libraries(zkutil_test_commands dbms)
+target_link_libraries(zkutil_test_commands PRIVATE clickhouse_common_zookeeper)
+
+add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
+target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zookeeper)
 
 add_executable(zkutil_test_lock zkutil_test_lock.cpp)
-target_link_libraries(zkutil_test_lock dbms)
+target_link_libraries(zkutil_test_lock PRIVATE clickhouse_common_zookeeper)
 
 add_executable(zkutil_expiration_test zkutil_expiration_test.cpp)
-target_link_libraries(zkutil_expiration_test dbms)
+target_link_libraries(zkutil_expiration_test PRIVATE clickhouse_common_zookeeper)
 
 add_executable(zkutil_test_async zkutil_test_async.cpp)
-target_link_libraries(zkutil_test_async dbms)
+target_link_libraries(zkutil_test_async PRIVATE clickhouse_common_zookeeper)
 
 add_executable(zkutil_zookeeper_holder zkutil_zookeeper_holder.cpp)
-target_link_libraries(zkutil_zookeeper_holder dbms)
+target_link_libraries(zkutil_zookeeper_holder PRIVATE clickhouse_common_zookeeper)
 
 add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
-target_link_libraries (zk_many_watches_reconnect dbms)
+target_link_libraries (zk_many_watches_reconnect PRIVATE clickhouse_common_zookeeper clickhouse_common_config)
 
-add_executable (zkutil_test_multi_exception zkutil_test_multi_exception.cpp)
-target_link_libraries (zkutil_test_multi_exception dbms gtest_main)
+add_executable (zookeeper_impl zookeeper_impl.cpp)
+target_link_libraries (zookeeper_impl PRIVATE clickhouse_common_zookeeper)

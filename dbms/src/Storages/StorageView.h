@@ -1,57 +1,49 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
+
+#include <ext/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
-
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageView>;
-
 public:
     std::string getName() const override { return "View"; }
     std::string getTableName() const override { return table_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    bool supportsParallelReplicas() const override { return true; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-private:
-    String select_database_name;
-    String select_table_name;
-    String table_name;
-    String database_name;
-    ASTPtr inner_query;
-    Context & context;
-    NamesAndTypesListPtr columns;
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override
+    {
+        table_name = new_table_name;
+    }
 
+private:
+    String table_name;
+    ASTPtr inner_query;
+
+    void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
+
+protected:
     StorageView(
         const String & table_name_,
-        const String & database_name_,
-        Context & context_,
         const ASTCreateQuery & query,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const ColumnsDescription & columns_);
 };
 
 }

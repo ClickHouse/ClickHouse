@@ -1,16 +1,16 @@
 #include <Common/config.h>
 #if USE_MYSQL
 
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
+#    include "TechDataHierarchy.h"
 
-#include <common/logger_useful.h>
-#include <mysqlxx/PoolWithFailover.h>
+#    include <common/logger_useful.h>
+#    include <mysqlxx/PoolWithFailover.h>
 
 
 static constexpr auto config_key = "mysql_metrica";
 
 
-void TechDataHierarchy::reload(const Poco::Util::AbstractConfiguration & config)
+void TechDataHierarchy::reload()
 {
     Logger * log = &Logger::get("TechDataHierarchy");
     LOG_DEBUG(log, "Loading tech data hierarchy.");

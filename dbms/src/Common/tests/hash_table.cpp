@@ -8,7 +8,7 @@
 
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     {
         using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
@@ -21,13 +21,13 @@ int main(int argc, char ** argv)
         bool inserted;
 
         cont.emplace(3, it, inserted);
-        std::cerr << inserted << ", " << *it << std::endl;
+        std::cerr << inserted << ", " << it->getValue() << std::endl;
 
         cont.emplace(3, it, inserted);
-        std::cerr << inserted << ", " << *it << std::endl;
+        std::cerr << inserted << ", " << it->getValue() << std::endl;
 
         for (auto x : cont)
-            std::cerr << x << std::endl;
+            std::cerr << x.getValue() << std::endl;
 
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);

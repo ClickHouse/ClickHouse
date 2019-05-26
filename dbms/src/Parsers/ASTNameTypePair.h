@@ -16,18 +16,19 @@ public:
     /// type
     ASTPtr type;
 
-    ASTNameTypePair() = default;
-    ASTNameTypePair(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
-    String getID() const override { return "NameTypePair_" + name; }
+    String getID(char delim) const override { return "NameTypePair" + (delim + name); }
 
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTNameTypePair>(*this);
         res->children.clear();
 
-        if (type)     { res->type = type->clone();     res->children.push_back(res->type); }
+        if (type)
+        {
+            res->type = type;
+            res->children.push_back(res->type);
+        }
 
         return res;
     }

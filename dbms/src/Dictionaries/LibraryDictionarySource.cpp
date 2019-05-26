@@ -1,10 +1,15 @@
+#include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
-#include <Dictionaries/LibraryDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include "LibraryDictionarySourceExternal.h"
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
+#include <ext/range.h>
+#include <ext/scope_guard.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "LibraryDictionarySourceExternal.h"
+
 
 namespace DB
 {
@@ -13,6 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
+    extern const int EXTERNAL_LIBRARY_ERROR;
 }
 
 
@@ -39,91 +45,127 @@ public:
 private:
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
     Container strings_holder;
-
 };
 
 
 namespace
 {
+    constexpr auto lib_config_settings = ".settings";
 
-const std::string lib_config_settings = ".settings";
 
-
-CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
-{
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_root, config_keys);
-    CStringsHolder::Container strings;
-    for (const auto & key : config_keys)
+    CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
     {
-        std::string key_name = key;
-        auto bracket_pos = key.find('[');
-        if (bracket_pos != std::string::npos && bracket_pos > 0)
-            key_name = key.substr(0, bracket_pos);
-        strings.emplace_back(key_name);
-        strings.emplace_back(config.getString(config_root + '.' + key));
-    }
-    return CStringsHolder(strings);
-}
-
-
-bool dataToBlock(const void * data, Block & block)
-{
-    if (!data)
-        return true;
-
-    auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
-    std::vector<IColumn *> columns(block.columns());
-    for (const auto i : ext::range(0, columns.size()))
-        columns[i] = block.getByPosition(i).column.get();
-    for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
-    {
-        if (columns.size() != columns_received->data[col_n].size)
-            throw Exception("Received unexpected number of columns: " + std::to_string(columns_received->data[col_n].size) + ", must be"
-                    + std::to_string(columns.size()),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(config_root, config_keys);
+        CStringsHolder::Container strings;
+        for (const auto & key : config_keys)
         {
-            columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
+            std::string key_name = key;
+            auto bracket_pos = key.find('[');
+            if (bracket_pos != std::string::npos && bracket_pos > 0)
+                key_name = key.substr(0, bracket_pos);
+            strings.emplace_back(key_name);
+            strings.emplace_back(config.getString(config_root + "." + key));
         }
+        return CStringsHolder(strings);
     }
-    return false;
+
+
+    Block dataToBlock(const Block & sample_block, const void * data)
+    {
+        if (!data)
+            throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+
+        auto columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
+        if (columns_received->error_code)
+            throw Exception(
+                "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
+                    + (columns_received->error_string ? columns_received->error_string : ""),
+                ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+
+        MutableColumns columns(sample_block.columns());
+        for (const auto i : ext::range(0, columns.size()))
+            columns[i] = sample_block.getByPosition(i).column->cloneEmpty();
+
+        for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
+        {
+            if (columns.size() != columns_received->data[col_n].size)
+                throw Exception(
+                    "LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
+                        + ", must be " + std::to_string(columns.size()),
+                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+            for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
+            {
+                const auto & field = columns_received->data[col_n].data[row_n];
+                if (!field.data)
+                {
+                    /// sample_block contains null_value (from config) inside corresponding column
+                    const auto & col = sample_block.getByPosition(row_n);
+                    columns[row_n]->insertFrom(*(col.column), 0);
+                }
+                else
+                {
+                    const auto & size = field.size;
+                    columns[row_n]->insertData(static_cast<const char *>(field.data), size);
+                }
+            }
+        }
+
+        return sample_block.cloneWithColumns(std::move(columns));
+    }
 }
 
-}
 
-
-LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dict_struct_,
+LibraryDictionarySource::LibraryDictionarySource(
+    const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block,
-    const Context & context)
-    : log(&Logger::get("LibraryDictionarySource")),
-      dict_struct{dict_struct_},
-      config_prefix{config_prefix},
-      path{config.getString(config_prefix + ".path", "")},
-      sample_block{sample_block},
-      context(context)
+    Block & sample_block)
+    : log(&Logger::get("LibraryDictionarySource"))
+    , dict_struct{dict_struct_}
+    , config_prefix{config_prefix}
+    , path{config.getString(config_prefix + ".path", "")}
+    , sample_block{sample_block}
 {
     if (!Poco::File(path).exists())
-    {
-        throw Exception("LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+        throw Exception(
+            "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
-    }
     description.init(sample_block);
-    library = std::make_shared<SharedLibrary>(path);
+    library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
+#if defined(RTLD_DEEPBIND) // Does not exists in freebsd
+        | RTLD_DEEPBIND
+#endif
+    );
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
+    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+            "ClickHouseDictionary_v3_libNew"))
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
-    : log(&Logger::get("LibraryDictionarySource")),
-      dict_struct{other.dict_struct},
-      config_prefix{other.config_prefix},
-      path{other.path},
-      sample_block{other.sample_block},
-      context(other.context)
+    : log(&Logger::get("LibraryDictionarySource"))
+    , dict_struct{other.dict_struct}
+    , config_prefix{other.config_prefix}
+    , path{other.path}
+    , sample_block{other.sample_block}
+    , library{other.library}
+    , description{other.description}
+    , settings{other.settings}
 {
+    if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
+        lib_data = libClone(other.lib_data);
+    else if (
+        auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+            "ClickHouseDictionary_v3_libNew"))
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
+}
+
+LibraryDictionarySource::~LibraryDictionarySource()
+{
+    if (auto libDelete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
+        libDelete(lib_data);
 }
 
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
@@ -131,8 +173,8 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll " + toString());
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
-    ClickHouseLibrary::CStrings columns{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
+                                        dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -141,14 +183,13 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     }
     void * data_ptr = nullptr;
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
-    auto fptr
-        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v1_loadAll");
-    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
-    auto data = fptr(data_ptr, &settings->strings, &columns);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
-    library->get<void (*)(void *)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
+    /// Get function pointer before dataNew call because library->get may throw.
+    auto func_loadAll
+        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v3_loadAll");
+    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
+    auto data = func_loadAll(data_ptr, &settings->strings, &columns);
+    auto block = dataToBlock(description.sample_block, data);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -158,8 +199,8 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
-    ClickHouseLibrary::CStrings columns_pass{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
+                                             dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -168,14 +209,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     }
     void * data_ptr = nullptr;
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
-    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
-        "ClickHouseDictionary_v1_loadIds");
-    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
-    auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
-    library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
+    /// Get function pointer before dataNew call because library->get may throw.
+    auto func_loadIds
+        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
+            "ClickHouseDictionary_v3_loadIds");
+    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
+    auto data = func_loadIds(data_ptr, &settings->strings, &columns_pass, &ids_data);
+    auto block = dataToBlock(description.sample_block, data);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -183,53 +224,48 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
-    /*
-    auto columns_c = std::make_unique<ClickHouseLibrary::Columns>(key_columns.size() + 1);
-    size_t i = 0;
-    for (auto & column : key_columns)
+    auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
+    std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
+    for (size_t i = 0; i < key_columns.size(); ++i)
     {
-        columns_c[i] = column->getName().c_str();
-        ++i;
-    }
-    columns_c[i] = nullptr;
-*/
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(key_columns.size());
-    ClickHouseLibrary::CStrings columns_pass{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
-    size_t key_columns_n = 0;
-    for (auto & column : key_columns)
-    {
-        columns_pass.data[key_columns_n] = column->getName().c_str();
-        ++key_columns_n;
-    }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
-    void * data_ptr = nullptr;
+        auto cell_holder = std::make_unique<ClickHouseLibrary::Field[]>(requested_rows.size());
+        for (size_t j = 0; j < requested_rows.size(); ++j)
+        {
+            auto data_ref = key_columns[i]->getDataAt(requested_rows[j]);
+            cell_holder[j] = ClickHouseLibrary::Field{.data = static_cast<const void *>(data_ref.data), .size = data_ref.size};
+        }
+        holder[i]
+            = ClickHouseLibrary::Row{.data = static_cast<ClickHouseLibrary::Field *>(cell_holder.get()), .size = requested_rows.size()};
 
-    /// Get function pointer before dataAllocate call because library->get may throw.
-    auto fptr
-        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
-            "ClickHouseDictionary_v1_loadKeys");
-    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
-    auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
-    auto block = description.sample_block.cloneEmpty();
-    dataToBlock(data, block);
-    library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
+        column_data_holders.push_back(std::move(cell_holder));
+    }
+
+    ClickHouseLibrary::Table request_cols{.data = static_cast<ClickHouseLibrary::Row *>(holder.get()), .size = key_columns.size()};
+
+    void * data_ptr = nullptr;
+    /// Get function pointer before dataNew call because library->get may throw.
+    auto func_loadKeys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
+        "ClickHouseDictionary_v3_loadKeys");
+    data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
+    auto data = func_loadKeys(data_ptr, &settings->strings, &request_cols);
+    auto block = dataToBlock(description.sample_block, data);
+    SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
 }
 
 bool LibraryDictionarySource::isModified() const
 {
-    auto fptr = library->tryGet<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_isModified");
-    if (fptr)
-        return fptr(&settings->strings);
+    if (auto func_isModified
+        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_isModified"))
+        return func_isModified(lib_data, &settings->strings);
     return true;
 }
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    auto fptr = library->tryGet<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_supportsSelectiveLoad");
-    if (fptr)
-        return fptr(&settings->strings);
+    if (auto func_supportsSelectiveLoad
+        = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
+        return func_supportsSelectiveLoad(lib_data, &settings->strings);
     return true;
 }
 
@@ -242,4 +278,18 @@ std::string LibraryDictionarySource::toString() const
 {
     return path;
 }
+
+void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context &) -> DictionarySourcePtr
+    {
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block);
+    };
+    factory.registerSource("library", createTableSource);
+}
+
 }

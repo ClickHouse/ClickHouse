@@ -1,10 +1,15 @@
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <Common/UTF8Helpers.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <limits>
 
@@ -66,17 +71,17 @@ void DataTypeEnum<Type>::fillMaps()
     {
         const auto name_to_value_pair = name_to_value_map.insert(
             { StringRef{name_and_value.first}, name_and_value.second });
+
         if (!name_to_value_pair.second)
-            throw Exception{
-                "Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
+            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+                    + " and '" + name_to_value_pair.first->getFirst().toString() + "' = " + toString(name_to_value_pair.first->getSecond()),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
+
         if (!value_to_name_pair.second)
-            throw Exception{
-                "Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
                     + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(value_to_name_pair.first->first),
                 ErrorCodes::SYNTAX_ERROR};
     }
@@ -86,37 +91,21 @@ template <typename Type>
 DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 {
     if (values.empty())
-        throw Exception{
-            "DataTypeEnum enumeration cannot be empty",
-            ErrorCodes::EMPTY_DATA_PASSED};
-
-    fillMaps();
+        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
 
     std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
         return left.second < right.second;
     });
 
-    name = generateName(values);
-}
-
-template <typename Type>
-DataTypeEnum<Type>::DataTypeEnum(const DataTypeEnum & other) : values{other.values}, name{other.name}
-{
     fillMaps();
+    type_name = generateName(values);
 }
-
-template <typename Type>
-DataTypePtr DataTypeEnum<Type>::clone() const
-{
-    return std::make_shared<DataTypeEnum>(*this);
-}
-
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
+    const FieldType x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -143,72 +132,72 @@ void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
-    std::string name;
-    readEscapedString(name, istr);
-    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+    std::string field_name;
+    readEscapedString(field_name, istr);
+    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    std::string name;
-    readQuotedStringWithSQLStyle(name, istr);
-    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+    std::string field_name;
+    readQuotedStringWithSQLStyle(field_name, istr);
+    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    std::string name;
-    readJSONString(name, istr);
-    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+    std::string field_name;
+    readJSONString(field_name, istr);
+    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    std::string name;
-    readCSVString(name, istr, delimiter);
-    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
+    std::string field_name;
+    readCSVString(field_name, istr, settings.csv);
+    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
 }
 
 template <typename Type>
@@ -226,7 +215,7 @@ void DataTypeEnum<Type>::serializeBinaryBulk(
 
 template <typename Type>
 void DataTypeEnum<Type>::deserializeBinaryBulk(
-    IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const
+    IColumn & column, ReadBuffer & istr, const size_t limit, const double /*avg_value_size_hint*/) const
 {
     auto & x = typeid_cast<ColumnType &>(column).getData();
     const auto initial_size = x.size();
@@ -236,15 +225,72 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    protobuf.prepareEnumMapping(values);
+    value_index = static_cast<bool>(protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]));
+}
+
+template<typename Type>
+void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    protobuf.prepareEnumMapping(values);
+    row_added = false;
+    Type value;
+    if (!protobuf.readEnum(value))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
+}
+
+template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type(values.front().second);
+    return values.front().second;
 }
 
 template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     static_cast<ColumnType &>(column).getData().push_back(values.front().second);
+}
+
+template <typename Type>
+bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
+}
+
+
+template <typename Type>
+bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
+{
+    for (const auto & elem : values)
+    {
+        const char * pos = elem.first.data();
+        const char * end = pos + elem.first.size();
+        while (pos < end)
+        {
+            size_t length = UTF8::seqLength(*pos);
+            if (pos + length > end)
+                return false;
+
+            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), length))
+                pos += length;
+            else
+                return false;
+        }
+    }
+    return true;
 }
 
 template <typename Type>
@@ -277,7 +323,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return static_cast<Int64>(getValue(value_or_name.get<String>()));
+        return getValue(value_or_name.get<String>());
     }
     else if (value_or_name.getType() == Field::Types::Int64
           || value_or_name.getType() == Field::Types::UInt64)
@@ -300,7 +346,7 @@ template class DataTypeEnum<Int16>;
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.empty())
+    if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     typename DataTypeEnum::Values values;
@@ -311,7 +357,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        const auto * func = child->as<ASTFunction>();
         if (!func
             || func->name != "equals"
             || func->parameters
@@ -320,8 +366,8 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-        const ASTLiteral * name_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[0].get());
-        const ASTLiteral * value_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[1].get());
+        const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
         if (!name_literal
             || !value_literal
@@ -330,15 +376,14 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-        const String & name = name_literal->value.get<String>();
-        const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
+        const String & field_name = name_literal->value.get<String>();
+        const auto value = value_literal->value.get<NearestFieldType<FieldType>>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
-            throw Exception{
-                "Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
+            throw Exception{"Value " + toString(value) + " for element '" + field_name + "' exceeds range of " + EnumName<FieldType>::value,
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        values.emplace_back(name, value);
+        values.emplace_back(field_name, value);
     }
 
     return std::make_shared<DataTypeEnum>(values);

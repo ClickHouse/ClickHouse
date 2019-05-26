@@ -1,4 +1,4 @@
-#include <Common/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <iostream>
 
 int main(int argc, char ** argv)
@@ -11,8 +11,8 @@ int main(int argc, char ** argv)
             return 3;
         }
 
-        ConfigProcessor processor(false, true);
-        XMLDocumentPtr document = processor.processConfig(argv[1]);
+        DB::ConfigProcessor processor(argv[1], false, true);
+        DB::XMLDocumentPtr document = processor.processConfig();
         Poco::XML::DOMWriter().writeNode(std::cout, document);
     }
     catch (Poco::Exception & e)

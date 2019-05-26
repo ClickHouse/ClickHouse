@@ -1,10 +1,12 @@
 #pragma once
 
+#if defined(__linux__) || defined(__FreeBSD__)
+
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/AIO.h>
 #include <Core/Defines.h>
-#include <Common/AIO.h>
 #include <Common/CurrentMetrics.h>
 
 #include <string>
@@ -56,9 +58,8 @@ private:
     BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
     /// Description of the asynchronous write request.
-    iocb request = { 0 };
-    std::vector<iocb *> request_ptrs{&request};
-    std::vector<io_event> events{1};
+    iocb request{};
+    iocb * request_ptr{&request};
 
     AIOContext aio_context{1};
 
@@ -97,3 +98,5 @@ private:
 };
 
 }
+
+#endif

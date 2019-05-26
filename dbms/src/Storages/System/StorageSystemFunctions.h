@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -13,28 +13,17 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
-class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorage
+class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorageSystemOneBlock<StorageSystemFunctions>
 {
-friend class ext::shared_ptr_helper<StorageSystemFunctions>;
 public:
     std::string getName() const override { return "SystemFunctions"; }
-    std::string getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+    static NamesAndTypesList getNamesAndTypes();
 
-private:
-    StorageSystemFunctions(const std::string & name_);
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-private:
-    const std::string name;
-    NamesAndTypesList columns;
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

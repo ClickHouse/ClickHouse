@@ -1,13 +1,10 @@
 #pragma once
 
-#include <vector>
+#include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Common/Stopwatch.h>
 
-#include <Core/Types.h>
-
-#if __APPLE__
-#include <common/apple_rt.h>
-#endif
+#include <vector>
 
 namespace DB
 {
@@ -15,13 +12,12 @@ namespace DB
 class Block;
 class ReadBuffer;
 class WriteBuffer;
-class IProfilingBlockInputStream;
 
-/// Information for profiling. See IProfilingBlockInputStream.h
+/// Information for profiling. See IBlockInputStream.h
 struct BlockStreamProfileInfo
 {
     /// Info about stream object this profile info refers to.
-    IProfilingBlockInputStream * parent = nullptr;
+    IBlockInputStream * parent = nullptr;
 
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time

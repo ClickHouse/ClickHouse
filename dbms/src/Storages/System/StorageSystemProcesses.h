@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,28 +12,17 @@ class Context;
 
 /** Implements `processes` system table, which allows you to get information about the queries that are currently executing.
   */
-class StorageSystemProcesses : public ext::shared_ptr_helper<StorageSystemProcesses>, public IStorage
+class StorageSystemProcesses : public ext::shared_ptr_helper<StorageSystemProcesses>, public IStorageSystemOneBlock<StorageSystemProcesses>
 {
-friend class ext::shared_ptr_helper<StorageSystemProcesses>;
 public:
     std::string getName() const override { return "SystemProcesses"; }
-    std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    static NamesAndTypesList getNamesAndTypes();
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-private:
-    const std::string name;
-    NamesAndTypesList columns;
-
-    StorageSystemProcesses(const std::string & name_);
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

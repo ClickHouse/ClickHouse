@@ -1,23 +1,25 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Core/Defines.h>
+#include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Core/TypeListNumber.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#if !__clang__
 #pragma GCC diagnostic push
+
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <boost/geometry.hpp>
 
-#if !__clang__
 #pragma GCC diagnostic pop
-#endif
 
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -107,7 +109,8 @@ private:
         inner,
         outer,
         singleLine,
-        pairOfLinesSinglePolygon,
+        pairOfLinesSingleConvexPolygon,
+        pairOfLinesSingleNonConvexPolygons,
         pairOfLinesDifferentPolygons,
         complexPolygon
     };
@@ -179,6 +182,9 @@ private:
     /// Returns a list of half-planes were formed from intersection edges without box edges.
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
+    /// Check that polygon.outer() is convex.
+    inline bool isConvex(const Polygon & polygon);
+
     using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
 
     /// min(distance(point, edge) : edge in polygon)
@@ -194,8 +200,8 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
     size += polygons.capacity() * sizeof(MultiPolygon);
     size += getPolygonAllocatedBytes(polygon);
 
-    for (const auto & polygon : polygons)
-        size += getMultiPolygonAllocatedBytes(polygon);
+    for (const auto & elem : polygons)
+        size += getMultiPolygonAllocatedBytes(elem);
 
     return size;
 }
@@ -305,25 +311,25 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return false;
         case CellType::singleLine:
             return cell.half_planes[0].contains(x, y);
-        case CellType::pairOfLinesSinglePolygon:
+        case CellType::pairOfLinesSingleConvexPolygon:
             return cell.half_planes[0].contains(x, y) && cell.half_planes[1].contains(x, y);
-        case CellType::pairOfLinesDifferentPolygons:
+        case CellType::pairOfLinesDifferentPolygons: [[fallthrough]];
+        case CellType::pairOfLinesSingleNonConvexPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
-        default:
-            return false;
-
     }
+
+    __builtin_unreachable();
 }
 
 template <typename CoordinateType>
 typename PointInPolygonWithGrid<CoordinateType>::Distance
 PointInPolygonWithGrid<CoordinateType>::distance(
         const PointInPolygonWithGrid<CoordinateType>::Point & point,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+        const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
 {
-    const auto & outer = polygon.outer();
+    const auto & outer = poly.outer();
     Distance distance = 0;
     for (auto i : ext::range(0, outer.size() - 1))
     {
@@ -332,6 +338,35 @@ PointInPolygonWithGrid<CoordinateType>::distance(
         distance = i ? std::min(current, distance) : current;
     }
     return distance;
+}
+
+template <typename CoordinateType>
+bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
+{
+    const auto & outer = poly.outer();
+    /// Segment or point.
+    if (outer.size() < 4)
+        return false;
+
+    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto getVector = [](const Point & from, const Point & to) -> Point
+    {
+        return Point(to.x() - from.x(), to.y() - from.y());
+    };
+
+    Point first = getVector(outer[0], outer[1]);
+    Point prev = first;
+
+    for (auto i : ext::range(1, outer.size() - 1))
+    {
+        Point cur = getVector(outer[i], outer[i + 1]);
+        if (vecProduct(prev, cur) < 0)
+            return false;
+
+        prev = cur;
+    }
+
+    return vecProduct(prev, first) >= 0;
 }
 
 template <typename CoordinateType>
@@ -369,9 +404,9 @@ void PointInPolygonWithGrid<CoordinateType>::addComplexPolygonCell(
     cells[index].index_of_inner_polygon = polygons.size();
 
     /// Expand box in (1 + eps_factor) times to eliminate errors for points on box bound.
-    static constexpr float eps_factor = 0.01;
-    float x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
-    float y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
+    static constexpr CoordinateType eps_factor = 0.01;
+    auto x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
+    auto y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
 
     Point min_corner(box.min_corner().x() - x_eps, box.min_corner().y() - y_eps);
     Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
@@ -422,7 +457,8 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
     }
     else if (half_planes.size() == 2)
     {
-        cells[index].type = CellType::pairOfLinesSinglePolygon;
+        cells[index].type = isConvex(intersection) ? CellType::pairOfLinesSingleConvexPolygon
+                                                   : CellType::pairOfLinesSingleNonConvexPolygons;
         cells[index].half_planes[0] = half_planes[0];
         cells[index].half_planes[1] = half_planes[1];
     }
@@ -513,10 +549,10 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
 
     if (impl.hasEmptyBound())
     {
-        return std::make_shared<ColumnVector<UInt8>>(size, 0);
+        return ColumnVector<UInt8>::create(size, 0);
     }
 
-    auto result = std::make_shared<ColumnVector<UInt8>>(size);
+    auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
 
     const auto & x_data = x.getData();
@@ -558,15 +594,15 @@ template <>
 struct CallPointInPolygon<>
 {
     template <typename T, typename PointInPolygonImpl>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
+    static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename PointInPolygonImpl>
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
+    static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -579,36 +615,35 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 
 /// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
 template <typename Linestring>
-float calcLinestringRotation(const Linestring & points)
+double calcLinestringRotation(const Linestring & points)
 {
-    using Point = typename std::decay<decltype(*points.begin())>::type;
-    float rotation = 0;
+    using Point = std::decay_t<decltype(*points.begin())>;
+    double rotation = 0;
 
-    auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
     auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto scalarProduct = [](const Point & from, const Point & to) { return from.x() * to.x() + from.y() * to.y(); };
     auto getVector = [](const Point & from, const Point & to) -> Point
     {
         return Point(to.x() - from.x(), to.y() - from.y());
     };
 
-    for (auto it = points.begin(); std::next(it) != points.end(); ++it)
+    for (auto it = points.begin(); it != points.end(); ++it)
     {
         if (it != points.begin())
         {
             auto prev = std::prev(it);
             auto next = std::next(it);
+
+            if (next == points.end())
+                next = std::next(points.begin());
+
             Point from = getVector(*prev, *it);
             Point to = getVector(*it, *next);
-            float sqr_from_len = sqrLength(from);
-            float sqr_to_len = sqrLength(to);
-            float sqr_len_product = (sqr_from_len * sqr_to_len);
-            if (std::isfinite(sqr_len_product))
-            {
-                float vec_prod = vecProduct(from, to);
-                float sin_ang = vec_prod * std::fabs(vec_prod) / sqr_len_product;
-                sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
-                rotation += std::asin(sin_ang);
-            }
+
+            auto vec_prod = vecProduct(from, to);
+            auto scalar_prod = scalarProduct(from, to);
+            auto ang = std::atan2(vec_prod, scalar_prod);
+            rotation += ang;
         }
     }
 
@@ -638,7 +673,7 @@ std::string serialize(Polygon && polygon)
     {
         WriteBufferFromString buffer(result);
 
-        using RingType = typename std::decay<Polygon>::type::ring_type;
+        using RingType = typename std::decay_t<Polygon>::ring_type;
 
         auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
         auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
@@ -663,6 +698,10 @@ std::string serialize(Polygon && polygon)
 
     return result;
 }
+
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out);
+
+void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
 
 
 } /// GeoUtils

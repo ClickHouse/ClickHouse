@@ -1,17 +1,30 @@
-FROM ubuntu:14.04
+FROM ubuntu:18.04
 
-RUN apt-get update -y
+RUN apt-get update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-install-recommends \
+            bash \
+            ccache \
+            cmake \
+            curl \
+            expect \
+            g++ \
+            gcc \
+            libclang-6.0-dev \
+            libicu-dev \
+            liblld-6.0-dev \
+            libreadline-dev \
+            gperf \
+            ninja-build \
+            perl \
+            pkg-config \
+            python \
+            python-lxml \
+            python-requests \
+            python-termcolor \
+            sudo \
+            tzdata
 
-RUN apt-get install -y software-properties-common && \
-	add-apt-repository ppa:ubuntu-toolchain-r/test
+COPY build.sh /
 
-RUN apt-get update -y && \
-	apt-get install -y cmake libssl-dev libcrypto++-dev \
-		libglib2.0-dev libltdl-dev libicu-dev libmysql++-dev \
-		gcc-5 g++-5 unixodbc-dev
-
-ADD build.sh /
-RUN chmod +x /build.sh
-
-
-CMD ["/build.sh"]
+CMD ["/bin/bash", "/build.sh"]

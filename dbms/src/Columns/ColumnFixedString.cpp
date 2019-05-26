@@ -1,14 +1,16 @@
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <IO/WriteHelpers.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -25,9 +27,9 @@ namespace ErrorCodes
 }
 
 
-ColumnPtr ColumnFixedString::cloneResized(size_t size) const
+MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 {
-    ColumnPtr new_col_holder = std::make_shared<ColumnFixedString>(n);
+    MutableColumnPtr new_col_holder = ColumnFixedString::create(n);
 
     if (size > 0)
     {
@@ -35,7 +37,7 @@ ColumnPtr ColumnFixedString::cloneResized(size_t size) const
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&(new_col.chars[0]), &chars[0], count * n * sizeof(chars[0]));
+        memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
 
         if (size > count)
             memset(&(new_col.chars[count * n]), '\0', (size - count) * n);
@@ -53,7 +55,7 @@ void ColumnFixedString::insert(const Field & x)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], s.data(), s.size());
+    memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -65,7 +67,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[n * index], n);
+    memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
 void ColumnFixedString::insertData(const char * pos, size_t length)
@@ -75,7 +77,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], pos, length);
+    memcpy(chars.data() + old_size, pos, length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -89,7 +91,7 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(&chars[old_size], pos, n);
+    memcpy(chars.data() + old_size, pos, n);
     return pos + n;
 }
 
@@ -105,13 +107,12 @@ struct ColumnFixedString::less
     explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        /// TODO: memcmp slows down.
-        int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+        int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
         return positive ? (res < 0) : (res > 0);
     }
 };
 
-void ColumnFixedString::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = size();
     res.resize(s);
@@ -150,7 +151,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
-    memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
+    memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
@@ -159,16 +160,16 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     if (col_size != filt.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    auto res = ColumnFixedString::create(n);
 
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
-    const UInt8 * filt_pos = &filt[0];
+    const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;
-    const UInt8 * data_pos = &chars[0];
+    const UInt8 * data_pos = chars.data();
 
-#if __SSE2__
+#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.
@@ -243,11 +244,11 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return std::make_shared<ColumnFixedString>(n);
+        return ColumnFixedString::create(n);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    auto res = ColumnFixedString::create(n);
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
 
     res_chars.resize(n * limit);
 
@@ -258,21 +259,47 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
     return res;
 }
 
-ColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
+
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+
+template <typename Type>
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnFixedString::create(n);
+
+    auto res = ColumnFixedString::create(n);
+
+    Chars & res_chars = res->chars;
+
+    res_chars.resize(n * limit);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < limit; ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
+
+    return res;
+}
+
+ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    auto res = ColumnFixedString::create(n);
 
     if (0 == col_size)
         return res;
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     res_chars.resize(n * offsets.back());
 
-    Offset_t curr_offset = 0;
+    Offset curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
         for (size_t next_offset = offsets[i]; curr_offset < next_offset; ++curr_offset)
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);

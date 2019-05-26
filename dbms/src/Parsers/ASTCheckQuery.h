@@ -1,16 +1,14 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 
 namespace DB
 {
 
-struct ASTCheckQuery : public ASTQueryWithOutput
+struct ASTCheckQuery : public ASTQueryWithTableAndOutput
 {
-    ASTCheckQuery(StringRange range_ = StringRange()) : ASTQueryWithOutput(range_) {};
-
     /** Get the text that identifies this element. */
-    String getID() const override { return ("CheckQuery_" + database + "_" + table); };
+    String getID(char delim) const override { return "CheckQuery" + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
@@ -20,11 +18,8 @@ struct ASTCheckQuery : public ASTQueryWithOutput
         return res;
     }
 
-    std::string database;
-    std::string table;
-
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const override
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
 

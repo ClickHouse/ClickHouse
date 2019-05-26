@@ -1,19 +1,25 @@
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
-#include "FunctionsArithmetic.h"
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
-    if (!column->isConst())
+    if (!column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -26,118 +32,90 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 }
 
 
-ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column)
+Columns convertConstTupleToConstantElements(const ColumnConst & column)
 {
-    Block res;
     const ColumnTuple & src_tuple = static_cast<const ColumnTuple &>(column.getDataColumn());
-    const Block & src_tuple_block = src_tuple.getData();
-    size_t rows = src_tuple_block.rows();
+    const auto & src_tuple_columns = src_tuple.getColumns();
+    size_t tuple_size = src_tuple_columns.size();
+    size_t rows = column.size();
 
-    for (size_t i = 0, size = src_tuple_block.columns(); i < size; ++i)
-        res.insert({
-            std::make_shared<ColumnConst>(src_tuple_block.getByPosition(i).column, rows),
-            src_tuple_block.getByPosition(i).type,
-            src_tuple_block.getByPosition(i).name});
+    Columns res(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        res[i] = ColumnConst::create(src_tuple_columns[i], rows);
 
-    return std::make_shared<ColumnTuple>(res);
+    return res;
 }
 
 
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
+static Block createBlockWithNestedColumnsImpl(const Block & block, const std::unordered_set<size_t> & args)
 {
-    std::sort(args.begin(), args.end());
-
     Block res;
+    size_t columns = block.columns();
 
-    size_t j = 0;
-    for (size_t i = 0; i < block.columns(); ++i)
+    for (size_t i = 0; i < columns; ++i)
     {
         const auto & col = block.getByPosition(i);
-        bool is_inserted = false;
 
-        if ((j < args.size()) && (i == args[j]))
+        if (args.count(i) && col.type->isNullable())
         {
-            ++j;
+            const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
-            if (col.column->isNullable())
+            if (!col.column)
             {
-                auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
-                const ColumnPtr & nested_col = nullable_col->getNestedColumn();
-
-                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-                const DataTypePtr & nested_type = nullable_type->getNestedType();
-
-                res.insert(i, {nested_col, nested_type, col.name});
-
-                is_inserted = true;
+                res.insert({nullptr, nested_type, col.name});
             }
-        }
+            else if (col.column->isColumnNullable())
+            {
+                const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
 
-        if (!is_inserted)
-            res.insert(i, col);
+                res.insert({nested_col, nested_type, col.name});
+            }
+            else if (col.column->isColumnConst())
+            {
+                const auto & nested_col = static_cast<const ColumnNullable &>(
+                    static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
+
+                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+            }
+            else
+                throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
+        }
+        else
+            res.insert(col);
     }
 
     return res;
 }
 
 
-Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args)
 {
-    std::sort(args.begin(), args.end());
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    return createBlockWithNestedColumnsImpl(block, args_set);
+}
 
-    Block res;
+Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result)
+{
+    std::unordered_set<size_t> args_set(args.begin(), args.end());
+    args_set.insert(result);
+    return createBlockWithNestedColumnsImpl(block, args_set);
+}
 
-    size_t j = 0;
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const auto & col = block.getByPosition(i);
-        bool is_inserted = false;
+void validateArgumentType(const IFunction & func, const DataTypes & arguments,
+                                 size_t argument_index, bool (* validator_func)(const IDataType &),
+                                 const char * expected_type_description)
+{
+    if (arguments.size() <= argument_index)
+        throw Exception("Incorrect number of arguments of function " + func.getName(),
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if ((j < args.size()) && (i == args[j]))
-        {
-            ++j;
-
-            if (col.type->isNullable())
-            {
-                bool is_const = col.column->isConst();
-                auto const_col = typeid_cast<const ColumnConst *>(col.column.get());
-
-                if (is_const && !const_col->getDataColumn().isNullable())
-                    throw Exception("Column at position " + toString(i + 1) + " with type " + col.type->getName() +
-                                    " should be nullable, but got " + const_col->getName(), ErrorCodes::LOGICAL_ERROR);
-
-                auto nullable_col = static_cast<const ColumnNullable *>(
-                        is_const ? &const_col->getDataColumn() : col.column.get());
-
-                ColumnPtr nested_col = nullable_col->getNestedColumn();
-                if (is_const)
-                    nested_col = std::make_shared<ColumnConst>(nested_col, const_col->size());
-
-                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-                const DataTypePtr & nested_type = nullable_type->getNestedType();
-
-                res.insert(i, {nested_col, nested_type, col.name});
-
-                is_inserted = true;
-            }
-        }
-        else if (i == result)
-        {
-            if (col.type->isNullable())
-            {
-                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
-                const DataTypePtr & nested_type = nullable_type->getNestedType();
-
-                res.insert(i, {nullptr, nested_type, col.name});
-                is_inserted = true;
-            }
-        }
-
-        if (!is_inserted)
-            res.insert(i, col);
-    }
-
-    return res;
+    const auto & argument = arguments[argument_index];
+    if (validator_func(*argument) == false)
+        throw Exception("Illegal type " + argument->getName() +
+                        " of " + std::to_string(argument_index) +
+                        " argument of function " + func.getName() +
+                        " expected " + expected_type_description,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 }

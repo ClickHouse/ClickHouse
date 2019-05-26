@@ -38,7 +38,7 @@ public:
             if (this->buf[i].isZero(*this))
                 std::cerr << "[    ]";
             else
-                std::cerr << '[' << this->buf[i].getValue().first.data << ", " << this->buf[i].getValue().second << ']';
+                std::cerr << '[' << this->buf[i].getValue().getFirst().data << ", " << this->buf[i].getValue().getSecond() << ']';
         }
         std::cerr << std::endl;
     }
@@ -59,7 +59,7 @@ struct Grower : public HashTableGrower<2>
     }
 };
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using Map = HashMapWithDump<
         StringRef,
@@ -85,7 +85,7 @@ int main(int argc, char ** argv)
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
     for (auto x : map)
-        std::cerr << x.first.toString() << " -> " << x.second << std::endl;
+        std::cerr << x.getFirst().toString() << " -> " << x.getSecond() << std::endl;
 
     return 0;
 }

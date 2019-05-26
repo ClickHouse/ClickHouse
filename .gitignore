@@ -9,7 +9,16 @@
 # auto generated files
 *.logrt
 
-build
+/build
+/build_*
+/build-*
+/docs/build
+/docs/edit
+/docs/tools/venv/
+/docs/en/development/build/
+/docs/ru/development/build/
+/docs/en/single.md
+/docs/ru/single.md
 
 # callgrind files
 callgrind.out.*
@@ -40,6 +49,7 @@ cmake-build-*
 # Python cache
 *.pyc
 __pycache__
+*.pytest_cache
 
 # ignore generated files
 *-metrika-yandex
@@ -170,19 +180,10 @@ utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
-dbms/tests/queries/1_stateful
-debian/control
-debian/copyright
-debian/tmp/
 libs/libcommon/src/tests/json_test
 utils/compressor/zstd_test
 utils/wikistat-loader/wikistat-loader
 dbms/src/Common/tests/pod_array
-debian/clickhouse-benchmark/
-debian/clickhouse-client/
-debian/clickhouse-server-base/
-debian/clickhouse-server-common/
-debian/files
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
@@ -201,9 +202,6 @@ vgcore*
 *.changes
 build-stamp
 configure-stamp
-debian/*.debhelper.log
-debian/*.debhelper
-debian/*.substvars
 
 *.bin
 *.mrk
@@ -232,3 +230,18 @@ config-preprocessed.xml
 node_modules
 public
 website/docs
+website/presentations
+website/package-lock.json
+.DS_Store
+*/.DS_Store
+
+# Ignore files for locally disabled tests
+/dbms/tests/queries/**/*.disabled
+
+# cquery cache
+/.cquery-cache
+
+# ccls cache
+/.ccls-cache
+
+/compile_commands.json

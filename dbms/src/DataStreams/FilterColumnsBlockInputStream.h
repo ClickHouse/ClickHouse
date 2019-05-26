@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <iostream>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 /// Removes columns other than columns_to_save_ from block,
 ///  and reorders columns as in columns_to_save_.
 /// Functionality is similar to ExpressionBlockInputStream with ExpressionActions containing PROJECT action.
-class FilterColumnsBlockInputStream : public IProfilingBlockInputStream
+class FilterColumnsBlockInputStream : public IBlockInputStream
 {
 public:
     FilterColumnsBlockInputStream(
@@ -21,10 +21,10 @@ public:
 
     String getName() const override
     {
-        return "FilterColumnsBlockInputStream";
+        return "FilterColumns";
     }
 
-    String getID() const override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

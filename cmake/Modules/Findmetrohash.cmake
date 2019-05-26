@@ -28,7 +28,7 @@ find_library(METROHASH_LIBRARIES
 
 find_path(METROHASH_INCLUDE_DIR
     NAMES metrohash.h
-    PATHS ${METROHASH_ROOT_DIR}/include ${METROHASH_INCLUDE_PATHS}
+    PATHS ${METROHASH_ROOT_DIR}/include PATH_SUFFIXES metrohash ${METROHASH_INCLUDE_PATHS}
 )
 
 include(FindPackageHandleStandardArgs)

@@ -35,12 +35,12 @@ struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
-    void free(const TKey & key) {}
+    void free(const TKey & /*key*/) {}
 };
 
 /*
  * Specialized storage for StringRef with a freelist arena.
- * Keys of this type that are retained on insertion must be serialised into local storage,
+ * Keys of this type that are retained on insertion must be serialized into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
 template <>
@@ -76,14 +76,14 @@ class SpaceSaving
 private:
     // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
     // Round to nearest power of 2 for cheaper binning without modulo
-    constexpr uint64_t nextAlphaSize (uint64_t x)
+    constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
-        return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
     }
 
 public:
-    using Self = SpaceSaving<TKey, Hash, Grower, Allocator>;
+    using Self = SpaceSaving;
 
     struct Counter
     {
@@ -152,7 +152,7 @@ public:
         auto it = counter_map.find(key, hash);
         if (it != counter_map.end())
         {
-            auto c = it->second;
+            auto c = it->getSecond();
             c->count += increment;
             c->error += error;
             percolate(c);
@@ -189,8 +189,8 @@ public:
             min->error = alpha + error;
             percolate(min);
 
-            it->second = min;
-            it->first = min->key;
+            it->getSecond() = min;
+            it->getFirstMutable() = min->key;
             counter_map.reinsert(it, hash);
         }
     }
@@ -340,4 +340,4 @@ private:
     size_t m_capacity;
 };
 
-};
+}

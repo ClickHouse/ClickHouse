@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Storages/StorageDistributed.h>
+#include <Common/ThreadPool.h>
 
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -22,12 +24,17 @@ public:
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
+    void shutdownAndDropAllData();
 private:
     void run();
     bool findFiles();
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
-    bool maybeMarkAsBroken(const std::string & file_path, const Exception &e) const;
+
+    static bool isFileBrokenErrorCode(int code);
+    void markAsBroken(const std::string & file_path) const;
+    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
+
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
@@ -50,7 +57,10 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     Logger * log;
-    std::thread thread {&StorageDistributedDirectoryMonitor::run, this};
+    ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
+
+    /// Read insert query and insert settings for backward compatible.
+    void readQueryAndSettings(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
 };
 
 }

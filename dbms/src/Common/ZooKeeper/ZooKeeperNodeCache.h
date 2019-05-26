@@ -4,10 +4,10 @@
 #include <unordered_set>
 #include <mutex>
 #include <memory>
-#include <experimental/optional>
+#include <optional>
 #include <Poco/Event.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/Common.h>
+#include "ZooKeeper.h"
+#include "Common.h"
 
 namespace DB
 {
@@ -22,8 +22,13 @@ namespace zkutil
 
 /// This class allows querying the contents of ZooKeeper nodes and caching the results.
 /// Watches are set for cached nodes and for nodes that were nonexistent at the time of query.
-/// After a watch fires, a notification is generated for the change event.
+/// After a watch fires, the callback or event that was passed by the user is notified.
+///
 /// NOTE: methods of this class are not thread-safe.
+///
+/// Intended use case: if you need one thread to watch changes in several nodes.
+/// If instead you use simple a watch event for this, watches will accumulate for nodes that do not change
+/// or change rarely.
 class ZooKeeperNodeCache
 {
 public:
@@ -32,26 +37,29 @@ public:
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
     ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
-    std::experimental::optional<std::string> get(const std::string & path);
+    struct ZNode
+    {
+        bool exists = false;
+        std::string contents;
+        Coordination::Stat stat{};
+    };
 
-    Poco::Event & getChangedEvent() { return context->changed_event; }
+    ZNode get(const std::string & path, EventPtr watch_event);
+    ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
 
 private:
     GetZooKeeper get_zookeeper;
 
     struct Context
     {
-        Poco::Event changed_event;
-
         std::mutex mutex;
-        zkutil::ZooKeeperPtr zookeeper;
         std::unordered_set<std::string> invalidated_paths;
+        bool all_paths_invalidated = false;
     };
 
     std::shared_ptr<Context> context;
 
-    std::unordered_set<std::string> nonexistent_nodes;
-    std::unordered_map<std::string, std::string> node_cache;
+    std::unordered_map<std::string, ZNode> path_to_cached_znode;
 };
 
 }

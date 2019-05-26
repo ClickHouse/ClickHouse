@@ -11,8 +11,8 @@ struct NullType {};
 const NullType null = {};
 
 
-/** Класс для NULL-able типов.
-  * Использование:
+/** Store NULL-able types from MySQL.
+  * Usage example:
   *        mysqlxx::Null<int> x = mysqlxx::null;
   *        std::cout << (x.isNull() ? "Ok." : "Fail.") << std::endl;
   *        x = 10;
@@ -21,8 +21,8 @@ template <typename T>
 class Null
 {
 public:
-    T data;
-    bool is_null;
+    T data {};
+    bool is_null = true;
 
     Null() : is_null(true) {}
     Null(const Null<T> &) = default;

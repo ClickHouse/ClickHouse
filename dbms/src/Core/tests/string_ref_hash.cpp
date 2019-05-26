@@ -7,7 +7,7 @@
 /** Calculates StringRefHash from stdin. For debugging.
   */
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using namespace DB;
 

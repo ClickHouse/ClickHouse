@@ -13,7 +13,7 @@
 
 #include <Common/ArenaAllocator.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <common/likely.h>
 #include <type_traits>
@@ -36,7 +36,7 @@ template <typename T>
 struct GroupArrayNumericData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedArenaAllocator<4096>;
+    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;
@@ -45,15 +45,16 @@ struct GroupArrayNumericData
 
 template <typename T, typename Tlimit_num_elems>
 class GroupArrayNumericImpl final
-    : public IUnaryAggregateFunction<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
+    : public IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
-    DataTypePtr data_type;
+    DataTypePtr & data_type;
     UInt64 max_elems;
 
 public:
     explicit GroupArrayNumericImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-            : data_type(data_type_), max_elems(max_elems_) {}
+        : IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>({data_type_}, {})
+        , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
@@ -62,20 +63,12 @@ public:
         return std::make_shared<DataTypeArray>(data_type);
     }
 
-    void setArgument(const DataTypePtr & argument) {}
-
-    void setParameters(const Array & params) override
-    {
-        if (!limit_num_elems && !params.empty())
-            throw Exception("This instatintion of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
 
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num], arena);
+        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -85,12 +78,14 @@ public:
 
         if (!limit_num_elems)
         {
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+            if (rhs_elems.value.size())
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
         }
         else
         {
             UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+            if (elems_to_insert)
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
 
@@ -99,7 +94,7 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -116,7 +111,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -125,12 +120,15 @@ public:
         size_t size = value.size();
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        }
     }
 
     bool allocatesMemoryInArena() const override
@@ -163,7 +161,7 @@ struct GroupArrayListNodeBase
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena)
     {
-        return reinterpret_cast<Node *>(const_cast<char *>(arena->insert(reinterpret_cast<char *>(this), sizeof(Node) + size)));
+        return reinterpret_cast<Node *>(const_cast<char *>(arena->alignedInsert(reinterpret_cast<char *>(this), sizeof(Node) + size, alignof(Node))));
     }
 
     /// Write node to buffer
@@ -179,7 +177,7 @@ struct GroupArrayListNodeBase
         UInt64 size;
         readVarUInt(size, buf);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
         buf.read(node->data(), size);
         return node;
@@ -195,7 +193,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
     {
         StringRef string = static_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + string.size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
         node->next = nullptr;
         node->size = string.size;
         memcpy(node->data(), string.data, string.size);
@@ -215,7 +213,7 @@ struct GroupArrayListNodeGeneral : public GroupArrayListNodeBase<GroupArrayListN
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        const char * begin = arena->alloc(sizeof(Node));
+        const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
         StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
@@ -245,39 +243,30 @@ struct GroupArrayGeneralListData
 /// It has poor performance in case of many small objects
 template <typename Node, bool limit_num_elems>
 class GroupArrayGeneralListImpl final
-    : public IUnaryAggregateFunction<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>
+    : public IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>
 {
     using Data = GroupArrayGeneralListData<Node>;
     static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
-    DataTypePtr data_type;
+    DataTypePtr & data_type;
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type}, {})
+        , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
-    void setParameters(const Array & params) override
-    {
-        if (!limit_num_elems && !params.empty())
-            throw Exception("This instantiation of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        data_type = argument;
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (limit_num_elems && data(place).elems >= max_elems)
             return;
 
-        Node * node = Node::allocate(column, row_num, arena);
+        Node * node = Node::allocate(*columns[0], row_num, arena);
 
         if (unlikely(!data(place).first))
         {
@@ -388,11 +377,11 @@ public:
         auto & column_array = static_cast<ColumnArray &>(to);
 
         auto & offsets = column_array.getOffsets();
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + data(place).elems);
+        offsets.push_back(offsets.back() + data(place).elems);
 
         auto & column_data = column_array.getData();
 
-        if (std::is_same<Node, GroupArrayListNodeString>::value)
+        if (std::is_same_v<Node, GroupArrayListNodeString>)
         {
             auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);

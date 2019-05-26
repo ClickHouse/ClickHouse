@@ -6,18 +6,15 @@ namespace DB
 
 void registerFunctionsRound(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRoundToExp2>();
-    factory.registerFunction<FunctionRoundDuration>();
-    factory.registerFunction<FunctionRoundAge>();
-
-    factory.registerFunction("round", FunctionRound::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("floor", FunctionFloor::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("ceil", FunctionCeil::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("trunc", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCeil>("ceil", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTrunc>("trunc", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRoundDown>();
 
     /// Compatibility aliases.
-    factory.registerFunction("ceiling", FunctionCeil::create, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("truncate", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("ceiling", "ceil", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("truncate", "trunc", FunctionFactory::CaseInsensitive);
 }
 
 }

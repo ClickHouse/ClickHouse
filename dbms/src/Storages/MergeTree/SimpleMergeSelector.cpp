@@ -68,8 +68,8 @@ struct Estimator
     }
 
     double min_score = 0;
-    Iterator best_begin;
-    Iterator best_end;
+    Iterator best_begin {};
+    Iterator best_end {};
 };
 
 
@@ -148,7 +148,7 @@ void selectWithinPartition(
 
     for (size_t begin = 0; begin < parts_count; ++begin)
     {
-        /// If too much parts, select only from first, to avoid complexity.
+        /// If too many parts, select only from first, to avoid complexity.
         if (begin > 1000)
             break;
 

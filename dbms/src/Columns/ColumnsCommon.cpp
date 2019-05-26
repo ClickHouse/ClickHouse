@@ -1,8 +1,12 @@
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Common/typeid_cast.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -17,10 +21,10 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
       * It would be better to use != 0, then this does not allow SSE2.
       */
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
+    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
     const Int8 * end = pos + filt.size();
 
-#if __SSE2__ && __POPCNT__
+#if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();
     const Int8 * end64 = pos + filt.size() / 64 * 64;
 
@@ -48,6 +52,14 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
     return count;
 }
 
+std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector)
+{
+    std::vector<size_t> counts(num_columns);
+    for (auto idx : selector)
+        ++counts[idx];
+
+    return counts;
+}
 
 /** clang 4 generates better code than gcc 6.
   * And both gcc and clang could not vectorize trivial loop by bytes automatically.
@@ -57,7 +69,7 @@ bool memoryIsZero(const void * data, size_t size)
     const Int8 * pos = reinterpret_cast<const Int8 *>(data);
     const Int8 * end = pos + size;
 
-#if __SSE2__
+#ifdef __SSE2__
     const __m128 zero16 = _mm_setzero_ps();
     const Int8 * end64 = pos + size / 64 * 64;
 
@@ -100,10 +112,10 @@ namespace
 
     struct ResultOffsetsBuilder
     {
-        IColumn::Offsets_t & res_offsets;
-        IColumn::Offset_t current_src_offset = 0;
+        IColumn::Offsets & res_offsets;
+        IColumn::Offset current_src_offset = 0;
 
-        explicit ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
+        explicit ResultOffsetsBuilder(IColumn::Offsets * res_offsets_) : res_offsets(*res_offsets_) {}
 
         void reserve(ssize_t result_size_hint, size_t src_size)
         {
@@ -118,14 +130,14 @@ namespace
 
         template <size_t SIMD_BYTES>
         void insertChunk(
-            const IColumn::Offset_t * src_offsets_pos,
+            const IColumn::Offset * src_offsets_pos,
             bool first,
-            IColumn::Offset_t chunk_offset,
+            IColumn::Offset chunk_offset,
             size_t chunk_size)
         {
             const auto offsets_size_old = res_offsets.size();
             res_offsets.resize(offsets_size_old + SIMD_BYTES);
-            memcpy(&res_offsets[offsets_size_old], src_offsets_pos, SIMD_BYTES * sizeof(IColumn::Offset_t));
+            memcpy(&res_offsets[offsets_size_old], src_offsets_pos, SIMD_BYTES * sizeof(IColumn::Offset));
 
             if (!first)
             {
@@ -147,16 +159,16 @@ namespace
 
     struct NoResultOffsetsBuilder
     {
-        explicit NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
-        void reserve(ssize_t result_size_hint, size_t src_size) {}
-        void insertOne(size_t array_size) {}
+        explicit NoResultOffsetsBuilder(IColumn::Offsets *) {}
+        void reserve(ssize_t, size_t) {}
+        void insertOne(size_t) {}
 
         template <size_t SIMD_BYTES>
         void insertChunk(
-            const IColumn::Offset_t * src_offsets_pos,
-            bool first,
-            IColumn::Offset_t chunk_offset,
-            size_t chunk_size)
+            const IColumn::Offset *,
+            bool,
+            IColumn::Offset,
+            size_t)
         {
         }
     };
@@ -164,8 +176,8 @@ namespace
 
     template <typename T, typename ResultOffsetsBuilder>
     void filterArraysImplGeneric(
-        const PaddedPODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
-        PaddedPODArray<T> & res_elems, IColumn::Offsets_t * res_offsets,
+        const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
+        PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
         const IColumn::Filter & filt, ssize_t result_size_hint)
     {
         const size_t size = src_offsets.size();
@@ -184,26 +196,26 @@ namespace
                 res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
         }
 
-        const UInt8 * filt_pos = &filt[0];
+        const UInt8 * filt_pos = filt.data();
         const auto filt_end = filt_pos + size;
 
-        auto offsets_pos = &src_offsets[0];
+        auto offsets_pos = src_offsets.data();
         const auto offsets_begin = offsets_pos;
 
         /// copy array ending at *end_offset_ptr
-        const auto copy_array = [&] (const IColumn::Offset_t * offset_ptr)
+        const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
         {
-            const auto offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
-            const auto size = *offset_ptr - offset;
+            const auto arr_offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
+            const auto arr_size = *offset_ptr - arr_offset;
 
-            result_offsets_builder.insertOne(size);
+            result_offsets_builder.insertOne(arr_size);
 
             const auto elems_size_old = res_elems.size();
-            res_elems.resize(elems_size_old + size);
-            memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
+            res_elems.resize(elems_size_old + arr_size);
+            memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #if __SSE2__
+    #ifdef __SSE2__
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;
         const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
@@ -259,8 +271,8 @@ namespace
 
 template <typename T>
 void filterArraysImpl(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
-    PaddedPODArray<T> & res_elems, IColumn::Offsets_t & res_offsets,
+    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
+    PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
     return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
@@ -268,7 +280,7 @@ void filterArraysImpl(
 
 template <typename T>
 void filterArraysImplOnlyData(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
+    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
@@ -279,11 +291,11 @@ void filterArraysImplOnlyData(
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
 #define INSTANTIATE(TYPE) \
 template void filterArraysImpl<TYPE>( \
-    const PaddedPODArray<TYPE> &, const IColumn::Offsets_t &, \
-    PaddedPODArray<TYPE> &, IColumn::Offsets_t &, \
+    const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
+    PaddedPODArray<TYPE> &, IColumn::Offsets &, \
     const IColumn::Filter &, ssize_t); \
 template void filterArraysImplOnlyData<TYPE>( \
-    const PaddedPODArray<TYPE> &, const IColumn::Offsets_t &, \
+    const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
     PaddedPODArray<TYPE> &, \
     const IColumn::Filter &, ssize_t);
 
@@ -299,5 +311,23 @@ INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 
 #undef INSTANTIATE
+
+namespace detail
+{
+    template <typename T>
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
+    {
+        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const IColumn & indexes);
+    template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const IColumn & indexes);
+    template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
+    template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
+}
 
 }

@@ -2,19 +2,14 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -25,66 +20,64 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
-NativeBlockInputStream::NativeBlockInputStream(
-    ReadBuffer & istr_, UInt64 server_revision_,
-    bool use_index_,
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_)
+    : istr(istr_), server_revision(server_revision_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool convert_types_to_low_cardinality_)
+    : istr(istr_), header(header_), server_revision(server_revision_), convert_types_to_low_cardinality(convert_types_to_low_cardinality_)
+{
+}
+
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
     IndexForNativeFormat::Blocks::const_iterator index_block_it_,
     IndexForNativeFormat::Blocks::const_iterator index_block_end_)
     : istr(istr_), server_revision(server_revision_),
-    use_index(use_index_), index_block_it(index_block_it_), index_block_end(index_block_end_)
+    use_index(true), index_block_it(index_block_it_), index_block_end(index_block_end_)
 {
-    if (use_index)
-    {
-        istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
-        if (!istr_concrete)
-            throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+    istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
+    if (!istr_concrete)
+        throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
-        index_column_it = index_block_it->columns.begin();
+    if (index_block_it == index_block_end)
+        return;
+
+    index_column_it = index_block_it->columns.begin();
+
+    /// Initialize header from the index.
+    for (const auto & column : index_block_it->columns)
+    {
+        auto type = DataTypeFactory::instance().get(column.type);
+        header.insert(ColumnWithTypeAndName{ type, column.name });
     }
 }
 
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
-    if (type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+    IDataType::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.avg_value_size_hint = avg_value_size_hint;
+    settings.position_independent_encoding = false;
 
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-        IColumn & nested_col = *nullable_col.getNestedColumn();
-
-        IColumn & null_map = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.deserializeBinaryBulk(null_map, istr, rows, avg_value_size_hint);
-
-        readData(nested_type, nested_col, istr, rows, avg_value_size_hint);
-
-        return;
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /** For arrays, we deserialize the offsets first, and then the values.
-          */
-        IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
-        type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
-
-        if (offsets_column.size() != rows)
-            throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
-
-        if (rows)
-            readData(
-                *type_arr->getNestedType(),
-                typeid_cast<ColumnArray &>(column).getData(),
-                istr,
-                typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1], 0);
-    }
-    else
-        type.deserializeBinaryBulk(column, istr, rows, avg_value_size_hint);
+    IDataType::DeserializeBinaryBulkStatePtr state;
+    type.deserializeBinaryBulkStatePrefix(settings, state);
+    type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
 
     if (column.size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
+            ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
+
+Block NativeBlockInputStream::getHeader() const
+{
+    return header;
 }
 
 
@@ -152,11 +145,21 @@ Block NativeBlockInputStream::readImpl()
         }
 
         /// Data
-        column.column = column.type->createColumn();
+        MutableColumnPtr read_column = column.type->createColumn();
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, *column.column, istr, rows, avg_value_size_hint);
+            readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
+
+        column.column = std::move(read_column);
+
+        /// Support insert from old clients without low cardinality type.
+        bool revision_without_low_cardinality = server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE;
+        if (header && (convert_types_to_low_cardinality || revision_without_low_cardinality))
+        {
+            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+            column.type = header.getByPosition(i).type;
+        }
 
         res.insert(std::move(column));
 

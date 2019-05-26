@@ -34,7 +34,7 @@ public:
     }
 
 protected:
-    singleton() {};
+    singleton() {}
 
 private:
     singleton(const singleton &);

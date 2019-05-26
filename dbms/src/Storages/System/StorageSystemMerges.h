@@ -1,7 +1,10 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -10,27 +13,17 @@ namespace DB
 class Context;
 
 
-class StorageSystemMerges : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorage
+class StorageSystemMerges : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>
 {
-friend class ext::shared_ptr_helper<StorageSystemMerges>;
 public:
     std::string getName() const override { return "SystemMerges"; }
-    std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+    static NamesAndTypesList getNamesAndTypes();
 
-private:
-    const std::string name;
-    NamesAndTypesList columns;
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    StorageSystemMerges(const std::string & name);
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

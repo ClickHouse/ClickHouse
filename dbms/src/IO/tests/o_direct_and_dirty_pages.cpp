@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using namespace DB;
 

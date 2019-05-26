@@ -9,10 +9,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <AggregateFunctions/IBinaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE 0xFFFFFF
 
@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -50,27 +51,35 @@ struct AggregateFunctionGroupArrayInsertAtDataGeneric
 
 
 class AggregateFunctionGroupArrayInsertAtGeneric final
-    : public IBinaryAggregateFunction<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
 {
 private:
-    DataTypePtr type;
+    DataTypePtr & type;
     Field default_value;
     UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
-    String getName() const override { return "groupArrayInsertAt"; }
-
-    DataTypePtr getReturnType() const override
+    AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
+        , type(argument_types[0])
     {
-        return std::make_shared<DataTypeArray>(type);
-    }
+        if (!params.empty())
+        {
+            if (params.size() > 2)
+                throw Exception("Aggregate function " + getName() + " requires at most two parameters.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    void setArgumentsImpl(const DataTypes & arguments)
-    {
-        if (!arguments.at(1)->behavesAsNumber())    /// TODO filter out floating point types.
+            default_value = params[0];
+
+            if (params.size() == 2)
+            {
+                length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
+                if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
+                    throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            }
+        }
+
+        if (!isUnsignedInteger(arguments[1]))
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        type = arguments.front();
 
         if (default_value.isNull())
             default_value = type->getDefault();
@@ -85,26 +94,17 @@ public:
         }
     }
 
-    void setParameters(const Array & params) override
+    String getName() const override { return "groupArrayInsertAt"; }
+
+    DataTypePtr getReturnType() const override
     {
-        if (params.empty())
-            return;
-
-        if (params.size() > 2)
-            throw Exception("Aggregate function " + getName() + " requires at most two parameters.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        default_value = params[0];
-
-        if (params.size() == 2)
-        {
-            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
-        }
+        return std::make_shared<DataTypeArray>(type);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_position, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         /// TODO Do positions need to be 1-based for this function?
-        size_t position = column_position.get64(row_num);
+        size_t position = columns[1]->getUInt(row_num);
 
         /// If position is larger than size to which array will be cutted - simply ignore value.
         if (length_to_resize && position >= length_to_resize)
@@ -122,10 +122,10 @@ public:
         else if (!arr[position].isNull())
             return; /// Element was already inserted to the specified position.
 
-        column_value.get(row_num, arr[position]);
+        columns[0]->get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -182,7 +182,7 @@ public:
     {
         ColumnArray & to_array = static_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();
-        ColumnArray::Offsets_t & to_offsets = to_array.getOffsets();
+        ColumnArray::Offsets & to_offsets = to_array.getOffsets();
 
         const Array & arr = data(place).value;
 
@@ -200,7 +200,7 @@ public:
         for (size_t i = arr.size(); i < result_array_size; ++i)
             to_data.insert(default_value);
 
-        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
+        to_offsets.push_back(to_offsets.back() + result_array_size);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

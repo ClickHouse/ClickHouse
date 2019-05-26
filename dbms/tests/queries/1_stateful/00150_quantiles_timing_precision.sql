@@ -1,0 +1,1 @@
+SELECT CounterID, quantileTiming(0.5)(SendTiming) AS qt, least(30000, quantileExact(0.5)(SendTiming)) AS qe, count() AS c, round(abs(qt - qe) / greatest(qt, qe) AS diff, 3) AS rounded_diff FROM test.hits WHERE SendTiming != -1 GROUP BY CounterID HAVING diff != 0 ORDER BY diff DESC;

@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
-void sortBlock(Block & block, const SortDescription & description, size_t limit = 0);
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);
 
 
 /** Used only in StorageMergeTree to sort the data with INSERT.
@@ -28,5 +28,9 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
   * Collations are not supported.
   */
 bool isAlreadySorted(const Block & block, const SortDescription & description);
+
+using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
+
+ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description);
 
 }

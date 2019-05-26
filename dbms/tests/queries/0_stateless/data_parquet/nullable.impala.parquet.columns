@@ -1,0 +1,1 @@
+`id` Nullable(Int64), `element` Nullable(Int32), `element2` Nullable(Int32), `key` Nullable(String), `value` Nullable(Int32), `key5` Nullable(String), `value6` Nullable(Int32), `A` Nullable(Int32), `element8` Nullable(Int32), `E` Nullable(Int32), `F` Nullable(String), `key11` Nullable(String), `element12` Nullable(Float64)

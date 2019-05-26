@@ -4,16 +4,12 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTCheckQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
 
 bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_check_table("CHECK TABLE");
     ParserToken s_dot(TokenType::Dot);
 
@@ -32,16 +28,16 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!table_parser.parse(pos, table, expected))
             return false;
 
-        auto query = std::make_shared<ASTCheckQuery>(StringRange(begin, pos));
-        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
-        query->table = typeid_cast<const ASTIdentifier &>(*table).name;
+        auto query = std::make_shared<ASTCheckQuery>();
+        getIdentifierName(database, query->database);
+        getIdentifierName(table, query->table);
         node = query;
     }
     else
     {
         table = database;
-        auto query = std::make_shared<ASTCheckQuery>(StringRange(begin, pos));
-        query->table = typeid_cast<const ASTIdentifier &>(*table).name;
+        auto query = std::make_shared<ASTCheckQuery>();
+        getIdentifierName(table, query->table);
         node = query;
     }
 

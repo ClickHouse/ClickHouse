@@ -1,0 +1,4 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "robot-clickhouse/clickhouse-freebsd"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+end

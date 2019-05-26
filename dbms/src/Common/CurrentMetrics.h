@@ -24,8 +24,10 @@ namespace CurrentMetrics
     using Metric = size_t;
     using Value = DB::Int64;
 
+    /// Get name of metric by identifier. Returns statically allocated string.
+    const char * getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const char * getDescription(Metric event);
+    const char * getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];

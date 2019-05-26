@@ -39,7 +39,7 @@ private:
     void writeImpl(const T & data, time_t timestamp, const std::string & custom_root_path)
     {
         if (!timestamp)
-            timestamp = time(0);
+            timestamp = time(nullptr);
 
         try
         {

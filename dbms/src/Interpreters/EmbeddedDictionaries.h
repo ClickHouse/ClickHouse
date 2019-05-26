@@ -1,15 +1,18 @@
 #pragma once
 
 #include <thread>
-#include <common/MultiVersion.h>
+#include <functional>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Event.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
 class RegionsHierarchies;
 class TechDataHierarchy;
 class RegionsNames;
+class IGeoDictionariesLoader;
 
 
 namespace DB
@@ -30,6 +33,8 @@ private:
     MultiVersion<TechDataHierarchy> tech_data_hierarchy;
     MultiVersion<RegionsNames> regions_names;
 
+    std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader;
+
     /// Directories' updating periodicity (in seconds).
     int reload_period;
     int cur_reload_period = 1;
@@ -37,7 +42,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::thread reloading_thread;
+    ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
 
 
@@ -53,11 +58,21 @@ private:
     bool reloadImpl(const bool throw_on_error, const bool force_reload = false);
 
     template <typename Dictionary>
-    bool reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error, const bool force_reload);
+    using DictionaryReloader = std::function<std::unique_ptr<Dictionary>(const Poco::Util::AbstractConfiguration & config)>;
+
+    template <typename Dictionary>
+    bool reloadDictionary(
+        MultiVersion<Dictionary> & dictionary,
+        DictionaryReloader<Dictionary> reload_dictionary,
+        const bool throw_on_error,
+        const bool force_reload);
 
 public:
     /// Every reload_period seconds directories are updated inside a separate thread.
-    EmbeddedDictionaries(Context & context, const bool throw_on_error);
+    EmbeddedDictionaries(
+        std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader,
+        Context & context,
+        const bool throw_on_error);
 
     /// Forcibly reloads all dictionaries.
     void reload();

@@ -98,7 +98,7 @@ template <typename HashValueType, typename DenominatorType, DenominatorMode deno
 struct IntermediateDenominator;
 
 template <typename DenominatorType, DenominatorMode denominator_mode>
-struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, typename std::enable_if<denominator_mode != DenominatorMode::ExactType>::type>
+struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, std::enable_if_t<denominator_mode != DenominatorMode::ExactType>>
 {
     using Type = double;
 };
@@ -122,7 +122,7 @@ template <UInt8 precision, int max_rank, typename HashValueType, typename Denomi
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
-    typename std::enable_if<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>::type>
+    std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
 {
 private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
@@ -166,7 +166,7 @@ template <UInt8 precision, int max_rank, typename HashValueType, typename Denomi
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
-    typename std::enable_if<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>::type>
+    std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
 {
 public:
     Denominator(DenominatorType initial_value)
@@ -278,7 +278,7 @@ template <
     typename BiasEstimator = TrivialBiasEstimator,
     HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
     DenominatorMode denominator_mode = DenominatorMode::StableIfBig>
-class __attribute__ ((packed)) HyperLogLogCounter : private Hash
+class HyperLogLogCounter : private Hash
 {
 private:
     /// Number of buckets.
@@ -287,12 +287,13 @@ private:
     /// Size of counter's rank in bits.
     static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
 
-private:
-    using Value_t = UInt64;
+    using Value = UInt64;
     using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
 
 public:
-    void insert(Value_t value)
+    using value_type = Value;
+
+    void insert(Value value)
     {
         HashValueType hash = getHash(value);
 
@@ -305,13 +306,13 @@ public:
         update(bucket, rank);
     }
 
-    UInt32 size() const
+    UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
-            bucket_count == 2     ? 0.351 :
-            bucket_count == 4  ? 0.532 :
-            bucket_count == 8  ? 0.626 :
+            bucket_count == 2 ? 0.351 :
+            bucket_count == 4 ? 0.532 :
+            bucket_count == 8 ? 0.626 :
             bucket_count == 16 ? 0.673 :
             bucket_count == 32 ? 0.697 :
             bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
@@ -323,7 +324,7 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
-        return static_cast<UInt32>(final_estimate + 0.5);
+        return static_cast<UInt64>(final_estimate + 0.5);
     }
 
     void merge(const HyperLogLogCounter & rhs)
@@ -413,7 +414,7 @@ private:
         return zeros_plus_one;
     }
 
-    inline HashValueType getHash(Value_t key) const
+    inline HashValueType getHash(Value key) const
     {
         return Hash::operator()(key);
     }
@@ -443,13 +444,12 @@ private:
             return applyBiasCorrection(raw_estimate);
         else if (mode == HyperLogLogMode::FullFeatured)
         {
-            static constexpr bool fix_big_cardinalities = std::is_same<HashValueType, UInt32>::value;
             static constexpr double pow2_32 = 4294967296.0;
 
             double fixed_estimate;
 
-            if (fix_big_cardinalities && (raw_estimate > (pow2_32 / 30.0)))
-                fixed_estimate = -pow2_32 * log(1.0 - raw_estimate / pow2_32);
+            if (raw_estimate > (pow2_32 / 30.0))
+                fixed_estimate = raw_estimate;
             else
                 fixed_estimate = applyCorrection(raw_estimate);
 
@@ -516,10 +516,8 @@ private:
     }
 
 private:
-    /// Maximum rank.
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
-    /// Rank storage.
     RankStore rank_store;
 
     /// Expression's denominator for HyperLogLog algorithm.

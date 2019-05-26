@@ -14,10 +14,8 @@
   *
   * When local time was shifted backwards (due to daylight saving time or whatever reason)
   *  - then to resolve the ambiguity of transforming to time_t, lowest of two possible values is selected.
-  *
-  * packed - for memcmp to work naturally (but because m_year is 2 bytes, on little endian, comparison is correct only before year 2047)
   */
-class __attribute__ ((__packed__)) LocalDateTime
+class LocalDateTime
 {
 private:
     unsigned short m_year;
@@ -26,6 +24,10 @@ private:
     unsigned char m_hour;
     unsigned char m_minute;
     unsigned char m_second;
+
+    /// For struct to fill 8 bytes and for safe invocation of memcmp.
+    /// NOTE We may use attribute packed instead, but it is less portable.
+    unsigned char pad = 0;
 
     void init(time_t time)
     {
@@ -50,6 +52,8 @@ private:
         m_hour = date_lut.toHour(time);
         m_minute = date_lut.toMinute(time);
         m_second = date_lut.toSecond(time);
+
+        (void)pad;  /// Suppress unused private field warning.
     }
 
     void init(const char * s, size_t length)
@@ -64,6 +68,8 @@ private:
         m_hour = (s[11] - '0') * 10 + (s[12] - '0');
         m_minute = (s[14] - '0') * 10 + (s[15] - '0');
         m_second = (s[17] - '0') * 10 + (s[18] - '0');
+
+        (void)pad;
     }
 
 public:
@@ -159,6 +165,9 @@ public:
         return !(*this == other);
     }
 };
+
+static_assert(sizeof(LocalDateTime) == 8);
+
 
 inline std::ostream & operator<< (std::ostream & ostr, const LocalDateTime & datetime)
 {

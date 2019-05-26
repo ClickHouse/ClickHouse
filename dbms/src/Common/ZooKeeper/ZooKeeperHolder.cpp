@@ -1,10 +1,20 @@
-#include <Common/ZooKeeper/ZooKeeperHolder.h>
+#include "ZooKeeperHolder.h"
+
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int NULL_POINTER_DEREFERENCE;
+    }
+}
+
 
 using namespace zkutil;
 
 ZooKeeperHolder::UnstorableZookeeperHandler ZooKeeperHolder::getZooKeeper()
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
     return UnstorableZookeeperHandler(ptr);
 }
 
@@ -15,7 +25,7 @@ void ZooKeeperHolder::initFromInstance(const ZooKeeper::Ptr & zookeeper_ptr)
 
 bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
     if (ptr.unique())
     {
@@ -47,7 +57,7 @@ ZooKeeperHolder::UnstorableZookeeperHandler::UnstorableZookeeperHandler(ZooKeepe
 ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->()
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
 
     return zk_ptr.get();
 }
@@ -55,20 +65,20 @@ ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->()
 const ZooKeeper * ZooKeeperHolder::UnstorableZookeeperHandler::operator->() const
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
     return zk_ptr.get();
 }
 
 ZooKeeper & ZooKeeperHolder::UnstorableZookeeperHandler::operator*()
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
     return *zk_ptr;
 }
 
 const ZooKeeper & ZooKeeperHolder::UnstorableZookeeperHandler::operator*() const
 {
     if (zk_ptr == nullptr)
-        throw DB::Exception(nullptr_exception_message);
+        throw DB::Exception(nullptr_exception_message, DB::ErrorCodes::NULL_POINTER_DEREFERENCE);
     return *zk_ptr;
 }

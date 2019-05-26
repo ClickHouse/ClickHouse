@@ -6,7 +6,7 @@
 #include <Common/SpaceSaving.h>
 #include <common/StringRef.h>
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     {
         using Cont = DB::SpaceSaving<int>;

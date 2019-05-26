@@ -37,7 +37,7 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
 
@@ -47,6 +47,8 @@ public:
     String current_user;
     String current_query_id;
     Poco::Net::SocketAddress current_address;
+    /// Use current user and password when sending query to replica leader
+    String current_password;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
@@ -63,6 +65,7 @@ public:
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
+    UInt64 client_version_patch = 0;
     unsigned client_revision = 0;
 
     /// For http

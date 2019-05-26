@@ -110,6 +110,8 @@ public:
                 return "pool is null";
         }
 
+        void disconnect();
+
         friend class Pool;
 
     private:
@@ -150,19 +152,9 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          const char * parent_config_name_ = nullptr);
 
-    /**
-     * @param db_                    Database name
-     * @param server_                Hostname
-     * @param user_                  User name
-     * @param password_              Password
-     * @param socket_                Socket
-     * @param port_                  Port
-     * @param default_connections_   Number of default connections
-     * @param max_connections_       Maximum number of connections
-     *
-     * Like with mysqlxx::Connection, either port either socket should be specified.
-     * If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
-     */
+    /** Like with mysqlxx::Connection, either port either socket should be specified.
+      * If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
+      */
     Pool(const std::string & db_,
          const std::string & server_,
          const std::string & user_ = "",
@@ -172,10 +164,11 @@ public:
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-         unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
+         unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+         unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE)
     : default_connections(default_connections_), max_connections(max_connections_),
-    db(db_), server(server_), user(user_), password(password_), port(port_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_) {}
+    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
+    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_) {}
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -183,7 +176,8 @@ public:
           db{other.db}, server{other.server},
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
-          connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout}
+          connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
+          enable_local_infile{other.enable_local_infile}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -234,6 +228,7 @@ private:
     std::string ssl_ca;
     std::string ssl_cert;
     std::string ssl_key;
+    bool enable_local_infile;
 
     /// True if connection was established at least once.
     bool was_successful{false};

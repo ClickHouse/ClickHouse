@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <type_traits>
 
 
 namespace DB
@@ -32,7 +33,7 @@ class FunctionBitmaskToList : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToList";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToList>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmaskToList>(); }
 
     String getName() const override
     {
@@ -44,16 +45,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = &*arguments[0];
+        const DataTypePtr & type = arguments[0];
 
-        if (!checkDataType<DataTypeUInt8>(type) &&
-            !checkDataType<DataTypeUInt16>(type) &&
-            !checkDataType<DataTypeUInt32>(type) &&
-            !checkDataType<DataTypeUInt64>(type) &&
-            !checkDataType<DataTypeInt8>(type) &&
-            !checkDataType<DataTypeInt16>(type) &&
-            !checkDataType<DataTypeInt32>(type) &&
-            !checkDataType<DataTypeInt64>(type))
+        if (!isInteger(type))
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -61,16 +55,16 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)))
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -80,16 +74,19 @@ private:
     template <typename T>
     inline static void writeBitmask(T x, WriteBuffer & out)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+        UnsignedT u_x = x;
+
         bool first = true;
-        while (x)
+        while (u_x)
         {
-            T y = (x & (x - 1));
-            T bit = x ^ y;
-            x = y;
+            UnsignedT y = u_x & (u_x - 1);
+            UnsignedT bit = u_x ^ y;
+            u_x = y;
             if (!first)
-                out.write(",", 1);
+                writeChar(',', out);
             first = false;
-            writeIntText(bit, out);
+            writeIntText(T(bit), out);
         }
     }
 
@@ -98,17 +95,16 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            ColumnString::Chars & data_to = col_to->getChars();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
+            WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -116,7 +112,9 @@ private:
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
-            data_to.resize(buf_to.count());
+
+            buf_to.finish();
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
@@ -132,7 +130,7 @@ class FunctionFormatReadableSize : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableSize";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFormatReadableSize>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableSize>(); }
 
     String getName() const override
     {
@@ -145,7 +143,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!type.behavesAsNumber())
+        if (!isNativeNumber(type))
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -153,18 +151,18 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -176,32 +174,30 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
+            auto col_to = ColumnString::create();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            ColumnString::Chars & data_to = col_to->getChars();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
+            WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {
-                formatReadableSizeWithBinarySuffix(vec_from[i], buf_to);
+                formatReadableSizeWithBinarySuffix(static_cast<double>(vec_from[i]), buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
-            data_to.resize(buf_to.count());
-        }
-        else
-        {
-            return false;
+
+            buf_to.finish();
+            block.getByPosition(result).column = std::move(col_to);
+            return true;
         }
 
-        return true;
+        return false;
     }
 };
 

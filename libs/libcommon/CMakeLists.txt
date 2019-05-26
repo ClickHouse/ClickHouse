@@ -1,47 +1,47 @@
-if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
-        set (APPLE_SIERRA_OR_NEWER 1)
-    else ()
-        set (APPLE_SIERRA_OR_NEWER 0)
-    endif ()
-endif ()
-
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 
-if (APPLE)
-    add_library (apple_rt
-        src/apple_rt.cpp
-        include/common/apple_rt.h
-    )
-    target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
+add_library(apple_rt
+    src/apple_rt.cpp
+    include/port/clock.h
+)
+target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
+if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
+    target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common
+add_library(common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/exp10.cpp
+    src/preciseExp10.c
+    src/shift10.cpp
+    src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
-    src/ThreadPool.cpp
-    src/iostream_debug_helpers.cpp
+    src/demangle.cpp
+    src/setTerminalEcho.cpp
+    src/getThreadNumber.cpp
 
-    include/common/ApplicationServerExt.h
     include/common/Types.h
+    include/common/DayNum.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h
     include/common/LocalDateTime.h
     include/common/ErrorHandlers.h
-    include/common/exp10.h
+    include/common/preciseExp10.h
+    include/common/shift10.h
+    include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
-    include/common/MultiVersion.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
-    include/common/ThreadPool.h
-    include/common/iostream_debug_helpers.h
+    include/common/demangle.h
+    include/common/setTerminalEcho.h
+    include/common/find_symbols.h
+    include/common/constexpr_helpers.h
+    include/common/getThreadNumber.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -58,25 +58,27 @@ add_library (common
     ${CONFIG_COMMON}
 )
 
-# When testing for memory leaks, dont link tcmalloc or jemalloc.
+# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
-        message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
+    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
-    if (DEBUG_LIBTCMALLOC)
+    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
+        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
+    endif ()
+
+    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
         message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
     else ()
-        message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
+        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
     endif ()
+elseif (SANITIZE)
+    message (STATUS "Will use ${SANITIZE} sanitizer.")
 else ()
-    message (STATUS "Disabling libtcmalloc for valgrind better analysis")
-endif ()
-
-if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_LIBRARIES glibc-compatibility)
+    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
 if (USE_INTERNAL_MEMCPY)
@@ -85,22 +87,40 @@ endif ()
 
 find_package (Threads)
 
-target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
-target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
+if(CCTZ_INCLUDE_DIR)
+    target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+endif()
+
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
-target_link_libraries (
-    common
-    pocoext
+if (NOT USE_INTERNAL_BOOST_LIBRARY)
+    target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+endif ()
+
+if(NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (common SYSTEM BEFORE PUBLIC ${Poco_Foundation_INCLUDE_DIR})
+endif()
+
+if(CCTZ_LIBRARY)
+    target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
+endif()
+
+target_link_libraries (common
+        PUBLIC
+    ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
-    ${CCTZ_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
+        PRIVATE
     ${Boost_FILESYSTEM_LIBRARY}
+        PUBLIC
+    ${Boost_SYSTEM_LIBRARY}
+        PRIVATE
     ${MALLOC_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARIES}
-    ${GLIBC_COMPATIBILITY_LIBRARIES}
+    Threads::Threads
     ${MEMCPY_LIBRARIES})
+
+if (RT_LIBRARY)
+    target_link_libraries (common PRIVATE ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

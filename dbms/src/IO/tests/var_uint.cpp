@@ -60,7 +60,7 @@ int main(int argc, char ** argv)
     s.clear();
     s.resize(9);
 
-    s.resize(DB::writeVarUInt(x, &s[0]) - s.data());
+    s.resize(DB::writeVarUInt(x, s.data()) - s.data());
 
     hex << s;
     std::cout << std::endl;

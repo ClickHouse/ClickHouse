@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -31,8 +29,9 @@ static bool parseDatabaseAndTable(
             return false;
     }
 
-    db_and_table.database = database ? typeid_cast<const ASTIdentifier &>(*database).name : "";
-    db_and_table.table = typeid_cast<const ASTIdentifier &>(*table).name;
+    db_and_table.database.clear();
+    getIdentifierName(database, db_and_table.database);
+    getIdentifierName(table, db_and_table.table);
 
     return true;
 }
@@ -40,8 +39,6 @@ static bool parseDatabaseAndTable(
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_rename_table("RENAME TABLE");
     ParserKeyword s_to("TO");
     ParserToken s_comma(TokenType::Comma);
@@ -71,7 +68,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTRenameQuery>();
     query->cluster = cluster_str;
     node = query;
 

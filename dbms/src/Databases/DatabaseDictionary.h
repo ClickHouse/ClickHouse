@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace Poco
@@ -15,25 +15,16 @@ namespace Poco
 
 namespace DB
 {
-class ExternalDictionaries;
 
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
 class DatabaseDictionary : public IDatabase
 {
-private:
-    const String name;
-    mutable std::mutex mutex;
-    const ExternalDictionaries & external_dictionaries;
-    std::unordered_set<String> deleted_tables;
-
-    Poco::Logger * log;
-
-    Tables loadTables();
-
 public:
-    DatabaseDictionary(const String & name_, const Context & context);
+    DatabaseDictionary(const String & name_);
+
+    String getDatabaseName() const override;
 
     String getEngineName() const override
     {
@@ -51,7 +42,7 @@ public:
 
     StoragePtr tryGetTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name) const override;
 
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
@@ -79,22 +70,34 @@ public:
     void alterTable(
         const Context & context,
         const String & name,
-        const NamesAndTypesList & columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
+        const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateQuery(
+    ASTPtr getCreateTableQuery(
         const Context & context,
         const String & table_name) const override;
 
+    ASTPtr tryGetCreateTableQuery(
+            const Context & context,
+            const String & table_name) const override;
+
+    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+
     void shutdown() override;
-    void drop() override;
+
+private:
+    const String name;
+    mutable std::mutex mutex;
+
+    Poco::Logger * log;
+
+    Tables listTables(const Context & context);
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 
 }

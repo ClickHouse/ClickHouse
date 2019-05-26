@@ -9,26 +9,23 @@ ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr
     : expression(expression_)
 {
     children.push_back(input);
+    cached_header = children.back()->getHeader();
+    expression->execute(cached_header, true);
 }
 
 String ExpressionBlockInputStream::getName() const { return "Expression"; }
 
-String ExpressionBlockInputStream::getID() const
+Block ExpressionBlockInputStream::getTotals()
 {
-    std::stringstream res;
-    res << "Expression(" << children.back()->getID() << ", " << expression->getID() << ")";
-    return res.str();
-}
-
-const Block & ExpressionBlockInputStream::getTotals()
-{
-    if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
-    {
-        totals = child->getTotals();
-        expression->executeOnTotals(totals);
-    }
+    totals = children.back()->getTotals();
+    expression->executeOnTotals(totals);
 
     return totals;
+}
+
+Block ExpressionBlockInputStream::getHeader() const
+{
+    return cached_header.cloneEmpty();
 }
 
 Block ExpressionBlockInputStream::readImpl()
@@ -36,9 +33,7 @@ Block ExpressionBlockInputStream::readImpl()
     Block res = children.back()->read();
     if (!res)
         return res;
-
     expression->execute(res);
-
     return res;
 }
 

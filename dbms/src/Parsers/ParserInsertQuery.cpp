@@ -1,15 +1,14 @@
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
-
-#include <Common/typeid_cast.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -23,37 +22,52 @@ namespace ErrorCodes
 
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
+    ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_select("SELECT");
+    ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserFunction table_function_p;
 
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
+    ASTPtr table_function;
+    ASTPtr settings_ast;
     /// Insertion data
     const char * data = nullptr;
 
     if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    if (!name_p.parse(pos, table, expected))
-        return false;
+    s_table.ignore(pos, expected);
 
-    if (s_dot.ignore(pos, expected))
+    if (s_function.ignore(pos, expected))
     {
-        database = table;
+        if (!table_function_p.parse(pos, table_function, expected))
+            return false;
+    }
+    else
+    {
         if (!name_p.parse(pos, table, expected))
             return false;
+
+        if (s_dot.ignore(pos, expected))
+        {
+            database = table;
+            if (!name_p.parse(pos, table, expected))
+                return false;
+        }
     }
 
     /// Is there a list of columns
@@ -75,12 +89,32 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_format.ignore(pos, expected))
     {
-        auto name_pos = pos;
-
         if (!name_p.parse(pos, format, expected))
             return false;
+    }
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
+    {
+        pos = before_select;
+        ParserSelectWithUnionQuery select_p;
+        select_p.parse(pos, select, expected);
+    }
+    else
+    {
+        return false;
+    }
 
-        data = name_pos->end;
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, settings_ast, expected))
+            return false;
+    }
+
+    if (format)
+    {
+        Pos last_token = pos;
+        --last_token;
+        data = last_token->end;
 
         if (data < end && *data == ';')
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
@@ -103,30 +137,25 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (data < end && *data == '\n')
             ++data;
     }
-    else if (s_select.ignore(pos, expected))
+
+    auto query = std::make_shared<ASTInsertQuery>();
+    node = query;
+
+    if (table_function)
     {
-        pos = before_select;
-        ParserSelectQuery select_p;
-        select_p.parse(pos, select, expected);
+        query->table_function = table_function;
     }
     else
     {
-        return false;
+        getIdentifierName(database, query->database);
+        getIdentifierName(table, query->table);
     }
 
-    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
-    node = query;
-
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-
-    query->table = typeid_cast<ASTIdentifier &>(*table).name;
-
-    if (format)
-        query->format = typeid_cast<ASTIdentifier &>(*format).name;
+    getIdentifierName(format, query->format);
 
     query->columns = columns;
     query->select = select;
+    query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
 
@@ -134,6 +163,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (settings_ast)
+        query->children.push_back(settings_ast);
 
     return true;
 }

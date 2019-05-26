@@ -14,33 +14,29 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : public ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
+class StorageSetOrJoinBase : public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageSetOrJoinBase>;
     friend class SetOrJoinBlockOutputStream;
 
 public:
-    String getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    String getTableName() const override { return table_name; }
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+
+    String getDataPath() const override { return path; }
 
 protected:
     StorageSetOrJoinBase(
         const String & path_,
-        const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const String & table_name_,
+        const ColumnsDescription & columns_);
 
     String path;
-    String name;
-    NamesAndTypesListPtr columns;
+    String table_name;
 
-    UInt64 increment = 0;    /// For the backup file names.
+    std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
     /// Restore from backup.
     void restore();
@@ -61,38 +57,27 @@ private:
   */
 class StorageSet : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-friend class ext::shared_ptr_helper<StorageSet>;
+friend struct ext::shared_ptr_helper<StorageSet>;
 
 public:
-    static StoragePtr create(
-        const String & path_,
-        const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_)
-    {
-        return ext::shared_ptr_helper<StorageSet>::make_shared(path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-    }
-
     String getName() const override { return "Set"; }
 
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
+    void truncate(const ASTPtr &, const Context &) override;
+
 private:
     SetPtr set;
 
+    void insertBlock(const Block & block) override;
+    size_t getSize() const override;
+
+protected:
     StorageSet(
         const String & path_,
         const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
-    void insertBlock(const Block & block) override;
-    size_t getSize() const override;
+        const ColumnsDescription & columns_);
 };
 
 }

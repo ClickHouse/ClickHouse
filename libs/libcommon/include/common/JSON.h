@@ -38,7 +38,7 @@
   */
 
 
-POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception);
+POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
 
 
 class JSON
@@ -62,9 +62,6 @@ public:
 
     JSON(const JSON & rhs) : ptr_begin(rhs.ptr_begin), ptr_end(rhs.ptr_end), level(rhs.level) {}
 
-    /// Для вставки в контейнеры (создаёт некорректный объект)
-    JSON() : ptr_begin(nullptr), ptr_end(ptr_begin + 1) {}
-
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
 
@@ -82,13 +79,13 @@ public:
 
     ElementType getType() const;
 
-    bool isObject() const        { return getType() == TYPE_OBJECT; };
-    bool isArray() const         { return getType() == TYPE_ARRAY; };
-    bool isNumber() const        { return getType() == TYPE_NUMBER; };
-    bool isString() const        { return getType() == TYPE_STRING; };
-    bool isBool() const          { return getType() == TYPE_BOOL; };
-    bool isNull() const          { return getType() == TYPE_NULL; };
-    bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; };
+    bool isObject() const        { return getType() == TYPE_OBJECT; }
+    bool isArray() const         { return getType() == TYPE_ARRAY; }
+    bool isNumber() const        { return getType() == TYPE_NUMBER; }
+    bool isString() const        { return getType() == TYPE_STRING; }
+    bool isBool() const          { return getType() == TYPE_BOOL; }
+    bool isNull() const          { return getType() == TYPE_NULL; }
+    bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; }
 
     /// Количество элементов в массиве или объекте; если элемент - не массив или объект, то исключение.
     size_t size() const;
@@ -114,11 +111,11 @@ public:
     template <class T>
     T getWithDefault(const std::string & key, const T & default_ = T()) const;
 
-    double         getDouble() const;
-    Int64         getInt() const;    /// Отбросить дробную часть.
-    UInt64         getUInt() const;    /// Отбросить дробную часть. Если число отрицательное - исключение.
+    double      getDouble() const;
+    Int64       getInt() const;    /// Отбросить дробную часть.
+    UInt64      getUInt() const;    /// Отбросить дробную часть. Если число отрицательное - исключение.
     std::string getString() const;
-    bool         getBool() const;
+    bool        getBool() const;
     std::string getName() const;    /// Получить имя name-value пары.
     JSON        getValue() const;    /// Получить значение name-value пары.
 
@@ -126,9 +123,9 @@ public:
     StringRef getRawName() const;
 
     /// Получить значение элемента; если элемент - строка, то распарсить значение из строки; если не строка или число - то исключение.
-    double         toDouble() const;
-    Int64         toInt() const;
-    UInt64         toUInt() const;
+    double      toDouble() const;
+    Int64       toInt() const;
+    UInt64      toUInt() const;
 
     /** Преобразовать любой элемент в строку.
       * Для строки возвращается её значение, для всех остальных элементов - сериализованное представление.

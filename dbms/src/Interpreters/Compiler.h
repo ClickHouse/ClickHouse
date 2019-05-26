@@ -15,7 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
 #include <Common/SharedLibrary.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -7,11 +8,13 @@ namespace DB
 
 void registerFunctionsHashing(FunctionFactory & factory)
 {
+#if USE_SSL
     factory.registerFunction<FunctionHalfMD5>();
     factory.registerFunction<FunctionMD5>();
     factory.registerFunction<FunctionSHA1>();
     factory.registerFunction<FunctionSHA224>();
     factory.registerFunction<FunctionSHA256>();
+#endif
     factory.registerFunction<FunctionSipHash64>();
     factory.registerFunction<FunctionSipHash128>();
     factory.registerFunction<FunctionCityHash64>();
@@ -20,22 +23,18 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionIntHash32>();
     factory.registerFunction<FunctionIntHash64>();
     factory.registerFunction<FunctionURLHash>();
-}
+    factory.registerFunction<FunctionJavaHash>();
+    factory.registerFunction<FunctionHiveHash>();
+    factory.registerFunction<FunctionMurmurHash2_32>();
+    factory.registerFunction<FunctionMurmurHash2_64>();
+    factory.registerFunction<FunctionMurmurHash3_32>();
+    factory.registerFunction<FunctionMurmurHash3_64>();
+    factory.registerFunction<FunctionMurmurHash3_128>();
+    factory.registerFunction<FunctionGccMurmurHash>();
 
-template <>
-UInt64 toInteger<Float32>(Float32 x)
-{
-    UInt32 res;
-    memcpy(&res, &x, sizeof(x));
-    return res;
+#if USE_XXHASH
+    factory.registerFunction<FunctionXxHash32>();
+    factory.registerFunction<FunctionXxHash64>();
+#endif
 }
-
-template <>
-UInt64 toInteger<Float64>(Float64 x)
-{
-    UInt64 res;
-    memcpy(&res, &x, sizeof(x));
-    return res;
-}
-
 }

@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "common/getMemoryAmount.h"
 
 // http://nadeausoftware.com/articles/2012/09/c_c_tip_how_get_physical_memory_size_system
@@ -25,7 +26,7 @@
  * Returns the size of physical memory (RAM) in bytes.
  * Returns 0 on unsupported platform
  */
-uint64_t getMemoryAmount()
+uint64_t getMemoryAmountOrZero()
 {
 #if defined(_WIN32) && (defined(__CYGWIN__) || defined(__CYGWIN32__))
     /* Cygwin under Windows. ------------------------------------ */
@@ -94,4 +95,13 @@ uint64_t getMemoryAmount()
 #endif /* sysctl and sysconf variants */
 
 #endif
+}
+
+
+uint64_t getMemoryAmount()
+{
+    auto res = getMemoryAmountOrZero();
+    if (!res)
+        throw std::runtime_error("Cannot determine memory amount");
+    return res;
 }

@@ -2,10 +2,10 @@
 
 #include <Core/Types.h>
 
-#include <map>
-#include <vector>
-#include <unordered_set>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 
 namespace Poco
@@ -38,12 +38,12 @@ public:
 class AddressPatterns
 {
 private:
-    using Container = std::vector<std::unique_ptr<IAddressPattern>>;
+    using Container = std::vector<std::shared_ptr<IAddressPattern>>;
     Container patterns;
 
 public:
     bool contains(const Poco::Net::IPAddress & addr) const;
-    void addFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+    void addFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
 
 
@@ -66,28 +66,13 @@ struct User
     using DatabaseSet = std::unordered_set<std::string>;
     DatabaseSet databases;
 
-    User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config);
-};
+    /// Table properties.
+    using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
+    using TableMap = std::unordered_map<std::string /* table */, PropertyMap /* properties */>;
+    using DatabaseMap = std::unordered_map<std::string /* database */, TableMap /* tables */>;
+    DatabaseMap table_props;
 
-
-/// Known users.
-class Users
-{
-private:
-    using Container = std::map<String, User>;
-    Container cont;
-
-public:
-    void loadFromConfig(Poco::Util::AbstractConfiguration & config);
-
-    /// Find user and make authorize checks
-    const User & get(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
-
-    /// Just find user
-    const User & get(const String & user_name);
-
-    /// Check if the user has access to the database.
-    bool isAllowedDatabase(const String & user_name, const String & database_name) const;
+    User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
 
 

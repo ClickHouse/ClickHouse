@@ -6,6 +6,11 @@
 namespace DB
 {
 
+Block MergingAggregatedBlockInputStream::getHeader() const
+{
+    return aggregator.getHeader(final);
+}
+
 
 Block MergingAggregatedBlockInputStream::readImpl()
 {
@@ -23,7 +28,7 @@ Block MergingAggregatedBlockInputStream::readImpl()
     }
 
     Block res;
-    if (isCancelled() || it == blocks.end())
+    if (isCancelledOrThrowIfKilled() || it == blocks.end())
         return res;
 
     res = std::move(*it);

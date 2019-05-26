@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * Unlike UnionBlockInputStream, it does this sequentially.
   * Blocks of different sources are not interleaved with each other.
   */
-class ConcatBlockInputStream : public IProfilingBlockInputStream
+class ConcatBlockInputStream : public IBlockInputStream
 {
 public:
     ConcatBlockInputStream(BlockInputStreams inputs_)
@@ -22,24 +22,10 @@ public:
 
     String getName() const override { return "Concat"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Concat(";
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Let's assume that the order of concatenation of blocks does not matter.
-        std::sort(children_ids.begin(), children_ids.end());
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
+    /// We call readSuffix prematurely by ourself. Suppress default behaviour.
+    void readSuffix() override {}
 
 protected:
     Block readImpl() override

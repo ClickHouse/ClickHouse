@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -5,103 +6,76 @@
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 
 
 namespace DB
 {
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(static_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-
-template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value && std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
-{
-    readIntTextUnsafe(x, istr);
-}
-
-template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value || !std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
-{
-    readText(x, istr);
-}
-
-template <typename T>
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
-    readTextUnsafeIfIntegral<T>(x, istr);
+
+    if constexpr (std::is_integral_v<T> && std::is_arithmetic_v<T>)
+        readIntTextUnsafe(x, istr);
+    else
+        readText(x, istr);
+
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
-
 template <typename T>
-void DataTypeNumberBase<T>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
 {
-    deserializeText<T>(column, istr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
-{
-    deserializeText<T>(column, istr);
-}
-
-
-template <typename T>
-static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr)
-{
-    if (std::signbit(x))
+    if constexpr (std::is_floating_point_v<T>)
     {
-        if (isNaN(x))
-            writeCString("-nan", ostr);
+        if (std::signbit(x))
+        {
+            if (isNaN(x))
+                writeCString("-nan", ostr);
+            else
+                writeCString("-inf", ostr);
+        }
         else
-            writeCString("-inf", ostr);
+        {
+            if (isNaN(x))
+                writeCString("nan", ostr);
+            else
+                writeCString("inf", ostr);
+        }
     }
     else
     {
-        if (isNaN(x))
-            writeCString("nan", ostr);
-        else
-            writeCString("inf", ostr);
+        /// This function is not called for non floating point numbers.
+        (void)x;
     }
 }
 
-template <typename T>
-static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr) {}
-
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
-        || (settings.output_format_json_quote_denormals && !is_finite);
+    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
 
     if (is_finite)
         writeText(x, ostr);
-    else if (!settings.output_format_json_quote_denormals)
+    else if (!settings.json.quote_denormals)
         writeCString("null", ostr);
     else
         writeDenormalNumber(x, ostr);
@@ -111,7 +85,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
@@ -132,8 +106,8 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else
     {
-        static constexpr bool is_uint8 = std::is_same<T, UInt8>::value;
-        static constexpr bool is_int8 = std::is_same<T, Int8>::value;
+        static constexpr bool is_uint8 = std::is_same_v<T, UInt8>;
+        static constexpr bool is_int8 = std::is_same_v<T, Int8>;
 
         if (is_uint8 || is_int8)
         {
@@ -162,13 +136,7 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     FieldType x;
     readCSV(x, istr);
@@ -178,14 +146,14 @@ void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return NearestFieldType<FieldType>();
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -194,7 +162,7 @@ void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) 
 {
     typename ColumnVector<T>::value_type x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
@@ -214,30 +182,72 @@ void DataTypeNumberBase<T>::deserializeBinary(IColumn & column, ReadBuffer & ist
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    const typename ColumnVector<T>::Container_t & x = typeid_cast<const ColumnVector<T> &>(column).getData();
+    const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
 
     size_t size = x.size();
 
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    typename ColumnVector<T>::Container_t & x = typeid_cast<ColumnVector<T> &>(column).getData();
+    typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
 }
 
+
 template <typename T>
-ColumnPtr DataTypeNumberBase<T>::createColumn() const
+void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    return std::make_shared<ColumnVector<T>>();
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+}
+
+
+template <typename T>
+void DataTypeNumberBase<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T value;
+    if (!protobuf.readNumber(value))
+        return;
+
+    auto & container = typeid_cast<ColumnVector<T> &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
+}
+
+
+template <typename T>
+MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
+{
+    return ColumnVector<T>::create();
+}
+
+template <typename T>
+bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
+{
+    return std::is_integral_v<T>;
+}
+
+template <typename T>
+bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
+{
+    return std::is_integral_v<T> && std::is_unsigned_v<T>;
 }
 
 

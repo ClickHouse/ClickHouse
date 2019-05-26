@@ -1,11 +1,11 @@
-#include <Common/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Poco/Event.h>
 #include <iostream>
 
 /// A tool for reproducing https://issues.apache.org/jira/browse/ZOOKEEPER-706
 /// Original libzookeeper can't reconnect the session if the length of SET_WATCHES message
-/// exceeeds jute.maxbuffer (0xfffff by default).
+/// exceeds jute.maxbuffer (0xfffff by default).
 /// This happens when the number of watches exceeds ~29000.
 ///
 /// Session reconnect can be caused by forbidding packets to the current zookeeper server, e.g.
@@ -23,8 +23,8 @@ int main(int argc, char ** argv)
             return 3;
         }
 
-        ConfigProcessor processor(false, true);
-        auto config = processor.loadConfig(argv[1]).configuration;
+        DB::ConfigProcessor processor(argv[1], false, true);
+        auto config = processor.loadConfig().configuration;
         zkutil::ZooKeeper zk(*config, "zookeeper");
         zkutil::EventPtr watch = std::make_shared<Poco::Event>();
 
@@ -63,6 +63,4 @@ int main(int argc, char ** argv)
         std::cerr << "Some exception" << std::endl;
         return 2;
     }
-
-    return 0;
 }

@@ -2,8 +2,8 @@
 
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 
 
@@ -16,7 +16,7 @@ namespace DB
   * If final == false, aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
   * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
   */
-class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
+class ParallelAggregatingBlockInputStream : public IBlockInputStream
 {
 public:
     /** Columns from key_names and arguments of aggregate functions must already be computed.
@@ -27,9 +27,9 @@ public:
 
     String getName() const override { return "ParallelAggregating"; }
 
-    String getID() const override;
+    void cancel(bool kill) override;
 
-    void cancel() override;
+    Block getHeader() const override;
 
 protected:
     /// Do nothing that preparation to execution of the query be done in parallel, in ParallelInputsProcessor.
@@ -81,16 +81,14 @@ private:
         size_t src_bytes = 0;
 
         StringRefs key;
-        ConstColumnPlainPtrs key_columns;
+        ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
-        Sizes key_sizes;
 
         ThreadData(size_t keys_size, size_t aggregates_size)
         {
             key.resize(keys_size);
             key_columns.resize(keys_size);
             aggregate_columns.resize(aggregates_size);
-            key_sizes.resize(keys_size);
         }
     };
 

@@ -27,4 +27,9 @@ x	Nullable(String)
 4	Nullable(String)
 1	UInt8
 1	UInt8
-\N	Null
+\N	Nullable(Nothing)
+0	Nullable(String)
+-1	Nullable(String)
+2	Nullable(String)
+3	Nullable(String)
+4	Nullable(String)

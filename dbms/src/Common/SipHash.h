@@ -14,6 +14,10 @@
   */
 
 #include <common/Types.h>
+#include <common/unaligned.h>
+#include <string>
+#include <type_traits>
+#include <Core/Defines.h>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
@@ -46,7 +50,7 @@ private:
         UInt8 current_bytes[8];
     };
 
-    void finalize()
+    ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
         current_bytes[7] = cnt;
@@ -105,7 +109,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const UInt64 *>(data);
+            current_word = unalignedLoad<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -119,15 +123,27 @@ public:
         current_word = 0;
         switch (end - data)
         {
-            case 7: current_bytes[6] = data[6];
-            case 6: current_bytes[5] = data[5];
-            case 5: current_bytes[4] = data[4];
-            case 4: current_bytes[3] = data[3];
-            case 3: current_bytes[2] = data[2];
-            case 2: current_bytes[1] = data[1];
-            case 1: current_bytes[0] = data[0];
+            case 7: current_bytes[6] = data[6]; [[fallthrough]];
+            case 6: current_bytes[5] = data[5]; [[fallthrough]];
+            case 5: current_bytes[4] = data[4]; [[fallthrough]];
+            case 4: current_bytes[3] = data[3]; [[fallthrough]];
+            case 3: current_bytes[2] = data[2]; [[fallthrough]];
+            case 2: current_bytes[1] = data[1]; [[fallthrough]];
+            case 1: current_bytes[0] = data[0]; [[fallthrough]];
             case 0: break;
         }
+    }
+
+    /// NOTE: std::has_unique_object_representations is only available since clang 6. As of Mar 2017 we still use clang 5 sometimes.
+    template <typename T>
+    std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, void> update(const T & x)
+    {
+        update(reinterpret_cast<const char *>(&x), sizeof(x));
+    }
+
+    void update(const std::string & x)
+    {
+        update(x.data(), x.length());
     }
 
     /// Get the result in some form. This can only be done once!
@@ -139,8 +155,11 @@ public:
         reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
     }
 
-    void get128(UInt64 & lo, UInt64 & hi)
+    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
+    template <typename T>
+    ALWAYS_INLINE void get128(T & lo, T & hi)
     {
+        static_assert(sizeof(T) == 8);
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
@@ -173,7 +192,13 @@ inline UInt64 sipHash64(const char * data, const size_t size)
     return hash.get64();
 }
 
-#include <string>
+template <typename T>
+std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, UInt64> sipHash64(const T & x)
+{
+    SipHash hash;
+    hash.update(x);
+    return hash.get64();
+}
 
 inline UInt64 sipHash64(const std::string & s)
 {

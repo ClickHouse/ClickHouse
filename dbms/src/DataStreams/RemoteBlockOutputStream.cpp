@@ -4,6 +4,8 @@
 #include <common/logger_useful.h>
 
 #include <Common/NetException.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 
 
 namespace DB
@@ -19,59 +21,65 @@ namespace ErrorCodes
 RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_)
     : connection(connection_), query(query_), settings(settings_)
 {
-}
-
-
-void RemoteBlockOutputStream::writePrefix()
-{
-    /** Send query and receive "sample block", that describe table structure.
-      * Sample block is needed to know, what structure is required for blocks to be passed to 'write' method.
+    /** Send query and receive "header", that describe table structure.
+      * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-
     connection.sendQuery(query, "", QueryProcessingStage::Complete, settings, nullptr);
 
-    Connection::Packet packet = connection.receivePacket();
-
-    if (Protocol::Server::Data == packet.type)
+    while (true)
     {
-        sample_block = packet.block;
+        Connection::Packet packet = connection.receivePacket();
 
-        if (!sample_block)
-            throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
+        if (Protocol::Server::Data == packet.type)
+        {
+            header = packet.block;
+            break;
+        }
+        else if (Protocol::Server::Exception == packet.type)
+        {
+            packet.exception->rethrow();
+            break;
+        }
+        else if (Protocol::Server::Log == packet.type)
+        {
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+        }
+        else
+            throw NetException("Unexpected packet from server (expected Data or Exception, got "
+                + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
-    else if (Protocol::Server::Exception == packet.type)
-    {
-        packet.exception->rethrow();
-        return;
-    }
-    else
-        throw NetException("Unexpected packet from server (expected Data or Exception, got "
-        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 
 void RemoteBlockOutputStream::write(const Block & block)
 {
-    if (!sample_block)
-        throw Exception("You must call IBlockOutputStream::writePrefix before IBlockOutputStream::write", ErrorCodes::LOGICAL_ERROR);
+    if (header)
+        assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
 
-    if (!blocksHaveEqualStructure(block, sample_block))
+    try
     {
-        std::stringstream message;
-        message << "Block structure is different from table structure.\n"
-        << "\nTable structure:\n(" << sample_block.dumpStructure() << ")\nBlock structure:\n(" << block.dumpStructure() << ")\n";
-
-        LOG_ERROR(&Logger::get("RemoteBlockOutputStream"), message.str());
-        throw DB::Exception(message.str());
+        connection.sendData(block);
     }
+    catch (const NetException &)
+    {
+        /// Try to get more detailed exception from server
+        auto packet_type = connection.checkPacket();
+        if (packet_type && *packet_type == Protocol::Server::Exception)
+        {
+            Connection::Packet packet = connection.receivePacket();
+            packet.exception->rethrow();
+        }
 
-    connection.sendData(block);
+        throw;
+    }
 }
 
 
 void RemoteBlockOutputStream::writePrepared(ReadBuffer & input, size_t size)
 {
-    /// We cannot use 'sample_block'. Input must contain block with proper structure.
+    /// We cannot use 'header'. Input must contain block with proper structure.
     connection.sendPreparedData(input, size);
 }
 
@@ -81,18 +89,42 @@ void RemoteBlockOutputStream::writeSuffix()
     /// Empty block means end of data.
     connection.sendData(Block());
 
-    /// Receive EndOfStream packet.
-    Connection::Packet packet = connection.receivePacket();
-
-    if (Protocol::Server::EndOfStream == packet.type)
+    /// Wait for EndOfStream or Exception packet, skip Log packets.
+    while (true)
     {
-        /// Do nothing.
+        Connection::Packet packet = connection.receivePacket();
+
+        if (Protocol::Server::EndOfStream == packet.type)
+            break;
+        else if (Protocol::Server::Exception == packet.type)
+            packet.exception->rethrow();
+        else if (Protocol::Server::Log == packet.type)
+        {
+            // Do nothing
+        }
+        else
+            throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
+            + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
-    else if (Protocol::Server::Exception == packet.type)
-        packet.exception->rethrow();
-    else
-        throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
-        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+    finished = true;
+}
+
+RemoteBlockOutputStream::~RemoteBlockOutputStream()
+{
+    /// If interrupted in the middle of the loop of communication with the server, then interrupt the connection,
+    ///  to not leave the connection in unsynchronized state.
+    if (!finished)
+    {
+        try
+        {
+            connection.disconnect();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 }

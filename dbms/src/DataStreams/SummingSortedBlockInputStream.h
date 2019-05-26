@@ -2,8 +2,11 @@
 
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/AlignedBuffer.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 
 namespace DB
 {
@@ -22,18 +25,14 @@ namespace ErrorCodes
 class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-    SummingSortedBlockInputStream(BlockInputStreams inputs_,
+    SummingSortedBlockInputStream(
+        const BlockInputStreams & inputs_,
         const SortDescription & description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum_,
-        size_t max_block_size_)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_), column_names_to_sum(column_names_to_sum_)
-    {
-    }
+        size_t max_block_size_);
 
     String getName() const override { return "SummingSorted"; }
-
-    String getID() const override;
 
 protected:
     /// Can return 1 more records than max_block_size.
@@ -46,7 +45,6 @@ private:
     bool finished = false;
 
     /// Columns with which values should be summed.
-    Names column_names_to_sum;    /// If set, it is converted to column_numbers_to_aggregate when initialized.
     ColumnNumbers column_numbers_not_to_aggregate;
 
     /** A table can have nested tables that are treated in a special way.
@@ -72,19 +70,53 @@ private:
     /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
+        /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;
-        ColumnPtr merged_column;
-        std::vector<char> state;
+        MutableColumnPtr merged_column;
+        AlignedBuffer state;
         bool created = false;
+
+        /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
+        bool is_agg_func_type = false;
+
+        void init(const char * function_name, const DataTypes & argument_types)
+        {
+            function = AggregateFunctionFactory::instance().get(function_name, argument_types);
+            add_function = function->getAddressOfAddFunction();
+            state.reset(function->sizeOfData(), function->alignOfData());
+        }
+
+        void createState()
+        {
+            if (created)
+                return;
+            if (is_agg_func_type)
+                merged_column->insertDefault();
+            else
+                function->create(state.data());
+            created = true;
+        }
+
+        void destroyState()
+        {
+            if (!created)
+                return;
+            if (!is_agg_func_type)
+                function->destroy(state.data());
+            created = false;
+        }
 
         /// Explicitly destroy aggregation state if the stream is terminated
         ~AggregateDescription()
         {
-            if (created)
-                function->destroy(state.data());
+            destroyState();
         }
+
+        AggregateDescription() = default;
+        AggregateDescription(AggregateDescription &&) = default;
+        AggregateDescription(const AggregateDescription &) = delete;
     };
 
     /// Stores numbers of key-columns and value-columns.
@@ -103,26 +135,21 @@ private:
     Row current_row;
     bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
-    bool output_is_non_empty = false;   /// Have we given out at least one row as a result.
     size_t merged_rows = 0;             /// Number of rows merged into current result block
 
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
-    /// If force_insertion=true, then the row will be inserted even if it is "zero"
-    void insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion);
+    void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
 
     /// Returns true if merge result is not empty
-    template <typename TSortCursor>
-    bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
+    bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
-    template <typename TSortCursor>
-    void addRow(Row & row, TSortCursor & cursor);
+    void addRow(SortCursor & cursor);
 };
 
 }

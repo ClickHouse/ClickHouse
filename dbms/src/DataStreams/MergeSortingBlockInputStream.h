@@ -8,11 +8,11 @@
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 
 
 namespace DB
@@ -25,28 +25,29 @@ namespace DB
 /** Part of implementation. Merging array of ready (already read from somewhere) blocks.
   * Returns result of merge as stream of blocks, not more than 'max_merged_block_size' rows in each.
   */
-class MergeSortingBlocksBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_ = 0);
+        size_t max_merged_block_size_, UInt64 limit_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
-    String getID() const override { return getName(); }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
+
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
 
 private:
     Blocks & blocks;
+    Block header;
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
     size_t total_merged_rows = 0;
 
     using CursorImpls = std::vector<SortCursorImpl>;
@@ -54,7 +55,7 @@ private:
 
     bool has_collation = false;
 
-    std::priority_queue<SortCursor> queue;
+    std::priority_queue<SortCursor> queue_without_collation;
     std::priority_queue<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.
@@ -65,36 +66,21 @@ private:
 };
 
 
-class MergeSortingBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_,
-        size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
-        : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
-        max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
-    {
-        children.push_back(input);
-    }
+        size_t max_merged_block_size_, UInt64 limit_,
+        size_t max_bytes_before_remerge_,
+        size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
 
     String getName() const override { return "MergeSorting"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "MergeSorting(" << children.back()->getID();
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
+
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
@@ -102,21 +88,24 @@ protected:
 private:
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
 
+    size_t max_bytes_before_remerge;
     size_t max_bytes_before_external_sort;
     const std::string tmp_path;
 
     Logger * log = &Logger::get("MergeSortingBlockInputStream");
 
     Blocks blocks;
+    size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
     std::unique_ptr<IBlockInputStream> impl;
 
     /// Before operation, will remove constant columns from blocks. And after, place constant columns back.
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
     /// Save original block structure here.
-    Block sample_block;
+    Block header;
+    Block header_without_constants;
 
     /// Everything below is for external sorting.
     std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
@@ -128,13 +117,17 @@ private:
         CompressedReadBuffer compressed_in;
         BlockInputStreamPtr block_in;
 
-        TemporaryFileStream(const std::string & path)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in)) {}
+        TemporaryFileStream(const std::string & path, const Block & header)
+            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
     };
 
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
     BlockInputStreams inputs_to_merge;
-};
 
+    /// Merge all accumulated blocks to keep no more than limit rows.
+    void remerge();
+    /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
+    bool remerge_is_useful = true;
+};
 }

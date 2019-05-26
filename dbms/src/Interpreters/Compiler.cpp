@@ -1,19 +1,20 @@
 #include <Poco/DirectoryIterator.h>
-#include <Common/ClickHouseRevision.h>
+#include <Poco/Util/Application.h>
 #include <ext/unlock_guard.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/config.h>
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
-#include <Common/StringUtils.h>
-
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
-
 #include <Interpreters/Compiler.h>
-#include <Interpreters/config_compile.h>
 
+#if __has_include(<Interpreters/config_compile.h>)
+#include <Interpreters/config_compile.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -27,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_DLOPEN;
+    extern const int CANNOT_COMPILE_CODE;
 }
 
 Compiler::Compiler(const std::string & path_, size_t threads)
@@ -59,7 +61,7 @@ static Compiler::HashedKey getHash(const std::string & key)
     SipHash hash;
 
     auto revision = ClickHouseRevision::get();
-    hash.update(reinterpret_cast<const char *>(&revision), sizeof(revision));
+    hash.update(revision);
     hash.update(key.data(), key.size());
 
     Compiler::HashedKey res;
@@ -86,7 +88,7 @@ SharedLibraryPtr Compiler::getOrCount(
 {
     HashedKey hashed_key = getHash(key);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     UInt32 count = ++counts[hashed_key];
 
@@ -141,40 +143,37 @@ SharedLibraryPtr Compiler::getOrCount(
     {
         /// The min_count_to_compile value of zero indicates the need for synchronous compilation.
 
-        /// Are there any free threads?
-        if (min_count_to_compile == 0 || pool.active() < pool.size())
+        /// Indicates that the library is in the process of compiling.
+        libraries[hashed_key] = nullptr;
+
+        LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
+
+        if (min_count_to_compile == 0)
         {
-            /// Indicates that the library is in the process of compiling.
-            libraries[hashed_key] = nullptr;
-
-            LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
-
-            if (min_count_to_compile == 0)
             {
-                {
-                    ext::unlock_guard<std::mutex> unlock(mutex);
-                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                }
+                ext::unlock_guard<std::mutex> unlock(mutex);
+                compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+            }
 
-                return libraries[hashed_key];
-            }
-            else
-            {
-                pool.schedule([=]
-                {
-                    try
-                    {
-                        compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("Compiler");
-                    }
-                });
-            }
+            return libraries[hashed_key];
         }
         else
-            LOG_INFO(log, "All threads are busy.");
+        {
+            bool res = pool.trySchedule([=]
+            {
+                try
+                {
+                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Compiler");
+                }
+            });
+
+            if (!res)
+                LOG_INFO(log, "All threads are busy.");
+        }
     }
 
     return nullptr;
@@ -187,7 +186,10 @@ static void addCodeToAssertHeadersMatch(WriteBuffer & out)
     out <<
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
-        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
+        "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";
 }
 
@@ -201,6 +203,9 @@ void Compiler::compile(
 {
     ProfileEvents::increment(ProfileEvents::CompileAttempt);
 
+#if !defined(INTERNAL_COMPILER_EXECUTABLE)
+    throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
     std::string so_file_path = prefix + ".so";
@@ -215,32 +220,63 @@ void Compiler::compile(
 
     std::stringstream command;
 
-    /// Slightly inconvenient.
+    auto compiler_executable_root = Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+    auto compiler_headers_root = Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
+    LOG_DEBUG(log, "Using internal compiler: compiler_executable_root=" << compiler_executable_root << "; compiler_headers_root=" << compiler_headers_root << "; compiler_headers=" << compiler_headers);
+
+    /// Slightly unconvenient.
     command <<
-        "LD_LIBRARY_PATH=" PATH_SHARE "/clickhouse/bin/"
-        " " INTERNAL_COMPILER_EXECUTABLE
-        " -B " PATH_SHARE "/clickhouse/bin/"
-        " " INTERNAL_COMPILER_FLAGS
-#if INTERNAL_COMPILER_CUSTOM_ROOT
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include/"
+        "("
+            INTERNAL_COMPILER_ENV
+            " " << compiler_executable_root << INTERNAL_COMPILER_EXECUTABLE
+            " " INTERNAL_COMPILER_FLAGS
+            /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
+            /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
+            " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
+            " -fdiagnostics-color=never"
+
+    #if INTERNAL_COMPILER_CUSTOM_ROOT
+            /// To get correct order merge this results carefully:
+            /// echo | clang -x c++ -E -Wp,-v -
+            /// echo | g++ -x c++ -E -Wp,-v -
+
+            " -isystem " << compiler_headers_root << "/usr/include/c++/*"
+        #if defined(CMAKE_LIBRARY_ARCHITECTURE)
+            " -isystem " << compiler_headers_root << "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE "/c++/*"
+        #endif
+            " -isystem " << compiler_headers_root << "/usr/include/c++/*/backward"
+            " -isystem " << compiler_headers_root << "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
+            " -isystem " << compiler_headers_root << "/usr/local/lib/clang/*/include"                /// if clang installed manually
+            " -isystem " << compiler_headers_root << "/usr/lib/clang/*/include"                      /// if clang build from submodules
+        #if defined(CMAKE_LIBRARY_ARCHITECTURE)
+            " -isystem " << compiler_headers_root << "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
+            " -isystem " << compiler_headers_root << "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
+        #endif
+            " -isystem " << compiler_headers_root << "/usr/local/include"                            /// if something installed manually
+        #if defined(CMAKE_LIBRARY_ARCHITECTURE)
+            " -isystem " << compiler_headers_root << "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE
+        #endif
+            " -isystem " << compiler_headers_root << "/usr/include"
+    #endif
+            " -I " << compiler_headers << "/dbms/src/"
+            " -isystem " << compiler_headers << "/contrib/cityhash102/include/"
+            " -isystem " << compiler_headers << "/contrib/libpcg-random/include/"
+        #if USE_LFALLOC
+            " -isystem " << compiler_headers << "/contrib/lfalloc/src/"
+        #endif
+            " -isystem " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
+            " -isystem " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
+            " -isystem " << compiler_headers << INTERNAL_Boost_INCLUDE_DIRS
+            " -I " << compiler_headers << "/libs/libcommon/include/"
+            " " << additional_compiler_flags <<
+            " -shared -o " << so_tmp_file_path << " " << cpp_file_path
+            << " 2>&1"
+        ") || echo Return code: $?";
+
+#ifndef NDEBUG
+    LOG_TRACE(log, "Compile command: " << command.str());
 #endif
-        " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
-        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
-        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
-        " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
-        " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
-        " -I " INTERNAL_Boost_INCLUDE_DIRS
-        " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
-        " " << additional_compiler_flags <<
-        " -o " << so_tmp_file_path << " " << cpp_file_path
-        << " 2>&1 || echo Exit code: $?";
 
     std::string compile_result;
 
@@ -251,7 +287,18 @@ void Compiler::compile(
     }
 
     if (!compile_result.empty())
-        throw Exception("Cannot compile code:\n\n" + command.str() + "\n\n" + compile_result);
+    {
+        std::string error_message = "Cannot compile code:\n\n" + command.str() + "\n\n" + compile_result;
+
+        Poco::File so_tmp_file(so_tmp_file_path);
+        if (so_tmp_file.exists() && so_tmp_file.canExecute())
+        {
+            /// Compiler may emit information messages. This is suspicious, but we still can use compiled result.
+            LOG_WARNING(log, error_message);
+        }
+        else
+            throw Exception(error_message, ErrorCodes::CANNOT_COMPILE_CODE);
+    }
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();
@@ -260,7 +307,7 @@ void Compiler::compile(
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         libraries[hashed_key] = lib;
     }
 
@@ -268,6 +315,8 @@ void Compiler::compile(
     ProfileEvents::increment(ProfileEvents::CompileSuccess);
 
     on_ready(lib);
+
+#endif
 }
 
 

@@ -15,33 +15,33 @@
 
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
-  * - some data structure is used to calculate the value of X;
-  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
-  * - after processing all elements, the data structure is in some state S;
-  * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
-  *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
-  */
+  * - some data structure is used to calculate the value of X;
+  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
+  * - after processing all elements, the data structure is in some state S;
+  * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
+  *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
+  */
 
 /** In particular, what is described below can be found by the name of the BJKST algorithm.
-  */
+  */
 
 /** Very simple hash-set for approximate number of unique values.
-  * Works like this:
-  * - you can insert UInt64;
-  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
-  * - the original value is not saved (lost);
-  * - further all operations are made with these hashes;
-  * - hash table is constructed according to the scheme:
-  * -  open addressing (one buffer, position in buffer is calculated by taking remainder of division by its size);
-  * -  linear probing (if the cell already has a value, then the cell following it is taken, etc.);
-  * -  the missing value is zero-encoded; to remember presence of zero in set, separate variable of type bool is used;
-  * -  buffer growth by 2 times when filling more than 50%;
-  * - if the set has more UNIQUES_HASH_MAX_SIZE elements, then all the elements are removed from the set,
-  *   not divisible by 2, and then all elements that do not divide by 2 are not inserted into the set;
-  * - if the situation repeats, then only elements dividing by 4, etc., are taken.
-  * - the size() method returns an approximate number of elements that have been inserted into the set;
-  * - there are methods for quick reading and writing in binary and text form.
-  */
+  * Works like this:
+  * - you can insert UInt64;
+  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
+  * - the original value is not saved (lost);
+  * - further all operations are made with these hashes;
+  * - hash table is constructed according to the scheme:
+  * -  open addressing (one buffer, position in buffer is calculated by taking remainder of division by its size);
+  * -  linear probing (if the cell already has a value, then the cell following it is taken, etc.);
+  * -  the missing value is zero-encoded; to remember presence of zero in set, separate variable of type bool is used;
+  * -  buffer growth by 2 times when filling more than 50%;
+  * - if the set has more UNIQUES_HASH_MAX_SIZE elements, then all the elements are removed from the set,
+  *   not divisible by 2, and then all elements that do not divide by 2 are not inserted into the set;
+  * - if the situation repeats, then only elements dividing by 4, etc., are taken.
+  * - the size() method returns an approximate number of elements that have been inserted into the set;
+  * - there are methods for quick reading and writing in binary and text form.
+  */
 
 /// The maximum degree of buffer size before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE_DEGREE 17
@@ -50,8 +50,8 @@
 #define UNIQUES_HASH_MAX_SIZE (1ULL << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
 
 /** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
-  * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
-  */
+  * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
+  */
 #define UNIQUES_HASH_BITS_FOR_SKIP (32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
 
 /// Initial buffer size degree
@@ -59,8 +59,8 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in the Meter), so it continues to be used.
-  */
+  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
+  */
 struct UniquesHashSetDefaultHash
 {
     size_t operator() (UInt64 x) const
@@ -74,8 +74,8 @@ template <typename Hash = UniquesHashSetDefaultHash>
 class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
 {
 private:
-    using Value_t = UInt64;
-    using HashValue_t = UInt32;
+    using Value = UInt64;
+    using HashValue = UInt32;
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
     UInt32 m_size;          /// Number of elements
@@ -83,7 +83,7 @@ private:
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
-    HashValue_t * buf;
+    HashValue * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -92,7 +92,7 @@ private:
 
     void alloc(UInt8 new_size_degree)
     {
-        buf = reinterpret_cast<HashValue_t *>(Allocator::alloc((1ULL << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue *>(Allocator::alloc((1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
     }
 
@@ -108,15 +108,15 @@ private:
     inline size_t buf_size() const           { return 1ULL << size_degree; }
     inline size_t max_fill() const           { return 1ULL << (size_degree - 1); }
     inline size_t mask() const               { return buf_size() - 1; }
-    inline size_t place(HashValue_t x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
-    inline bool good(HashValue_t hash) const
+    inline bool good(HashValue hash) const
     {
         return hash == ((hash >> skip_degree) << skip_degree);
     }
 
-    HashValue_t hash(Value_t key) const
+    HashValue hash(Value key) const
     {
         return Hash()(key);
     }
@@ -141,7 +141,7 @@ private:
         {
             if (unlikely(buf[i] && i != place(buf[i])))
             {
-                HashValue_t x = buf[i];
+                HashValue x = buf[i];
                 buf[i] = 0;
                 reinsertImpl(x);
             }
@@ -157,7 +157,7 @@ private:
             new_size_degree = size_degree + 1;
 
         /// Expand the space.
-        buf = reinterpret_cast<HashValue_t *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
 
         /** Now some items may need to be moved to a new location.
@@ -174,7 +174,7 @@ private:
           */
         for (size_t i = 0; i < old_size || buf[i]; ++i)
         {
-            HashValue_t x = buf[i];
+            HashValue x = buf[i];
             if (!x)
                 continue;
 
@@ -204,7 +204,7 @@ private:
     }
 
     /// Insert a value.
-    void insertImpl(HashValue_t x)
+    void insertImpl(HashValue x)
     {
         if (x == 0)
         {
@@ -234,7 +234,7 @@ private:
     /** Insert a value into the new buffer that was in the old buffer.
       * Used when increasing the size of the buffer, as well as when reading from a file.
       */
-    void reinsertImpl(HashValue_t x)
+    void reinsertImpl(HashValue x)
     {
         size_t place_value = place(x);
         while (buf[place_value])
@@ -272,6 +272,8 @@ private:
 
 
 public:
+    using value_type = Value;
+
     UniquesHashSet() :
         m_size(0),
         skip_degree(0),
@@ -312,9 +314,9 @@ public:
         free();
     }
 
-    void insert(Value_t x)
+    void insert(Value x)
     {
-        HashValue_t hash_value = hash(x);
+        HashValue hash_value = hash(x);
         if (!good(hash_value))
             return;
 
@@ -337,8 +339,8 @@ public:
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
           * - with how many different elements of fixed_res,
-          *   when randomly scattered across 2^32 baskets,
-          *   filled baskets with average of res is obtained.
+          *   when randomly scattered across 2^32 buckets,
+          *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
         size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));
@@ -380,7 +382,7 @@ public:
 
         if (has_zero)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::writeIntBinary(x, wb);
         }
 
@@ -409,7 +411,7 @@ public:
 
         for (size_t i = 0; i < m_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::readIntBinary(x, rb);
             if (x == 0)
                 has_zero = true;
@@ -443,7 +445,7 @@ public:
 
         for (size_t i = 0; i < rhs_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::readIntBinary(x, rb);
             insertHash(x);
         }
@@ -459,7 +461,7 @@ public:
         if (size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
-        rb.ignore(sizeof(HashValue_t) * size);
+        rb.ignore(sizeof(HashValue) * size);
     }
 
     void writeText(DB::WriteBuffer & wb) const
@@ -505,7 +507,7 @@ public:
 
         for (size_t i = 0; i < m_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::assertChar(',', rb);
             DB::readIntText(x, rb);
             if (x == 0)
@@ -515,7 +517,7 @@ public:
         }
     }
 
-    void insertHash(HashValue_t hash_value)
+    void insertHash(HashValue hash_value)
     {
         if (!good(hash_value))
             return;

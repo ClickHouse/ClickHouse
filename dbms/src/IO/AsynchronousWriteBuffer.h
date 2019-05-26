@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <IO/WriteBuffer.h>
 
 
@@ -25,8 +25,7 @@ private:
     /// Swap the main and duplicate buffers.
     void swapBuffers()
     {
-        buffer().swap(out.buffer());
-        std::swap(position(), out.position());
+        swap(out);
     }
 
     void nextImpl() override

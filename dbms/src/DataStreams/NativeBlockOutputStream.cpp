@@ -3,20 +3,13 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedWriteBuffer.h>
-
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -28,10 +21,10 @@ namespace ErrorCodes
 
 
 NativeBlockOutputStream::NativeBlockOutputStream(
-    WriteBuffer & ostr_, UInt64 client_revision_,
+    WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)
-    : ostr(ostr_), client_revision(client_revision_),
-    index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_)
+    : ostr(ostr_), client_revision(client_revision_), header(header_),
+    index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_), remove_low_cardinality(remove_low_cardinality_)
 {
     if (index_ostr)
     {
@@ -48,68 +41,22 @@ void NativeBlockOutputStream::flush()
 }
 
 
-void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
+void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
       */
-    ColumnPtr full_column;
+    ColumnPtr full_column = column->convertToFullColumnIfConst();
 
-    if (auto converted = column->convertToFullColumnIfConst())
-        full_column = converted;
-    else
-        full_column = column;
+    IDataType::SerializeBinaryBulkSettings settings;
+    settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+    settings.position_independent_encoding = false;
+    settings.low_cardinality_max_dictionary_size = 0;
 
-    if (type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-
-        const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
-        const ColumnPtr & nested_col = nullable_col.getNestedColumn();
-
-        const IColumn & null_map = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.serializeBinaryBulk(null_map, ostr, offset, limit);
-
-        writeData(nested_type, nested_col, ostr, offset, limit);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /** For arrays, we serialize the offsets first, and then the values.
-          */
-        const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
-        type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
-
-        if (!column_array.getData().empty())
-        {
-            const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
-
-            if (offset > offsets.size())
-                return;
-
-            /** offset - from which array to write.
-              * limit - how many arrays should be written, or 0, if you write everything that is.
-              * end - up to which array written part finishes.
-              *
-              * nested_offset - from which nested element to write.
-              * nested_limit - how many nested elements to write, or 0, if you write everything that is.
-              */
-
-            size_t end = std::min(offset + limit, offsets.size());
-
-            size_t nested_offset = offset ? offsets[offset - 1] : 0;
-            size_t nested_limit = limit
-                ? offsets[end - 1] - nested_offset
-                : 0;
-
-            const DataTypePtr & nested_type = type_arr->getNestedType();
-
-            if (limit == 0 || nested_limit)
-                writeData(*nested_type, column_array.getDataPtr(), ostr, nested_offset, nested_limit);
-        }
-    }
-    else
-        type.serializeBinaryBulk(*full_column, ostr, offset, limit);
+    IDataType::SerializeBinaryBulkStatePtr state;
+    type.serializeBinaryBulkStatePrefix(settings, state);
+    type.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
+    type.serializeBinaryBulkStateSuffix(settings, state);
 }
 
 
@@ -118,6 +65,8 @@ void NativeBlockOutputStream::write(const Block & block)
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
+
+    block.checkNumberOfRows();
 
     /// Dimensions
     size_t columns = block.columns();
@@ -147,13 +96,28 @@ void NativeBlockOutputStream::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+
+        /// Send data to old clients without low cardinality type.
+        if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
+        {
+            column.column = recursiveRemoveLowCardinality(column.column);
+            column.type = recursiveRemoveLowCardinality(column.type);
+        }
 
         /// Name
         writeStringBinary(column.name, ostr);
 
         /// Type
-        writeStringBinary(column.type->getName(), ostr);
+        String type_name = column.type->getName();
+
+        /// For compatibility, we will not send explicit timezone parameter in DateTime data type
+        ///  to older clients, that cannot understand it.
+        if (client_revision < DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE
+            && startsWith(type_name, "DateTime("))
+            type_name = "DateTime";
+
+        writeStringBinary(type_name, ostr);
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.

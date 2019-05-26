@@ -3,7 +3,8 @@
 #include <vector>
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
+#include <Common/NaNUtils.h>
 
 
 namespace DB
@@ -12,7 +13,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
+
 
 /** Parameters of different functions quantiles*.
   * - list of levels of quantiles.
@@ -33,10 +36,19 @@ struct QuantileLevels
 
     size_t size() const { return levels.size(); }
 
-    void set(const Array & params)
+    QuantileLevels(const Array & params, bool require_at_least_one_param)
     {
         if (params.empty())
-            throw Exception("Aggregate function quantiles requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {
+            if (require_at_least_one_param)
+                throw Exception("Aggregate function for calculation of multiple quantiles require at least one parameter",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            /// If levels are not specified, default is 0.5 (median).
+            levels.push_back(0.5);
+            permutation.push_back(0);
+            return;
+        }
 
         size_t size = params.size();
         levels.resize(size);
@@ -45,6 +57,10 @@ struct QuantileLevels
         for (size_t i = 0; i < size; ++i)
         {
             levels[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+
+            if (isNaN(levels[i]) || levels[i] < 0 || levels[i] > 1)
+                throw Exception("Quantile level is out of range [0..1]", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
             permutation[i] = i;
         }
 

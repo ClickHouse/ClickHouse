@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Quota.h>
 
@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Counter>
-void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void QuotaValues<Counter>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     queries             = config.getUInt64(config_elem + ".queries",        0);
     errors              = config.getUInt64(config_elem + ".errors",         0);
@@ -34,11 +34,12 @@ void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util
     execution_time_usec = config.getUInt64(config_elem + ".execution_time", 0) * 1000000ULL;
 }
 
-template void QuotaValues<size_t>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
-template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+template void QuotaValues<size_t>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
 
-void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, Poco::Util::AbstractConfiguration & config)
+void QuotaForInterval::initFromConfig(
+    const String & config_elem, time_t duration_, bool randomize_, time_t offset_, const Poco::Util::AbstractConfiguration & config)
 {
     rounded_time.store(0, std::memory_order_relaxed);
     duration = duration_;
@@ -50,13 +51,13 @@ void QuotaForInterval::initFromConfig(const String & config_elem, time_t duratio
 void QuotaForInterval::checkExceeded(time_t current_time, const String & quota_name, const String & user_name)
 {
     updateTime(current_time);
-    check(max.queries, used.queries, current_time, quota_name, user_name, "Queries");
-    check(max.errors, used.errors, current_time, quota_name, user_name, "Errors");
-    check(max.result_rows, used.result_rows, current_time, quota_name, user_name, "Total result rows");
-    check(max.result_bytes, used.result_bytes, current_time, quota_name, user_name, "Total result bytes");
-    check(max.read_rows, used.read_rows, current_time, quota_name, user_name, "Total rows read");
-    check(max.read_bytes, used.read_bytes, current_time, quota_name, user_name, "Total bytes read");
-    check(max.execution_time_usec / 1000000, used.execution_time_usec / 1000000, current_time, quota_name, user_name, "Total execution time");
+    check(max.queries, used.queries, quota_name, user_name, "Queries");
+    check(max.errors, used.errors, quota_name, user_name, "Errors");
+    check(max.result_rows, used.result_rows, quota_name, user_name, "Total result rows");
+    check(max.result_bytes, used.result_bytes, quota_name, user_name, "Total result bytes");
+    check(max.read_rows, used.read_rows, quota_name, user_name, "Total rows read");
+    check(max.read_bytes, used.read_bytes, quota_name, user_name, "Total bytes read");
+    check(max.execution_time_usec / 1000000, used.execution_time_usec / 1000000, quota_name, user_name, "Total execution time");
 }
 
 String QuotaForInterval::toString() const
@@ -131,7 +132,7 @@ void QuotaForInterval::updateTime(time_t current_time)
 }
 
 void QuotaForInterval::check(
-    size_t max_amount, size_t used_amount, time_t current_time,
+    size_t max_amount, size_t used_amount,
     const String & quota_name, const String & user_name, const char * resource_name)
 {
     if (max_amount && used_amount > max_amount)
@@ -160,7 +161,7 @@ void QuotaForInterval::check(
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
+void QuotaForIntervals::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -251,7 +252,7 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, const Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     name = name_;
 
@@ -297,7 +298,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
                 ? quota_key
                 : user_name));
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     Container::iterator it = quota_for_keys.find(quota_key_hashed);
     if (quota_for_keys.end() == it)
@@ -307,7 +308,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 }
 
 
-void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
+void Quotas::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     pcg64 rng;
 

@@ -335,22 +335,6 @@ protected:
 };
 
 
-class ParserExpressionInCastExpression : public IParserBase
-{
-public:
-    ParserExpressionInCastExpression(bool allow_alias_without_as_keyword);
-protected:
-    ParserPtr impl;
-
-    const char * getName() const { return "expression in CAST expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-    {
-        return impl->parse(pos, node, expected);
-    }
-};
-
-
 /** A comma-separated list of expressions, probably empty. */
 class ParserExpressionList : public IParserBase
 {

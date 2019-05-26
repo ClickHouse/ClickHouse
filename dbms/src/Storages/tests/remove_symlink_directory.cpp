@@ -1,12 +1,19 @@
-#include <unistd.h>
+#include <port/unistd.h>
 #include <iostream>
-
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Common/Exception.h>
 
 
-int main(int argc, char ** argv)
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int SYSTEM_ERROR;
+    }
+}
+
+int main(int, char **)
 try
 {
     Poco::File dir("./test_dir/");
@@ -15,7 +22,7 @@ try
     Poco::File("./test_dir/file").createFile();
 
     if (0 != symlink("./test_dir", "./test_link"))
-        DB::throwFromErrno("Cannot create symlink");
+        DB::throwFromErrno("Cannot create symlink", DB::ErrorCodes::SYSTEM_ERROR);
 
     Poco::File link("./test_link");
     link.renameTo("./test_link2");

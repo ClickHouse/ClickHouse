@@ -2,8 +2,8 @@
 
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ namespace DB
   * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
   * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
   */
-class AggregatingBlockInputStream : public IProfilingBlockInputStream
+class AggregatingBlockInputStream : public IBlockInputStream
 {
 public:
     /** keys are taken from the GROUP BY part of the query
@@ -30,12 +30,7 @@ public:
 
     String getName() const override { return "Aggregating"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Aggregating(" << children.back()->getID() << ", " << aggregator.getID() << ")";
-        return res.str();
-    }
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

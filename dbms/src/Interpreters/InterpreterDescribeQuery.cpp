@@ -1,17 +1,19 @@
 #include <Storages/IStorage.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
+#include <Common/typeid_cast.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Common/typeid_cast.h>
-
+#include <Interpreters/IdentifierSemantic.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 
 namespace DB
@@ -21,8 +23,6 @@ BlockIO InterpreterDescribeQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
@@ -46,6 +46,14 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
+    col.name = "comment";
+    block.insert(col);
+
+    col.name = "codec_expression";
+    block.insert(col);
+
+    col.name = "ttl_expression";
+    block.insert(col);
 
     return block;
 }
@@ -53,44 +61,74 @@ Block InterpreterDescribeQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
-    const ASTDescribeQuery & ast = typeid_cast<const ASTDescribeQuery &>(*query_ptr);
+    ColumnsDescription columns;
 
-    NamesAndTypesList columns;
-    ColumnDefaults column_defaults;
-
+    const auto & ast = query_ptr->as<ASTDescribeQuery &>();
+    const auto & table_expression = ast.table_expression->as<ASTTableExpression &>();
+    if (table_expression.subquery)
     {
-        StoragePtr table = context.getTable(ast.database, ast.table);
-        auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
-        columns = table->getColumnsList();
-        columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
-        column_defaults = table->column_defaults;
+        auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
+            table_expression.subquery->children.at(0), context).getNamesAndTypesList();
+        columns = ColumnsDescription(std::move(names_and_types));
     }
-
-    ColumnWithTypeAndName name_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type" };
-    ColumnWithTypeAndName default_type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_type" };
-    ColumnWithTypeAndName default_expression_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_expression" };;
-
-    for (const auto column : columns)
+    else
     {
-        name_column.column->insert(column.name);
-        type_column.column->insert(column.type->getName());
-
-        const auto it = column_defaults.find(column.name);
-        if (it == std::end(column_defaults))
+        StoragePtr table;
+        if (table_expression.table_function)
         {
-            default_type_column.column->insertDefault();
-            default_expression_column.column->insertDefault();
+            const auto & table_function = table_expression.table_function->as<ASTFunction &>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function.name, context);
+            /// Run the table function and remember the result
+            table = table_function_ptr->execute(table_expression.table_function, context);
         }
         else
         {
-            default_type_column.column->insert(toString(it->second.type));
-            default_expression_column.column->insert(queryToString(it->second.expression));
+            const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
+
+            String database_name;
+            String table_name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(identifier);
+
+            table = context.getTable(database_name, table_name);
         }
+
+        auto table_lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+        columns = table->getColumns();
     }
 
-    return std::make_shared<OneBlockInputStream>(
-        Block{name_column, type_column, default_type_column, default_expression_column});
+    Block sample_block = getSampleBlock();
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+    for (const auto & column : columns)
+    {
+        res_columns[0]->insert(column.name);
+        res_columns[1]->insert(column.type->getName());
+
+        if (column.default_desc.expression)
+        {
+            res_columns[2]->insert(toString(column.default_desc.kind));
+            res_columns[3]->insert(queryToString(column.default_desc.expression));
+        }
+        else
+        {
+            res_columns[2]->insertDefault();
+            res_columns[3]->insertDefault();
+        }
+
+        res_columns[4]->insert(column.comment);
+
+        if (column.codec)
+            res_columns[5]->insert(column.codec->getCodecDesc());
+        else
+            res_columns[5]->insertDefault();
+
+        if (column.ttl)
+            res_columns[6]->insert(queryToString(column.ttl));
+        else
+            res_columns[6]->insertDefault();
+    }
+
+    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
 
 }

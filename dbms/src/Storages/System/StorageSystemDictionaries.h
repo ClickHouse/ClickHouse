@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -10,28 +10,17 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorage
+class StorageSystemDictionaries : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
-friend class ext::shared_ptr_helper<StorageSystemDictionaries>;
 public:
     std::string getName() const override { return "SystemDictionaries"; }
-    std::string getTableName() const override { return name; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
+    static NamesAndTypesList getNamesAndTypes();
 
-private:
-    const std::string name;
-    const NamesAndTypesList columns;
+protected:
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    StorageSystemDictionaries(const std::string & name);
-
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

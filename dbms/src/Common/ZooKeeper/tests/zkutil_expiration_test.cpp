@@ -1,6 +1,8 @@
 #include <iostream>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/ConsoleChannel.h>
+#include <Common/Exception.h>
 
 
 /// Проверяет, какие ошибки выдает ZooKeeper при попытке сделать какую-нибудь операцию через разное время после истечения сессии.
@@ -32,36 +34,37 @@ int main(int argc, char ** argv)
         while (true)
         {
             {
-                zkutil::Ops ops;
-                ops.emplace_back(std::make_unique<zkutil::Op::Create>("/test/zk_expiration_test", "hello", zk.getDefaultACL(), zkutil::CreateMode::Persistent));
-                ops.emplace_back(std::make_unique<zkutil::Op::Remove>("/test/zk_expiration_test", -1));
+                Coordination::Requests ops;
+                ops.emplace_back(zkutil::makeCreateRequest("/test/zk_expiration_test", "hello", zkutil::CreateMode::Persistent));
+                ops.emplace_back(zkutil::makeRemoveRequest("/test/zk_expiration_test", -1));
 
-                int code;
+                Coordination::Responses responses;
+                int32_t code = zk.tryMultiNoThrow(ops, responses);
+
+                std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
                 try
                 {
-                    code = zk.tryMulti(ops);
+                    if (code)
+                        std::cout << "Path: " << zkutil::KeeperMultiException(code, ops, responses).getPathForFirstFailedOp() << std::endl;
                 }
-                catch (zkutil::KeeperException & e)
+                catch (...)
                 {
-                    code = e.code;
+                    std::cout << DB::getCurrentExceptionMessage(false) << std::endl;
                 }
 
-                std::cout << time(0) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
             }
 
             sleep(1);
         }
     }
-    catch (zkutil::KeeperException & e)
+    catch (Coordination::Exception &)
     {
-        std::cerr << "KeeperException: " << e.displayText() << std::endl;
+        std::cerr << "KeeperException: " << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
     catch (...)
     {
-        std::cerr << "Some exception" << std::endl;
+        std::cerr << "Some exception: " << DB::getCurrentExceptionMessage(true) << std::endl;
         return 2;
     }
-
-    return 0;
 }

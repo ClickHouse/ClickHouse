@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <log_queries>1</log_queries>
+            <!-- Just to test settings_pull -->
+            <max_rows_in_distinct>5</max_rows_in_distinct>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</yandex>

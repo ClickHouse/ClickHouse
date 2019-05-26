@@ -15,15 +15,13 @@ class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
     bool databases{false};
+    bool temporary{false};
     String from;
     String like;
     bool not_like{false};
 
-    ASTShowTablesQuery() = default;
-    ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
     /** Get the text that identifies this element. */
-    String getID() const override { return "ShowTables"; };
+    String getID(char) const override { return "ShowTables"; }
 
     ASTPtr clone() const override
     {
@@ -34,7 +32,7 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         if (databases)
         {

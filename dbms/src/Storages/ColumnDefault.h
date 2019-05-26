@@ -9,39 +9,21 @@
 namespace DB
 {
 
-enum class ColumnDefaultType
+enum class ColumnDefaultKind
 {
     Default,
     Materialized,
     Alias
 };
 
-}
 
-
-namespace std
-{
-    template <> struct hash<DB::ColumnDefaultType>
-    {
-        size_t operator()(const DB::ColumnDefaultType type) const
-        {
-            return hash<int>{}(static_cast<int>(type));
-        }
-    };
-}
-
-
-namespace DB
-{
-
-
-ColumnDefaultType columnDefaultTypeFromString(const std::string & str);
-std::string toString(const ColumnDefaultType type);
+ColumnDefaultKind columnDefaultKindFromString(const std::string & str);
+std::string toString(const ColumnDefaultKind type);
 
 
 struct ColumnDefault
 {
-    ColumnDefaultType type;
+    ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
 };
 
@@ -50,6 +32,5 @@ bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs);
 
 
 using ColumnDefaults = std::unordered_map<std::string, ColumnDefault>;
-
 
 }

@@ -1,20 +1,17 @@
 #include <Common/Exception.h>
+#include <Common/FieldVisitors.h>
 
 #include <Core/Block.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <iterator>
 #include <memory>
+
 
 namespace DB
 {
@@ -24,59 +21,7 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
-}
-
-
-void Block::addDefaults(const NamesAndTypesList & required_columns)
-{
-    /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
-    /// First, remember the offset columns for all arrays in the block.
-    std::map<String, ColumnPtr> offset_columns;
-
-    for (const auto & elem : data)
-    {
-        if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*elem.column))
-        {
-            String offsets_name = DataTypeNested::extractNestedTableName(elem.name);
-            auto & offsets_column = offset_columns[offsets_name];
-
-            /// If for some reason there are different displacement columns for one nested structure, then we take nonempty.
-            if (!offsets_column || offsets_column->empty())
-                offsets_column = array->getOffsetsColumn();
-        }
-    }
-
-    for (const auto & requested_column : required_columns)
-    {
-        if (has(requested_column.name))
-            continue;
-
-        ColumnWithTypeAndName column_to_add;
-        column_to_add.name = requested_column.name;
-        column_to_add.type = requested_column.type;
-
-        String offsets_name = DataTypeNested::extractNestedTableName(column_to_add.name);
-        if (offset_columns.count(offsets_name))
-        {
-            ColumnPtr offsets_column = offset_columns[offsets_name];
-            DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
-            size_t nested_rows = offsets_column->empty() ? 0
-                : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
-
-            ColumnPtr nested_column = nested_type->createConstColumn(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
-            column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
-        }
-        else
-        {
-            /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
-              *  it can be full (or the interpreter may decide that it is constant everywhere).
-              */
-            column_to_add.column = column_to_add.type->createConstColumn(rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
-        }
-
-        insert(std::move(column_to_add));
-    }
+    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -109,7 +54,7 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, elem);
 }
 
@@ -123,20 +68,20 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }
 
@@ -151,6 +96,13 @@ void Block::insertUnique(ColumnWithTypeAndName && elem)
 {
     if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
+}
+
+
+void Block::erase(const std::set<size_t> & positions)
+{
+    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
+        erase(*it);
 }
 
 
@@ -335,13 +287,7 @@ std::string Block::dumpStructure() const
     {
         if (it != data.begin())
             out << ", ";
-
-        out << it->name << ' ' << it->type->getName();
-
-        if (it->column)
-            out << ' ' << it->column->getName() << ' ' << it->column->size();
-        else
-            out << " nullptr";
+        it->dumpStructure(out);
     }
     return out.str();
 }
@@ -358,6 +304,89 @@ Block Block::cloneEmpty() const
 }
 
 
+MutableColumns Block::cloneEmptyColumns() const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? data[i].column->cloneEmpty() : data[i].type->createColumn();
+    return columns;
+}
+
+
+Columns Block::getColumns() const
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column;
+    return columns;
+}
+
+
+MutableColumns Block::mutateColumns()
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column ? (*std::move(data[i].column)).mutate() : data[i].type->createColumn();
+    return columns;
+}
+
+
+void Block::setColumns(MutableColumns && columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = std::move(columns[i]);
+}
+
+
+void Block::setColumns(const Columns & columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = columns[i];
+}
+
+
+
+Block Block::cloneWithColumns(MutableColumns && columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ std::move(columns[i]), data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithColumns(const Columns & columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ columns[i], data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithoutColumns() const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ nullptr, data[i].type, data[i].name });
+
+    return res;
+}
+
+
 Block Block::sortColumns() const
 {
     Block sorted_block;
@@ -369,92 +398,105 @@ Block Block::sortColumns() const
 }
 
 
-ColumnsWithTypeAndName Block::getColumns() const
+const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {
     return data;
 }
 
 
-NamesAndTypesList Block::getColumnsList() const
+NamesAndTypesList Block::getNamesAndTypesList() const
 {
     NamesAndTypesList res;
 
     for (const auto & elem : data)
-        res.push_back(NameAndTypePair(elem.name, elem.type));
+        res.emplace_back(elem.name, elem.type);
 
     return res;
 }
 
 
-void Block::checkNestedArraysOffsets() const
+Names Block::getNames() const
 {
-    /// Pointers to array columns, to check the equality of offset columns in nested data structures
-    using ArrayColumns = std::map<String, const ColumnArray *>;
-    ArrayColumns array_columns;
+    Names res;
+    res.reserve(columns());
 
     for (const auto & elem : data)
-    {
-        if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(elem.column.get()))
-        {
-            String name = DataTypeNested::extractNestedTableName(elem.name);
+        res.push_back(elem.name);
 
-            ArrayColumns::const_iterator it = array_columns.find(name);
-            if (array_columns.end() == it)
-                array_columns[name] = column_array;
-            else
-            {
-                if (!it->second->hasEqualOffsets(*column_array))
-                    throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-            }
-        }
-    }
+    return res;
 }
 
 
-void Block::optimizeNestedArraysOffsets()
+DataTypes Block::getDataTypes() const
 {
-    /// Pointers to array columns, to check the equality of offset columns in nested data structures
-    using ArrayColumns = std::map<String, ColumnArray *>;
-    ArrayColumns array_columns;
+    DataTypes res;
+    res.reserve(columns());
 
-    for (auto & elem : data)
+    for (const auto & elem : data)
+        res.push_back(elem.type);
+
+    return res;
+}
+
+
+template <typename ReturnType>
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
+{
+    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
-        if (ColumnArray * column_array = typeid_cast<ColumnArray *>(elem.column.get()))
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(message, code);
+        else
+            return false;
+    };
+
+    size_t columns = rhs.columns();
+    if (lhs.columns() != columns)
+        return on_error("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+    for (size_t i = 0; i < columns; ++i)
+    {
+        const auto & expected = rhs.getByPosition(i);
+        const auto & actual = lhs.getByPosition(i);
+
+        if (actual.name != expected.name)
+            return on_error("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (!actual.type->equals(*expected.type))
+            return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->getName() != expected.column->getName())
+            return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (actual.column->isColumnConst() && expected.column->isColumnConst())
         {
-            String name = DataTypeNested::extractNestedTableName(elem.name);
+            Field actual_value = static_cast<const ColumnConst &>(*actual.column).getField();
+            Field expected_value = static_cast<const ColumnConst &>(*expected.column).getField();
 
-            ArrayColumns::const_iterator it = array_columns.find(name);
-            if (array_columns.end() == it)
-                array_columns[name] = column_array;
-            else
-            {
-                if (!it->second->hasEqualOffsets(*column_array))
-                    throw Exception("Sizes of nested arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-
-                /// make columns of arrays offsets inside one nested table point to the same place
-                column_array->getOffsetsColumn() = it->second->getOffsetsColumn();
-            }
+            if (actual_value != expected_value)
+                return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
+                    + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
+                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
         }
     }
+
+    return ReturnType(true);
 }
 
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
-    size_t columns = lhs.columns();
-    if (rhs.columns() != columns)
-        return false;
+    return checkBlockStructure<bool>(lhs, rhs, {});
+}
 
-    for (size_t i = 0; i < columns; ++i)
-    {
-        const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
-        const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
 
-        if (!lhs_type.equals(rhs_type))
-            return false;
-    }
-
-    return true;
+void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
+{
+    checkBlockStructure<void>(lhs, rhs, context_description);
 }
 
 
@@ -513,12 +555,12 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
 
     for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
     {
-        lhs_diff_writer << it->prettyPrint();
+        lhs_diff_writer << it->dumpStructure();
         lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
     }
     for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
     {
-        rhs_diff_writer << it->prettyPrint();
+        rhs_diff_writer << it->dumpStructure();
         rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
     }
 }
@@ -539,67 +581,11 @@ void Block::swap(Block & other) noexcept
 }
 
 
-void Block::unshareColumns()
-{
-    std::unordered_set<void*> pointers;
-
-    for (auto & elem : data)
-    {
-        if (!pointers.insert(elem.column.get()).second)
-        {
-            elem.column = elem.column->clone();
-        }
-        else if (ColumnArray * arr = typeid_cast<ColumnArray *>(elem.column.get()))
-        {
-            ColumnPtr & offsets = arr->getOffsetsColumn();
-            if (!pointers.insert(offsets.get()).second)
-                offsets = offsets->clone();
-
-            ColumnPtr & nested = arr->getDataPtr();
-            if (!pointers.insert(nested.get()).second)
-                nested = nested->clone();
-        }
-        else if (ColumnTuple * tuple = typeid_cast<ColumnTuple *>(elem.column.get()))
-        {
-            Block & tuple_block = tuple->getData();
-            Columns & tuple_columns = tuple->getColumns();
-
-            size_t size = tuple_block.columns();
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (!pointers.insert(tuple_columns[i].get()).second)
-                {
-                    tuple_columns[i] = tuple_columns[i]->clone();
-                    tuple_block.getByPosition(i).column = tuple_columns[i];
-                }
-            }
-        }
-        else if (ColumnNullable * nullable = typeid_cast<ColumnNullable *>(elem.column.get()))
-        {
-            ColumnPtr & null_map = nullable->getNullMapColumn();
-            if (!pointers.insert(null_map.get()).second)
-                null_map = null_map->clone();
-
-            ColumnPtr & nested = nullable->getNestedColumn();
-            if (!pointers.insert(nested.get()).second)
-                nested = nested->clone();
-        }
-        else if (ColumnConst * col_const = typeid_cast<ColumnConst *>(elem.column.get()))
-        {
-            ColumnPtr & nested = col_const->getDataColumnPtr();
-            if (!pointers.insert(nested.get()).second)
-                nested = nested->clone();
-        }
-    }
-}
-
 void Block::updateHash(SipHash & hash) const
 {
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
-    {
-        for (auto & col : getColumns())
+        for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
-    }
 }
 
 }

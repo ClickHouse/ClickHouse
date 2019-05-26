@@ -1,0 +1,1 @@
+`key` Nullable(String), `key1` Nullable(Int32), `value` Nullable(UInt8), `b` Nullable(Int32), `c` Nullable(Float64)

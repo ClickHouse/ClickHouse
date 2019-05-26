@@ -11,7 +11,7 @@
 using namespace DB;
 
 
-int main(int arg, char ** argv)
+int main(int, char **)
 try
 {
     {
@@ -47,7 +47,8 @@ try
     }
 
     // <defunct> hunting:
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 1000; ++i)
+    {
         auto command = ShellCommand::execute("echo " + std::to_string(i));
         //command->wait(); // now automatic
     }

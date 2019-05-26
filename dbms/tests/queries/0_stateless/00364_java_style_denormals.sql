@@ -11,7 +11,6 @@ toFloat64('NAN'),
 toFloat64('-NAN'),
 toFloat64('NaN'),
 toFloat64('-NaN'),
-toFloat64('+NaN'),
 
 toFloat64OrZero('in'),
 toFloat64OrZero('-in'),
@@ -39,7 +38,6 @@ toFloat32('NAN'),
 toFloat32('-NAN'),
 toFloat32('NaN'),
 toFloat32('-NaN'),
-toFloat32('+NaN'),
 
 toFloat32OrZero('in'),
 toFloat32OrZero('-in'),
@@ -55,4 +53,4 @@ toFloat32OrZero('NaN+'),
 toFloat32OrZero('-NaNa'),
 toFloat32OrZero('+Na')
 
-FORMAT BlockTabSeparated;
+FORMAT TabSeparated;

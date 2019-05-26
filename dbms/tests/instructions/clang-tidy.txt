@@ -1,6 +1,6 @@
 # http://clang.llvm.org/extra/clang-tidy/
 # Install latest clang with extra tools.
-# Look at utils/prepare-environment/install-clang.sh
+# Look at ci/build-clang-from-sources.sh
 
 sudo apt-get install jq
 

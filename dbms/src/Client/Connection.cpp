@@ -2,8 +2,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -12,17 +12,21 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Common/config.h>
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -40,6 +44,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -50,24 +55,39 @@ void Connection::connect()
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
 
-        if (static_cast<bool>(encryption))
+        if (static_cast<bool>(secure))
         {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
-            throw Exception{"tcp_ssl protocol is disabled because poco library built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         }
         else
         {
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
-        socket->connect(resolved_address, connect_timeout);
-        socket->setReceiveTimeout(receive_timeout);
-        socket->setSendTimeout(send_timeout);
+
+        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+
+        socket->connect(current_resolved_address, timeouts.connection_timeout);
+        socket->setReceiveTimeout(timeouts.receive_timeout);
+        socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
+        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        {
+            socket->setKeepAlive(true);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
+#endif
+                , timeouts.tcp_keep_alive_timeout);
+        }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
@@ -80,7 +100,7 @@ void Connection::connect()
         LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
             << " server version " << server_version_major
             << "." << server_version_minor
-            << "." << server_revision
+            << "." << server_version_patch
             << ".");
     }
     catch (Poco::Net::NetException & e)
@@ -88,14 +108,14 @@ void Connection::connect()
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -105,6 +125,7 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
+    last_input_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
@@ -115,12 +136,33 @@ void Connection::disconnect()
 
 void Connection::sendHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending hello");
+    /** Disallow control characters in user controlled parameters
+      *  to mitigate the possibility of SSRF.
+      * The user may do server side requests with 'remote' table function.
+      * Malicious user with full r/w access to ClickHouse
+      *  may use 'remote' table function to forge requests
+      *  to another services in the network other than ClickHouse (examples: SMTP).
+      * Limiting number of possible characters in user-controlled part of handshake
+      *  will mitigate this possibility but doesn't solve it completely.
+      */
+    auto has_control_character = [](const std::string & s)
+    {
+        for (auto c : s)
+            if (isControlASCII(c))
+                return true;
+        return false;
+    };
+
+    if (has_control_character(default_database)
+        || has_control_character(user)
+        || has_control_character(password))
+        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(ClickHouseRevision::get(), *out);
     writeStringBinary(default_database, *out);
     writeStringBinary(user, *out);
@@ -145,9 +187,13 @@ void Connection::receiveHello()
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-        {
             readStringBinary(server_timezone, *in);
-        }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+            readStringBinary(server_display_name, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            readVarUInt(server_version_patch, *in);
+        else
+            server_version_patch = server_revision;
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -184,7 +230,7 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
+void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision)
 {
     if (!connected)
         connect();
@@ -192,7 +238,16 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     name = server_name;
     version_major = server_version_major;
     version_minor = server_version_minor;
+    version_patch = server_version_patch;
     revision = server_revision;
+}
+
+UInt64 Connection::getServerRevision()
+{
+    if (!connected)
+        connect();
+
+    return server_revision;
 }
 
 const String & Connection::getServerTimezone()
@@ -201,6 +256,14 @@ const String & Connection::getServerTimezone()
         connect();
 
     return server_timezone;
+}
+
+const String & Connection::getServerDisplayName()
+{
+    if (!connected)
+        connect();
+
+    return server_display_name;
 }
 
 void Connection::forceConnected()
@@ -216,37 +279,11 @@ void Connection::forceConnected()
     }
 }
 
-struct TimeoutSetter
-{
-    TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_)
-        : socket(socket_), timeout(timeout_)
-    {
-        old_send_timeout = socket.getSendTimeout();
-        old_receive_timeout = socket.getReceiveTimeout();
-
-        if (old_send_timeout > timeout)
-            socket.setSendTimeout(timeout);
-        if (old_receive_timeout > timeout)
-            socket.setReceiveTimeout(timeout);
-    }
-
-    ~TimeoutSetter()
-    {
-        socket.setSendTimeout(old_send_timeout);
-        socket.setReceiveTimeout(old_receive_timeout);
-    }
-
-    Poco::Net::StreamSocket & socket;
-    Poco::Timespan timeout;
-    Poco::Timespan old_send_timeout;
-    Poco::Timespan old_receive_timeout;
-};
-
 bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
         UInt64 pong = 0;
@@ -286,7 +323,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -317,7 +354,19 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
+    if (settings)
+    {
+        std::optional<int> level;
+        std::string method = Poco::toUpper(settings->network_compression_method.toString());
+
+        /// Bad custom logic
+        if (method == "ZSTD")
+            level = settings->network_zstd_compression_level;
+
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 
@@ -331,7 +380,7 @@ void Connection::sendQuery(
     {
         ClientInfo client_info_to_send;
 
-        if (!client_info)
+        if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
             client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
@@ -352,7 +401,7 @@ void Connection::sendQuery(
     if (settings)
         settings->serialize(*out);
     else
-        writeStringBinary("", *out);
+        writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
@@ -362,6 +411,7 @@ void Connection::sendQuery(
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
     block_in.reset();
+    block_logs_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -389,11 +439,11 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision);
+        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
     writeVarUInt(Protocol::Client::Data, *out);
@@ -401,7 +451,6 @@ void Connection::sendData(const Block & block, const String & name)
 
     size_t prev_bytes = out->count();
 
-    block.checkNestedArraysOffsets();
     block_out->write(block);
     maybe_compressed_out->next();
     out->next();
@@ -475,6 +524,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
+Poco::Net::SocketAddress Connection::getResolvedAddress() const
+{
+    if (connected)
+        return current_resolved_address;
+
+    return DNSResolver::instance().resolveAddress(host, port);
+}
+
 
 bool Connection::poll(size_t timeout_microseconds)
 {
@@ -482,20 +539,50 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadBufferPendingData() const
+bool Connection::hasReadPendingData() const
 {
-    return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
+std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
+{
+    if (last_input_packet_type.has_value())
+        return last_input_packet_type;
+
+    if (hasReadPendingData() || poll(timeout_microseconds))
+    {
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        UInt64 packet_type;
+        readVarUInt(packet_type, *in);
+
+        last_input_packet_type.emplace(packet_type);
+        return last_input_packet_type;
+    }
+
+    return {};
 }
 
 
 Connection::Packet Connection::receivePacket()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving packet");
-
     try
     {
         Packet res;
-        readVarUInt(res.type, *in);
+
+        /// Have we already read packet type?
+        if (last_input_packet_type)
+        {
+            res.type = *last_input_packet_type;
+            last_input_packet_type.reset();
+        }
+        else
+        {
+            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+            readVarUInt(res.type, *in);
+        }
+
+        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {
@@ -525,6 +612,14 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
+            case Protocol::Server::Log:
+                res.block = receiveLogData();
+                return res;
+
+            case Protocol::Server::TableColumns:
+                res.multistring_message = receiveMultistringMessage(res.type);
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -552,14 +647,26 @@ Block Connection::receiveData()
     //LOG_TRACE(log_wrapper.get(), "Receiving data");
 
     initBlockInput();
+    return receiveDataImpl(block_in);
+}
 
+
+Block Connection::receiveLogData()
+{
+    initBlockLogsInput();
+    return receiveDataImpl(block_logs_in);
+}
+
+
+Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
+{
     String external_table_name;
     readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = block_in->read();
+    Block res = stream->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
@@ -568,24 +675,44 @@ Block Connection::receiveData()
 }
 
 
+void Connection::initInputBuffers()
+{
+
+}
+
+
 void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (compression == Protocol::Compression::Enable)
-            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-        else
-            maybe_compressed_in = in;
+        if (!maybe_compressed_in)
+        {
+            if (compression == Protocol::Compression::Enable)
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            else
+                maybe_compressed_in = in;
+        }
 
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
     }
 }
 
 
+void Connection::initBlockLogsInput()
+{
+    if (!block_logs_in)
+    {
+        /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
+    }
+}
+
+
 void Connection::setDescription()
 {
+    auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
-    auto ip_address =  resolved_address.host().toString();
+    auto ip_address = resolved_address.host().toString();
 
     if (host != ip_address)
         description += ", " + ip_address;
@@ -599,6 +726,16 @@ std::unique_ptr<Exception> Connection::receiveException()
     Exception e;
     readException(e, *in, "Received from " + getDescription());
     return std::unique_ptr<Exception>{ e.clone() };
+}
+
+
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+{
+    size_t num = Protocol::Server::stringsInMessage(msg_type);
+    std::vector<String> strings(num);
+    for (size_t i = 0; i < num; ++i)
+        readStringBinary(strings[i], *in);
+    return strings;
 }
 
 
@@ -619,14 +756,6 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
     return profile_info;
 }
 
-void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
-{
-    info.is_valid = true;
-    info.host = host;
-    info.resolved_address = resolved_address.toString();
-    info.port = port;
-    info.user = user;
-}
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {

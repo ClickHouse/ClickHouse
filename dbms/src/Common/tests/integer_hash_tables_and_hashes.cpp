@@ -14,12 +14,9 @@
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
-
-#include "hopscotch-map/src/hopscotch_map.h"
-
 
 using Key = UInt64;
 using Value = UInt64;
@@ -174,7 +171,7 @@ namespace Hashes
         }
     };
 
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
     #include <nmmintrin.h>
     #endif
 
@@ -182,7 +179,7 @@ namespace Hashes
     {
         size_t operator()(Key x) const
         {
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
             return _mm_crc32_u64(-1ULL, x);
     #else
             /// On other platforms we do not have CRC32. NOTE This can be confusing.
@@ -204,7 +201,7 @@ namespace Hashes
         size_t operator()(Key x) const
         {
             ::SipHash hash;
-            hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+            hash.update(x);
             return hash.get64();
         }
     };
@@ -288,22 +285,9 @@ namespace Hashes
 }
 
 
-template <typename Key, typename Mapped, typename Hash>
-using HopscotchMap = tsl::hopscotch_map<Key, Mapped, Hash>;
-
-
-
 template <template <typename...> class Map, typename Hash>
-void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash>&)> init = {})
+void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash> &)> init = {})
 {
-    if (std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::IdentityHash>>::value
-        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::SimpleMultiplyHash>>::value
-        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::MixAllBitsHash>>::value)
-    {
-        std::cerr << __PRETTY_FUNCTION__ << ":\nDisqualified\n";
-        return;
-    }
-
     Stopwatch watch;
 
     Map<Key, Value, Hash> map;
@@ -343,19 +327,24 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
 
 void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 {
-    auto nothing = [](auto & map){};
+    auto nothing = [](auto &){};
 
     testForEachHash<HashMap>(data, size, nothing);
     testForEachHash<std::unordered_map>(data, size, nothing);
-    testForEachHash<google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
-    testForEachHash<google::sparse_hash_map>(data, size, nothing);
-    testForEachHash<HopscotchMap>(data, size, nothing);
+    testForEachHash<GOOGLE_NAMESPACE::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
+    testForEachHash<GOOGLE_NAMESPACE::sparse_hash_map>(data, size, nothing);
 }
 
 
 
 int main(int argc, char ** argv)
 {
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program n\n";
+        return 1;
+    }
+
     size_t n = atoi(argv[1]);
 //    size_t m = atoi(argv[2]);
 
@@ -370,7 +359,7 @@ int main(int argc, char ** argv)
         DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
         DB::CompressedReadBuffer in2(in1);
 
-        in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
 
         watch.stop();
         std::cerr

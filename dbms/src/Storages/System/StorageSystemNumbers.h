@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
+#include <optional>
 #include <Storages/IStorage.h>
 
 
@@ -17,33 +18,30 @@ class Context;
   * You could also specify a limit (how many numbers to give).
   * If multithreaded is specified, numbers will be generated in several streams
   *  (and result could be out of order). If both multithreaded and limit are specified,
-  *  the table could give you not exactly 1..limit range, but some arbitary 'limit' numbers.
+  *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
   */
 class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
-
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
     bool multithreaded;
-    size_t limit;
+    std::optional<UInt64> limit;
+    UInt64 offset;
 
-    /// limit: 0 means unlimited.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0);
+protected:
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0);
 };
 
 }

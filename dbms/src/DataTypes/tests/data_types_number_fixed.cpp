@@ -8,12 +8,12 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using namespace DB;
 
-    std::shared_ptr<ColumnUInt64> column = std::make_shared<ColumnUInt64>();
-    ColumnUInt64::Container_t & vec = column->getData();
+    auto column = ColumnUInt64::create();
+    ColumnUInt64::Container & vec = column->getData();
     DataTypeUInt64 data_type;
 
     Stopwatch stopwatch;
@@ -27,7 +27,12 @@ int main(int argc, char ** argv)
     WriteBufferFromOStream out_buf(ostr);
 
     stopwatch.restart();
-    data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
+    IDataType::SerializeBinaryBulkSettings settings;
+    settings.getter = [&](const IDataType::SubstreamPath &){ return &out_buf; };
+    IDataType::SerializeBinaryBulkStatePtr state;
+    data_type.serializeBinaryBulkStatePrefix(settings, state);
+    data_type.serializeBinaryBulkWithMultipleStreams(*column, 0, 0, settings, state);
+    data_type.serializeBinaryBulkStateSuffix(settings, state);
     stopwatch.stop();
 
     std::cout << "Elapsed: " << stopwatch.elapsedSeconds() << std::endl;
