@@ -6,8 +6,6 @@ import redis
 from tzlocal import get_localzone
 import datetime
 import os
-import dateutil.parser
-import time
 
 
 class ExternalSource(object):
@@ -37,9 +35,6 @@ class ExternalSource(object):
 
     def compatible_with_layout(self, layout):
         return True
-
-    def prepare_value_for_type(self, field, value):
-        return value
 
 
 class SourceMySQL(ExternalSource):
@@ -425,16 +420,3 @@ class SourceRedis(ExternalSource):
         if layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "hash_map":
             return True
         return False
-
-    def prepare_value_for_type(self, field, value):
-        if field.field_type == "Date":
-            dt = dateutil.parser.parse(value)
-            return int(time.mktime(dt.timetuple()) // 86400)
-        if field.field_type == "DateTime":
-            dt = dateutil.parser.parse(value)
-            return int(time.mktime(dt.timetuple()))
-        if field.field_type == "Float32":
-            return str(value)
-        if field.field_type == "Float64":
-            return str(value)
-        return value

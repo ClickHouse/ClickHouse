@@ -223,18 +223,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def prepare_row(dct, fields, values):
-    prepared_values = []
-    for field, value in zip(fields, values):
-        prepared_values.append(dct.source.prepare_value_for_type(field, value))
-    return Row(fields, prepared_values)
-
-
-def prepare_data(dct, fields, values_by_row):
-    data = []
-    for row in values_by_row:
-        data.append(prepare_row(dct, fields, row))
-    return data
+def prepare_data(fields, values_by_row):
+    return [Row(fields, values) for values in values_by_row]
 
 
 def xtest_simple_dictionaries(started_cluster):
@@ -243,14 +233,14 @@ def xtest_simple_dictionaries(started_cluster):
 
     simple_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "simple"]
     for dct in simple_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         dct.load_data(data)
 
     node.query("system reload dictionaries")
 
     queries_with_answers = []
     for dct in simple_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         for row in data:
             for field in fields:
                 if not field.is_key:
@@ -262,11 +252,11 @@ def xtest_simple_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
-        # for query in dct.get_hierarchical_queries(data[0]):
-        #     queries_with_answers.append((query, [1]))
+        for query in dct.get_hierarchical_queries(data[0]):
+            queries_with_answers.append((query, [1]))
 
-        # for query in dct.get_hierarchical_queries(data[1]):
-        #     queries_with_answers.append((query, [2, 1]))
+        for query in dct.get_hierarchical_queries(data[1]):
+            queries_with_answers.append((query, [2, 1]))
 
         for query in dct.get_is_in_queries(data[0], data[1]):
             queries_with_answers.append((query, 0))
@@ -283,13 +273,13 @@ def xtest_simple_dictionaries(started_cluster):
 def test_simple_kv_dictionaries(started_cluster):
     simple_kv_dicts = [d for d in KV_DICTIONARIES if d.structure.layout.layout_type == "simple"]
 
-    queries_with_answers = []
     for dct in simple_kv_dicts:
+        queries_with_answers = []
         fields = dct.fields
         print("FIELDS AND VALUES FOR " + dct.name)
         print(fields)
         print(dct.values)
-        data = prepare_data(dct, fields, dct.values)
+        data = prepare_data(fields, dct.values)
         dct.source.load_kv_data(dct.values)
 
         try:
@@ -321,14 +311,14 @@ def test_simple_kv_dictionaries(started_cluster):
         # for query in dct.get_is_in_queries(data[1], data[0]):
         #     queries_with_answers.append((query, 1))
 
-    for query, answer in queries_with_answers:
-        if isinstance(answer, list):
-            answer = str(answer).replace(' ', '')
-        try:
-            assert node.query(query) == str(answer) + '\n', query
-        except Exception:
-            print query
-            raise
+        for query, answer in queries_with_answers:
+            if isinstance(answer, list):
+                answer = str(answer).replace(' ', '')
+            try:
+                assert node.query(query) == str(answer) + '\n', query
+            except Exception:
+                print query
+                raise
 
 
 def xtest_complex_dictionaries(started_cluster):
@@ -337,14 +327,14 @@ def xtest_complex_dictionaries(started_cluster):
 
     complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
     for dct in complex_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         dct.load_data(data)
 
     node.query("system reload dictionaries")
 
     queries_with_answers = []
     for dct in complex_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         for row in data:
             for field in fields:
                 if not field.is_key:
@@ -367,14 +357,14 @@ def xtest_ranged_dictionaries(started_cluster):
 
     ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
     for dct in ranged_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         dct.load_data(data)
 
     node.query("system reload dictionaries")
 
     queries_with_answers = []
     for dct in ranged_dicts:
-        data = prepare_data(dct, fields, values_by_row)
+        data = prepare_data(fields, values_by_row)
         for row in data:
             for field in fields:
                 if not field.is_key and not field.is_range:
