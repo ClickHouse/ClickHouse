@@ -131,7 +131,8 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     as_error err;
     std::vector<std::unique_ptr<as_key>> keys;
 
-    auto scannerCallback = [](const as_val * p_val, void * keys) {
+    auto scannerCallback = [](const as_val * p_val, void * keys)
+    {
         if (!p_val)
         {
             printf("scan callback returned null - scan is complete");

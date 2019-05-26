@@ -48,8 +48,8 @@ namespace
     class TemporaryName
     {
     public:
-        TemporaryName(MutableColumns * columns, const ExternalResultDescription & description, size_t cursor)
-            : columns(columns), description(description), cursor(cursor)
+        TemporaryName(MutableColumns * columns, const ExternalResultDescription & description, size_t /*cursor*/)
+            : columns(columns), description(description)
         {
         }
 
@@ -285,7 +285,8 @@ Block AerospikeBlockInputStream::readImpl()
         InitializeBatchKey(as_batch_keyat(&batch, i), "test", "test_set", keys[cursor + i]);
     }
 
-    const auto batchReadCallback = [](const as_batch_read * results, uint32_t size, void * records_handler_) {
+    const auto batchReadCallback = [](const as_batch_read * results, uint32_t size, void * records_handler_)
+    {
         TemporaryName * records_handler = static_cast<TemporaryName *>(records_handler_);
         uint32_t n_found = 0;
 
