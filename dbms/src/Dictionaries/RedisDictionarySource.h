@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Core/Block.h>
 #if USE_POCO_REDIS
 
 #    include "DictionaryStructure.h"
@@ -31,7 +32,7 @@ namespace DB
             UNKNOWN
         };
 
-        Id valueOf(const std::string& value)
+        Id valueOf(const std::string & value)
         {
             if (value == "simple")
                 return SIMPLE;
