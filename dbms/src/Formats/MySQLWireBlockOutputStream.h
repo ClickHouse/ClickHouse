@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IBlockOutputStream.h"
 #include <Core/MySQLProtocol.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
@@ -11,10 +11,10 @@ namespace DB
 
 /** Interface for writing rows in MySQL Client/Server Protocol format.
   */
-class MySQLBlockOutputStream : public IBlockOutputStream
+class MySQLWireBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MySQLBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context);
+    MySQLWireBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context);
 
     Block getHeader() const { return header; }
 
@@ -31,6 +31,6 @@ private:
     FormatSettings format_settings;
 };
 
-using MySQLBlockOutputStreamPtr = std::shared_ptr<MySQLBlockOutputStream>;
+using MySQLWireBlockOutputStreamPtr = std::shared_ptr<MySQLWireBlockOutputStream>;
 
 }
