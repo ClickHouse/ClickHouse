@@ -664,35 +664,57 @@ TCP порт для защищённого обмена данными с кли
 <users_config>users.xml</users_config>
 ```
 
+## zookeeper {#server-settings_zookeeper}
 
-## zookeeper
+Содержит параметры, позволяющие ClickHouse взаимодействовать с кластером [ZooKeeper](http://zookeeper.apache.org/).
 
-Конфигурация серверов ZooKeeper.
+ClickHouse использует ZooKeeper для хранения метаданных о репликах при использовании реплицированных таблиц. Если реплицированные таблицы не используются, этот раздел параметров может отсутствовать.
 
-ClickHouse использует ZooKeeper для хранения метаданных о репликах при использовании реплицированных таблиц.
+Раздел содержит следующие параметры:
 
-Параметр можно не указывать, если реплицированные таблицы не используются.
+- `node` — адрес ноды ZooKeeper. Можно сконфигурировать несколько нод.
 
-Подробно читайте в разделе "[Репликация](../../operations/table_engines/replication.md)".
+    Например:
 
-**Пример**
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
+
+- `session_timeout` — Максимальный таймаут клиентской сессии в миллисекундах.
+
+- `root` — znode, который используется как корневой для всех znode, которые использует сервер ClickHouse. Необязательный.
+
+- `identity` — пользователь и пароль, которые требует ZooKeeper для доступа к запрошенным znode. Необязательный.
+
+**Пример конфигурации**
 
 ```xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
-        <host>example3</host>
-        <port>2181</port>
-    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
 </zookeeper>
 ```
+
+**Смотрите также**
+
+- [Репликация](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
