@@ -39,6 +39,7 @@ void registerDictionarySourceAerospike(DictionarySourceFactory & factory)
 #    include <aerospike/as_record.h>
 #    include <aerospike/as_scan.h>
 #    include "AerospikeBlockInputStream.h"
+#    include "DictionaryStructure.h"
 
 namespace DB
 {
@@ -48,7 +49,10 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     UInt16 port,
     as_config * /*uselessConfig*/,
     const DB::Block & sample_block)
-    : dict_struct{dict_struct}, host{host}, port{port}, sample_block{sample_block}
+    : dict_struct{dict_struct}
+    , host{host}
+    , port{port}
+    , sample_block{sample_block}
 {
     as_config config;
     as_config_init(&config);
@@ -74,12 +78,18 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     const std::string & config_prefix,
     Block & sample_block)
     : AerospikeDictionarySource(
-          dict_struct, config.getString(config_prefix + ".host"), config.getUInt(config_prefix + ".port"), nullptr, sample_block)
+          dict_struct, config.getString(config_prefix + ".host"),
+          config.getUInt(config_prefix + ".port"),
+          nullptr,
+          sample_block)
 {
 }
 
 AerospikeDictionarySource::AerospikeDictionarySource(const DB::AerospikeDictionarySource & other)
-    : dict_struct{other.dict_struct}, host{other.host}, port{other.port}, client{other.client}
+    : dict_struct{other.dict_struct}
+    , host{other.host}
+    , port{other.port}
+    , client{other.client}
 {
 }
 
@@ -160,7 +170,7 @@ BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64>
 
 std::string AerospikeDictionarySource::toString() const
 {
-    return "Aerospike: "; // +  bla bla bla
+    return "Aerospike: " + host + ':' + std::to_string(port); // May be add set and namespace here
 }
 }
 

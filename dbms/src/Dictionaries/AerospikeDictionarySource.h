@@ -37,10 +37,9 @@ public:
         throw Exception{"Method loadUpdatedAll is unsupported for AerospikeDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    bool supportsSelectiveLoad() const override { return true; }
 
-    /// @TODO(glebx777): fix it
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
     {
@@ -48,7 +47,6 @@ public:
             throw Exception{"Method loadKeys is unsupported for AerospikeDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    /// @todo: for Aerospike, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }
 
     ///Not yet supported
@@ -59,8 +57,8 @@ public:
     std::string toString() const override;
 private:
     const DictionaryStructure dict_struct;
-    std::string host; // think how to save const here
-    UInt16 port; // think how to save const here
+    const std::string host; // think how to save const here ??
+    const UInt16 port; // think how to save const here ??
     Block sample_block;
     aerospike client; // may be use ptr here
     // may be save global error variable

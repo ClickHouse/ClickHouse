@@ -22,7 +22,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
-    liblua5.1-dev \ 
+    liblua5.1-dev \
     luajit \
     libc6-dev \
     libssl-dev \
