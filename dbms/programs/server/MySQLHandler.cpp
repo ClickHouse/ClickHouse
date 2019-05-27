@@ -9,12 +9,14 @@
 #include <Columns/ColumnVector.h>
 #include <Common/config_version.h>
 #include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/CipherFactory.h>
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
 #include "MySQLHandler.h"
 #include <limits>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -25,17 +27,28 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
-extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-extern const int UNKNOWN_EXCEPTION;
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
+    extern const int OPENSSL_ERROR;
 }
 
-uint32_t MySQLHandler::last_connection_id = 0;
-
+MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id)
+    : Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , log(&Poco::Logger::get("MySQLHandler"))
+    , connection_context(server.context())
+    , connection_id(connection_id)
+    , public_key(public_key)
+    , private_key(private_key)
+{
+    server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
+    if (ssl_enabled)
+        server_capability_flags |= CLIENT_SSL;
+}
 
 void MySQLHandler::run()
 {
     connection_context = server.context();
-    connection_context.setDefaultFormat("MySQL");
+    connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -49,8 +62,7 @@ void MySQLHandler::run()
          *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
          *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
          */
-        Handshake handshake(connection_id, VERSION_STRING, scramble + '\0');
-
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING, scramble + '\0');
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -78,15 +90,11 @@ void MySQLHandler::run()
                                         << "\nauth_plugin_name: "
                                         << handshake_response.auth_plugin_name);
 
-        capabilities = handshake_response.capability_flags;
-        if (!(capabilities & CLIENT_PROTOCOL_41))
-        {
+        client_capability_flags = handshake_response.capability_flags;
+        if (!(client_capability_flags & CLIENT_PROTOCOL_41))
             throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
-        }
-        if (!(capabilities & CLIENT_PLUGIN_AUTH))
-        {
+        if (!(client_capability_flags & CLIENT_PLUGIN_AUTH))
             throw Exception("Required capability: CLIENT_PLUGIN_AUTH.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
-        }
 
         authenticate(handshake_response, scramble);
         OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -165,7 +173,7 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
     };
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
-    size_t payload_size = *reinterpret_cast<uint32_t *>(buf) & 0xFFFFFFu;
+    size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
     LOG_TRACE(log, "payload size: " << payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
@@ -226,31 +234,19 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         LOG_TRACE(log, "Authentication method match.");
     }
 
-    auto getOpenSSLError = []() -> String
-    {
-        BIO * mem = BIO_new(BIO_s_mem());
-        ERR_print_errors(mem);
-        char * buf = nullptr;
-        long size = BIO_get_mem_data(mem, &buf);
-        String errors_str(buf, size);
-        BIO_free(mem);
-        return errors_str;
-    };
-
     if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
 
         BIO * mem = BIO_new(BIO_s_mem());
-        if (PEM_write_bio_RSA_PUBKEY(mem, public_key) != 1)
+        SCOPE_EXIT(BIO_free(mem));
+        if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
         {
-            LOG_TRACE(log, "OpenSSL error:\n" << getOpenSSLError());
-            throw Exception("Failed to write public key to memory.", ErrorCodes::UNKNOWN_EXCEPTION);
+            throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
         }
         char * pem_buf = nullptr;
         long pem_size = BIO_get_mem_data(mem, &pem_buf);
         String pem(pem_buf, pem_size);
-        BIO_free(mem);
 
         LOG_TRACE(log, "Key: " << pem);
 
@@ -271,17 +267,16 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
      *  an empty packet is a blank password, thus the check for auth_response.empty() has to be made too.
      *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
      */
-    if (!secure_connection && (!auth_response.empty() && auth_response != "\0"))
+    if (!secure_connection && !auth_response.empty() && auth_response != String("\0", 1))
     {
         LOG_TRACE(log, "Received nonempty password");
         auto ciphertext = reinterpret_cast<unsigned char *>(auth_response.data());
 
-        unsigned char plaintext[RSA_size(private_key)];
-        int plaintext_size = RSA_private_decrypt(auth_response.size(), ciphertext, plaintext, private_key, RSA_PKCS1_OAEP_PADDING);
+        unsigned char plaintext[RSA_size(&private_key)];
+        int plaintext_size = RSA_private_decrypt(auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
         if (plaintext_size == -1)
         {
-            LOG_TRACE(log, "OpenSSL error:\n" << getOpenSSLError());
-            throw Exception("Failed to decrypt.", ErrorCodes::UNKNOWN_EXCEPTION);
+            throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
         }
 
         password.resize(plaintext_size);
@@ -324,7 +319,7 @@ void MySQLHandler::comInitDB(const String & payload)
     String database = payload.substr(1);
     LOG_DEBUG(log, "Setting current database to " << database);
     connection_context.setCurrentDatabase(database);
-    packet_sender->sendPacket(OK_Packet(0, capabilities, 0, 0, 1), true);
+    packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }
 
 void MySQLHandler::comFieldList(const String & payload)
@@ -340,12 +335,12 @@ void MySQLHandler::comFieldList(const String & payload)
         );
         packet_sender->sendPacket(column_definition);
     }
-    packet_sender->sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0), true);
+    packet_sender->sendPacket(OK_Packet(0xfe, client_capability_flags, 0, 0, 0), true);
 }
 
 void MySQLHandler::comPing()
 {
-    packet_sender->sendPacket(OK_Packet(0x0, capabilities, 0, 0, 0), true);
+    packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
 void MySQLHandler::comQuery(const String & payload)
@@ -357,7 +352,7 @@ void MySQLHandler::comQuery(const String & payload)
     ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
     executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
-        packet_sender->sendPacket(OK_Packet(0x00, capabilities, 0, 0, 0), true);
+        packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
 
 }
