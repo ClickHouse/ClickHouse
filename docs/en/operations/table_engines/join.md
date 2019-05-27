@@ -14,9 +14,9 @@ The table can't be used for GLOBAL JOINs.
 
 You can use INSERT to add data to the table, similar to the Set engine. For ANY, data for duplicated keys will be ignored. For ALL, it will be counted.
 
-You can't perform SELECT directly from the table. There are to ways to rerieve data from table with Join engine
+You can't perform SELECT directly from the table. There are two ways to retrieve data from table with Join engine
 * use it as the "right-hand" table for JOIN
-* use `joinGet` function, which allow to extract data from Join table with dictionary-like syntax.
+* use `joinGet` function, which allows to extract data from Join table with dictionary-like syntax.
 
 Storing data on the disk is the same as for the Set engine.
 
