@@ -26,7 +26,8 @@
 // #ifndef _READPASSPHRASE_H_
 // #define _READPASSPHRASE_H_
 
-#include "includes.h"
+//#include "includes.h"
+#include "config_client.h"
 
 #ifndef HAVE_READPASSPHRASE
 
