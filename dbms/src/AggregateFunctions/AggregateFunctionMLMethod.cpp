@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include "AggregateFunctionFactory.h"
@@ -152,24 +153,28 @@ void LinearModelData::predict(
 
 void LinearModelData::returnWeights(IColumn & to) const
 {
-//    auto & column = static_cast<ColumnVector<Float64> &>(to);
-//    for (auto weight_value : weights)
-//    {
-//        column.getData().push_back(weight_value);
-//    }
-//    column.getData().push_back(bias);
-    auto & column = static_cast<ColumnArray &>(to);
+    size_t size = weights.size() + 1;
 
-    Array weights_array;
-    weights_array.reserve(weights.size() + 1);
-    for (auto weight_value : weights)
+    ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+    ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+    size_t old_size = offsets_to.back();
+    offsets_to.push_back(old_size + size);
+
+    if (size)
     {
-        weights_array.push_back(weight_value);
-    }
-    weights_array.push_back(bias);
+        typename ColumnFloat64::Container & val_to
+                = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
-//    column.getData().push_back(weights_array);
-    column.getData().insert(weights_array);
+        val_to.reserve(old_size + size);
+        size_t i = 0;
+        while (i < weights.size())
+        {
+            val_to.push_back(weights[i]);
+            i++;
+        }
+        val_to.push_back(bias);
+    }
 }
 
 void LinearModelData::read(ReadBuffer & buf)
