@@ -162,7 +162,7 @@ target_link_libraries ( minilua ${LIBS} )
 
 # Dynasm
 set ( DASM ${LUAJIT_DIR}/dynasm/dynasm.lua )
-set ( DASM_T ${LUAJIT_DIR}/${LUAJIT_SOURCE_DIR}/host/buildvm_arch.h )
+set ( DASM_T ${LUAJIT_DIR}/host/buildvm_arch.h )
 
 # 2DO: Proper detection of flags
 set ( DASM_VER "" )
