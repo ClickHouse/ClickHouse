@@ -1,8 +1,8 @@
-# SELECT запросы
+# Синтаксис запросов SELECT
 
 `SELECT` осуществляет выборку данных.
 
-``` sql
+```sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
@@ -17,7 +17,7 @@ SELECT [DISTINCT] expr_list
     [UNION ALL ...]
     [INTO OUTFILE filename]
     [FORMAT format]
-    [LIMIT n BY columns]
+    [LIMIT [offset_value, ]n BY columns]
 ```
 
 Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
@@ -221,10 +221,10 @@ ARRAY JOIN arr;
 
 ``` sql
 SELECT s, arr
-FROM arrays_test 
+FROM arrays_test
 LEFT ARRAY JOIN arr;
 ```
-``` 
+```
 ┌─s───────────┬─arr─┐
 │ Hello       │   1 │
 │ Hello       │   2 │
@@ -233,7 +233,7 @@ LEFT ARRAY JOIN arr;
 │ World       │   5 │
 │ Goodbye     │   0 │
 └─────────────┴─────┘
-``` 
+```
 
 #### Использование алиасов
 
@@ -245,7 +245,7 @@ FROM arrays_test
 ARRAY JOIN arr AS a;
 ```
 
-``` 
+```
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -259,7 +259,7 @@ ARRAY JOIN arr AS a;
 
 ``` sql
 SELECT s, arr_external
-FROM arrays_test 
+FROM arrays_test
 ARRAY JOIN [1, 2, 3] AS arr_external;
 ```
 
@@ -330,7 +330,7 @@ INSERT INTO nested_test
 VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
 ```
 
-``` 
+```
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
@@ -344,7 +344,7 @@ FROM nested_test
 ARRAY JOIN nest;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -362,7 +362,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`, `nest.y`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -380,7 +380,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -398,7 +398,7 @@ FROM nested_test
 ARRAY JOIN nest AS n;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -416,7 +416,7 @@ FROM nested_test
 ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -691,13 +691,60 @@ GROUP BY вычисляет для каждого встретившегося �
 Если после GROUP BY у вас есть ORDER BY с небольшим LIMIT, то на ORDER BY не будет тратиться существенного количества оперативки.
 Но если есть ORDER BY без LIMIT, то не забудьте включить внешнюю сортировку (`max_bytes_before_external_sort`).
 
-### Секция LIMIT N BY
+### Секция LIMIT BY
 
-`LIMIT N BY COLUMNS` выбирает топ `N` строк для каждой группы `COLUMNS`. `LIMIT N BY` не связан с `LIMIT` и они могут использоваться в одном запросе. Ключ для `LIMIT N BY` может содержать произвольное число колонок или выражений.
+Запрос с секцией `LIMIT n BY expressions` выбирает первые `n` строк для каждого отличного значения `expressions`. Ключ `LIMIT BY` может содержать любое количество [expressions](syntax.md#syntax-expressions).
 
-Пример:
+ClickHouse поддерживает следующий синтаксис:
 
-``` sql
+- `LIMIT [offset_value, ]n BY expressions`
+- `LIMIT n OFFSET offset_value BY expressions`
+
+Во время обработки запроса, ClickHouse выбирает данные, упорядоченные по ключу сортировки. Ключ сортировки задаётся явно в секции [ORDER BY](#select-order-by) или неявно в свойствах движка таблицы. Затем ClickHouse применяет `LIMIT n BY expressions` и возвращает первые `n` для каждой отличной комбинации `expressions`. Если указан `OFFSET`, то для каждого блока данных, который принадлежит отдельной комбинации `expressions`, ClickHouse отступает `offset_value` строк от начала блока и возвращает не более `n`. Если `offset_value` больше, чем количество строк в блоке данных, ClickHouse не возвращает ни одной строки.
+
+`LIMIT BY` не связана с секцией `LIMIT`. Их можно использовать в одном запросе.
+
+**Примеры**
+
+Образец таблицы:
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by values(1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+Запросы:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+Запрос `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` возвращает такой же результат.
+
+Следующий запрос выбирает топ 5 рефереров для каждой пары `domain, device_type`, но не более 100 строк (`LIMIT n BY + LIMIT`).
+
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
@@ -721,7 +768,7 @@ WHERE и HAVING отличаются тем, что WHERE выполняется
 Если агрегации не производится, то HAVING использовать нельзя.
 
 
-### Секция ORDER BY
+### Секция ORDER BY {#select-order-by}
 
 Секция ORDER BY содержит список выражений, к каждому из которых также может быть приписано DESC или ASC (направление сортировки). Если ничего не приписано - это аналогично приписыванию ASC. ASC - сортировка по возрастанию, DESC - сортировка по убыванию. Обозначение направления сортировки действует на одно выражение, а не на весь список. Пример: `ORDER BY Visits DESC, SearchPhrase`
 
