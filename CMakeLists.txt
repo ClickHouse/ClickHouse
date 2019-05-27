@@ -366,6 +366,7 @@ if (GLIBC_COMPATIBILITY)
         endif ()
     endfunction ()
 
+    add_glibc_compat(liblua)
     add_glibc_compat(ltdl)
     add_glibc_compat(zlibstatic)
     add_glibc_compat(jemalloc)

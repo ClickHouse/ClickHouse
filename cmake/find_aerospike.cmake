@@ -1,4 +1,4 @@
-if(OS_FREEBSD AND SANITIZE STREQUAL "address") {
+if(OS_FREEBSD AND SANITIZE STREQUAL "address")
     if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/aerospike/src/main/aerospike/_bin.c")
         message (WARNING "submodule contrib/aerospike is missing. to fix try run: \n git submodule update --init --recursive")
     else()
@@ -10,5 +10,5 @@ if(OS_FREEBSD AND SANITIZE STREQUAL "address") {
             set (USE_AEROSPIKE 1)
         endif()
     endif ()
-}
+endif()
 message(STATUS "Using Aerospike=${USE_AEROSPIKE}: ${USE_POCO_REDIS}, ${AEROSPIKE_LIBRARY}, ${AEROSPIKE_INCLUDE_DIR}")
