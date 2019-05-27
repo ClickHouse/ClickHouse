@@ -210,7 +210,7 @@ Default value: 0.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
-Enables or disables skipping of insertion of extra data.
+Enables or disables skipping insertion of extra data.
 
 When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn't insert extra data and doesn't throw an exception.
 
@@ -227,7 +227,7 @@ Default value: 0.
 
 Enables or disables checking the column order when inserting data.
 
-We recommend disabling check, if you are sure that the column order of the input data is the same as in the target table. It increases ClickHouse performance.
+To improve ClickHouse performance, we recommend disabling this check if you are sure that the column order of the input data is the same as in the target table.
 
 Supported formats: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
 
