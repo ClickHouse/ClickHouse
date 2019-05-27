@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 template <bool rate>
-struct AggregateFunctionTSgroupSumData
+struct AggregateFunctionTimeSeriesGroupSumData
 {
     using DataPoint = std::pair<Int64, Float64>;
     struct Points
@@ -90,7 +90,7 @@ struct AggregateFunctionTSgroupSumData
             it_ss->second.add(t, v);
         }
         if (result.size() > 0 && t < result.back().first)
-            throw Exception{"TSgroupSum or TSgroupRateSum must order by timestamp asc!!!", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"timeSeriesGroupSum or timeSeriesGroupRateSum must order by timestamp asc!!!", ErrorCodes::LOGICAL_ERROR};
         if (result.size() > 0 && t == result.back().first)
         {
             //do not add new point
@@ -119,7 +119,7 @@ struct AggregateFunctionTSgroupSumData
         }
     }
 
-    void merge(const AggregateFunctionTSgroupSumData & other)
+    void merge(const AggregateFunctionTimeSeriesGroupSumData & other)
     {
         //if ts has overlap, then aggregate two series by interpolation;
         AggSeries tmp;
@@ -199,15 +199,15 @@ struct AggregateFunctionTSgroupSumData
     }
 };
 template <bool rate>
-class AggregateFunctionTSgroupSum final
-    : public IAggregateFunctionDataHelper<AggregateFunctionTSgroupSumData<rate>, AggregateFunctionTSgroupSum<rate>>
+class AggregateFunctionTimeSeriesGroupSum final
+    : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupSumData<rate>, AggregateFunctionTimeSeriesGroupSum<rate>>
 {
 private:
 public:
-    String getName() const override { return rate ? "TSgroupRateSum" : "TSgroupSum"; }
+    String getName() const override { return rate ? "timeSeriesGroupRateSum" : "timeSeriesGroupSum"; }
 
-    AggregateFunctionTSgroupSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionTSgroupSumData<rate>, AggregateFunctionTSgroupSum<rate>>(arguments, {})
+    AggregateFunctionTimeSeriesGroupSum(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupSumData<rate>, AggregateFunctionTimeSeriesGroupSum<rate>>(arguments, {})
     {
         if (!WhichDataType(arguments[0].get()).isUInt64())
             throw Exception{"Illegal type " + arguments[0].get()->getName() + " of argument 1 of aggregate function " + getName()

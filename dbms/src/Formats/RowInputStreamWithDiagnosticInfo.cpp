@@ -114,7 +114,7 @@ bool OPTIMIZE(1) RowInputStreamWithDiagnosticInfo::deserializeFieldAndPrintDiagn
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-    if (isNumber(type) || isDateOrDateTime(type))
+    if (isNativeNumber(type) || isDateOrDateTime(type))
     {
         /// An empty string instead of a value.
         if (curr_position == prev_position)

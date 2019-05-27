@@ -40,7 +40,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
-    /// NOTE: ReadBuffer was implemented with a immutable buffer contents in mind.
+    /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
     ///       If we failed to poll any message once - don't try again.
     ///       Otherwise, the |poll_timeout| expectations get flawn.
     if (stalled)
@@ -48,7 +48,8 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
 
     if (current == messages.end())
     {
-        commit();
+        if (intermediate_commit)
+            commit();
         messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
         current = messages.begin();
 

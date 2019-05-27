@@ -39,6 +39,7 @@
 #include <Storages/StorageJoin.h>
 
 #include <DataStreams/copyData.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Dictionaries/IDictionary.h>
 
@@ -848,8 +849,19 @@ bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only
 
     getRootActions(select_query->limitBy(), only_types, step.actions);
 
+    NameSet aggregated_names;
+    for (const auto & column : aggregated_columns)
+    {
+        step.required_output.push_back(column.name);
+        aggregated_names.insert(column.name);
+    }
+
     for (const auto & child : select_query->limitBy()->children)
-        step.required_output.push_back(child->getColumnName());
+    {
+        auto child_name = child->getColumnName();
+        if (!aggregated_names.count(child_name))
+            step.required_output.push_back(std::move(child_name));
+    }
 
     return true;
 }

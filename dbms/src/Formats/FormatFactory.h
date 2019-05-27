@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
-#include <functional>
-#include <unordered_map>
-#include <ext/singleton.h>
 #include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <ext/singleton.h>
+
+#include <functional>
+#include <memory>
+#include <unordered_map>
 
 
 namespace DB
@@ -16,13 +18,6 @@ struct FormatSettings;
 
 class ReadBuffer;
 class WriteBuffer;
-
-class IBlockInputStream;
-class IBlockOutputStream;
-
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
