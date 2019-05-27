@@ -666,13 +666,13 @@ Path to the file that contains:
 
 ## zookeeper {#server-settings_zookeeper}
 
-Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter section contains the following parameters:
+This section contains the following parameters:
 
-- `node` — ZooKeeper endpoint. You can set a few endpoints.
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
     For example:
 
@@ -683,10 +683,10 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout` — Maximum timeout for client session in milliseconds.
-- `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The ZNode that is used as the root for znodes used by the ClickHouse server. Optional.
 - `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
