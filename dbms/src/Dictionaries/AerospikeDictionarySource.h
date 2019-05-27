@@ -20,7 +20,6 @@ public:
         UInt16 port,
         as_config * config,
         const Block & sample_block);
-    
     AerospikeDictionarySource(
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
