@@ -27,7 +27,7 @@ bool RegexpRowInputStream::read(MutableColumns & columns, RowReadExtension & ext
     OptimizedRegularExpression::MatchVec matches;
     auto begin = buf.position();
     auto end_of_line = buf.position();
-    while(!match)
+    while (!match)
     {
         if (buf.eof())
             return false;
