@@ -321,10 +321,10 @@ private:
 
 struct NameLinearRegression
 {
-    static constexpr auto name = "LinearRegression";
+    static constexpr auto name = "linearRegression";
 };
 struct NameLogisticRegression
 {
-    static constexpr auto name = "LogisticRegression";
+    static constexpr auto name = "logisticRegression";
 };
 }

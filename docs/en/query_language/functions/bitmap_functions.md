@@ -51,6 +51,56 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapHasAny
+
+Analogous to `hasAny(array, array)` returns 1 if bitmaps have any common elements, 0 otherwise.
+For empty bitmaps returns 0.
+
+```
+bitmapHasAny(bitmap,bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+``` sql
+SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  1  │
+└─────┘
+```
+
+## bitmapHasAll
+
+Analogous to `hasAll(array, array)` returns 1 if the first bitmap contains all the elements of the second one, 0 otherwise. 
+If the second argument is an empty bitmap then returns 1. 
+
+```
+bitmapHasAll(bitmap,bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+``` sql
+SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  0  │
+└─────┘
+```
+
 
 ## bitmapAnd
 

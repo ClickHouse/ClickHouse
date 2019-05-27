@@ -427,6 +427,7 @@ namespace ErrorCodes
     extern const int BAD_TTL_EXPRESSION = 450;
     extern const int BAD_TTL_FILE = 451;
     extern const int SETTING_CONSTRAINT_VIOLATION = 452;
+    extern const int OPENSSL_ERROR = 454;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
@@ -436,6 +437,8 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES = 446;
 }
 
 }

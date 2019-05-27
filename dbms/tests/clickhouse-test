@@ -94,7 +94,6 @@ def colored(text, args, color=None, on_color=None, attrs=None):
        else:
            return text
 
-
 SERVER_DIED = False
 exit_code = 0
 
@@ -140,7 +139,9 @@ def run_tests_array(all_tests_with_params):
             elif not args.zookeeper and 'zookeeper' in name:
                 print(MSG_SKIPPED + " - no zookeeper")
                 skipped_total += 1
-            elif not args.shard and 'shard' in name:
+            elif not args.shard and ('shard' in name
+                    or 'distributed' in name
+                    or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
             elif not args.no_long and 'long' in name:
@@ -455,6 +456,9 @@ if __name__ == '__main__':
             args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
+    if args.queries is None:
+        print_err("Failed to detect path to the queries directory. Please specify it with '--queries' option.")
+        exit(1)
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
