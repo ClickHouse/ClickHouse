@@ -135,7 +135,7 @@ endif ()
 
 ## SOURCES
 # Generate luaconf.h
-configure_file ( ${LUAJIT_SOURCE_DIR}/luaconf.h.in ${CMAKE_CURRENT_BINARY_DIR}/luaconf.h )
+configure_file ( ${LUAJIT_SOURCE_DIR}/luaconf.h.in ${LUAJIT_SOURCE_DIR}/luaconf.h )
 
 set ( LJLIB_C
         ${LUAJIT_SOURCE_DIR}/lib_base.c
@@ -162,7 +162,7 @@ target_link_libraries ( minilua ${LIBS} )
 
 # Dynasm
 set ( DASM ${LUAJIT_DIR}/dynasm/dynasm.lua )
-set ( DASM_T ${LUAJIT_DIR}/host/buildvm_arch.h )
+set ( DASM_T ${LUAJIT_SOURCE_DIR}/host/buildvm_arch.h )
 
 # 2DO: Proper detection of flags
 set ( DASM_VER "" )
@@ -228,10 +228,10 @@ endmacro(add_buildvm_target)
 
 if ( WIN32 AND NOT CYGWIN )
     add_buildvm_target ( lj_vm.obj peobj )
-    set (LJ_VM_SRC ${CMAKE_CURRENT_BINARY_DIR}/lj_vm.obj)
+    set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.obj)
 else ()
     add_buildvm_target ( lj_vm.s ${LJVM_MODE} )
-    set (LJ_VM_SRC ${CMAKE_CURRENT_BINARY_DIR}/lj_vm.s)
+    set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.s)
 endif ()
 
 add_buildvm_target ( lj_ffdef.h   ffdef   ${LJLIB_C} )
@@ -243,15 +243,15 @@ add_buildvm_target ( jit/vmdef.lua  libvm  ${LJLIB_C} )
 
 SET ( DEPS
         ${LJ_VM_SRC}
-        ${CMAKE_CURRENT_BINARY_DIR}/lj_ffdef.h
-        ${CMAKE_CURRENT_BINARY_DIR}/lj_bcdef.h
-        ${CMAKE_CURRENT_BINARY_DIR}/lj_libdef.h
-        ${CMAKE_CURRENT_BINARY_DIR}/lj_recdef.h
-        ${CMAKE_CURRENT_BINARY_DIR}/lj_folddef.h
+        ${LUAJIT_SOURCE_DIR}/lj_ffdef.h
+        ${LUAJIT_SOURCE_DIR}/lj_bcdef.h
+        ${LUAJIT_SOURCE_DIR}/lj_libdef.h
+        ${LUAJIT_SOURCE_DIR}/lj_recdef.h
+        ${LUAJIT_SOURCE_DIR}/lj_folddef.h
         )
 
 ## LuaJIT Library
-include_directories ( ${CMAKE_CURRENT_BINARY_DIR} dynasm ${LUAJIT_SOURCE_DIR} ${LUAJIT_SOURCE_DIR}/host )
+include_directories ( ${LUAJIT_SOURCE_DIR} dynasm ${LUAJIT_SOURCE_DIR} ${LUAJIT_SOURCE_DIR}/host )
 
 set ( LJCORE_C
         ${LUAJIT_SOURCE_DIR}/lj_gc.c
@@ -325,7 +325,7 @@ endif ()
 ## INSTALL
 install_executable( luajit )
 install_library( liblua )
-install_header( ${LUAJIT_SOURCE_DIR}/lua.h ${LUAJIT_SOURCE_DIR}/luajit.h ${LUAJIT_SOURCE_DIR}/lua.hpp ${CMAKE_CURRENT_BINARY_DIR}/luaconf.h ${LUAJIT_SOURCE_DIR}/lualib.h ${LUAJIT_SOURCE_DIR}/lauxlib.h )
+install_header( ${LUAJIT_SOURCE_DIR}/lua.h ${LUAJIT_SOURCE_DIR}/luajit.h ${LUAJIT_SOURCE_DIR}/lua.hpp ${LUAJIT_SOURCE_DIR}/luaconf.h ${LUAJIT_SOURCE_DIR}/lualib.h ${LUAJIT_SOURCE_DIR}/lauxlib.h )
 
 install_doc ( doc/ )
 install_foo ( etc/ )
