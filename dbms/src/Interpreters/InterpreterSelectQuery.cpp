@@ -30,6 +30,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -43,8 +45,7 @@
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -590,13 +591,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), query_analyzer->getRequiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{query_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
         };
 
-        if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
-            optimize_prewhere(*merge_tree);
-        else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
-            optimize_prewhere(*replicated_merge_tree);
+        if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+            optimize_prewhere(*merge_tree_data);
     }
 
     AnalysisResult expressions;
@@ -852,7 +851,7 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
-    if (!isNumber(type))
+    if (!isNativeNumber(type))
         throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
@@ -1562,18 +1561,18 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    if (!query.limitByValue() || !query.limitBy())
+    if (!query.limitByLength() || !query.limitBy())
         return;
 
     Names columns;
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
-
-    UInt64 value = getLimitUIntValue(query.limitByValue(), context);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), context);
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context) : 0);
 
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<LimitByBlockInputStream>(stream, value, columns);
+        stream = std::make_shared<LimitByBlockInputStream>(stream, length, offset, columns);
     });
 }
 

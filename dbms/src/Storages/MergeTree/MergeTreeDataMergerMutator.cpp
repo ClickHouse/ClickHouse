@@ -494,17 +494,17 @@ public:
 
     void operator() (const Progress & value)
     {
-        ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+        ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.read_bytes);
         if (stage.is_first)
-            ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
+            ProfileEvents::increment(ProfileEvents::MergedRows, value.read_rows);
         updateWatch();
 
-        merge_entry->bytes_read_uncompressed += value.bytes;
+        merge_entry->bytes_read_uncompressed += value.read_bytes;
         if (stage.is_first)
-            merge_entry->rows_read += value.rows;
+            merge_entry->rows_read += value.read_rows;
 
-        stage.total_rows += value.total_rows;
-        stage.rows_read += value.rows;
+        stage.total_rows += value.total_rows_to_read;
+        stage.rows_read += value.read_rows;
         if (stage.total_rows > 0)
         {
             merge_entry->progress.store(

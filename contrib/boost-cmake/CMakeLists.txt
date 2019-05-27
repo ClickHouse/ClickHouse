@@ -20,7 +20,7 @@ endif()
 
 macro(add_boost_lib lib_name)
     add_headers_and_sources(boost_${lib_name} ${LIBRARY_DIR}/libs/${lib_name}/src)
-    add_library(boost_${lib_name}_internal ${LINK_MODE} ${boost_${lib_name}_sources})
+    add_library(boost_${lib_name}_internal ${boost_${lib_name}_sources})
     target_include_directories(boost_${lib_name}_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
     target_compile_definitions(boost_${lib_name}_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
 endmacro()

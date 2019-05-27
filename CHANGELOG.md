@@ -1,3 +1,60 @@
+## ClickHouse release 19.6.2.11, 2019-05-13
+
+### New Features
+* TTL expressions for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
+* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
+* Added a new aggregate function `simpleLinearRegression(x, y)` which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([hcz](https://github.com/hczhcz))
+* Added new function `isValidUTF8` for checking whether a set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
+* Add new load balancing policy `first_or_random` which sends queries to the first specified host and if it's inaccessible send queries to random hosts of shard. Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
+
+### Experimental Features
+* Add setting `index_granularity_bytes` (adaptive index granularity) for MergeTree* tables family. [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
+
+### Improvements
+* Added support for non-constant and negative size and length arguments for function `substringUTF8`. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Disable push-down to right table in left join, left table in right join, and both tables in full join. This fixes wrong JOIN results in some cases. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
+* `clickhouse-copier`: auto upload task configuration from `--task-file` option [#4876](https://github.com/yandex/ClickHouse/pull/4876) ([proller](https://github.com/proller))
+* Added typos handler for storage factory and table functions factory. [#4891](https://github.com/yandex/ClickHouse/pull/4891) ([Danila Kutenin](https://github.com/danlark1))
+* Support asterisks and qualified asterisks for multiple joins without subqueries [#4898](https://github.com/yandex/ClickHouse/pull/4898) ([Artem Zuikov](https://github.com/4ertus2))
+* Make missing column error message more user friendly. [#4915](https://github.com/yandex/ClickHouse/pull/4915) ([Artem Zuikov](https://github.com/4ertus2))
+
+### Performance Improvements
+* Significant speedup of ASOF JOIN [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
+
+### Backward Incompatible Changes
+* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail](https://github.com/fandyushin))
+
+### Bug Fixes
+* Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
+* Fixed error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
+* Partially fix distributed_product_mode = local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix potentially wrong result for `SELECT DISTINCT` with `JOIN` [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
+
+### Build/Testing/Packaging Improvements
+* Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
+* clickhouse-test: Disable color control sequences in non tty environment. [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
+* clickhouse-test: Allow use any test database (remove `test.` qualification where it possible) [#5008](https://github.com/yandex/ClickHouse/pull/5008) ([proller](https://github.com/proller))
+* Fix ubsan errors [#5037](https://github.com/yandex/ClickHouse/pull/5037) ([Vitaly Baranov](https://github.com/vitlibar))
+* Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
+* Python util to help with backports and changelogs. [#4949](https://github.com/yandex/ClickHouse/pull/4949) ([Ivan](https://github.com/abyss7))
+
+
+## ClickHouse release 19.5.4.22, 2019-05-13
+
+### Bug fixes
+* Fixed possible crash in bitmap* functions [#5220](https://github.com/yandex/ClickHouse/pull/5220) [#5228](https://github.com/yandex/ClickHouse/pull/5228) ([Andy Yang](https://github.com/andyyzh))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error `Set for IN is not created yet in case of using single LowCardinality column in the left part of IN`. This error happened if LowCardinality column was the part of primary key. #5031 [#5154](https://github.com/yandex/ClickHouse/pull/5154) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Modification of retention function: If a row satisfies both the first and NTH condition, only the first satisfied condition is added to the data state. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
+
+
+## ClickHouse release 19.5.3.8, 2019-04-18
+
+### Bug fixes
+* Fixed type of setting `max_partitions_per_insert_block` from boolean to UInt64. [#5028](https://github.com/yandex/ClickHouse/pull/5028) ([Mohammad Hossein Sekhavat](https://github.com/mhsekhavat))
+
+
 ## ClickHouse release 19.5.2.6, 2019-04-15
 
 ### New Features
@@ -24,6 +81,7 @@
 * Fill `system.graphite_detentions` from a table config of `*GraphiteMergeTree` engine tables. [#4584](https://github.com/yandex/ClickHouse/pull/4584) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
 * Rename `trigramDistance` function to `ngramDistance` and add more functions with `CaseInsensitive` and `UTF`. [#4602](https://github.com/yandex/ClickHouse/pull/4602) ([Danila Kutenin](https://github.com/danlark1))
 * Improved data skipping indices calculation. [#4640](https://github.com/yandex/ClickHouse/pull/4640) ([Nikita Vasilev](https://github.com/nikvas0))
+* Keep ordinary, `DEFAULT`, `MATERIALIZED` and `ALIAS` columns in a single list (fixes issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 
 ### Bug Fix
 
@@ -34,7 +92,6 @@
 * Deadlock may happen while executing `DROP DATABASE dictionary` query. [#4701](https://github.com/yandex/ClickHouse/pull/4701) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix undefinied behavior in `median` and `quantile` functions. [#4702](https://github.com/yandex/ClickHouse/pull/4702) ([hcz](https://github.com/hczhcz))
 * Fix compression level detection when `network_compression_method` in lowercase. Broken in v19.1. [#4706](https://github.com/yandex/ClickHouse/pull/4706) ([proller](https://github.com/proller))
-* Keep ordinary, `DEFAULT`, `MATERIALIZED` and `ALIAS` columns in a single list (fixes issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 * Fixed ignorance of `<timezone>UTC</timezone>` setting (fixes issue [#4658](https://github.com/yandex/ClickHouse/issues/4658)). [#4718](https://github.com/yandex/ClickHouse/pull/4718) ([proller](https://github.com/proller))
 * Fix `histogram` function behaviour with `Distributed` tables. [#4741](https://github.com/yandex/ClickHouse/pull/4741) ([olegkv](https://github.com/olegkv))
 * Fixed tsan report `destroy of a locked mutex`. [#4742](https://github.com/yandex/ClickHouse/pull/4742) ([alexey-milovidov](https://github.com/alexey-milovidov))
@@ -63,7 +120,7 @@
 * Fix rare bug when setting `min_bytes_to_use_direct_io` is greater than zero, which occures when thread have to seek backward in column file. [#4897](https://github.com/yandex/ClickHouse/pull/4897) ([alesapin](https://github.com/alesapin))
 * Fix wrong argument types for aggregate functions with `LowCardinality` arguments (fixes issue [#4919](https://github.com/yandex/ClickHouse/issues/4919)). [#4922](https://github.com/yandex/ClickHouse/pull/4922) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Fix wrong name qualification in `GLOBAL JOIN`. [#4969](https://github.com/yandex/ClickHouse/pull/4969) ([Artem Zuikov](https://github.com/4ertus2))
-* Function `toISOWeek` result for year 1970. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix function `toISOWeek` result for year 1970. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix `DROP`, `TRUNCATE` and `OPTIMIZE` queries duplication, when executed on `ON CLUSTER` for `ReplicatedMergeTree*` tables family. [#4991](https://github.com/yandex/ClickHouse/pull/4991) ([alesapin](https://github.com/alesapin))
 
 ### Backward Incompatible Change
@@ -92,6 +149,47 @@
 * Upgrade contrib boost to 1.69. [#4793](https://github.com/yandex/ClickHouse/pull/4793) ([proller](https://github.com/proller))
 * Disable usage of `mremap` when compiled with Thread Sanitizer. Surprisingly enough, TSan does not intercept `mremap` (though it does intercept `mmap`, `munmap`) that leads to false positives. Fixed TSan report in stateful tests. [#4859](https://github.com/yandex/ClickHouse/pull/4859) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add test checking using format schema via HTTP interface. [#4864](https://github.com/yandex/ClickHouse/pull/4864) ([Vitaly Baranov](https://github.com/vitlibar))
+
+## ClickHouse release 19.4.4.33, 2019-04-17
+
+### Bug Fixes
+
+* Avoid `std::terminate` in case of memory allocation failure. Now `std::bad_alloc` exception is thrown as expected. [#4665](https://github.com/yandex/ClickHouse/pull/4665) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixes capnproto reading from buffer. Sometimes files wasn't loaded successfully by HTTP. [#4674](https://github.com/yandex/ClickHouse/pull/4674) ([Vladislav](https://github.com/smirnov-vs))
+* Fix error `Unknown log entry type: 0` after `OPTIMIZE TABLE FINAL` query. [#4683](https://github.com/yandex/ClickHouse/pull/4683) ([Amos Bird](https://github.com/amosbird))
+* Wrong arguments to `hasAny` or `hasAll` functions may lead to segfault. [#4698](https://github.com/yandex/ClickHouse/pull/4698) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Deadlock may happen while executing `DROP DATABASE dictionary` query. [#4701](https://github.com/yandex/ClickHouse/pull/4701) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix undefinied behavior in `median` and `quantile` functions. [#4702](https://github.com/yandex/ClickHouse/pull/4702) ([hcz](https://github.com/hczhcz))
+* Fix compression level detection when `network_compression_method` in lowercase. Broken in v19.1. [#4706](https://github.com/yandex/ClickHouse/pull/4706) ([proller](https://github.com/proller))
+* Fixed ignorance of `<timezone>UTC</timezone>` setting (fixes issue [#4658](https://github.com/yandex/ClickHouse/issues/4658)). [#4718](https://github.com/yandex/ClickHouse/pull/4718) ([proller](https://github.com/proller))
+* Fix `histogram` function behaviour with `Distributed` tables. [#4741](https://github.com/yandex/ClickHouse/pull/4741) ([olegkv](https://github.com/olegkv))
+* Fixed tsan report `destroy of a locked mutex`. [#4742](https://github.com/yandex/ClickHouse/pull/4742) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed TSan report on shutdown due to race condition in system logs usage. Fixed potential use-after-free on shutdown when part_log is enabled. [#4758](https://github.com/yandex/ClickHouse/pull/4758) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix recheck parts in `ReplicatedMergeTreeAlterThread` in case of error. [#4772](https://github.com/yandex/ClickHouse/pull/4772) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Arithmetic operations on intermediate aggregate function states were not working for constant arguments (such as subquery results). [#4776](https://github.com/yandex/ClickHouse/pull/4776) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Always backquote column names in metadata. Otherwise it's impossible to create a table with column named `index` (server won't restart due to malformed `ATTACH` query in metadata). [#4782](https://github.com/yandex/ClickHouse/pull/4782) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix crash in `ALTER ... MODIFY ORDER BY` on `Distributed` table. [#4790](https://github.com/yandex/ClickHouse/pull/4790) ([TCeason](https://github.com/TCeason))
+* Fix segfault in `JOIN ON` with enabled `enable_optimize_predicate_expression`. [#4794](https://github.com/yandex/ClickHouse/pull/4794) ([Winter Zhang](https://github.com/zhang2014))
+* Fix bug with adding an extraneous row after consuming a protobuf message from Kafka. [#4808](https://github.com/yandex/ClickHouse/pull/4808) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fix segmentation fault in `clickhouse-copier`. [#4835](https://github.com/yandex/ClickHouse/pull/4835) ([proller](https://github.com/proller))
+* Fixed race condition in `SELECT` from `system.tables` if the table is renamed or altered concurrently. [#4836](https://github.com/yandex/ClickHouse/pull/4836) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed data race when fetching data part that is already obsolete. [#4839](https://github.com/yandex/ClickHouse/pull/4839) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed rare data race that can happen during `RENAME` table of MergeTree family. [#4844](https://github.com/yandex/ClickHouse/pull/4844) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed segmentation fault in function `arrayIntersect`. Segmentation fault could happen if function was called with mixed constant and ordinary arguments. [#4847](https://github.com/yandex/ClickHouse/pull/4847) ([Lixiang Qian](https://github.com/fancyqlx))
+* Fixed reading from `Array(LowCardinality)` column in rare case when column contained a long sequence of empty arrays. [#4850](https://github.com/yandex/ClickHouse/pull/4850) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix `No message received` exception while fetching parts between replicas. [#4856](https://github.com/yandex/ClickHouse/pull/4856) ([alesapin](https://github.com/alesapin))
+* Fixed `arrayIntersect` function wrong result in case of several repeated values in single array. [#4871](https://github.com/yandex/ClickHouse/pull/4871) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix a race condition during concurrent `ALTER COLUMN` queries that could lead to a server crash (fixes issue [#3421](https://github.com/yandex/ClickHouse/issues/3421)). [#4592](https://github.com/yandex/ClickHouse/pull/4592) ([Alex Zatelepin](https://github.com/ztlpn))
+* Fix parameter deduction in `ALTER MODIFY` of column `CODEC` when column type is not specified. [#4883](https://github.com/yandex/ClickHouse/pull/4883) ([alesapin](https://github.com/alesapin))
+* Functions `cutQueryStringAndFragment()` and `queryStringAndFragment()` now works correctly when `URL` contains a fragment and no query. [#4894](https://github.com/yandex/ClickHouse/pull/4894) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fix rare bug when setting `min_bytes_to_use_direct_io` is greater than zero, which occures when thread have to seek backward in column file. [#4897](https://github.com/yandex/ClickHouse/pull/4897) ([alesapin](https://github.com/alesapin))
+* Fix wrong argument types for aggregate functions with `LowCardinality` arguments (fixes issue [#4919](https://github.com/yandex/ClickHouse/issues/4919)). [#4922](https://github.com/yandex/ClickHouse/pull/4922) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix function `toISOWeek` result for year 1970. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix `DROP`, `TRUNCATE` and `OPTIMIZE` queries duplication, when executed on `ON CLUSTER` for `ReplicatedMergeTree*` tables family. [#4991](https://github.com/yandex/ClickHouse/pull/4991) ([alesapin](https://github.com/alesapin))
+
+### Improvements
+
+* Keep ordinary, `DEFAULT`, `MATERIALIZED` and `ALIAS` columns in a single list (fixes issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 
 ## ClickHouse release 19.4.3.11, 2019-04-02
 

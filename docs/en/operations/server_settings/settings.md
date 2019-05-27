@@ -702,6 +702,7 @@ This section contains the following parameters:
         <port>2181</port>
     </node>
     <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
     <!-- Optional. Chroot suffix. Should exist. -->
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->

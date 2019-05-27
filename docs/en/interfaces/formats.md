@@ -24,11 +24,14 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
+| [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
+
+You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
 ## TabSeparated {#tabseparated}
 
@@ -346,11 +349,11 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    Use this option carefully. Enabling it negatively affects the performance of the ClickHouse server.
+    When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.
 
 ### Selecting Data
 
@@ -708,6 +711,55 @@ are not applied; the [table defaults](../query_language/create.md#create-default
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+## Parquet {#data-format-parquet}
+
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format available to any project in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+
+### Data Types Matching
+
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
+| -------------------- | ------------------ | ---- |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
+| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
+| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
+| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
+| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
+| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
+| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
+| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
+| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
+| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
+| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
+| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
+
+ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Data types of a ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+
+### Inserting and Selecting Data
+
+You can insert Parquet data from a file into ClickHouse table by the following command:
+
+```
+cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```
+
+You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
+
+```
+clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```
+
+Also look at the `HDFS` and `URL` storage engines to process data from the remote servers.
+
 
 ## Format Schema {#formatschema}
 
