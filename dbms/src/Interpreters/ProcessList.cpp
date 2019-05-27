@@ -131,6 +131,17 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             }
         }
 
+        // Check other users running query with our query_id
+        for (const auto & user_process_list : user_to_queries)
+        {
+            if (user_process_list.first == client_info.current_user)
+                continue;
+            auto range = user_process_list.second.queries.equal_range(client_info.current_query_id);
+            if (range.first != range.second)
+                throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
+                    ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+        }
+
         auto process_it = processes.emplace(processes.end(),
             query_, client_info, settings.max_memory_usage, settings.memory_tracker_fault_probability, priorities.insert(settings.priority));
 

@@ -9,3 +9,8 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL?query_id=hello&replace_running_query=1" -d
 sleep 0.1 # First query (usually) should be received by the server after this sleep.
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL?query_id=hello&replace_running_query=1" -d 'SELECT 0'
 wait
+
+${CLICKHOUSE_CLIENT} --user=readonly --query_id=42 --query='SELECT sleep(1)' &
+sleep 0.2
+( ${CLICKHOUSE_CLIENT} --query_id=42 --query='SELECT 43' ||: ) 2>&1 | grep -F 'is already running by user' > /dev/null
+wait
