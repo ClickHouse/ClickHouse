@@ -448,6 +448,19 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
+#### Syntax Limitations
+
+For multiple `JOIN`:
+
+- You cannot perform `SELECT * ...` if you use `SELECT` subqueries for joining. Using of `*` is available only for joining tables.
+- The `PREWARE` clause is not available for multiple `JOIN`.
+
+For `ON`, `WHERE` and `GROUP BY` clauses:
+
+- You cannot use the functions in clauses.
+
+    You can use the functions in the `SELECT` list, define an aliases for them and use aliases in `ON`, `WHERE` and `GROUP BY` clauses.
+
 #### Multiple JOIN
 
 Performing queries, ClickHouse rewrites multiple joins into the combination of two-table joins and processes them sequentially. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
@@ -531,7 +544,7 @@ LIMIT 10
 ```
 
 Subqueries don't allow you to set names or use them for referencing a column from a specific subquery.
-The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases 'hits' and 'visits').
+The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases `hits` and `visits`).
 
 The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
 
