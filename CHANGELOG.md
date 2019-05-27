@@ -3,7 +3,6 @@
 ### New Features
 * TTL expressions for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
 * Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
-* Added a new aggregate function `simpleLinearRegression(x, y)` which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([hcz](https://github.com/hczhcz))
 * Added new function `isValidUTF8` for checking whether a set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
 * Add new load balancing policy `first_or_random` which sends queries to the first specified host and if it's inaccessible send queries to random hosts of shard. Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
@@ -346,7 +345,7 @@
 * Added support of `Nullable` types in `mysql` table function. [#4198](https://github.com/yandex/ClickHouse/pull/4198) ([Emmanuel Donin de Rosière](https://github.com/edonin))
 * Support for arbitrary constant expressions in `LIMIT` clause. [#4246](https://github.com/yandex/ClickHouse/pull/4246) ([k3box](https://github.com/k3box))
 * Added `topKWeighted` aggregate function that takes additional argument with (unsigned integer) weight. [#4245](https://github.com/yandex/ClickHouse/pull/4245) ([Andrew Golman](https://github.com/andrewgolman))
-* `StorageJoin` now supports `join_overwrite` setting that allows overwriting existing values of the same key. [#3973](https://github.com/yandex/ClickHouse/pull/3973) ([Amos Bird](https://github.com/amosbird)
+* `StorageJoin` now supports `join_any_take_last_row` setting that allows overwriting existing values of the same key. [#3973](https://github.com/yandex/ClickHouse/pull/3973) ([Amos Bird](https://github.com/amosbird)
 * Added function `toStartOfInterval`. [#4304](https://github.com/yandex/ClickHouse/pull/4304) ([Vitaly Baranov](https://github.com/vitlibar))
 * Added `RowBinaryWithNamesAndTypes` format. [#4200](https://github.com/yandex/ClickHouse/pull/4200) ([Oleg V. Kozlyuk](https://github.com/DarkWanderer))
 * Added `IPv4` and `IPv6` data types. More effective implementations of `IPv*` functions. [#3669](https://github.com/yandex/ClickHouse/pull/3669) ([Vasily Nemkov](https://github.com/Enmk))
