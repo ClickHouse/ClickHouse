@@ -61,7 +61,7 @@ namespace
                 const auto & name = description.sample_block.getByPosition(idx).name;
 
                 const as_bin_value & bin_value = record.bins.entries[idx - 1].value;
-                if (as_val_type(&bin_value) == AS_NIL)
+                if (as_val_type(const_cast<as_bin_value*>(&bin_value)) == AS_NIL)
                 {
                     insertDefaultValue(*(*columns)[idx], *description.sample_block.getByPosition(idx).column);
                 }
@@ -150,7 +150,7 @@ namespace
         template <typename T>
         void insertNumberValue(IColumn & column, const as_bin_value * value, const std::string & name)
         {
-            switch (as_val_type(value))
+            switch (as_val_type(const_cast<as_bin_value*>(value)))
             {
                 case AS_INTEGER:
                     static_cast<ColumnVector<T> &>(column).getData().push_back(value->integer.value);
@@ -232,11 +232,6 @@ namespace
                     static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(str));
                     break;
                 }
-                default:
-                    std::string invalid_type = "bad"; // toString(as_val_type(&(value)); // TODO:FIX_ME(glebx777)
-                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(invalid_type) + " for column "
-                                        + name,
-                                    ErrorCodes::TYPE_MISMATCH};
             }
         }
 
