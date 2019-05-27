@@ -60,7 +60,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                 if (input_header.has(res_elem.name))
                     conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
                 else
-                    throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                         ErrorCodes::THERE_IS_NO_COLUMN);
                 break;
         }

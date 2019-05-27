@@ -73,6 +73,9 @@ void KafkaBlockInputStream::readPrefixImpl()
 Block KafkaBlockInputStream::readImpl()
 {
     Block block = children.back()->read();
+    if (!block)
+        return block;
+
     Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneWithColumns(std::move(virtual_columns));
     virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
 
