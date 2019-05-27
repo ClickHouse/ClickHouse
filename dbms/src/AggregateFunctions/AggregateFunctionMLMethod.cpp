@@ -161,20 +161,17 @@ void LinearModelData::returnWeights(IColumn & to) const
     size_t old_size = offsets_to.back();
     offsets_to.push_back(old_size + size);
 
-    if (size)
-    {
-        typename ColumnFloat64::Container & val_to
-                = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+    typename ColumnFloat64::Container & val_to
+            = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
-        val_to.reserve(old_size + size);
-        size_t i = 0;
-        while (i < weights.size())
-        {
-            val_to.push_back(weights[i]);
-            i++;
-        }
-        val_to.push_back(bias);
+    val_to.reserve(old_size + size);
+    size_t i = 0;
+    while (i < weights.size())
+    {
+        val_to.push_back(weights[i]);
+        i++;
     }
+    val_to.push_back(bias);
 }
 
 void LinearModelData::read(ReadBuffer & buf)
