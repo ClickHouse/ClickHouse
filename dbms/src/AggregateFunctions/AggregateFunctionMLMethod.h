@@ -4,6 +4,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include "IAggregateFunction.h"
 
 namespace DB
@@ -270,7 +272,15 @@ public:
     {
     }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+    }
+
+    DataTypePtr getReturnTypeToPredict() const override
+    {
+        return std::make_shared<DataTypeNumber<Float64>>();
+    }
 
     void create(AggregateDataPtr place) const override
     {

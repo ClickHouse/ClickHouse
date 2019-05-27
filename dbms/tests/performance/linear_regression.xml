@@ -5,34 +5,32 @@
     <stop_conditions>
         <any_of>
             <average_speed_not_changing_for_ms>3000</average_speed_not_changing_for_ms>
-            <total_time_ms>5000</total_time_ms>
+            <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
 
     <main_metric>
         <min_time/>
     </main_metric>
 
-    <create_query>CREATE TABLE train_dataset(p1 Float64, p2 Float64, target Float64) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE test_dataset(p1 Float64, p2 Float64) ENGINE = Memory</create_query>
-
-    <create_query>CREATE TABLE test_model engine = Memory as select linearRegressionState(0.001)(target, p1, p2) as state from train_dataset</create_query>
-
-    <fill_query>INSERT INTO train_dataset values (2.0, 1.0, 6.0), (3.0, -1.0, 6.0), (4.0, 2.0, 11.0), (-2.0, 1.0, -2.0)</fill_query>
-    <fill_query>INSERT INTO test_dataset values (1.0, 1.0), (5.0, -3.0)</fill_query>
+    <create_query>CREATE TABLE test_model engine = Memory as select linearRegressionState(0.0001)(Age, Income, ParamPrice, Robotness, RefererHash) as state from test.hits</create_query>
 
 <!--    Check model fit-->
-    <query>with (SELECT linearRegressionState(0.001)(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
+    <query>with (SELECT linearRegressionState(0.0001, 0, 15)(Age, Income, ParamPrice, Robotness, RefererHash) FROM test.hits) as model select toColumnTypeName(model)</query>
 
-<!--    Check fit with Momentum -->
-    <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Momentum')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
+<!--    Check model fit with Momentum-->
+    <query>with (SELECT linearRegressionState(0.0001, 0, 15, 'Momentum')(Age, Income, ParamPrice, Robotness, RefererHash) FROM test.hits) as model select toColumnTypeName(model)</query>
 
-<!--    Check fit with Nesterov-->
-    <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Nesterov')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
-
+<!--    Check model fit with Nesterov-->
+    <query>with (SELECT linearRegressionState(0.0001, 0, 15, 'Nesterov')(Age, Income, ParamPrice, Robotness, RefererHash) FROM test.hits) as model select toColumnTypeName(model)</query>
 
 <!--    Check model predict-->
-    <query>with (SELECT state FROM test_model) as model select evalMLMethod(model, p1, p2) from test_dataset</query>
+    <query>with (SELECT state FROM test_model) as model select evalMLMethod(model, Income, ParamPrice, Robotness, RefererHash) from test.hits</query>
+
 
     <drop_query>DROP TABLE IF EXISTS train_dataset</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_dataset</drop_query>
