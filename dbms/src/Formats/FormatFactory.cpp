@@ -50,6 +50,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.template_settings.format = settings.format_schema;
     format_settings.template_settings.row_format = settings.format_schema_rows;
     format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
+    format_settings.regexp_settings.regexp = settings.format_schema;
+
 
     return input_getter(buf, sample, context, max_block_size, rows_portion_size, format_settings);
 }
@@ -143,6 +145,7 @@ void registerOutputFormatNull(FormatFactory & factory);
 /// Input only formats.
 
 void registerInputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatRegexp(FormatFactory & factory);
 
 
 FormatFactory::FormatFactory()
@@ -179,6 +182,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatODBCDriver(*this);
     registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
+
+    registerInputFormatRegexp(*this);
 }
 
 }

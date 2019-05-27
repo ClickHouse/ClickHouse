@@ -57,6 +57,13 @@ struct FormatSettings
 
     Template template_settings;
 
+    struct Regexp
+    {
+        String regexp;
+    };
+
+    Regexp regexp_settings;
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool write_statistics = true;
