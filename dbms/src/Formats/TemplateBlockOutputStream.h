@@ -80,7 +80,7 @@ private:
     ParsedTemplateFormat format;
     ParsedTemplateFormat row_format;
 
-    size_t rows_before_limit;
+    size_t rows_before_limit = 0;
     bool rows_before_limit_set = false;
     Block totals;
     Block extremes;
