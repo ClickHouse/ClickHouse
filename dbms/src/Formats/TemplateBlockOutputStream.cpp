@@ -310,10 +310,10 @@ void TemplateBlockOutputStream::writeSuffix()
                 writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.formats[j]);
                 break;
             case OutputPart::RowsRead:
-                writeValue<size_t, DataTypeUInt64>(progress.rows.load(), format.formats[j]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.formats[j]);
                 break;
             case OutputPart::BytesRead:
-                writeValue<size_t, DataTypeUInt64>(progress.bytes.load(), format.formats[j]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[j]);
                 break;
             default:
                 break;
