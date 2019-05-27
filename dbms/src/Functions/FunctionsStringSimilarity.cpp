@@ -479,22 +479,22 @@ struct NameNgramDistanceUTF8CaseInsensitive
     static constexpr auto name = "ngramDistanceCaseInsensitiveUTF8";
 };
 
-struct NameNgramEntry
+struct NameNgramSearch
 {
-    static constexpr auto name = "ngramEntry";
+    static constexpr auto name = "ngramSearch";
 };
-struct NameNgramEntryCaseInsensitive
+struct NameNgramSearchCaseInsensitive
 {
-    static constexpr auto name = "ngramEntryCaseInsensitive";
+    static constexpr auto name = "ngramSearchCaseInsensitive";
 };
-struct NameNgramEntryUTF8
+struct NameNgramSearchUTF8
 {
-    static constexpr auto name = "ngramEntryUTF8";
+    static constexpr auto name = "ngramSearchUTF8";
 };
 
-struct NameNgramEntryUTF8CaseInsensitive
+struct NameNgramSearchUTF8CaseInsensitive
 {
-    static constexpr auto name = "ngramEntryCaseInsensitiveUTF8";
+    static constexpr auto name = "ngramSearchCaseInsensitiveUTF8";
 };
 
 using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, true>, NameNgramDistance>;
@@ -502,10 +502,10 @@ using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDist
 using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, true>, NameNgramDistanceUTF8>;
 using FunctionNgramDistanceCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
 
-using FunctionNgramEntry = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, false>, NameNgramEntry>;
-using FunctionNgramEntryCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramEntryCaseInsensitive>;
-using FunctionNgramEntryUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramEntryUTF8>;
-using FunctionNgramEntryCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramEntryUTF8CaseInsensitive>;
+using FunctionNgramSearch = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, false>, NameNgramSearch>;
+using FunctionNgramSearchCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
+using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramSearchUTF8>;
+using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
 
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)
@@ -515,10 +515,10 @@ void registerFunctionsStringSimilarity(FunctionFactory & factory)
     factory.registerFunction<FunctionNgramDistanceUTF8>();
     factory.registerFunction<FunctionNgramDistanceCaseInsensitiveUTF8>();
 
-    factory.registerFunction<FunctionNgramEntry>();
-    factory.registerFunction<FunctionNgramEntryCaseInsensitive>();
-    factory.registerFunction<FunctionNgramEntryUTF8>();
-    factory.registerFunction<FunctionNgramEntryCaseInsensitiveUTF8>();
+    factory.registerFunction<FunctionNgramSearch>();
+    factory.registerFunction<FunctionNgramSearchCaseInsensitive>();
+    factory.registerFunction<FunctionNgramSearchUTF8>();
+    factory.registerFunction<FunctionNgramSearchCaseInsensitiveUTF8>();
 }
 
 }
