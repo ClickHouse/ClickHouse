@@ -45,10 +45,10 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    class TemporaryName
+    class RecordsHandler
     {
     public:
-        TemporaryName(MutableColumns * columns, const ExternalResultDescription & description, size_t /*cursor*/)
+        RecordsHandler(MutableColumns * columns, const ExternalResultDescription & description, size_t /*cursor*/)
             : columns(columns), description(description)
         {
         }
@@ -123,8 +123,7 @@ namespace
                     break;
                 case ValueType::String:
                 {
-                    String str{key->value.string.value, key->value.string.len};
-                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(key->value.string.value, key->value.string.len);
                     break;
                 }
                 case ValueType::Date:
@@ -274,24 +273,22 @@ Block AerospikeBlockInputStream::readImpl()
     as_batch batch;
     as_batch_inita(&batch, current_block_size);
 
-    TemporaryName recordsHandler(&columns, description, cursor);
+    RecordsHandler recordsHandler(&columns, description, cursor);
     for (UInt32 i = 0; i < current_block_size; ++i)
     {
         InitializeBatchKey(as_batch_keyat(&batch, i), "test", "test_set", keys[cursor + i]);
     }
 
-    const auto batchReadCallback = [](const as_batch_read * results, uint32_t size, void * records_handler_)
+    const auto batchReadCallback = [](const as_batch_read * results, uint32_t resultSize, void * records_handler_)
     {
-        TemporaryName * records_handler = static_cast<TemporaryName *>(records_handler_);
-        uint32_t n_found = 0;
+        RecordsHandler * records_handler = static_cast<RecordsHandler *>(records_handler_);
 
-        for (uint32_t i = 0; i < size; i++)
+        for (uint32_t i = 0; i < resultSize; i++)
         {
             if (results[i].result == AEROSPIKE_OK)
             {
                 records_handler->HandleRecordBins(results[i].record);
                 fprintf(stderr, "  AEROSPIKE_OK");
-                n_found++;
             }
             else if (results[i].result == AEROSPIKE_ERR_RECORD_NOT_FOUND)
             {

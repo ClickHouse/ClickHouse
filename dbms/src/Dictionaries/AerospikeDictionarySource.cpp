@@ -124,7 +124,7 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     as_error err;
     std::vector<std::unique_ptr<as_key>> keys;
 
-    auto scannerCallback = [](const as_val * p_val, void * keys)
+    auto scannerCallback = [](const as_val * p_val, void * udata)
     {
         if (!p_val)
         {
@@ -137,8 +137,8 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
             printf("scan callback returned non-as_record object");
             return false;
         }
-        std::vector<std::unique_ptr<as_key>> & tmp = *static_cast<std::vector<std::unique_ptr<as_key>> *>(keys);
-        tmp.emplace_back(AllocateKey(record->key));
+        std::vector<std::unique_ptr<as_key>> & globalKeys = *static_cast<std::vector<std::unique_ptr<as_key>> *>(udata);
+        globalKeys.emplace_back(AllocateKey(record->key));
         return true;
     };
     if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void *>(&keys)) != AEROSPIKE_OK)
