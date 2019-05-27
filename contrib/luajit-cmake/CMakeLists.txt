@@ -19,7 +19,9 @@ set ( LUA_PATH "LUA_PATH" CACHE STRING "Environment variable to use as package.p
 set ( LUA_CPATH "LUA_CPATH" CACHE STRING "Environment variable to use as package.cpath." )
 set ( LUA_INIT "LUA_INIT" CACHE STRING "Environment variable for initial script." )
 
+message("FIRST" ${LUAJIT_DIR})
 set(LUAJIT_SOURCE_DIR ${LUAJIT_DIR}/src)
+message("SECOND" ${LUAJIT_SOURCE_DIR})
 
 option ( LUA_ANSI "Use only ansi features." OFF )
 option ( LUA_USE_RELATIVE_LOADLIB "Use modified loadlib.c with support for relative paths on posix systems." ON)
@@ -219,8 +221,9 @@ file ( GLOB SRC_BUILDVM ${LUAJIT_SOURCE_DIR}/host/buildvm*.c )
 add_executable ( buildvm ${SRC_BUILDVM} ${DASM_T} )
 
 macro(add_buildvm_target _target _mode)
-    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_target}
-            COMMAND buildvm ARGS -m ${_mode} -o ${CMAKE_CURRENT_BINARY_DIR}/${_target} ${ARGN}
+    message("SEE ${LUAJIT_SOURCE_DIR}/${_target}")
+    add_custom_command(OUTPUT ${LUAJIT_SOURCE_DIR}/${_target}
+            COMMAND buildvm ARGS -m ${_mode} -o ${LUAJIT_SOURCE_DIR}/${_target} ${ARGN}
             WORKING_DIRECTORY ${LUAJIT_DIR}
             DEPENDS buildvm ${ARGN}
             )
@@ -230,6 +233,8 @@ if ( WIN32 AND NOT CYGWIN )
     add_buildvm_target ( lj_vm.obj peobj )
     set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.obj)
 else ()
+    message("LOL0 ${LUAJIT_SOURCE_DIR}")
+    message("LOL ${LUAJIT_SOURCE_DIR}")
     add_buildvm_target ( lj_vm.s ${LJVM_MODE} )
     set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.s)
 endif ()
