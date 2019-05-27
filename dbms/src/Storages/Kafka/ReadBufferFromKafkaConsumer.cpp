@@ -3,6 +3,16 @@
 namespace DB
 {
 
+using namespace std::chrono_literals;
+
+ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
+{
+    /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
+    consumer->unsubscribe();
+    consumer->unassign();
+    while(consumer->get_consumer_queue().next_event(1s));
+}
+
 void ReadBufferFromKafkaConsumer::commit()
 {
     if (messages.empty() || current == messages.begin())
@@ -20,8 +30,6 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     if (consumer->get_subscription().empty())
     {
-        using namespace std::chrono_literals;
-
         consumer->pause(); // don't accidentally read any messages
         consumer->subscribe(topics);
         consumer->poll(5s);

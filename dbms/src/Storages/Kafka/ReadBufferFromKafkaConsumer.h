@@ -27,6 +27,7 @@ public:
         , current(messages.begin())
     {
     }
+    ~ReadBufferFromKafkaConsumer() override;
 
     void commit(); // Commit all processed messages.
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
