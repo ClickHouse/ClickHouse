@@ -50,7 +50,7 @@ struct Less
 
     bool operator() (size_t a, size_t b) const
     {
-        for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end() && jt != right_columns.end(); ++it, ++jt)
+        for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end(); ++it, ++jt)
         {
             int res = it->second.direction * it->first->compareAt(a, b, *jt->first, it->second.nulls_direction);
             if (res < 0)
@@ -61,6 +61,31 @@ struct Less
         return false;
     }
 };
+
+template<class ForwardIt, class T, class Comparator>
+ForwardIt upperBoundWithoutSWO(ForwardIt first, ForwardIt last, const T& value, Comparator comp)
+{
+    ForwardIt it;
+    typename std::iterator_traits<ForwardIt>::difference_type count, step;
+    count = std::distance(first, last);
+
+    while (count > 0)
+    {
+        it = first;
+        step = count / 2;
+        std::advance(it, step);
+        if (!comp(value, *it))
+        {
+            first = ++it;
+            count -= step + 1;
+        }
+        else
+        {
+            count = step;
+        }
+    }
+    return first;
+}
 
 Block FinishSortingBlockInputStream::readImpl()
 {
@@ -120,7 +145,7 @@ Block FinishSortingBlockInputStream::readImpl()
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
 
-                auto it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
+                auto it = upperBoundWithoutSWO(perm.begin(), perm.end(), last_block.rows() - 1, less);
 
                 /// We need to save tail of block, because next block may starts with the same key as in tail
                 /// and we should sort these rows in one chunk.
