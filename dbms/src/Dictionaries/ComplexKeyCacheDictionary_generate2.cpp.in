@@ -20,6 +20,6 @@ void ComplexKeyCacheDictionary::get@NAME@(const std::string & attribute_name,
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::@NAME@);
 
-    getItemsNumber<TYPE>(attribute, key_columns, out, [&](const size_t row) { return def[row]; });
+    getItemsNumberImpl<TYPE, TYPE>(attribute, key_columns, out, [&](const size_t row) { return def[row]; });
 }
 }

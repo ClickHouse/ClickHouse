@@ -54,7 +54,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, \
             key_columns, \
             [&](const size_t row, const auto value) { out[row] = value; }, \
@@ -106,7 +106,7 @@ void ComplexKeyHashedDictionary::getString(
         const auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, \
             key_columns, \
             [&](const size_t row, const auto value) { out[row] = value; }, \
@@ -160,7 +160,7 @@ void ComplexKeyHashedDictionary::getString(
         const auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
     }
 DECLARE(UInt8)
@@ -553,34 +553,6 @@ ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingTyp
     return attr;
 }
 
-
-template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-void ComplexKeyHashedDictionary::getItemsNumber(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
-{
-    if (false)
-    {
-    }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) getItemsImpl<TYPE, OutputType>( \
-        attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsImpl(
