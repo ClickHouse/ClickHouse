@@ -31,7 +31,7 @@ public:
 private:
     bool nextImpl() override
     {
-        if (eof)
+        if (eof || !mutex)
             return false;
 
         std::lock_guard<std::mutex> lock(*mutex);
