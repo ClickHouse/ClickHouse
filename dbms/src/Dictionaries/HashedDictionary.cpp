@@ -116,9 +116,7 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
         const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -144,9 +142,7 @@ DECLARE(Decimal128)
 void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -165,9 +161,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsNumber<TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -192,9 +186,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -208,9 +200,7 @@ void HashedDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsNumber<TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -235,9 +225,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
