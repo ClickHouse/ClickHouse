@@ -1,5 +1,5 @@
 <test>
-    <name>json_extract</name>
+    <name>json_extract_without_simdjson</name>
     <type>once</type>
 
     <stop_conditions>
@@ -27,7 +27,7 @@
     </substitutions>
 
     <settings>
-        <allow_simdjson>1</allow_simdjson>
+        <allow_simdjson>0</allow_simdjson>
     </settings>
 
     <query>SELECT count() FROM system.numbers WHERE NOT ignore(JSONExtractString(materialize({json}), 'sparam'))</query>
