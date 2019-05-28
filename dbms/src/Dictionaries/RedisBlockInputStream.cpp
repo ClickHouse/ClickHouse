@@ -36,6 +36,7 @@ namespace DB
         extern const int TYPE_MISMATCH;
         extern const int LOGICAL_ERROR;
         extern const int LIMIT_EXCEEDED;
+        extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     }
 
 
@@ -59,11 +60,8 @@ namespace DB
 
         bool isNull(const Poco::Redis::RedisType::Ptr & value)
         {
-            if (value.isNull())
-                return true;
-            if (value->isBulkString())
-                return static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value().isNull();
-            return false;
+            return value->isBulkString() &&
+                static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value().isNull();
         }
 
         std::string getStringOrThrow(const Poco::Redis::RedisType::Ptr & value, const std::string & column_name)
@@ -158,10 +156,6 @@ namespace DB
         if (all_read)
             return {};
 
-        for (size_t i = 0; i < 5; ++i)
-            if (description.sample_block.columns() >= i + 1)
-                LOG_INFO(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
-
         const size_t size = description.sample_block.columns();
 
         MutableColumns columns(description.sample_block.columns());
@@ -220,6 +214,7 @@ namespace DB
                     commandForValues.addRedisType(secondary_key);
                 }
 
+                // FIXME: fix insert
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
                 for (const auto & value : values)
                 {
@@ -235,10 +230,10 @@ namespace DB
         }
         else
         {
-            size_t num_rows = 0;
             Poco::Redis::Command commandForValues("MGET");
 
-            while (num_rows < max_block_size)
+            // keys.size() > 0
+            for (size_t num_rows = 0; num_rows < max_block_size; ++num_rows)
             {
                 if (cursor >= keys.size())
                 {
@@ -247,23 +242,29 @@ namespace DB
                 }
 
                 const auto & key = *(keys.begin() + cursor);
-                insertValueByIdx(0, key);
                 commandForValues.addRedisType(key);
-
-                ++num_rows;
                 ++cursor;
             }
 
-            if (num_rows == 0)
-                return {};
-
             Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-            for (const auto & value : values)
+            if (commandForValues.size() != values.size() + 1)
+                throw Exception{"Inconsistent sizes of keys and values in Redis request",
+                        ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT};
+
+            for (size_t num_rows = 0; num_rows < values.size(); ++num_rows)
             {
-                if (isNull(value))
+                const auto & key = *(keys.begin() + cursor - num_rows - 1);
+                const auto & value = *(values.begin() + values.size() - num_rows - 1);
+                if (value.isNull())
+                {
+                    insertValueByIdx(0, key);
                     insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
-                else
+                }
+                else if (!isNull(value)) // null string means 'no value for requested key'
+                {
+                    insertValueByIdx(0, key);
                     insertValueByIdx(1, value);
+                }
             }
         }
 
