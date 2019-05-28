@@ -69,7 +69,7 @@ namespace
                 {
                     if (description.types[idx].second)
                     {
-                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*(*columns)[idx]);
+                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*(*columns)[idx]); // Use reference here because pointers cannot be casted
                         insertValue(column_nullable.getNestedColumn(), description.types[idx].first, &bin_value, name);
                         column_nullable.getNullMapData().emplace_back(0);
                     }

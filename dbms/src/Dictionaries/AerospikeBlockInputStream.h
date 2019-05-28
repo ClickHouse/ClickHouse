@@ -9,7 +9,6 @@
 
 namespace DB
 {
-/// Converts MongoDB Cursor to a stream of Blocks
     class AerospikeBlockInputStream final : public IBlockInputStream
     {
     public:

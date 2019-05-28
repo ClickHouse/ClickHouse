@@ -10,9 +10,7 @@ set(LUAJIT_DIR ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/luajit)
 
 project ( luajit C ASM)
 cmake_minimum_required ( VERSION 2.8 )
-# message("SEE ${LUAJIT_DIR}")
 set(CMAKE_MODULE_PATH ${LUAJIT_DIR}/cmake)
- #message("SEE ${CMAKE_MODULE_PATH}")
 include ( ${CMAKE_MODULE_PATH}/dist.cmake )
 include ( lua )
 
@@ -22,9 +20,7 @@ set ( LUA_PATH "LUA_PATH" CACHE STRING "Environment variable to use as package.p
 set ( LUA_CPATH "LUA_CPATH" CACHE STRING "Environment variable to use as package.cpath." )
 set ( LUA_INIT "LUA_INIT" CACHE STRING "Environment variable for initial script." )
 
-message("FIRST" ${LUAJIT_DIR})
 set(LUAJIT_SOURCE_DIR ${LUAJIT_DIR}/src)
-message("SECOND" ${LUAJIT_SOURCE_DIR})
 
 option ( LUA_ANSI "Use only ansi features." OFF )
 option ( LUA_USE_RELATIVE_LOADLIB "Use modified loadlib.c with support for relative paths on posix systems." ON)

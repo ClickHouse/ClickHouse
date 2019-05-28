@@ -36,12 +36,10 @@ if(USE_POCO_DATAODBC)
 endif()
 
 if(USE_POCO_MONGODB)
-    message(STATUS "MongoDB library: ${Poco_MongoDB_LIBRARY}")
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
 if(USE_AEROSPIKE)
-    message(STATUS "Aerospike library: ${AEROSPIKE_LIBRARY}")
     target_link_libraries(clickhouse_dictionaries PRIVATE ${AEROSPIKE_LIBRARY})
     target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${AEROSPIKE_INCLUDE_DIR})
 endif()
