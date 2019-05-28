@@ -830,7 +830,7 @@ private:
             connection->forceConnected();
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-            if (insert && !insert->select)
+            if (insert && (!insert->select || insert->input_function))
                 processInsertQuery();
             else
                 processOrdinaryQuery();
