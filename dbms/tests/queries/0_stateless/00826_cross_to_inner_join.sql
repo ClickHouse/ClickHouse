@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 SET enable_debug_queries = 1;
 
 set allow_experimental_cross_to_join_conversion = 0;

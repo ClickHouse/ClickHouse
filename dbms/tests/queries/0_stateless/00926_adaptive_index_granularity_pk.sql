@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 
 SET send_logs_level = 'none';
 SELECT '----00489----';

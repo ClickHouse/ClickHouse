@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 select round(1000 * ngramDistanceUTF8(materialize(''), '')) from system.numbers limit 5;
 select round(1000 * ngramDistanceUTF8(materialize('абв'), '')) from system.numbers limit 5;
 select round(1000 * ngramDistanceUTF8(materialize(''), 'абв')) from system.numbers limit 5;

@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 DROP TABLE IF EXISTS summing_composite_key;
 CREATE TABLE summing_composite_key (d Date, k UInt64, FirstMap Nested(k1 UInt32, k2ID Int8, s Float64), SecondMap Nested(k1ID UInt64, k2Key UInt32, k3Type Int32, s Int64)) ENGINE = SummingMergeTree(d, k, 1);
 

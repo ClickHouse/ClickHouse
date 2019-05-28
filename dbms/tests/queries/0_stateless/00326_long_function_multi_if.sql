@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 
 SELECT 'Trivial case';
 

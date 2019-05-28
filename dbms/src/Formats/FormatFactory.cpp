@@ -50,7 +50,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
 
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
-    if (settings.enable_parallel_reading
+    std::cerr << settings.input_format_parallel_parsing << "\n";
+    if (settings.input_format_parallel_parsing
             && !settings.input_format_defaults_for_omitted_fields
             && file_segmentation_engine)
     {

@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 
 DROP TABLE IF EXISTS appointment_events;
 CREATE TABLE appointment_events

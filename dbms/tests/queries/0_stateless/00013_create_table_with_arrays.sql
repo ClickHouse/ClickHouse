@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 
 DROP TABLE IF EXISTS arrays_test;
 CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;

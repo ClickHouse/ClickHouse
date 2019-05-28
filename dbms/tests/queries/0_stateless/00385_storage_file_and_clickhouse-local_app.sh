@@ -20,8 +20,8 @@ function pack_unpack_compare()
     local res_db_file=$(${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT $TABLE_HASH FROM buf_file")
 
     ${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT * FROM buf FORMAT $3" > "$buf_file"
-    local res_ch_local1=$(${CLICKHOUSE_LOCAL} --enable_parallel_reading=0 --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`")
-    local res_ch_local2=$(${CLICKHOUSE_LOCAL} --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file")
+    local res_ch_local1=$(${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --structure "$2" --file "$buf_file" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`")
+    local res_ch_local2=$(${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --structure "$2" --table "my super table" --input-format "$3" --output-format TabSeparated --query "SELECT $TABLE_HASH FROM \`my super table\`" < "$buf_file")
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS buf"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS buf_file"

@@ -1,4 +1,4 @@
-SET enable_parallel_reading=0;
+SET input_format_parallel_parsing=0;
 drop table if exists lc_left_aj;
 CREATE TABLE lc_left_aj
 (

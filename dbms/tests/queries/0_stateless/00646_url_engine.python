@@ -149,9 +149,9 @@ def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,do
 def main():
     test_data = "Hello,2,-2,7.7\nWorld,2,-5,8.8"
     select_only_requests = {
-        "select str,numuint,numint,double from {tbl}" : test_data.replace(',', '\t'),
+        "select str,numuint,numint,double from {tbl} settings input_format_parallel_parsing=0" : test_data.replace(',', '\t'),
         "select numuint, count(*) from {tbl} group by numuint" : "2\t2",
-        "select str,numuint,numint,double from {tbl} limit 1": test_data.split("\n")[0].replace(',', '\t'),
+        "select str,numuint,numint,double from {tbl} limit 1 settings input_format_parallel_parsing=0": test_data.split("\n")[0].replace(',', '\t'),
     }
 
     insert_requests = [
