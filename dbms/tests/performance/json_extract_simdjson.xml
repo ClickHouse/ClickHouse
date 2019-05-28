@@ -2,6 +2,10 @@
     <name>json_extract_simdjson</name>
     <type>once</type>
 
+    <preconditions>
+        <cpu>AVX2</cpu>
+    </preconditions>
+
     <stop_conditions>
         <any_of>
             <average_speed_not_changing_for_ms>1000</average_speed_not_changing_for_ms>
