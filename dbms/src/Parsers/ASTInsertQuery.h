@@ -17,6 +17,7 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
+    ASTPtr input_function;
     ASTPtr table_function;
     ASTPtr settings_ast;
 
@@ -40,6 +41,7 @@ public:
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (input_function) { res->input_function = input_function->clone(); res->children.push_back(res->input_function); }
         if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
 
