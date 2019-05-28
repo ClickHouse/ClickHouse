@@ -1,3 +1,5 @@
+SET enable_parallel_reading=0;
+
 DROP TABLE IF EXISTS alter;
 CREATE TABLE alter (`boolean_false` Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
 

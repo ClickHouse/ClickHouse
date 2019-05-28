@@ -1,3 +1,5 @@
+SET enable_parallel_reading=0;
+
 DROP TABLE IF EXISTS collapsing;
 
 CREATE TABLE collapsing(key String, value String, sign Int8) ENGINE CollapsingMergeTree(sign)

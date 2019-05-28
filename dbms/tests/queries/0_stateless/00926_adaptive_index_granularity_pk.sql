@@ -1,3 +1,5 @@
+SET enable_parallel_reading=0;
+
 SET send_logs_level = 'none';
 SELECT '----00489----';
 DROP TABLE IF EXISTS test.pk;

@@ -1,3 +1,5 @@
+SET enable_parallel_reading=0;
+
 DROP TABLE IF EXISTS appointment_events;
 CREATE TABLE appointment_events
 (
