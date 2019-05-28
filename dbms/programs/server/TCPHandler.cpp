@@ -218,7 +218,7 @@ void TCPHandler::runImpl()
                     state.block_in.reset();
                     state.maybe_compressed_in.reset();
                     return Block();
-                };
+                }
                 return state.block_for_input;
             });
 
