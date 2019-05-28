@@ -24,6 +24,7 @@ RUN apt-get update \
     curl \
     liblua5.1-dev \
     luajit \
+    libssl-dev \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
