@@ -38,6 +38,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
@@ -65,6 +67,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
+    extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 }
 
 
@@ -522,6 +525,22 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+
+    /// Check low cardinality types in creating table if it was not cancelled in setting
+    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
+    {
+        for (const auto & name_and_type_pair : columns.getAllPhysical())
+        {
+            if ((name_and_type_pair.type)->lowCardinality())
+            {
+                const auto current_type_ptr = recursiveRemoveLowCardinality(name_and_type_pair.type);
+                if (!isStringOrFixedString(*current_type_ptr) && !isStringOrFixedString(*removeNullable(current_type_ptr)))
+                    throw Exception("The type " + current_type_ptr->getName() + "   "  + " is not allowed for making low cardinality in creating table by default, because it could increase time of join and memory consumption. "
+                    + "Low cardinality is usefull only for types String, Nullable(String), FixedString and Nullable(FixedString). Could be allowed for others by setting allow_suspicious_low_cardinality_types.",
+                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+            }
+        }
+    }
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
