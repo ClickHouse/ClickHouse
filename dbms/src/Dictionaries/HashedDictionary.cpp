@@ -324,7 +324,6 @@ void HashedDictionary::createAttributes()
 void HashedDictionary::blockToAttributes(const Block & block)
 {
     const auto & id_column = *block.safeGetByPosition(0).column;
-    element_count += id_column.size();
 
     for (const size_t attribute_idx : ext::range(0, attributes.size()))
     {
@@ -332,7 +331,8 @@ void HashedDictionary::blockToAttributes(const Block & block)
         auto & attribute = attributes[attribute_idx];
 
         for (const auto row_idx : ext::range(0, id_column.size()))
-            setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
+            if (setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]))
+                ++element_count;
     }
 }
 
@@ -613,69 +613,56 @@ void HashedDictionary::getItemsImpl(
 
 
 template <typename T>
-void HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T value)
+bool HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T value)
 {
     auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
-    map.insert({id, value});
+    return map.insert({id, value}).second;
 }
 
-void HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
+bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
     switch (attribute.type)
     {
         case AttributeUnderlyingType::UInt8:
-            setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-            break;
+            return setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
         case AttributeUnderlyingType::UInt16:
-            setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-            break;
+            return setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
         case AttributeUnderlyingType::UInt32:
-            setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-            break;
+            return setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
         case AttributeUnderlyingType::UInt64:
-            setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-            break;
+            return setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
         case AttributeUnderlyingType::UInt128:
-            setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-            break;
+            return setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
         case AttributeUnderlyingType::Int8:
-            setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-            break;
+            return setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
         case AttributeUnderlyingType::Int16:
-            setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-            break;
+            return setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
         case AttributeUnderlyingType::Int32:
-            setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-            break;
+            return setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
         case AttributeUnderlyingType::Int64:
-            setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-            break;
+            return setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
         case AttributeUnderlyingType::Float32:
-            setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-            break;
+            return setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
         case AttributeUnderlyingType::Float64:
-            setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
-            break;
+            return setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
 
         case AttributeUnderlyingType::Decimal32:
-            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-            break;
+            return setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
         case AttributeUnderlyingType::Decimal64:
-            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-            break;
+            return setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
         case AttributeUnderlyingType::Decimal128:
-            setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
-            break;
+            return setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
 
         case AttributeUnderlyingType::String:
         {
             auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
             const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            map.insert({id, StringRef{string_in_arena, string.size()}});
-            break;
+            return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
         }
     }
+
+    throw Exception{"Invalid attribute type", ErrorCodes::BAD_ARGUMENTS};
 }
 
 const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::string & attribute_name) const
