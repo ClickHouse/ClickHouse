@@ -10,7 +10,9 @@ set(LUAJIT_DIR ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/luajit)
 
 project ( luajit C ASM)
 cmake_minimum_required ( VERSION 2.8 )
-include ( cmake/dist.cmake )
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+message("LOOK ${CMAKE_MODULE_PATH}")
+include ( ${CMAKE_MODULE_PATH}/dist.cmake )
 include ( lua )
 
 ## CONFIGURATION
