@@ -3,6 +3,7 @@ import warnings
 import pymysql.cursors
 import pymongo
 import redis
+import aerospike
 from tzlocal import get_localzone
 import datetime
 import os
@@ -12,7 +13,7 @@ import time
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password, is_kv):
+                 docker_hostname, docker_port, user, password, storage_type=None):
         self.name = name
         self.internal_hostname = internal_hostname
         self.internal_port = int(internal_port)
@@ -20,7 +21,7 @@ class ExternalSource(object):
         self.docker_port = int(docker_port)
         self.user = user
         self.password = password
-        self.is_kv = is_kv
+        self.storage_type = storage_type
 
     def get_source_str(self, table_name):
         raise NotImplementedError("Method {} is not implemented for {}".format(
@@ -37,9 +38,6 @@ class ExternalSource(object):
 
     def compatible_with_layout(self, layout):
         return True
-
-    def prepare_value_for_type(self, field, value):
-        return value
 
 
 class SourceMySQL(ExternalSource):
@@ -388,10 +386,12 @@ class SourceRedis(ExternalSource):
                 <host>{host}</host>
                 <port>{port}</port>
                 <db_index>0</db_index>
+                <storage_type>{storage_type}</storage_type>
             </redis>
         '''.format(
             host=self.docker_hostname,
             port=self.docker_port,
+            storage_type=self.storage_type,  # simple or hash_map
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -399,33 +399,96 @@ class SourceRedis(ExternalSource):
         self.prepared = True
 
     def load_data(self, data, table_name):
-        for row_num, row in enumerate(data): # FIXME: yield
-            self.client.execute_command("FLUSHDB")
+        self.client.flushdb()
+        for row in data:
             for cell_name, cell_value in row.data.items():
                 value_type = "$"
                 if isinstance(cell_value, int):
                     value_type = ":"
                 else:
                     cell_value = '"' + str(cell_value).replace(' ', '\s') + '"'
-                cmd = "SET " + "$" + cell_name + " " + value_type + str(cell_value)
+                cmd = "SET ${} {}{}".format(cell_name, value_type, cell_value)
                 print(cmd)
                 self.client.execute_command(cmd)
-            return
+
+    def load_kv_data(self, values):
+        self.client.flushdb()
+        if len(values[0]) == 2:
+            self.client.mset({value[0]: value[1] for value in values})
+        else:
+            for value in values:
+                self.client.hset(value[0], value[1], value[2])
 
     def compatible_with_layout(self, layout):
-        if not layout.is_simple:
-            return False
-        return True
+        if layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "simple":
+            return True
+        return False
 
-    def prepare_value_for_type(self, field, value):
-        if field.field_type == "Date":
-            dt = dateutil.parser.parse(value)
-            return int(time.mktime(dt.timetuple()) // 86400)
-        if field.field_type == "DateTime":
-            dt = dateutil.parser.parse(value)
-            return int(time.mktime(dt.timetuple()))
-        if field.field_type == "Float32":
-            return str(value)
-        if field.field_type == "Float64":
-            return str(value)
-        return value
+
+class SourceAerospike(ExternalSource):
+    def __init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password, storage_type=None):
+        ExternalSource.__init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password, storage_type)
+        self.namespace = "test"
+        self.set = "test_set"
+
+    def get_source_str(self, table_name):
+        print("AEROSPIKE get source str")
+        return '''
+            <aerospike>
+                <host>{host}</host>
+                <port>{port}</port>
+            </aerospike>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            storage_type=self.storage_type,  # simple or hash_map
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        config = {
+            'hosts': [ (self.internal_hostname, self.internal_port) ]
+        }
+        self.client = aerospike.client(config).connect()
+        self.prepared = True
+        print("PREPARED AEROSPIKE")
+        print(config)
+
+    def compatible_with_layout(self, layout):
+        print("compatible AEROSPIKE")
+        return layout.is_simple
+
+    def _flush_aerospike_db(self):
+        keys = []
+
+        def handle_record((key, metadata, record)):
+            print("Handle record {} {}".format(key, record))
+            keys.append(key)
+
+        def print_record((key, metadata, record)):
+            print("Print record {} {}".format(key, record))
+
+        scan = self.client.scan(self.namespace, self.set)
+        scan.foreach(handle_record)
+
+        [self.client.remove(key) for key in keys]
+
+    def load_kv_data(self, values):
+        self._flush_aerospike_db()
+
+        print("Load KV Data Aerospike")
+        if len(values[0]) == 2:
+            for value in values:
+                key = (self.namespace, self.set, value[0])
+                print(key)
+                self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
+                assert self.client.exists(key)
+        else:
+            assert("VALUES SIZE != 2")
+
+        # print(values)
+
+    def load_data(self, data, table_name):
+        print("Load Data Aerospike")
+        # print(data)

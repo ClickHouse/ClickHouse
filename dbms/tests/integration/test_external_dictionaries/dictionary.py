@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import copy
 
 
@@ -9,7 +9,7 @@ class Layout(object):
         'cache': '<cache><size_in_cells>128</size_in_cells></cache>',
         'complex_key_hashed': '<complex_key_hashed/>',
         'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
-        'range_hashed': '<range_hashed/>'
+        'range_hashed': '<range_hashed/>',
     }
 
     def __init__(self, name):
@@ -18,13 +18,13 @@ class Layout(object):
         self.is_simple = False
         self.is_ranged = False
         if self.name.startswith('complex'):
-            self.layout_type = "complex"
+            self.layout_type = 'complex'
             self.is_complex = True
-        elif name.startswith("range"):
-            self.layout_type = "ranged"
+        elif name.startswith('range'):
+            self.layout_type = 'ranged'
             self.is_ranged = True
         else:
-            self.layout_type = "simple"
+            self.layout_type = 'simple'
             self.is_simple = True
 
     def get_str(self):
@@ -33,8 +33,7 @@ class Layout(object):
     def get_key_block_name(self):
         if self.is_complex:
             return 'key'
-        else:
-            return 'id'
+        return 'id'
 
 
 class Row(object):
@@ -90,13 +89,12 @@ class Field(object):
 
 
 class DictionaryStructure(object):
-    def __init__(self, layout, fields, is_kv=False):
+    def __init__(self, layout, fields):
         self.layout = layout
         self.keys = []
         self.range_key = None
         self.ordinary_fields = []
         self.range_fields = []
-        self.is_kv = is_kv
 
         for field in fields:
             if field.is_key:
@@ -121,14 +119,12 @@ class DictionaryStructure(object):
         fields_strs = []
         for field in self.ordinary_fields:
             fields_strs.append(field.get_attribute_str())
-            if self.is_kv:
-                break
 
         key_strs = []
         if self.layout.is_complex:
             for key_field in self.keys:
                 key_strs.append(key_field.get_attribute_str())
-        else: # same for simple and ranged
+        else:  # same for simple and ranged
             for key_field in self.keys:
                 key_strs.append(key_field.get_simple_index_str())
 
@@ -288,13 +284,14 @@ class DictionaryStructure(object):
 
 
 class Dictionary(object):
-    def __init__(self, name, structure, source, config_path, table_name):
+    def __init__(self, name, structure, source, config_path, table_name, fields=None, values=None):
         self.name = name
         self.structure = copy.deepcopy(structure)
         self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
-        self.is_kv = source.is_kv
+        self.fields = fields
+        self.values = values
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
