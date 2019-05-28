@@ -293,12 +293,14 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
                     ++in.position();
                     if (!eofWithSavingBufferState(in, memory, begin_pos))
                         ++in.position();
-                } else if (*in.position() == '"')
+                }
+                else if (*in.position() == '"')
                 {
                     ++in.position();
                     quotes = false;
                 }
-            } else
+            }
+            else
             {
                 in.position() = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
                 if (in.position() == in.buffer().end())
@@ -307,16 +309,19 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
                 {
                     ++balance;
                     ++in.position();
-                } else if (*in.position() == '}')
+                }
+                else if (*in.position() == '}')
                 {
                     --balance;
                     ++in.position();
-                } else if (*in.position() == '\\')
+                }
+                else if (*in.position() == '\\')
                 {
                     ++in.position();
                     if (!eofWithSavingBufferState(in, memory, begin_pos))
                         ++in.position();
-                } else if (*in.position() == '"')
+                }
+                else if (*in.position() == '"')
                 {
                     quotes = true;
                     ++in.position();

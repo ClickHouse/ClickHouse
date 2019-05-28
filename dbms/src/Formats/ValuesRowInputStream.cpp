@@ -190,16 +190,19 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
                 ++in.position();
                 if (!eofWithSavingBufferState(in, memory, begin_pos))
                     ++in.position();
-            } else if (*in.position() == '\'')
+            }
+            else if (*in.position() == '\'')
             {
                 quoted ^= true;
                 ++in.position();
-            } else if (*in.position() == ')')
+            }
+            else if (*in.position() == ')')
             {
                 ++in.position();
                 if (!quoted)
                     --balance;
-            } else if (*in.position() == '(')
+            }
+            else if (*in.position() == '(')
             {
                 ++in.position();
                 if (!quoted)

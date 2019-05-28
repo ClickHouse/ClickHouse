@@ -513,7 +513,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
             while (!eofWithSavingBufferState(in, memory, begin_pos)
                     && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
             {
-                in.position() = find_first_symbols<'\\', '\r', '\n'>(in.position(), in.buffer().end());
+                in.position() = find_first_symbols<'\\','\r', '\n'>(in.position(), in.buffer().end());
                 if (in.position() == in.buffer().end())
                     continue;
                 if (*in.position() == '\\')

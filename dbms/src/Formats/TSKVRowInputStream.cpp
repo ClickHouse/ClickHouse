@@ -228,7 +228,8 @@ void registerFileSegmentationEngineTSKV(FormatFactory & factory)
                 ++in.position();
                 if (!eofWithSavingBufferState(in, memory, begin_pos))
                     ++in.position();
-            } else if (*in.position() == '\n' || *in.position() == '\r')
+            }
+            else if (*in.position() == '\n' || *in.position() == '\r')
             {
                 end_of_line = true;
                 ++in.position();

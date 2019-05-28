@@ -516,7 +516,8 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
                     else
                         quotes = false;
                 }
-            } else
+            }
+            else
             {
                 in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
                 if (in.position() == in.buffer().end())
@@ -525,13 +526,15 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
                 {
                     quotes = true;
                     ++in.position();
-                } else if (*in.position() == '\n')
+                }
+                else if (*in.position() == '\n')
                 {
                     end_of_line = true;
                     ++in.position();
                     if (!eofWithSavingBufferState(in, memory, begin_pos) && *in.position() == '\r')
                         ++in.position();
-                } else if (*in.position() == '\r')
+                }
+                else if (*in.position() == '\r')
                 {
                     end_of_line = true;
                     ++in.position();
@@ -540,7 +543,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
                 }
             }
         }
-        // std::cerr << StringRef(memory.data(), memory.size()) << "\n";
         eofWithSavingBufferState(in, memory, begin_pos, true);
         return true;
     });
