@@ -8,8 +8,7 @@
 namespace DB
 {
 
-
-/** Allows many threads to read from single ReadBuffer 
+/** Allows many threads to read from single ReadBuffer
   * Each SharedReadBuffer has his own memory,
   *  which he filles under shared mutex using FileSegmentationEngine.
   */
