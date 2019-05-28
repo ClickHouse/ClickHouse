@@ -24,12 +24,7 @@ RUN apt-get update \
     curl \
     liblua5.1-dev \
     luajit \
-    libc6-dev \
     libssl-dev \
-    autoconf \
-    automake \
-    libtool \
-    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

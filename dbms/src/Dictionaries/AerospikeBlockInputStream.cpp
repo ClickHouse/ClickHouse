@@ -121,27 +121,23 @@ namespace
                 case ValueType::Int64:
                     static_cast<ColumnVector<Int64> &>(column).getData().push_back(key->value.integer.value);
                     break;
-                case ValueType::String:
-                {
+                case ValueType::String: {
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(key->value.string.value, key->value.string.len);
+                    // static_cast<ColumnString &>(column).insert(parse<String>(key->value.string.value));
                     break;
                 }
                 case ValueType::Date:
-                    static_cast<ColumnUInt16 &>(column).getData().push_back(
-                        UInt16{DateLUT::instance().toDayNum(static_cast<Int64>(key->value.integer.value))});
+                    static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(String(key->value.string.value, key->value.string.len)).getDayNum());
                     break;
                 case ValueType::DateTime:
-                    static_cast<ColumnUInt32 &>(column).getData().push_back(static_cast<Int64>(key->value.integer.value));
+                    static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(String(key->value.string.value, key->value.string.len))));
                     break;
                 case ValueType::UUID:
-                {
-                    String str{key->value.string.value, key->value.string.len};
-                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(str));
+                    static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(String(key->value.string.value, key->value.string.len)));
                     break;
-                }
                 default:
-                    std::string invalid_type = "bad"; // toString(as_val_type(&(key->value))); // TODO:FIX_ME(glebx777)
-                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + invalid_type + " for column " + name,
+                    std::string invalid_type = toString(static_cast<int>(as_val_type(const_cast<as_key_value*>(&key->value))));
+                    throw Exception{"Type mismatch, got type id = " + invalid_type + " for column " + name,
                                     ErrorCodes::TYPE_MISMATCH};
             }
         }
@@ -157,20 +153,11 @@ namespace
                 case AS_DOUBLE:
                     static_cast<ColumnVector<T> &>(column).getData().push_back(value->dbl.value);
                     break;
-                    /*case AS_STRING:
-                            static_cast<ColumnVector<T>&>(column).getData().push_back(value->string.value);
-                            break; NOBODY USE IT */
                 default:
-                    std::string type = "bad"; // toString(as_val_type(&(value)); // TODO:FIX_ME(glebx777)
+                    std::string type = toString(static_cast<int>(as_val_type(const_cast<as_bin_value*>(value))));
                     throw Exception(
                         "Type mismatch, expected a number, got type id = " + type + " for column " + name, ErrorCodes::TYPE_MISMATCH);
             }
-        }
-
-        template <typename T>
-        inline void insert(IColumn & column, const String & stringValue)
-        {
-            static_cast<ColumnVector<T> &>(column).insertValue(parse<T>(stringValue));
         }
 
         void insertValue(IColumn & column, const ValueType type, const as_bin_value * value, const std::string & name)
@@ -207,30 +194,21 @@ namespace
                 case ValueType::Float64:
                     insertNumberValue<Float64>(column, value, name);
                     break;
-                case ValueType::String:
-                {
+                case ValueType::String: {
                     String str{value->string.value, value->string.len};
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
+                    // static_cast<CslumnString &>(column).insert(parse<String>(value->string.value));
                     break;
                 }
                 case ValueType::Date:
-                {
-                    String str{value->string.value, value->string.len};
-                    static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(str).getDayNum());
+                    static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(String(value->string.value, value->string.len)).getDayNum());
                     break;
-                }
                 case ValueType::DateTime:
-                {
-                    String str{value->string.value, value->string.len};
-                    static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(str)));
+                    static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(String(value->string.value, value->string.len))));
                     break;
-                }
                 case ValueType::UUID:
-                {
-                    String str{value->string.value, value->string.len};
-                    static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(str));
+                    static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(String(value->string.value, value->string.len)));
                     break;
-                }
             }
         }
 

@@ -23,7 +23,7 @@ void registerDictionarySourceAerospike(DictionarySourceFactory & factory)
         (void)config;
         (void)config_prefix;
         (void)sample_block;
-        throw Exception{"Dictionary source of type `aerospike` is disabled because poco library was built without aerospike support.",
+        throw Exception{"Dictionary source of type `aerospike` is disabled because ClickHouse was built without aerospike support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     };
@@ -103,12 +103,10 @@ std::unique_ptr<as_key> AllocateKey(const as_key & key)
     {
         case AS_INTEGER:
         {
-            fprintf(stderr, "AllocateKey INTEGER\n");
             return std::unique_ptr<as_key>(as_key_new_int64(default_namespace_name, default_set_name, key.value.integer.value));
         }
         case AS_STRING:
         {
-            fprintf(stderr, "AllocateKey STRING\n");
             size_t value_size = key.value.string.len;
             char * v = static_cast<char *>(cf_malloc(value_size + 1));
             memcpy(v, key.value.string.value, value_size);
