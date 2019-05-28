@@ -1,5 +1,5 @@
 #include <DataStreams/copyData.h>
-#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/executeQuery.h>
@@ -62,7 +62,7 @@ void MySQLHandler::run()
          *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
          *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
          */
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING, scramble + '\0');
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, scramble + '\0');
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -224,6 +224,10 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     if (handshake_response.auth_plugin_name != Authentication::SHA256)
     {
         packet_sender->sendPacket(AuthSwitchRequest(Authentication::SHA256, scramble + '\0'), true);
+        if (in->eof())
+            throw Exception(
+                "Client doesn't support authentication method " + String(Authentication::SHA256) + " used by ClickHouse",
+                ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
         packet_sender->receivePacket(response);
         auth_response = response.value;
         LOG_TRACE(log, "Authentication method mismatch.");
@@ -349,8 +353,16 @@ void MySQLHandler::comQuery(const String & payload)
     std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
         with_output = true;
     };
-    ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
-    executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
+
+    String query = payload.substr(1);
+
+    // Translate query from MySQL to ClickHouse.
+    // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
+    if (query == "select @@version_comment limit 1")  // MariaDB client starts session with that query
+        query = "select ''";
+
+    ReadBufferFromString buf(query);
+    executeQuery(buf, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
