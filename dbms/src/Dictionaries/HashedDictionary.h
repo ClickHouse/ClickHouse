@@ -219,9 +219,9 @@ private:
         const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
+    bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
 
-    void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
+    bool setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
