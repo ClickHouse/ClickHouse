@@ -533,8 +533,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
             {
-
-                if (!isStringOrFixedString(current_type_ptr->getDictionaryType()) && !isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
+                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
                     throw Exception("The type " + current_type_ptr->getName() + "   "  + " is not allowed for making low cardinality in creating table by default, because it could increase time of join and memory consumption. "
                     + "Low cardinality is usefull only for types String, Nullable(String), FixedString and Nullable(FixedString). Could be allowed for others by setting allow_suspicious_low_cardinality_types.",
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
