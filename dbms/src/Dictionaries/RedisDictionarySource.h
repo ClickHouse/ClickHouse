@@ -2,6 +2,7 @@
 
 #include <Common/config.h>
 #include <Core/Block.h>
+
 #if USE_POCO_REDIS
 
 #    include "DictionaryStructure.h"
@@ -95,7 +96,7 @@ namespace DB
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;
-        const UInt8 db_index; // [0..15]
+        const UInt8 db_index;
         const RedisStorageType::Id storage_type;
         Block sample_block;
 
