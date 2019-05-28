@@ -427,6 +427,7 @@ namespace ErrorCodes
     extern const int BAD_TTL_EXPRESSION = 450;
     extern const int BAD_TTL_FILE = 451;
     extern const int SETTING_CONSTRAINT_VIOLATION = 452;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 453;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

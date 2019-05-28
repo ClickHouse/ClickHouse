@@ -15,6 +15,8 @@ limitations under the License. */
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Condition.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageLiveView.h>
@@ -26,13 +28,13 @@ namespace DB
 /**
   */
 
-class LiveViewBlockInputStream : public IBlockInputStream
+class LiveViewEventsBlockInputStream : public IBlockInputStream
 {
 
 using NonBlockingResult = std::pair<Block, bool>;
 
 public:
-    ~LiveViewBlockInputStream() override
+    ~LiveViewEventsBlockInputStream() override
     {
         /// Start storage no users thread
         /// if we are the last active user
@@ -41,17 +43,15 @@ public:
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
-    LiveViewBlockInputStream(StorageLiveView & storage_, std::shared_ptr<BlocksPtr> blocks_ptr_,
-        std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
-        std::shared_ptr<bool> active_ptr_, Poco::Condition & condition_, Poco::FastMutex & mutex_,
+    LiveViewEventsBlockInputStream(StorageLiveView & storage_, std::shared_ptr<BlocksPtr> blocks_ptr_, std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_, std::shared_ptr<bool> active_ptr_, Poco::Condition & condition_, Poco::FastMutex & mutex_,
         int64_t length_, const UInt64 & heartbeat_delay_)
-        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_delay(heartbeat_delay_), blocks_hash("")
+        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_delay(heartbeat_delay_)
     {
         /// grab active pointer
         active = active_ptr.lock();
     }
 
-    String getName() const override { return "LiveViewBlockInputStream"; }
+    String getName() const override { return "LiveViewEventsBlockInputStream"; }
 
     void cancel(bool kill) override
     {
@@ -79,8 +79,10 @@ public:
     {
         active = active_ptr.lock();
         {
-            if (!blocks || blocks.get() != (*blocks_ptr).get())
+            if (!blocks || blocks.get() != (*blocks_ptr).get()) {
                 blocks = (*blocks_ptr);
+                blocks_metadata = (*blocks_metadata_ptr);
+            }
         }
         it = blocks->begin();
         begin = blocks->begin();
@@ -106,8 +108,6 @@ protected:
      */
     NonBlockingResult tryRead_(bool blocking)
     {
-        Block res;
-
         if (length == 0)
         {
             return { Block(), true };
@@ -119,6 +119,7 @@ protected:
             if (!active)
                 return { Block(), false };
             blocks = (*blocks_ptr);
+            blocks_metadata = (*blocks_metadata_ptr);
             it = blocks->begin();
             begin = blocks->begin();
             end = blocks->end();
@@ -140,6 +141,7 @@ protected:
                 if (blocks.get() != (*blocks_ptr).get())
                 {
                     blocks = (*blocks_ptr);
+                    blocks_metadata = (*blocks_metadata_ptr);
                     it = blocks->begin();
                     begin = blocks->begin();
                     end = blocks->end();
@@ -165,6 +167,7 @@ protected:
                         }
                         else
                         {
+                            // return Block(version, hash)
                             //hashmap["blocks"] = blocks_hash;
                             last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
                             //heartbeat(Heartbeat(last_event_timestamp, std::move(hashmap)));
@@ -175,9 +178,8 @@ protected:
             return tryRead_(blocking);
         }
 
-        res = *it;
-
-        ++it;
+        // move right to the end
+        it = end;
 
         if (it == end)
         {
@@ -186,6 +188,19 @@ protected:
         }
 
         last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
+
+        Block res{
+            ColumnWithTypeAndName(
+                DataTypeUInt64().createColumnConst(1, blocks_metadata->version)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeUInt64>(),
+                "version"),
+            ColumnWithTypeAndName(
+                DataTypeString().createColumnConst(1, blocks_metadata->hash)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeString>(),
+                "hash"),
+
+        };
+
         return { res, true };
     }
 
@@ -205,7 +220,6 @@ private:
     /// Length specifies number of updates to send, default -1 (no limit)
     int64_t length;
     UInt64 heartbeat_delay;
-    String blocks_hash;
     UInt64 last_event_timestamp{0};
     Poco::Timestamp timestamp;
 };

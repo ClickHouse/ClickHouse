@@ -19,6 +19,7 @@ limitations under the License. */
 #include <Interpreters/InterpreterDropQuery.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/LiveViewBlockInputStream.h>
+#include <DataStreams/LiveViewEventsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Common/typeid_cast.h>
 
@@ -133,6 +134,7 @@ StorageLiveView::StorageLiveView(
     is_temporary = query.temporary;
 
     blocks_ptr = std::make_shared<BlocksPtr>();
+    blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 }
 
@@ -153,6 +155,7 @@ bool StorageLiveView::getNewBlocks()
     SipHash hash;
     UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
+    BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
     InterpreterSelectQuery interpreter(inner_query->clone(), global_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
@@ -180,14 +183,16 @@ bool StorageLiveView::getNewBlocks()
     ///       if blocks are not in the same order
     bool updated = false;
     {
-        if (hash_key != key.toHexString())
+        if (getBlocksHashKey() != key.toHexString())
         {
             if (new_blocks->empty())
             {
                 new_blocks->push_back(getHeader());
             }
+            new_blocks_metadata->hash = key.toHexString();
+            new_blocks_metadata->version = getBlocksVersion() + 1;
             (*blocks_ptr) = new_blocks;
-            hash_key = key.toHexString();
+            (*blocks_metadata_ptr) = new_blocks_metadata;
             updated = true;
         }
     }
@@ -366,27 +371,54 @@ BlockInputStreams StorageLiveView::watch(
     if (query.limit_length)
         length = (int64_t)safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
 
-    auto reader = std::make_shared<LiveViewBlockInputStream>(*this, blocks_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().heartbeat_delay);
-
-    if (no_users_thread.joinable())
+    if (query.is_watch_events)
     {
-        Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
-        noUsersThreadWakeUp = true;
-        noUsersThreadCondition.signal();
-    }
+        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().heartbeat_delay);
 
-    {
-        Poco::FastMutex::ScopedLock lock(mutex);
-        if (!(*blocks_ptr))
+        if (no_users_thread.joinable())
         {
-           if (getNewBlocks())
-               condition.broadcast();
+            Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
+            noUsersThreadWakeUp = true;
+            noUsersThreadCondition.signal();
         }
+
+        {
+            Poco::FastMutex::ScopedLock lock(mutex);
+            if (!(*blocks_ptr))
+            {
+            if (getNewBlocks())
+                condition.broadcast();
+            }
+        }
+
+        processed_stage = QueryProcessingStage::Complete;
+
+        return { reader };
     }
+    else
+    {
+        auto reader = std::make_shared<LiveViewBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().heartbeat_delay);
 
-    processed_stage = QueryProcessingStage::Complete;
+        if (no_users_thread.joinable())
+        {
+            Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
+            noUsersThreadWakeUp = true;
+            noUsersThreadCondition.signal();
+        }
 
-    return { reader };
+        {
+            Poco::FastMutex::ScopedLock lock(mutex);
+            if (!(*blocks_ptr))
+            {
+            if (getNewBlocks())
+                condition.broadcast();
+            }
+        }
+
+        processed_stage = QueryProcessingStage::Complete;
+
+        return { reader };
+    }
 }
 
 BlockOutputStreamPtr StorageLiveView::write(const ASTPtr & /*query*/, const Context & /*context*/)

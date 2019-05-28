@@ -29,6 +29,14 @@ namespace DB
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
+struct BlocksMetadata {
+    String hash;
+    UInt64 version;
+};
+
+using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
+using SipHashPtr = std::shared_ptr<SipHash>;
+
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
@@ -79,7 +87,16 @@ public:
 
     String getBlocksHashKey()
     {
-        return hash_key;
+        if (*blocks_metadata_ptr)
+            return (*blocks_metadata_ptr)->hash;
+        return "";
+    }
+
+    UInt64 getBlocksVersion()
+    {
+        if (*blocks_metadata_ptr)
+            return (*blocks_metadata_ptr)->version;
+        return -1;
     }
 
     /// Reset blocks
@@ -87,8 +104,8 @@ public:
     void reset()
     {
         (*blocks_ptr).reset();
+        (*blocks_metadata_ptr).reset();
         mergeable_blocks.reset();
-        hash_key = "";
     }
 
     void checkTableCanBeDropped() const override;
@@ -246,11 +263,10 @@ private:
     /// Current data blocks that store query result
     std::shared_ptr<BlocksPtr> blocks_ptr;
     BlocksPtr new_blocks;
+    /// Current data blocks metadata
+    std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
+    BlocksMetadataPtr new_blocks_metadata;
     BlocksPtrs mergeable_blocks;
-
-    /// Current blocks hash key
-    String hash_key;
-    String new_hash_key;
 
     void noUsersThread();
     std::thread no_users_thread;
@@ -273,13 +289,27 @@ public:
 
     void write(const Block & block) override
     {
+        UInt128 key;
+
         if (!new_blocks)
+        {
             new_blocks = std::make_shared<Blocks>();
+            new_blocks_metadata = std::make_shared<BlocksMetadata>();
+            new_hash = std::make_shared<SipHash>();
+        }
 
         new_blocks->push_back(block);
-        // FIXME: do I need to calculate block hash?
+        block.updateHash(*new_hash);
+        new_hash->get128(key.low, key.high);
+        new_blocks_metadata->hash = key.toHexString();
+        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
+
         (*storage.blocks_ptr) = new_blocks;
+        (*storage.blocks_metadata_ptr) = new_blocks_metadata;
+
         new_blocks.reset();
+        new_blocks_metadata.reset();
+        new_hash.reset();
         storage.condition.broadcast();
     }
 
@@ -287,7 +317,8 @@ public:
 
 private:
     BlocksPtr new_blocks;
-    String new_hash_key;
+    BlocksMetadataPtr new_blocks_metadata;
+    SipHashPtr new_hash;
     StorageLiveView & storage;
 };
 

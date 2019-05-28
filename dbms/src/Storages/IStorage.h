@@ -144,6 +144,36 @@ public:
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
 
+    /** Watch live changes to the table.
+     * Accepts a list of columns to read, as well as a description of the query,
+     *  from which information can be extracted about how to retrieve data
+     *  (indexes, locks, etc.)
+     * Returns a stream with which you can read data sequentially
+     *  or multiple streams for parallel data reading.
+     * The `processed_stage` info is also written to what stage the request was processed.
+     * (Normally, the function only reads the columns from the list, but in other cases,
+     *  for example, the request can be partially processed on a remote server.)
+     *
+     * context contains settings for one query.
+     * Usually Storage does not care about these settings, since they are used in the interpreter.
+     * But, for example, for distributed query processing, the settings are passed to the remote server.
+     *
+     * num_streams - a recommendation, how many streams to return,
+     *  if the storage can return a different number of streams.
+     *
+     * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+     */
+    virtual BlockInputStreams watch(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/)
+    {
+        throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
       *  from which information can be extracted about how to retrieve data

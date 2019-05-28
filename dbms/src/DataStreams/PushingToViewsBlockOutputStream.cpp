@@ -7,6 +7,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/StorageLiveView.h>
 
 namespace DB
 {
@@ -72,8 +73,15 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
       */
     Nested::validateArraySizes(block);
 
-    if (output)
-        output->write(block);
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
+    {
+	    StorageLiveView::writeIntoLiveView(*live_view, block, context, output);
+    }
+    else
+    {
+        if (output)
+            output->write(block);
+    }
 
     /// Don't process materialized views if this block is duplicate
     if (replicated_output && replicated_output->lastBlockIsDuplicate())
