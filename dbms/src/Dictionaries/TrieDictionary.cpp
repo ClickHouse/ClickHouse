@@ -75,9 +75,7 @@ TrieDictionary::~TrieDictionary()
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -109,9 +107,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -133,9 +129,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsNumber<TYPE>( \
             attribute, \
@@ -169,9 +163,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -191,9 +183,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsNumber<TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -224,9 +214,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,

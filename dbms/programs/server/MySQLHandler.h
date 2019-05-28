@@ -4,7 +4,7 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/MySQLProtocol.h>
-#include <openssl/evp.h>
+#include <openssl/rsa.h>
 #include "IServer.h"
 
 
@@ -15,21 +15,7 @@ namespace DB
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(
-        IServer & server_,
-        const Poco::Net::StreamSocket & socket_,
-        RSA * public_key,
-        RSA * private_key)
-            : Poco::Net::TCPServerConnection(socket_)
-            , server(server_)
-            , log(&Poco::Logger::get("MySQLHandler"))
-            , connection_context(server.context())
-            , connection_id(last_connection_id++)
-            , public_key(public_key)
-            , private_key(private_key)
-    {
-        log->setLevel("information");
-    }
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id);
 
     void run() final;
 
@@ -55,13 +41,13 @@ private:
 
     std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
 
-    uint32_t connection_id = 0;
+    size_t connection_id = 0;
 
-    uint32_t capabilities;
+    size_t server_capability_flags;
+    size_t client_capability_flags;
 
-    static uint32_t last_connection_id;
-
-    RSA * public_key, * private_key;
+    RSA & public_key;
+    RSA & private_key;
 
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;

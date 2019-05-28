@@ -1,18 +1,18 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
+#include <Core/Types.h>
 #include <IO/copyData.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
-#include <Core/Types.h>
-#include <Poco/RandomStream.h>
+#include <Poco/Logger.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Poco/RandomStream.h>
+#include <common/logger_useful.h>
 #include <random>
 #include <sstream>
-#include <common/logger_useful.h>
-#include <Poco/Logger.h>
 
 /// Implementation of MySQL wire protocol
 
@@ -163,7 +163,6 @@ public:
         , out(&out)
         , log(&Poco::Logger::get(logger_name))
     {
-        log->setLevel("information");
     }
 
     /// For writing.
@@ -173,7 +172,6 @@ public:
         , out(&out)
         , log(&Poco::Logger::get(logger_name))
     {
-        log->setLevel("information");
     }
 
     String receivePacketPayload()
@@ -279,12 +277,11 @@ class Handshake : public WritePacket
     uint32_t status_flags;
     String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t connection_id, String server_version, String auth_plugin_data)
+    explicit Handshake(uint32_t capability_flags, uint32_t connection_id, String server_version, String auth_plugin_data)
         : protocol_version(0xa)
         , server_version(std::move(server_version))
         , connection_id(connection_id)
-        , capability_flags(CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-            | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF | CLIENT_SSL)
+        , capability_flags(capability_flags)
         , character_set(CharacterSet::utf8_general_ci)
         , status_flags(0)
         , auth_plugin_data(auth_plugin_data)
