@@ -8,7 +8,6 @@ from tzlocal import get_localzone
 from tzlocal import get_localzone
 import datetime
 import os
-import dateutil.parser
 import time
 
 
