@@ -49,7 +49,7 @@ void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    getItemsNumber<UInt64>(
+    getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
         [&](const size_t row, const UInt64 value) { out[row] = value; },
@@ -120,7 +120,7 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return null_value; }); \
     }
 DECLARE(UInt8)
@@ -163,7 +163,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
         const auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
     }
 DECLARE(UInt8)
@@ -202,7 +202,7 @@ void HashedDictionary::getString(
         const auto & attribute = getAttribute(attribute_name); \
         checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
     }
 DECLARE(UInt8)
@@ -554,34 +554,6 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
     return attr;
 }
 
-
-template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-void HashedDictionary::getItemsNumber(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
-{
-    if (false)
-    {
-    }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) \
-        getItemsImpl<TYPE, OutputType>(attribute, ids, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void HashedDictionary::getItemsImpl(
