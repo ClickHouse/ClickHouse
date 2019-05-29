@@ -526,7 +526,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
 
-    /// Check low cardinality types in creating table if it was not cancelled in setting
+    /// Check low cardinality types in creating table if it was not allowed in setting
     if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
     {
         for (const auto & name_and_type_pair : columns.getAllPhysical())
@@ -534,8 +534,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
             {
                 if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception("Using type " + current_type_ptr->getDictionaryType()->getName() + " with LowCardinality may negatively affect performance. LowCardinality is only useful for types String, Nullable(String), FixedString and Nullable(FixedString). "
-                                                                                "If you are sure you want to create a table with this type, you can suppress this error with allow_suspicious_low_cardinality_types setting",
+                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
             }
         }
