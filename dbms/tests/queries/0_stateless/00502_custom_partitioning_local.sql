@@ -1,4 +1,5 @@
 SET input_format_parallel_parsing=0;
+
 SELECT '*** Not partitioned ***';
 
 DROP TABLE IF EXISTS test.not_partitioned;

@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 DROP TABLE IF EXISTS file;
 CREATE TABLE file (s String, n UInt32) ENGINE = File(CSVWithNames);
 -- BTW, WithNames formats are totally unsuitable for more than a single INSERT

@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 SET send_logs_level = 'none';
 
 DROP TABLE IF EXISTS sum_map;
