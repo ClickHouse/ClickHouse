@@ -1,0 +1,29 @@
+<dictionaries>
+    <dictionary>
+        <name>xml_dict</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>9000</port>
+                <user>default</user>
+                <password></password>
+                <db>test</db>
+                <table>dict_table</table>
+            </clickhouse>
+        </source>
+        <lifetime>60</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>SomeField</name>
+                <type>String</type>
+                <null_value>empty</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
