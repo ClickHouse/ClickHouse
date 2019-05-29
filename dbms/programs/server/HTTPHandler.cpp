@@ -486,7 +486,7 @@ void HTTPHandler::processQuery(
     }
 
     SettingsChanges settings_changes;
-    for (const auto& [key, value] : params)
+    for (const auto & [key, value] : params)
     {
         if (key == "database")
         {
