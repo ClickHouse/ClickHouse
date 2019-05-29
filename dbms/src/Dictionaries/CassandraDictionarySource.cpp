@@ -17,7 +17,7 @@ namespace DB
                                      Block & sample_block,
                                      const Context & /* context */) -> DictionarySourcePtr {
 #if USE_CASSANDRA
-            return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
+        return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
 #else
         (void)dict_struct;
         (void)config;
@@ -40,7 +40,8 @@ namespace DB
 
 namespace DB
 {
-namespace ErrorCodes {
+namespace ErrorCodes
+{
     extern const int UNSUPPORTED_METHOD;
     extern const int WRONG_PASSWORD;
 }
