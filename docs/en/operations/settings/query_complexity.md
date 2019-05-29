@@ -194,4 +194,24 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
+## max_partitions_per_insert_block
+
+Limits the maximum number of partitions in a single inserted block.
+
+Possible values:
+
+- Positive integer.
+- 0 — Unlimited number of partitions.
+
+Default value: 100.
+
+**Details**
+
+When inserting data ClickHouse calculates the number of partitions in the inserted block, and if the number of partitions is more than `max_partitions_per_insert_block` then ClickHouse throws an exception with the following text:
+
+
+"Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
+
+
+
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

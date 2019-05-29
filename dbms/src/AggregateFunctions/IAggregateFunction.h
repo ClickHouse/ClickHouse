@@ -48,6 +48,12 @@ public:
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
 
+    /// Get type which will be used for prediction result in case if function is an ML method.
+    virtual DataTypePtr getReturnTypeToPredict() const
+    {
+        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */

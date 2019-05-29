@@ -37,7 +37,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isNumber(arguments[0]))
+        if (!isNativeNumber(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() +
                 " of argument of function " + getName() +
                 ", expected Integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

@@ -120,11 +120,22 @@ private:
             /// prepare() does Impl-specific preparation before handling each row.
             impl.prepare(Name::name, block, arguments, result_pos);
 
+            bool json_parsed_ok = false;
+            if (col_json_const)
+            {
+                StringRef json{reinterpret_cast<const char *>(&chars[0]), offsets[0] - 1};
+                json_parsed_ok = parser.parse(json);
+            }
+
             for (const auto i : ext::range(0, input_rows_count))
             {
-                StringRef json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
-                bool ok = parser.parse(json);
+                if (!col_json_const)
+                {
+                    StringRef json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                    json_parsed_ok = parser.parse(json);
+                }
 
+                bool ok = json_parsed_ok;
                 if (ok)
                 {
                     auto it = parser.getRoot();
