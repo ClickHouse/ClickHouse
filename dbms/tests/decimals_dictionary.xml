@@ -4,7 +4,7 @@
     <source>
         <clickhouse>
             <host>localhost</host>
-            <port>SERVER_PORT</port>
+            <port>9000</port>
             <user>default</user>
             <password></password>
             <db></db>
@@ -42,7 +42,7 @@
     <source>
         <clickhouse>
             <host>localhost</host>
-            <port>SERVER_PORT</port>
+            <port>9000</port>
             <user>default</user>
             <password></password>
             <db></db>
@@ -80,7 +80,7 @@
     <source>
         <clickhouse>
             <host>localhost</host>
-            <port>SERVER_PORT</port>
+            <port>9000</port>
             <user>default</user>
             <password></password>
             <db></db>
@@ -118,7 +118,7 @@
     <source>
         <clickhouse>
             <host>localhost</host>
-            <port>SERVER_PORT</port>
+            <port>9000</port>
             <user>default</user>
             <password></password>
             <db></db>
@@ -159,7 +159,7 @@
     <source>
         <clickhouse>
             <host>localhost</host>
-            <port>SERVER_PORT</port>
+            <port>9000</port>
             <user>default</user>
             <password></password>
             <db></db>
