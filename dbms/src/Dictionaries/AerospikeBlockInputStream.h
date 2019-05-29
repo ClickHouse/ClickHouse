@@ -17,8 +17,8 @@ namespace DB
             std::vector<std::unique_ptr<as_key>>&& keys,
             const Block & sample_block,
             const size_t max_block_size,
-            const std::string& namespace_name,
-            const std::string& set_name);
+            const std::string & namespace_name,
+            const std::string & set_name);
 
         ~AerospikeBlockInputStream() override;
 

@@ -132,6 +132,12 @@ std::unique_ptr<as_key> AllocateKey(const as_key & key, const char * namespace_n
 
 AerospikeDictionarySource::~AerospikeDictionarySource() = default;
 
+struct AerospikeSpecificKeys {
+    std::vector<std::unique_ptr<as_key>> * keys_ptrs;
+    const char * namespace_name;
+    const char * set_name;
+};
+
 BlockInputStreamPtr AerospikeDictionarySource::loadAll()
 {
     as_scan scanner;
@@ -139,7 +145,7 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     as_error err;
     std::vector<std::unique_ptr<as_key>> keys;
 
-    auto scannerCallback = [&](const as_val * p_val, void * /*udata*/)
+    auto scannerCallback = [](const as_val * p_val, void * udata)
     {
         if (!p_val)
         {
@@ -152,17 +158,12 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
             printf("scan callback returned non-as_record object");
             return false;
         }
-        keys.emplace_back(AllocateKey(record->key, namespace_name.c_str(), set_name.c_str()));
+        AerospikeSpecificKeys& global_keys_object = *(static_cast<AerospikeSpecificKeys*>(udata));
+        global_keys_object.keys_ptrs->emplace_back(AllocateKey(record->key, global_keys_object.namespace_name, global_keys_object.set_name));
         return true;
     };
-    // Need wrappers for casting aerospike callback type
-    static auto static_wrapper = scannerCallback;
-    auto wrapper = [](const as_val * p_val, void * udata) -> bool
-    {
-        return static_wrapper(p_val, udata);
-    };
-
-    if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, wrapper, nullptr) != AEROSPIKE_OK)
+    AerospikeSpecificKeys keys_object = {&keys, namespace_name.c_str(), set_name.c_str()};
+    if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void *>(&keys_object)) != AEROSPIKE_OK)
     {
         fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
     }

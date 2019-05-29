@@ -440,8 +440,8 @@ class SourceAerospike(ExternalSource):
             <aerospike>
                 <host>{host}</host>
                 <port>{port}</port>
-                <set>{set_name}</set>
                 <namespace>{namespace_name}</namespace>
+                <set>{set_name}</set>
             </aerospike>
         '''.format(
             host=self.docker_hostname,
@@ -458,14 +458,14 @@ class SourceAerospike(ExternalSource):
         self.prepared = True
         print("PREPARED AEROSPIKE")
         print(config)
-    
+
     def compatible_with_layout(self, layout):
         print("compatible AEROSPIKE")
         return layout.is_simple
 
     def _flush_aerospike_db(self):
         keys = []
-        
+
         def handle_record((key, metadata, record)):
             print("Handle record {} {}".format(key, record))
             keys.append(key)
@@ -477,7 +477,6 @@ class SourceAerospike(ExternalSource):
         scan.foreach(handle_record)
 
         [self.client.remove(key) for key in keys]
-
 
     def load_kv_data(self, values):
         self._flush_aerospike_db()
@@ -491,8 +490,6 @@ class SourceAerospike(ExternalSource):
                 assert self.client.exists(key)
         else:
             assert("VALUES SIZE != 2")
-
-        # print(values)
 
     def load_data(self, data, table_name):
         print("Load Data Aerospike")
