@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS part_info;
+CREATE TABLE part_info (t DateTime) ENGINE = MergeTree PARTITION BY toDate(t) ORDER BY (t);
+INSERT INTO part_info VALUES (1), (100000), (1000000);
+--SELECT name, is_frozen FROM system.parts WHERE `table`='part_info' FORMAT Vertical;
+SELECT database, name, is_frozen FROM system.parts WHERE `database` = database() AND `table` = 'part_info';
+SELECT 'freeze one';
+ALTER TABLE part_info FREEZE PARTITION toDate(100000);
+SELECT database, name, is_frozen FROM system.parts WHERE `database` = database() AND `table` = 'part_info';
+SELECT 'freeze all';
+ALTER TABLE part_info FREEZE;
+SELECT database, name, is_frozen FROM system.parts WHERE `database` = database() AND `table` = 'part_info';
+INSERT INTO part_info VALUES (100001);
+select * from part_info order by t;
+SELECT database, name, is_frozen FROM system.parts WHERE `database` = database() AND `table` = 'part_info';
+DROP TABLE part_info;

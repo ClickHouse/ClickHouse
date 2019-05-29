@@ -726,7 +726,8 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 void MergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullPath() + "columns.txt";
-    if (!Poco::File(path).exists())
+    Poco::File poco_file_path{path};
+    if (!poco_file_path.exists())
     {
         if (require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -747,6 +748,8 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         return;
     }
+
+    is_frozen = !poco_file_path.canWrite();
 
     ReadBufferFromFile file = openForReading(path);
     columns.readText(file);
