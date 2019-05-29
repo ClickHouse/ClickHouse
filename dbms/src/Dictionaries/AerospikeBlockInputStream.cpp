@@ -33,9 +33,19 @@ namespace ErrorCodes
 }
 
 AerospikeBlockInputStream::AerospikeBlockInputStream(
-    const aerospike & client, std::vector<std::unique_ptr<as_key>> && keys, const Block & sample_block, const size_t max_block_size)
-    : client(client), keys(std::move(keys)), max_block_size{max_block_size}
+    const aerospike & client,
+    std::vector<std::unique_ptr<as_key>> && keys,
+    const Block & sample_block,
+    const size_t max_block_size,
+    const std::string & namespace_name,
+    const std::string & set_name)
+    : client(client)
+    , keys(std::move(keys))
+    , max_block_size{max_block_size}
+    , namespace_name{namespace_name}
+    , set_name{set_name}
 {
+    fprintf(stderr, "Found here %s %s", namespace_name.c_str(), set_name.c_str());
     description.init(sample_block);
 }
 
@@ -48,7 +58,7 @@ namespace
     class RecordsHandler
     {
     public:
-        RecordsHandler(MutableColumns * columns, const ExternalResultDescription & description, size_t /*cursor*/)
+        RecordsHandler(MutableColumns * columns, const ExternalResultDescription & description)
             : columns(columns), description(description)
         {
         }
@@ -230,7 +240,7 @@ void InitializeBatchKey(as_key * new_key, const char * namespace_name, const cha
             break;
         default:
             const as_bytes & bytes = base_key->value.bytes;
-            as_key_init_raw(new_key, "ns", "set", bytes.value, bytes.size);
+            as_key_init_raw(new_key, namespace_name, set_name, bytes.value, bytes.size);
             break;
     }
 }
@@ -249,10 +259,10 @@ Block AerospikeBlockInputStream::readImpl()
     as_batch batch;
     as_batch_inita(&batch, current_block_size);
 
-    RecordsHandler recordsHandler(&columns, description, cursor);
+    RecordsHandler recordsHandler(&columns, description);
     for (UInt32 i = 0; i < current_block_size; ++i)
     {
-        InitializeBatchKey(as_batch_keyat(&batch, i), "test", "test_set", keys[cursor + i]);
+        InitializeBatchKey(as_batch_keyat(&batch, i), namespace_name.c_str(), set_name.c_str(), keys[cursor + i]);
     }
 
     const auto batchReadCallback = [](const as_batch_read * results, uint32_t resultSize, void * records_handler_)

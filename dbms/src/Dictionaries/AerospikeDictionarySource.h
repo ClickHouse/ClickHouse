@@ -18,6 +18,8 @@ public:
         const DictionaryStructure & dict_struct,
         const std::string& host,
         UInt16 port,
+        const std::string & namespace_name,
+        const std::string & set_name,
         as_config * config,
         const Block & sample_block);
     AerospikeDictionarySource(
@@ -57,8 +59,10 @@ public:
     std::string toString() const override;
 private:
     const DictionaryStructure dict_struct;
-    const std::string host; // think how to save const here ??
-    const UInt16 port; // think how to save const here ??
+    const std::string host;
+    const UInt16 port;
+    const std::string namespace_name;
+    const std::string set_name;
     Block sample_block;
     aerospike client; // may be use ptr here
     // may be save global error variable
