@@ -15,6 +15,7 @@
 #include <exception>
 #include <algorithm>
 #include <numeric>
+#include <fstream>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -99,10 +100,9 @@ public:
         /// Merge closest pairs of clusters by greedy algorithm
         for (size_t i = 0; i != rhs.clusters.size(); ++i)
         {
-            // TODO: find over clusters[i:] not all clusters
-            size_t closest_cluster = find_closest_cluster(rhs.clusters[i].center(), clusters);
-            clusters[closest_cluster].merge_cluster(rhs.clusters[i]);
+            size_t closest_cluster = find_closest_cluster(rhs.clusters[i].center(), clusters, i);
             std::swap(clusters[closest_cluster], clusters[i]);
+            clusters[i].merge_cluster(rhs.clusters[i]);
         }
     }
 
@@ -135,6 +135,7 @@ public:
                  const ColumnNumbers &arguments,
                  const Context & context) const
     {
+        print_clusters(); // TODO: delete
         if (dimensions + 1 != arguments.size())
         {
             throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
@@ -187,24 +188,32 @@ public:
     }
 
     /// Function for testing
-    void print_clusters(ColumnVector<Float64>& column) const
+    void print_clusters() const
     {
         make_prediction();
-        column.getData().push_back(predicted_clusters.size());
-        for (auto& cluster : clusters)
+        std::ofstream out("/home/max/programming/clickhouse/my1_clusters");
+        for (auto&& cluster : clusters)
         {
-            column.getData().push_back(cluster.size());
+            out << cluster.size() << '\n';
             for (auto&& coord : cluster.center())
             {
-                column.getData().push_back(coord);
+                out << coord << '\n';
             }
         }
-        for (auto& cluster : predicted_clusters)
+        for (auto&& cluster : predicted_clusters)
         {
-            // column.getData().push_back(cluster.size());
+            out << 0 << '\n';
             for (auto&& coord : cluster)
             {
-                column.getData().push_back(coord);
+                out << coord << '\n';
+            }
+        }
+        for (auto&& cluster : initialized_clusters)
+        {
+            out << 0 << '\n';
+            for (auto&& coord : cluster)
+            {
+                out << coord << '\n';
             }
         }
     }
@@ -358,6 +367,7 @@ private:
         }
         return closest;
     }
+
     static size_t find_closest_cluster_with_penalty(const std::vector<Float64>& point, const std::vector<Cluster>& clusters)
     {
         Float64 min_dist = cluster_penalty(clusters[0].size()) * compute_distance(clusters[0].center(), point);
@@ -375,11 +385,11 @@ private:
     }
 
 
-    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<std::vector<Float64>>& clusters)
+    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<std::vector<Float64>>& clusters, size_t from = 0)
     {
-        Float64 min_dist = compute_distance(point, clusters[0]);
-        UInt32 closest = 0;
-        for (size_t i = 1; i != clusters.size(); ++i)
+        Float64 min_dist = compute_distance(point, clusters[from]);
+        UInt32 closest = from;
+        for (size_t i = from + 1; i != clusters.size(); ++i)
         {
             Float64 dist = compute_distance(point, clusters[i]);
             if (dist < min_dist)
@@ -409,8 +419,7 @@ private:
 
     static Float64 cluster_penalty(UInt32 cluster_size)
     {
-        std::ignore = cluster_size;
-        return 1.0;
+        return std::sqrt(cluster_size);
     }
 
     static std::vector<std::vector<Float64>> k_means_initialize_clusters(const std::vector<Cluster>& points, UInt32 clusters_num)
@@ -430,46 +439,43 @@ private:
         return clusters;
     }
 
+    // Returns sum of squared differences between new and old clusters
     static Float64 k_means_update_clusters(std::vector<std::vector<Float64>>& clusters, const std::vector<Cluster>& points, const std::vector<size_t>& closest_cluster)
     {
-        // TODO: maybe change algorithm
-        // time from O(clusters.size() * points.size()) to O(points.size())
-        // but space from O(clusters[0].size()) to O(clusters.size() * clusters[0].size())
         Float64 diff = 0.0;
-        for (size_t cluster_idx = 0; cluster_idx != clusters.size(); ++cluster_idx)
+        std::vector<std::vector<Float64>> new_clusters(
+            clusters.size(),
+            std::vector<Float64>(clusters[0].size(), 0.0)
+        );
+        std::vector<Float64> cluster_weights(clusters.size());
+        for (size_t point_idx = 0; point_idx != points.size(); ++point_idx)
         {
-            Float64 sum_weight = 0.0;
-            std::vector<Float64> new_cluster(clusters[cluster_idx].size(), 0.0);
-            for (size_t point_idx = 0; point_idx != points.size(); ++point_idx)
+            size_t cluster_idx = closest_cluster[point_idx];
+            Float64 weight = 1.0;
+            cluster_weights[cluster_idx] += weight;
+            for (size_t i = 0; i != new_clusters[cluster_idx].size(); ++i)
             {
-                if (closest_cluster[point_idx] != cluster_idx)
-                {
-                    continue;
-                }
-                Float64 weight = points[point_idx].size();
-                sum_weight += weight;
-                for (size_t i = 0; i != new_cluster.size(); ++i)
-                {
-                    new_cluster[i] += weight * points[point_idx].center()[i];
-                }
+                new_clusters[cluster_idx][i] += weight * points[point_idx].center()[i];
             }
-            for (size_t i = 0; i != new_cluster.size(); ++i)
+        }
+        for (size_t cluster_idx = 0; cluster_idx != new_clusters.size(); ++cluster_idx)
+        {
+            for (size_t i = 0; i != new_clusters[cluster_idx].size(); ++i)
             {
-                new_cluster[i] /= sum_weight;
-                Float64 d = new_cluster[i] - clusters[cluster_idx][i];
+                new_clusters[cluster_idx][i] /= cluster_weights[cluster_idx];
+                Float64 d = new_clusters[cluster_idx][i] - clusters[cluster_idx][i];
                 diff += d * d;
             }
-            clusters[cluster_idx] = std::move(new_cluster);
         }
+        clusters = std::move(new_clusters);
         return diff;
     }
 
-    static std::vector<std::vector<Float64>> k_means(const std::vector<Cluster>& points, UInt32 clusters_num)
+    static std::vector<std::vector<Float64>> k_means(const std::vector<Cluster>& points, UInt32 clusters_num, Float64& mean_distance)
     {
         std::vector<std::vector<Float64>> clusters = k_means_initialize_clusters(points, clusters_num);
         std::vector<size_t> closest_cluster(points.size());
-        // TODO: define number of steps
-        for (size_t step = 0; step != 1000; ++step)
+        for (size_t iter = 0; iter != max_iter; ++iter)
         {
             /// Search closest cluster from predicted_clusters for each point from clusters
             for (size_t point_idx = 0; point_idx != points.size(); ++point_idx)
@@ -484,6 +490,11 @@ private:
                 break;
             }
         }
+        mean_distance = 0.0;
+        for (size_t point_idx = 0; point_idx != points.size(); ++point_idx)
+        {
+            mean_distance += compute_distance(clusters[closest_cluster[point_idx]], points[point_idx].center()) / points.size();
+        }
         return clusters;
     }
 
@@ -491,12 +502,26 @@ private:
     {
         if (predicted_clusters.empty())
         {
-            predicted_clusters = k_means(clusters, clusters_num);
+            /// Searching for the best result over 10 tries
+            Float64 min_mean_distance;
+            new_predicted_clusters = k_means(clusters, clusters_num, min_mean_distance);
+            for (size_t i = 1; i != max_tries; ++i)
+            {
+                Float64 mean_distance;
+                auto new_predicted_clusters = k_means(clusters, clusters_num, mean_distance);
+                if (mean_distance < min_mean_distance)
+                {
+                    min_mean_distance = mean_distance;
+                    predicted_clusters = std::move(new_predicted_clusters);
+                }
+            }
         }
         return predicted_clusters;
     }
 
     static const UInt32 multiplication_factor = 30;
+    static const UInt32 max_iter = 1000;
+    static const UInt32 max_tries = 10;
     UInt32 clusters_num;
     UInt32 dimensions;
 
@@ -562,15 +587,9 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        /*
-        Release code
         std::ignore = place;
         std::ignore = to;
         throw std::runtime_error("not implemented");
-        */
-        // For testing
-        auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
-        this->data(place).print_clusters(column);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
