@@ -534,8 +534,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
             {
                 if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception("Using type " + current_type_ptr->getName() + " can negatively affect performance. Low cardinality is usefull only for types String, Nullable(String), FixedString and Nullable(FixedString). "
-                                                                                "If you are sure you want create table with this type, you can suppress this error by using setting allow_suspicious_low_cardinality_types",
+                    throw Exception("Using type " + current_type_ptr->getDictionaryType()->getName() + " with LowCardinality may negatively affect performance. LowCardinality is only useful for types String, Nullable(String), FixedString and Nullable(FixedString). "
+                                                                                "If you are sure you want to create a table with this type, you can suppress this error with allow_suspicious_low_cardinality_types setting",
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
             }
         }
