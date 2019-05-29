@@ -44,9 +44,15 @@ public:
 
     DictionarySourcePtr clone() const override { return std::make_unique<CassandraDictionarySource>(*this); }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /* ids */) override
+    {
+        throw Exception{"Method loadIds is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
+    }
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
+    {
+        throw Exception{"Method loadKeys is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
+    }
         
     BlockInputStreamPtr loadUpdatedAll() override
     {
@@ -56,7 +62,7 @@ public:
     std::string toString() const override;
 
 private:
-    static std::string toConnectionString(const std::string& host, const UInt16 port);
+    static std::string toConnectionString(const std::string & host, const UInt16 port);
 
     const DictionaryStructure dict_struct;
     const std::string host;
