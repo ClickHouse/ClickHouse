@@ -16,7 +16,9 @@ namespace DB
             const aerospike& client,
             std::vector<std::unique_ptr<as_key>>&& keys,
             const Block & sample_block,
-            const size_t max_block_size);
+            const size_t max_block_size,
+            const std::string& namespace_name,
+            const std::string& set_name);
 
         ~AerospikeBlockInputStream() override;
 
@@ -31,6 +33,8 @@ namespace DB
         aerospike client;
         std::vector<std::unique_ptr<as_key>> keys;
         const size_t max_block_size;
+        const std::string namespace_name;
+        const std::string set_name;
         ExternalResultDescription description;
         bool all_read = false;
     };

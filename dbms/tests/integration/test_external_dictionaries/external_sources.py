@@ -428,11 +428,11 @@ class SourceRedis(ExternalSource):
 
 class SourceAerospike(ExternalSource):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password, storage_type=None):
+                 docker_hostname, docker_port, user, password, namespace_name="test", set_name="test_set", storage_type=None):
         ExternalSource.__init__(self, name, internal_hostname, internal_port,
                  docker_hostname, docker_port, user, password, storage_type)
-        self.namespace = "test"
-        self.set = "test_set"
+        self.namespace_name = namespace_name
+        self.set_name = set_name
 
     def get_source_str(self, table_name):
         print("AEROSPIKE get source str")
@@ -440,11 +440,14 @@ class SourceAerospike(ExternalSource):
             <aerospike>
                 <host>{host}</host>
                 <port>{port}</port>
+                <set>{set_name}</set>
+                <namespace>{namespace_name}</namespace>
             </aerospike>
         '''.format(
             host=self.docker_hostname,
             port=self.docker_port,
-            storage_type=self.storage_type,  # simple or hash_map
+            set_name=self.set_name,
+            namespace_name=self.namespace_name
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -470,7 +473,7 @@ class SourceAerospike(ExternalSource):
         def print_record((key, metadata, record)):
             print("Print record {} {}".format(key, record))
 
-        scan = self.client.scan(self.namespace, self.set)
+        scan = self.client.scan(self.namespace_name, self.set_name)
         scan.foreach(handle_record)
 
         [self.client.remove(key) for key in keys]
@@ -482,7 +485,7 @@ class SourceAerospike(ExternalSource):
         print("Load KV Data Aerospike")
         if len(values[0]) == 2:
             for value in values:
-                key = (self.namespace, self.set, value[0])
+                key = (self.namespace_name, self.set_name, value[0])
                 print(key)
                 self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
                 assert self.client.exists(key)

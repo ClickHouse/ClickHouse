@@ -47,11 +47,15 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     const DB::DictionaryStructure & dict_struct,
     const std::string & host,
     UInt16 port,
+    const std::string & namespace_name,
+    const std::string & set_name,
     as_config * /*uselessConfig*/,
     const DB::Block & sample_block)
     : dict_struct{dict_struct}
     , host{host}
     , port{port}
+    , namespace_name{namespace_name}
+    , set_name{set_name}
     , sample_block{sample_block}
 {
     as_config config;
@@ -60,6 +64,7 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     aerospike_init(&client, &config);
     // Check connection
     as_error err;
+    fprintf(stderr, "namespace: %s set: %s", namespace_name.c_str(), set_name.c_str());
     if (aerospike_connect(&client, &err) != AEROSPIKE_OK)
     {
         fprintf(stderr, "error(%d) %s at [%s:%d] \n", err.code, err.message, err.file, err.line);
@@ -78,8 +83,11 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     const std::string & config_prefix,
     Block & sample_block)
     : AerospikeDictionarySource(
-          dict_struct, config.getString(config_prefix + ".host"),
+          dict_struct,
+          config.getString(config_prefix + ".host"),
           config.getUInt(config_prefix + ".port"),
+          config.getString(config_prefix + ".namespace"),
+          config.getString(config_prefix + ".set"),
           nullptr,
           sample_block)
 {
@@ -89,21 +97,20 @@ AerospikeDictionarySource::AerospikeDictionarySource(const DB::AerospikeDictiona
     : dict_struct{other.dict_struct}
     , host{other.host}
     , port{other.port}
+    , namespace_name{other.namespace_name}
+    , set_name{other.set_name}
     , client{other.client}
 {
 }
 
-const static char * default_namespace_name = "test";
-const static char * default_set_name = "test_set";
-
-std::unique_ptr<as_key> AllocateKey(const as_key & key)
+std::unique_ptr<as_key> AllocateKey(const as_key & key, const char * namespace_name, const char * set_name)
 {
     std::unique_ptr<as_key> result;
     switch (as_val_type(const_cast<as_key_value*>(&key.value)))
     {
         case AS_INTEGER:
         {
-            return std::unique_ptr<as_key>(as_key_new_int64(default_namespace_name, default_set_name, key.value.integer.value));
+            return std::unique_ptr<as_key>(as_key_new_int64(namespace_name, set_name, key.value.integer.value));
         }
         case AS_STRING:
         {
@@ -111,14 +118,14 @@ std::unique_ptr<as_key> AllocateKey(const as_key & key)
             char * v = static_cast<char *>(cf_malloc(value_size + 1));
             memcpy(v, key.value.string.value, value_size);
             v[value_size] = 0;
-            return std::unique_ptr<as_key>(as_key_new_str(default_namespace_name, default_set_name, v));
+            return std::unique_ptr<as_key>(as_key_new_str(namespace_name, set_name, v));
         }
         default:
         {
             size_t value_size = key.value.string.len;
             void * v = cf_malloc(value_size);
             memcpy(v, key.value.bytes.value, value_size);
-            return std::unique_ptr<as_key>(as_key_new_rawp(default_namespace_name, default_set_name, static_cast<uint8_t *>(v), value_size, true));
+            return std::unique_ptr<as_key>(as_key_new_rawp(namespace_name, set_name, static_cast<uint8_t *>(v), value_size, true));
         }
     }
 }
@@ -128,11 +135,11 @@ AerospikeDictionarySource::~AerospikeDictionarySource() = default;
 BlockInputStreamPtr AerospikeDictionarySource::loadAll()
 {
     as_scan scanner;
-    as_scan_init(&scanner, "test", "test_set");
+    as_scan_init(&scanner, namespace_name.c_str(), set_name.c_str());
     as_error err;
     std::vector<std::unique_ptr<as_key>> keys;
 
-    auto scannerCallback = [](const as_val * p_val, void * udata)
+    auto scannerCallback = [&](const as_val * p_val, void * /*udata*/)
     {
         if (!p_val)
         {
@@ -145,15 +152,21 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
             printf("scan callback returned non-as_record object");
             return false;
         }
-        std::vector<std::unique_ptr<as_key>> & globalKeys = *static_cast<std::vector<std::unique_ptr<as_key>> *>(udata);
-        globalKeys.emplace_back(AllocateKey(record->key));
+        keys.emplace_back(AllocateKey(record->key, namespace_name.c_str(), set_name.c_str()));
         return true;
     };
-    if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void *>(&keys)) != AEROSPIKE_OK)
+    // Need wrappers for casting aerospike callback type
+    static auto static_wrapper = scannerCallback;
+    auto wrapper = [](const as_val * p_val, void * udata) -> bool
+    {
+        return static_wrapper(p_val, udata);
+    };
+
+    if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, wrapper, nullptr) != AEROSPIKE_OK)
     {
         fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
     }
-    return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+    return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size, namespace_name, set_name);
 }
 
 BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -161,15 +174,14 @@ BlockInputStreamPtr AerospikeDictionarySource::loadIds(const std::vector<UInt64>
     std::vector<std::unique_ptr<as_key>> keys;
     for (UInt64 id : ids)
     {
-        keys.emplace_back(as_key_new_int64(default_namespace_name, default_set_name, id));
+        keys.emplace_back(as_key_new_int64(namespace_name.c_str(), set_name.c_str(), id));
     }
-    return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+    return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size, namespace_name, set_name);
 }
 
 std::string AerospikeDictionarySource::toString() const
 {
-    return "Aerospike: " + host + ':' + std::to_string(port); // May be add set and namespace here
-}
+    return "Aerospike: " + namespace_name + '.' + set_name + ',' + host + ':' + std::to_string(port); }
 }
 
 #endif
