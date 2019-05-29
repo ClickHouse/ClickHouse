@@ -222,7 +222,7 @@ Ok.
 **Возможные значения**
 
 - 0 — пустые ячейки заполняются значением по умолчанию соответствующего типа поля.
-- 1 — `JOIN` ведет себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](../../data_types/nullable.md#data_type-nullable), а пустые ячейки заполняются значениями [NULL](../../query_language/syntax.md).
+- 1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](../../data_types/nullable.md#data_type-nullable), а пустые ячейки заполняются значениями [NULL](../../query_language/syntax.md).
 
 **Значение по умолчанию**: 0.
 
@@ -586,4 +586,19 @@ ClickHouse использует этот параметр при чтении д
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
+
+Включает или отключает:
+
+1. Перезапись запросов, содержащих несколько [секций JOIN](../../query_language/select.md#select-join) из синтаксиса с запятыми в синтаксис `JOIN ON/USING`. Если значение параметра равно 0, ClickHouse не обрабатывает запросы с синтаксисом, использующим запятые, и генерирует исключение.
+2. Преобразование `CROSS JOIN` в `INNER JOIN` если условия объединения таблиц это позволяют.
+
+Возможные значения:
+
+- 0 — выключена.
+- 1 — включена.
+
+Значение по умолчанию: 1.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
+

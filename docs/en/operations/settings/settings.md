@@ -626,8 +626,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries containing multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if join conditions allow it.
 
 Possible values:
 
