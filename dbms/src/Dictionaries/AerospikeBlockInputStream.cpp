@@ -98,32 +98,31 @@ namespace
             switch (type)
             {
                 case ValueType::UInt8:
-                    static_cast<ColumnVector<UInt8> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<UInt8> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::UInt16:
-                    static_cast<ColumnVector<UInt16> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<UInt16> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::UInt32:
-                    static_cast<ColumnVector<UInt32> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<UInt32> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::UInt64:
-                    static_cast<ColumnVector<UInt64> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<UInt64> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::Int8:
-                    static_cast<ColumnVector<Int8> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<Int8> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::Int16:
-                    static_cast<ColumnVector<Int16> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<Int16> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::Int32:
-                    static_cast<ColumnVector<Int32> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<Int32> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::Int64:
-                    static_cast<ColumnVector<Int64> &>(column).getData().push_back(key->value.integer.value);
+                    static_cast<ColumnVector<Int64> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::String: {
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(key->value.string.value, key->value.string.len);
-                    // static_cast<ColumnString &>(column).insert(parse<String>(key->value.string.value));
                     break;
                 }
                 case ValueType::Date:
@@ -197,7 +196,6 @@ namespace
                 case ValueType::String: {
                     String str{value->string.value, value->string.len};
                     static_cast<ColumnString &>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
-                    // static_cast<CslumnString &>(column).insert(parse<String>(value->string.value));
                     break;
                 }
                 case ValueType::Date:
