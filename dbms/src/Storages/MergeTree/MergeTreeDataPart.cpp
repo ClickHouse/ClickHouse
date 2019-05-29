@@ -437,25 +437,26 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
 
 String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
+    /// Do not allow underscores in the prefix because they are used as separators.
+    assert(prefix.find_first_of('_') == String::npos);
+
     String res;
-    unsigned try_no = 0;
-    auto dst_name = [&, this] { return "detached/" + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
         * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
         * No more than 10 attempts are made so that there are not too many junk directories left.
         */
-    while (try_no < 10)
+    for (int try_no = 0; try_no < 10; try_no++)
     {
-        res = dst_name();
+        res = "detached/" + (prefix.empty() ? "" : prefix + "_")
+            + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!Poco::File(storage.full_path + res).exists())
             return res;
 
-        LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+        LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists."
             " Will detach to directory with '_tryN' suffix.");
-        ++try_no;
     }
 
     return res;
