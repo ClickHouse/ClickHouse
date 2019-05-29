@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 select round(1000 * ngramSearchUTF8(materialize(''), '')) from system.numbers limit 5;
 select round(1000 * ngramSearchUTF8(materialize('абв'), '')) from system.numbers limit 5;
 select round(1000 * ngramSearchUTF8(materialize(''), 'абв')) from system.numbers limit 5;
