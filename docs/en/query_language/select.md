@@ -453,7 +453,7 @@ See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) descriptio
 For multiple `JOIN`:
 
 - You cannot perform `SELECT * ...` if you use `SELECT` subqueries for joining. Using of `*` is available only for joining tables.
-- The `PREWARE` clause is not available for multiple `JOIN`.
+- The `PREWHERE` clause is not available for multiple `JOIN`.
 
 For `ON`, `WHERE` and `GROUP BY` clauses:
 
