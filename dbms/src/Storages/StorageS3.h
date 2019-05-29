@@ -4,6 +4,7 @@
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <Poco/URI.h>
 
 #include <common/logger_useful.h>
 
@@ -47,8 +48,6 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    String getDataPath() const override { return path; }
-
 protected:
     friend class StorageS3BlockInputStream;
     friend class StorageS3BlockOutputStream;
@@ -59,9 +58,7 @@ protected:
     - create own table inside data/db/table/
     */
     StorageS3(
-        const std::string & table_path_,
-        int table_fd_,
-        const std::string & db_dir_path,
+        const std::string & table_uri_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
@@ -73,13 +70,9 @@ private:
     std::string format_name;
     Context & context_global;
 
-    std::string path;
-    int table_fd = -1;
+    Poco::URI uri;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd insted of path
-    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
-    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
     mutable std::shared_mutex rwlock;
 
