@@ -47,6 +47,10 @@ public:
 
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
+    virtual DataTypePtr getReturnTypeToPredict() const
+    {
+        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     virtual ~IAggregateFunction() {}
 

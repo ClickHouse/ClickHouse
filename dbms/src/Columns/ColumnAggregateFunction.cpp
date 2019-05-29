@@ -35,25 +35,6 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
     arenas.push_back(arena_);
 }
 
-/// This function is used in convertToValues() and predictValues()
-/// and is written here to avoid repetitions
-bool ColumnAggregateFunction::tryFinalizeAggregateFunction(MutableColumnPtr *res_) const
-{
-    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
-    {
-        auto res = createView();
-        res->set(function_state->getNestedFunction());
-        res->data.assign(data.begin(), data.end());
-        *res_ = std::move(res);
-        return true;
-    }
-
-    MutableColumnPtr res = func->getReturnType()->createColumn();
-    res->reserve(data.size());
-    *res_ = std::move(res);
-    return false;
-}
-
 MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
@@ -86,16 +67,16 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
-
-    /** Convertion function is used in convertToValues and predictValues
-        * in the similar part of both functions
-        */
-
-    MutableColumnPtr res;
-    if (tryFinalizeAggregateFunction(&res))
+    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
+        auto res = createView();
+        res->set(function_state->getNestedFunction());
+        res->data.assign(data.begin(), data.end());
         return res;
     }
+
+    MutableColumnPtr res = func->getReturnType()->createColumn();
+    res->reserve(data.size());
 
     for (auto val : data)
         func->insertResultInto(val, *res);
@@ -105,8 +86,8 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 
 MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
-    MutableColumnPtr res;
-    tryFinalizeAggregateFunction(&res);
+    MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
+    res->reserve(data.size());
 
     auto ML_function = func.get();
     if (ML_function)
