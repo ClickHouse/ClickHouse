@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/** Internal temporary storage for table function input()
+/** Internal temporary storage for table function input(...)
   */
 
 class StorageInput : public ext::shared_ptr_helper<StorageInput>, public IStorage
@@ -13,8 +13,8 @@ class StorageInput : public ext::shared_ptr_helper<StorageInput>, public IStorag
 public:
     String getName() const override { return "Input"; }
     String getTableName() const override { return table_name; }
-    
-    /// A table will read directly from this stream.
+
+    /// A table will read from this stream.
     void setInputStream(BlockInputStreamPtr input_stream_);
 
     BlockInputStreams read(
