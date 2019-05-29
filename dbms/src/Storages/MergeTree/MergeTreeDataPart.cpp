@@ -1,5 +1,6 @@
-#include <optional>
+#include "MergeTreeDataPart.h"
 
+#include <optional>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -14,13 +15,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/localBackup.h>
 #include <Compression/CompressionInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <common/logger_useful.h>
 #include <common/JSON.h>
 
