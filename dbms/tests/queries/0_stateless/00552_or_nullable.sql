@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 SELECT
     0 OR NULL,
     1 OR NULL,

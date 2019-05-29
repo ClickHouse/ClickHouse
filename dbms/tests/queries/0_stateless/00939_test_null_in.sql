@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 DROP TABLE IF EXISTS test.nullt;
 
 CREATE TABLE test.nullt (c1 Nullable(UInt32), c2 Nullable(String))ENGINE = Log;

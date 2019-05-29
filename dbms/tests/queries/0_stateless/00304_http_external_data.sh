@@ -3,4 +3,4 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-echo -ne '1,Hello\n2,World\n' | ${CLICKHOUSE_CURL} -sSF 'file=@-' "${CLICKHOUSE_URL}?query=SELECT+*+FROM+file&file_format=CSV&file_types=UInt8,String&input_format_parallel_parsing=0";
+echo -ne '1,Hello\n2,World\n' | ${CLICKHOUSE_CURL} -sSF 'file=@-' "${CLICKHOUSE_URL}?query=SELECT+*+FROM+file&file_format=CSV&file_types=UInt8,String&format_csv_delimiter=|";

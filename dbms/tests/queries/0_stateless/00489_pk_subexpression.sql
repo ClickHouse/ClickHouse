@@ -1,3 +1,5 @@
+SET input_format_parallel_parsing=0;
+
 DROP TABLE IF EXISTS pk;
 
 CREATE TABLE pk (d Date DEFAULT '2000-01-01', x DateTime, y UInt64, z UInt64) ENGINE = MergeTree(d, (toStartOfMinute(x), y, z), 1);
