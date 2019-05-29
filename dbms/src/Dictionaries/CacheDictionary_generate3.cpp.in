@@ -14,7 +14,7 @@ void CacheDictionary::get@NAME@(const std::string & attribute_name, const Padded
     auto & attribute = getAttribute(attribute_name);
     checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::@NAME@);
 
-    getItemsNumber<TYPE>(attribute, ids, out, [&](const size_t) { return def; });
+    getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t) { return def; });
 }
 
 }
