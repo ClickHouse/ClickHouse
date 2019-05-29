@@ -138,12 +138,32 @@ StorageLiveView::StorageLiveView(
     active_ptr = std::make_shared<bool>(true);
 }
 
+NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
+{
+    if ( column_name == "_version" )
+        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
+
+    return IStorage::getColumn(column_name);
+}
+
+bool StorageLiveView::hasColumn(const String & column_name) const
+{
+    if ( column_name == "_version" )
+        return true;
+
+    return IStorage::hasColumn(column_name);
+}
+
 Block StorageLiveView::getHeader() const
 {
     if (!sample_block)
     {
         auto storage = global_context.getTable(select_database_name, select_table_name);
         sample_block = InterpreterSelectQuery(inner_query, global_context, storage).getSampleBlock();
+        sample_block.insert({DataTypeUInt64().createColumnConst(
+            sample_block.rows(), 0)->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt64>(),
+            "_version"});
     }
 
     return sample_block;
@@ -172,6 +192,11 @@ bool StorageLiveView::getNewBlocks()
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
     while (Block block = data->read())
     {
+        /// add result version meta column
+        block.insert({DataTypeUInt64().createColumnConst(
+            block.rows(), getBlocksVersion() + 1)->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt64>(),
+            "_version"});
         block.updateHash(hash);
         new_blocks->push_back(block);
     }

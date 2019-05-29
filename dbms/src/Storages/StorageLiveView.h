@@ -18,6 +18,7 @@ limitations under the License. */
 #include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <ext/shared_ptr_helper.h>
 #include <Common/SipHash.h>
 #include <Storages/IStorage.h>
@@ -49,6 +50,9 @@ public:
     String getDatabaseName() const { return database_name; }
     String getSelectDatabaseName() const { return select_database_name; }
     String getSelectTableName() const { return select_table_name; }
+
+    NameAndTypePair getColumn(const String & column_name) const override;
+    bool hasColumn(const String & column_name) const override;
 
     // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); };
@@ -96,7 +100,7 @@ public:
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->version;
-        return -1;
+        return 0;
     }
 
     /// Reset blocks
@@ -167,7 +171,6 @@ public:
         BlocksPtr blocks = std::make_shared<Blocks>();
         BlocksPtrs mergeable_blocks;
         BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
-
         {
             auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
             BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
@@ -227,6 +230,7 @@ public:
         auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(from), QueryProcessingStage::WithMergeableState);
         InterpreterSelectQuery select(live_view.getInnerQuery(), context, proxy_storage, QueryProcessingStage::Complete);
         BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+
         while (Block this_block = data->read())
         {
             this_block.updateHash(hash);
@@ -242,7 +246,6 @@ public:
             auto sample_block = blocks->front().cloneEmpty();
             BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
             {
-                Poco::FastMutex::ScopedLock lock(live_view.mutex);
                 copyData(*new_data, *output);
             }
         }
@@ -287,22 +290,21 @@ class LiveViewBlockOutputStream : public IBlockOutputStream
 public:
     explicit LiveViewBlockOutputStream(StorageLiveView & storage_) : storage(storage_) {}
 
-    void write(const Block & block) override
+    void writePrefix() override
     {
+        new_blocks = std::make_shared<Blocks>();
+        new_blocks_metadata = std::make_shared<BlocksMetadata>();
+        new_hash = std::make_shared<SipHash>();
+        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
+    }
+
+    void writeSuffix() override
+    {
+        Poco::FastMutex::ScopedLock lock(storage.mutex);
         UInt128 key;
 
-        if (!new_blocks)
-        {
-            new_blocks = std::make_shared<Blocks>();
-            new_blocks_metadata = std::make_shared<BlocksMetadata>();
-            new_hash = std::make_shared<SipHash>();
-        }
-
-        new_blocks->push_back(block);
-        block.updateHash(*new_hash);
         new_hash->get128(key.low, key.high);
         new_blocks_metadata->hash = key.toHexString();
-        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
 
         (*storage.blocks_ptr) = new_blocks;
         (*storage.blocks_metadata_ptr) = new_blocks_metadata;
@@ -310,7 +312,18 @@ public:
         new_blocks.reset();
         new_blocks_metadata.reset();
         new_hash.reset();
+
         storage.condition.broadcast();
+    }
+
+    void write(const Block & block) override
+    {
+        new_blocks->push_back(block);
+        new_blocks->back().insert({DataTypeUInt64().createColumnConst(
+            block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
+            std::make_shared<DataTypeUInt64>(),
+            "_version"});
+        block.updateHash(*new_hash);
     }
 
     Block getHeader() const override { return storage.getHeader(); }
