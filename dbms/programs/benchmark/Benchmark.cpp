@@ -325,8 +325,8 @@ private:
         double seconds = watch.elapsedSeconds();
 
         std::lock_guard lock(mutex);
-        info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
-        info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
+        info_per_interval.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        info_total.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
     }
 
 

@@ -221,11 +221,6 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-
-    template <typename OutputType, typename DefaultGetter>
-    void getItemsNumber(
-        Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
-
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
         Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;

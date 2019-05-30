@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
@@ -60,7 +61,7 @@ public:
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return type->getReturnType();
+        return type->getReturnTypeToPredict();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
