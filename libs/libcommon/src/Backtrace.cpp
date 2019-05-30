@@ -1,5 +1,6 @@
 #include <common/Backtrace.h>
 #include <common/SimpleCache.h>
+#include <common/demangle.h>
 
 #include <sstream>
 #include <cstring>
@@ -231,26 +232,25 @@ std::string Backtrace::toString() const
     return func_cached(frames, size);
 }
 
-std::string Backtrace::toStringImpl(const Frames& frames, size_t size) {
-    if (size == 0)
-        return "<Empty trace>";
+std::string Backtrace::toStringImpl(const Frames& frames, size_t size)
+{
+	if (size == 0)
+		return "<Empty trace>";
+
+    char ** symbols = backtrace_symbols(frames.data(), size);
+    if (!symbols)
+        return "<Invalid trace>";
 
     std::stringstream backtrace;
-    char ** symbols = backtrace_symbols(frames.data(), size);
-
-    if (!symbols)
+    try
     {
-        backtrace << "No symbols could be found for backtrace starting at " << frames[0];
-    }
-    else
-    {
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < size; i++)
         {
-            /// Perform demangling of names. Name is in parentheses, before '+' character.
+            /// We do "demangling" of names. The name is in parenthesis, before the '+' character.
 
             char * name_start = nullptr;
             char * name_end = nullptr;
-            char * demangled_name = nullptr;
+            std::string demangled_name;
             int status = 0;
 
             if (nullptr != (name_start = strchr(symbols[i], '('))
@@ -258,13 +258,13 @@ std::string Backtrace::toStringImpl(const Frames& frames, size_t size) {
             {
                 ++name_start;
                 *name_end = '\0';
-                demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
+                demangled_name = demangle(name_start, status);
                 *name_end = '+';
             }
 
             backtrace << i << ". ";
 
-            if (nullptr != demangled_name && 0 == status)
+            if (0 == status && name_start && name_end)
             {
                 backtrace.write(symbols[i], name_start - symbols[i]);
                 backtrace << demangled_name << name_end;
@@ -272,9 +272,15 @@ std::string Backtrace::toStringImpl(const Frames& frames, size_t size) {
             else
                 backtrace << symbols[i];
 
-            backtrace << "\n";
+            backtrace << std::endl;
         }
     }
+    catch (...)
+    {
+        free(symbols);
+        throw;
+    }
 
+    free(symbols);
     return backtrace.str();
 }
