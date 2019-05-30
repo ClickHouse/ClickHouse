@@ -292,7 +292,7 @@ def test_complex_dictionaries(started_cluster):
             assert node.query(query) == str(answer) + '\n'
 
 
-def xtest_ranged_dictionaries(started_cluster):
+def test_ranged_dictionaries(started_cluster):
     complex_kv_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
 
     for dct in complex_kv_dicts:
