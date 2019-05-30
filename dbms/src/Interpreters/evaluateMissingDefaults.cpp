@@ -78,7 +78,7 @@ void evaluateMissingDefaults(Block & block,
 
     if (copy_block.columns() == 0)
     {
-        // Add column to indicate block size in execute()
+        /// Add column to indicate block size in execute()
         copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy"});
     }
 
