@@ -64,3 +64,11 @@ Friday
 {}
 "\\n\\u0000"
 "☺"
+--const/non-const mixed--
+a
+b
+c
+d
+e
+u
+v
