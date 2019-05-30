@@ -633,9 +633,9 @@ There are 4 customizable parameters. They are passed to the function sequentiall
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.01`.
-2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.01`.
-3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `1`.
+1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
+2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
+3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
 4. `method for updating weights`, there are 3 of them: `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods. Default is `'SGD'`.
 
 

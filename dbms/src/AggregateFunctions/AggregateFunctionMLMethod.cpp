@@ -7,7 +7,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/convertFieldToType.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
