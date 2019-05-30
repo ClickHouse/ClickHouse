@@ -218,10 +218,6 @@ private:
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
 
-    template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void
-    getItemsNumber(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
-
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void
     getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;

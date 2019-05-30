@@ -851,7 +851,7 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
-    if (!isNumber(type))
+    if (!isNativeNumber(type))
         throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
