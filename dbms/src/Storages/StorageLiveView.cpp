@@ -192,12 +192,13 @@ bool StorageLiveView::getNewBlocks()
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
     while (Block block = data->read())
     {
+        /// calculate hash before virtual column is added
+        block.updateHash(hash);
         /// add result version meta column
         block.insert({DataTypeUInt64().createColumnConst(
             block.rows(), getBlocksVersion() + 1)->convertToFullColumnIfConst(),
             std::make_shared<DataTypeUInt64>(),
             "_version"});
-        block.updateHash(hash);
         new_blocks->push_back(block);
     }
 
@@ -411,8 +412,8 @@ BlockInputStreams StorageLiveView::watch(
             Poco::FastMutex::ScopedLock lock(mutex);
             if (!(*blocks_ptr))
             {
-            if (getNewBlocks())
-                condition.broadcast();
+                if (getNewBlocks())
+                    condition.broadcast();
             }
         }
 
@@ -435,8 +436,8 @@ BlockInputStreams StorageLiveView::watch(
             Poco::FastMutex::ScopedLock lock(mutex);
             if (!(*blocks_ptr))
             {
-            if (getNewBlocks())
-                condition.broadcast();
+                if (getNewBlocks())
+                    condition.broadcast();
             }
         }
 
