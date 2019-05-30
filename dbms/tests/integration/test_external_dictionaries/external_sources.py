@@ -7,7 +7,6 @@ import aerospike
 from tzlocal import get_localzone
 import datetime
 import os
-import dateutil.parser
 import time
 
 
