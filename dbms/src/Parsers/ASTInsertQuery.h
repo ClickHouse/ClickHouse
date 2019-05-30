@@ -17,7 +17,6 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
-    ASTPtr input_function;
     ASTPtr table_function;
     ASTPtr settings_ast;
 
@@ -31,6 +30,9 @@ public:
     /// Query has additional data, which will be sent later
     bool has_tail = false;
 
+    /// Try to find table function input() in SELECT part
+    void tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function) const;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }
 
@@ -41,7 +43,6 @@ public:
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (input_function) { res->input_function = input_function->clone(); res->children.push_back(res->input_function); }
         if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
 

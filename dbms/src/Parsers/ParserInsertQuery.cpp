@@ -8,7 +8,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 
 
@@ -18,24 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-}
-
-void tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function)
-{
-    if (!ast)
-        return;
-    for (const auto & child : ast->children)
-        tryFindInputFunction(child, input_function);
-
-    if (const auto * table_function = ast->as<ASTFunction>())
-    {
-        if (table_function->name == "input")
-        {
-            if (input_function)
-                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::SYNTAX_ERROR);
-            input_function = ast;
-        }
-    }
 }
 
 
@@ -63,7 +44,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     ASTPtr table_function;
     ASTPtr settings_ast;
-    ASTPtr input_function;
     /// Insertion data
     const char * data = nullptr;
 
@@ -118,12 +98,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
-        /// Check if we have INSERT SELECT FROM input().
-        tryFindInputFunction(select, input_function);
-        /// FORMAT section is required if we have input() in SELECT part
-        if (input_function)
-            if (!s_format.ignore(pos, expected) || !name_p.parse(pos, format, expected))
-                return false;
+        /// FORMAT section is expected if we have input() in SELECT part
+        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+            return false;
     }
     else
     {
@@ -182,7 +159,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->columns = columns;
     query->select = select;
-    query->input_function = input_function;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;

@@ -829,9 +829,17 @@ private:
 
             connection->forceConnected();
 
-            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-            if (insert && (!insert->select || insert->input_function))
+            ASTPtr input_function;
+            if (insert && insert->select)
+                insert->tryFindInputFunction(insert->select, input_function);
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+            if (insert && (!insert->select || input_function))
+            {
+                if (input_function && insert->format.empty())
+                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::LOGICAL_ERROR);
                 processInsertQuery();
+            }
             else
                 processOrdinaryQuery();
         }

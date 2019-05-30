@@ -224,18 +224,22 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Load external tables if they were provided
         context.initializeExternalTablesIfSet();
 
-        /// Prepare Input storage before executing interpreter.
         auto * insert_query = ast->as<ASTInsertQuery>();
-        if (insert_query && insert_query->input_function)
+        if (insert_query && insert_query->select)
         {
-            /// If we already got a buffer with data then initialize input stream.
+            /// Prepare Input storage before executing interpreter if we already got a buffer with data.
             if (istr)
             {
-                StoragePtr storage = context.executeTableFunction(insert_query->input_function);
-                auto * input_storage = dynamic_cast<StorageInput *>(storage.get());
-                BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
-                    input_storage->getSampleBlock(), context);
-                input_storage->setInputStream(input_stream);
+                ASTPtr input_function;
+                insert_query->tryFindInputFunction(insert_query->select, input_function);
+                if (input_function)
+                {
+                    StoragePtr storage = context.executeTableFunction(input_function);
+                    auto & input_storage = dynamic_cast<StorageInput &>(*storage);
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
+                        input_storage.getSampleBlock(), context, input_function);
+                    input_storage.setInputStream(input_stream);
+                }
             }
         }
         else
@@ -513,7 +517,7 @@ void executeQuery(
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context);
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
 
