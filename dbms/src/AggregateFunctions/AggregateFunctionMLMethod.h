@@ -4,6 +4,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include "IAggregateFunction.h"
 
 namespace DB
@@ -218,6 +220,7 @@ public:
     void
     predict(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
+    void returnWeights(IColumn & to) const;
 private:
     std::vector<Float64> weights;
     Float64 bias{0.0};
@@ -269,7 +272,15 @@ public:
     {
     }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+    }
+
+    DataTypePtr getReturnTypeToPredict() const override
+    {
+        return std::make_shared<DataTypeNumber<Float64>>();
+    }
 
     void create(AggregateDataPtr place) const override
     {
@@ -301,11 +312,12 @@ public:
         this->data(place).predict(column.getData(), block, arguments, context);
     }
 
+    /** This function is called if aggregate function without State modifier is selected in a query.
+     *  Inserts all weights of the model into the column 'to', so user may use such information if needed
+     */
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        std::ignore = place;
-        std::ignore = to;
-        throw std::runtime_error("not implemented");
+        this->data(place).returnWeights(to);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
