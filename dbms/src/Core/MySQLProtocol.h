@@ -7,10 +7,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
-#include <common/logger_useful.h>
 #include <random>
 #include <sstream>
 
@@ -157,20 +155,18 @@ public:
     size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For reading and writing.
-    PacketSender(ReadBuffer & in, WriteBuffer & out, size_t & sequence_id, const String logger_name)
+    PacketSender(ReadBuffer & in, WriteBuffer & out, size_t & sequence_id)
         : sequence_id(sequence_id)
         , in(&in)
         , out(&out)
-        , log(&Poco::Logger::get(logger_name))
     {
     }
 
     /// For writing.
-    PacketSender(WriteBuffer & out, size_t & sequence_id, const String logger_name)
+    PacketSender(WriteBuffer & out, size_t & sequence_id)
         : sequence_id(sequence_id)
         , in(nullptr)
         , out(&out)
-        , log(&Poco::Logger::get(logger_name))
     {
     }
 
@@ -184,8 +180,6 @@ public:
         // packets which are larger than or equal to 16MB are splitted
         do
         {
-            LOG_TRACE(log, "Reading from buffer");
-
             in->readStrict(reinterpret_cast<char *>(&payload_length), 3);
 
             if (payload_length > max_packet_size)
@@ -204,8 +198,6 @@ public:
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
             sequence_id++;
-
-            LOG_TRACE(log, "Received packet. Sequence-id: " << packet_sequence_id << ", payload length: " << payload_length);
 
             copyData(*in, static_cast<WriteBuffer &>(buf), payload_length);
         } while (payload_length == max_packet_size);
@@ -228,9 +220,6 @@ public:
         {
             size_t payload_length = std::min(payload.length() - pos, max_packet_size);
 
-            LOG_TRACE(log, "Writing packet of size " << payload_length << " with sequence-id " << static_cast<int>(sequence_id));
-            LOG_TRACE(log, packetToText(payload));
-
             out->write(reinterpret_cast<const char *>(&payload_length), 3);
             out->write(reinterpret_cast<const char *>(&sequence_id), 1);
             out->write(payload.data() + pos, payload_length);
@@ -239,12 +228,8 @@ public:
             sequence_id++;
         } while (pos < payload.length());
 
-        LOG_TRACE(log, "Packet was sent.");
-
         if (flush)
-        {
             out->next();
-        }
     }
 
     /// Sets sequence-id to 0. Must be called before each command phase.
@@ -253,8 +238,6 @@ public:
 private:
     /// Converts packet to text. Is used for debug output.
     static String packetToText(String payload);
-
-    Poco::Logger * log;
 };
 
 
