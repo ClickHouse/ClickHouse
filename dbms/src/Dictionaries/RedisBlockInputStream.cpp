@@ -6,13 +6,8 @@
 #    include <vector>
 
 #    include <Poco/Redis/Array.h>
-#    include <Poco/Redis/AsyncReader.h>
 #    include <Poco/Redis/Client.h>
 #    include <Poco/Redis/Command.h>
-#    include <Poco/Redis/Error.h>
-#    include <Poco/Redis/Exception.h>
-#    include <Poco/Redis/RedisEventArgs.h>
-#    include <Poco/Redis/RedisStream.h>
 #    include <Poco/Redis/Type.h>
 
 #    include <Columns/ColumnNullable.h>
@@ -25,9 +20,6 @@
 #    include "DictionaryStructure.h"
 #    include "RedisBlockInputStream.h"
 
-#    include "Poco/Logger.h"
-#    include "common/logger_useful.h"
-
 
 namespace DB
 {
@@ -36,7 +28,7 @@ namespace DB
         extern const int TYPE_MISMATCH;
         extern const int LOGICAL_ERROR;
         extern const int LIMIT_EXCEEDED;
-        extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
+        extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     }
 
 
@@ -66,9 +58,6 @@ namespace DB
 
         std::string getStringOrThrow(const Poco::Redis::RedisType::Ptr & value, const std::string & column_name)
         {
-            LOG_INFO(&Logger::get("Redis"),
-                    "isNullableString=" + DB::toString(value->isBulkString()) +
-                    ", isSimpleString=" + DB::toString(value->isSimpleString()));
             switch (value->type())
             {
                 case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
@@ -179,7 +168,7 @@ namespace DB
         if (keys.begin()->get()->isArray())
         {
             size_t num_rows = 0;
-            while (num_rows < max_block_size)
+            while (num_rows < max_block_size && !all_read)
             {
                 if (cursor >= keys.size())
                 {
@@ -206,6 +195,7 @@ namespace DB
 
                 Poco::Redis::Command commandForValues("HMGET");
                 const auto & primary_key = *keys_array.begin();
+                commandForValues.addRedisType(primary_key);
                 for (size_t i = 1; i < keys_array.size(); ++i)
                 {
                     const auto & secondary_key = *(keys_array.begin() + i);
@@ -213,57 +203,76 @@ namespace DB
                     insertValueByIdx(1, secondary_key);
                     commandForValues.addRedisType(secondary_key);
                 }
+                ++cursor;
 
-                // FIXME: fix insert
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-                for (const auto & value : values)
-                {
-                    if (isNull(value))
-                        insertDefaultValue(*columns[2], *description.sample_block.getByPosition(2).column);
-                    else
-                        insertValueByIdx(2, value);
-                }
+                if (commandForValues.size() != values.size() + 2) // 'HMGET' primary_key secondary_keys
+                    throw Exception{"Inconsistent sizes of keys and values in Redis request",
+                                    ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
-                num_rows += keys_array.size() - 1;
-                cursor += keys_array.size() - 1;
+                for (size_t i = 0; i < values.size(); ++i)
+                {
+                    const auto & secondary_key = *(keys_array.begin() + i + 1);
+                    const auto & value = *(values.begin() + i);
+                    if (value.isNull())
+                    {
+                        insertValueByIdx(0, primary_key);
+                        insertValueByIdx(1, secondary_key);
+                        insertDefaultValue(*columns[2], *description.sample_block.getByPosition(2).column);
+                        ++num_rows;
+                    }
+                    else if (!isNull(value)) // null string means 'no value for requested key'
+                    {
+                        insertValueByIdx(0, primary_key);
+                        insertValueByIdx(1, secondary_key);
+                        insertValueByIdx(2, value);
+                        ++num_rows;
+                    }
+                }
             }
         }
         else
         {
-            Poco::Redis::Command commandForValues("MGET");
-
-            // keys.size() > 0
-            for (size_t num_rows = 0; num_rows < max_block_size; ++num_rows)
+            size_t num_rows = 0;
+            while (num_rows < max_block_size && !all_read)
             {
-                if (cursor >= keys.size())
+                Poco::Redis::Command commandForValues("MGET");
+
+                // keys.size() > 0
+                for (size_t i = 0; i < max_block_size && cursor < keys.size(); ++i)
+                {
+                    const auto & key = *(keys.begin() + cursor);
+                    commandForValues.addRedisType(key);
+                    ++cursor;
+                }
+
+                if (commandForValues.size() == 1) // only 'MGET'
                 {
                     all_read = true;
                     break;
                 }
 
-                const auto & key = *(keys.begin() + cursor);
-                commandForValues.addRedisType(key);
-                ++cursor;
-            }
+                Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+                if (commandForValues.size() != values.size() + 1) // 'MGET' keys
+                    throw Exception{"Inconsistent sizes of keys and values in Redis request",
+                                    ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
-            Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-            if (commandForValues.size() != values.size() + 1)
-                throw Exception{"Inconsistent sizes of keys and values in Redis request",
-                        ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT};
-
-            for (size_t num_rows = 0; num_rows < values.size(); ++num_rows)
-            {
-                const auto & key = *(keys.begin() + cursor - num_rows - 1);
-                const auto & value = *(values.begin() + values.size() - num_rows - 1);
-                if (value.isNull())
+                for (size_t i = 0; i < values.size(); ++i)
                 {
-                    insertValueByIdx(0, key);
-                    insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
-                }
-                else if (!isNull(value)) // null string means 'no value for requested key'
-                {
-                    insertValueByIdx(0, key);
-                    insertValueByIdx(1, value);
+                    const auto & key = *(keys.begin() + cursor - i - 1);
+                    const auto & value = *(values.begin() + values.size() - i - 1);
+                    if (value.isNull())
+                    {
+                        insertValueByIdx(0, key);
+                        insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
+                        ++num_rows;
+                    }
+                    else if (!isNull(value)) // null string means 'no value for requested key'
+                    {
+                        insertValueByIdx(0, key);
+                        insertValueByIdx(1, value);
+                        ++num_rows;
+                    }
                 }
             }
         }
