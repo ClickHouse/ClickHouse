@@ -91,6 +91,13 @@ public:
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// If column stores native numeric type, it returns n-th element casted to Float64
+    /// Is used in regression methods to cast each features into uniform type
+    virtual Float64 getFloat64(size_t /*n*/) const
+    {
+        throw Exception("Method getFloat64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** If column is numeric, return value of n-th element, casted to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
