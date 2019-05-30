@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_CAST;
 }
 
 /**
@@ -86,7 +87,7 @@ public:
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
-        size_t row_num) override ;
+        size_t row_num) override;
 
     void predict(
         ColumnVector<Float64>::Container & container,
@@ -272,7 +273,7 @@ public:
     {
     }
 
-    /// This function is called when select linearRegression(...) is called
+    /// This function is called when SELECT linearRegression(...) is called
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
@@ -323,10 +324,18 @@ public:
                     + ". Required: " + std::to_string(param_num + 1),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        /// This cast is correct because column type is based on getReturnTypeToPredict.
-        auto & column = dynamic_cast<ColumnVector<Float64> &>(to);
+        /// This cast might be correct because column type is based on getReturnTypeToPredict.
+        ColumnVector<Float64> * column;
+        try
+        {
+            column = &dynamic_cast<ColumnVector<Float64> &>(to);
+        } catch (const std::bad_cast &)
+        {
+            throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
+                            ErrorCodes::BAD_CAST);
+        }
 
-        this->data(place).predict(column.getData(), block, arguments, context);
+        this->data(place).predict(column->getData(), block, arguments, context);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.
