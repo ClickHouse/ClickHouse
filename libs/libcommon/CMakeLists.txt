@@ -47,6 +47,7 @@ add_library (common
     include/common/Pipe.h
     include/common/getThreadNumber.h
     include/common/Sleep.h
+    include/common/SimpleCache.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

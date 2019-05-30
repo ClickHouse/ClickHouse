@@ -5,7 +5,6 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
-#include <Common/StackTrace.h>
 #include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 

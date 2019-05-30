@@ -194,7 +194,7 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
-                Backtrace backtrace;
+                Backtrace backtrace(NoCapture{});
                 ThreadNumber thread_num;
 
                 DB::readPODBinary(info, in);
@@ -224,7 +224,7 @@ private:
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         LOG_ERROR(log, signalToErrorMessage(sig, info, context));
-        LOG_ERROR(log, backtrace.toString("\n"));
+        LOG_ERROR(log, backtrace.toString());
     }
 };
 

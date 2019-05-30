@@ -1,4 +1,5 @@
 #include <common/Backtrace.h>
+#include <common/SimpleCache.h>
 
 #include <sstream>
 #include <cstring>
@@ -13,9 +14,20 @@
     #define NO_SANITIZE_ADDRESS
 #endif
 
+/// Arcadia compatibility DEVTOOLS-3976
+#if defined(BACKTRACE_INCLUDE)
+#include BACKTRACE_INCLUDE
+#endif
+
+#if !defined(BACKTRACE_FUNC) && USE_UNWIND
+#define BACKTRACE_FUNC unw_backtrace
+#endif
+
 #if USE_UNWIND
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
+
+static_assert(Backtrace::capacity < LIBUNWIND_MAX_STACK_SIZE, "Backtrace cannot be larger than libunwind upper bound on stack size");
 #endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
@@ -180,18 +192,20 @@ void * getCallerAddress(const ucontext_t & context)
 }
 
 
-Backtrace::Backtrace(const ucontext_t & signal_context)
+Backtrace::Backtrace(std::optional<ucontext_t> signal_context)
 {
     size = 0;
 
-#if USE_UNWIND
-    size = unw_backtrace(frames.data(), capacity);
+#if defined(BACKTRACE_FUNC)
+    size = BACKTRACE_FUNC(frames.data(), capacity);
 #else
-    /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
-    /// So at least print the function where the signal happened.
-    void * caller_address = getCallerAddress(signal_context);
-    if (caller_address)
-        frames[size++] = reinterpret_cast<void *>(caller_address);
+    if (signal_context.has_value()) {
+        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
+        /// So at least print the function where the signal happened.
+        void * caller_address = getCallerAddress(*signal_context);
+        if (caller_address)
+            frames[size++] = reinterpret_cast<void *>(caller_address);
+    }
 #endif
 }
 
@@ -208,7 +222,16 @@ const Backtrace::Frames& Backtrace::getFrames() const {
     return frames;
 }
 
-std::string Backtrace::toString(const std::string & delimiter) const {
+std::string Backtrace::toString() const
+{
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+
+    static SimpleCache<decltype(Backtrace::toStringImpl), &Backtrace::toStringImpl> func_cached;
+    return func_cached(frames, size);
+}
+
+std::string Backtrace::toStringImpl(const Frames& frames, size_t size) {
     if (size == 0)
         return "<Empty trace>";
 
@@ -249,7 +272,7 @@ std::string Backtrace::toString(const std::string & delimiter) const {
             else
                 backtrace << symbols[i];
 
-            backtrace << delimiter;
+            backtrace << "\n";
         }
     }
 

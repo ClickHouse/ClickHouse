@@ -32,7 +32,7 @@ namespace DB
                 break;
 
             std::string query_id;
-            Backtrace backtrace;
+            Backtrace backtrace(NoCapture{});
             TimerType timer_type;
 
             DB::readStringBinary(query_id, in);
