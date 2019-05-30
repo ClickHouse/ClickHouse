@@ -482,4 +482,44 @@ FROM ontime
 
 Вычисляет коэффициент корреляции Пирсона: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## simpleLinearRegression
+
+Выполняет простую (одномерную) линейную регрессию.
+
+```
+simpleLinearRegression(x, y)
+```
+
+Параметры:
+
+- `x` — столбец со значениями зависимой переменной.
+- `y` — столбец со значениями наблюдаемой переменной.
+
+Возвращаемые значения:
+
+Параметры `(a, b)` результирующей прямой `x = a*y + b`.
+
+**Примеры**
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
+
