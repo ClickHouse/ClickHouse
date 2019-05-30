@@ -420,7 +420,10 @@ class SourceRedis(ExternalSource):
                 self.client.hset(value[0], value[1], value[2])
 
     def compatible_with_layout(self, layout):
-        if layout.is_simple and self.storage_type == "simple" or layout.is_complex and self.storage_type == "simple":
+        if (
+            layout.is_simple and self.storage_type == "simple" or
+            layout.is_complex and self.storage_type == "simple" and layout.name != "complex_key_cache"
+        ):
             return True
         return False
 
