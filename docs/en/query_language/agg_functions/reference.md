@@ -625,12 +625,12 @@ mini-batch size and has few methods for updating weights (simple SGD, Momentum, 
 
 This function works as a usual aggregate function in terms of distributed processing of data, which is followed by merges. With regard to `linearRegression` this means that different aggregate function states are merged with weights - the more data was processed by a state, the bigger weight it has during a merge with other state.
 
-**Parameters**
+#### Parameters
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
 ```text
-linearRegression(1.0, 1.0, 10, 'SGD')
+stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
 1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.01`.
@@ -641,7 +641,7 @@ linearRegression(1.0, 1.0, 10, 'SGD')
 
 **Usage of linearRegression**
 
-`linearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
+`stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
 To predict we use function `evalMLMethod`, which takes a state as an argument as well as features to predict on.
 
 1. *Fitting*
@@ -656,7 +656,7 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     ) ENGINE = Memory;
     
     CREATE TABLE your_model ENGINE = Memory AS SELECT
-    linearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
     
     ```
@@ -684,46 +684,48 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     
 2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
     ```sql
-    SELECT LinearRegression(0.01)(target, param1, param2) FROM train_data
+    SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
     Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values. 
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
 
 ## logisticRegression
 
 
-This function implements stochastic logistic regression. It supports the same custom parameters as linearRegression and works the same way.
+This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-**Parameters**
+#### Parameters
 
-Parameters are exactly the same as in linearRegression: 
-(`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`). 
-For more information see *linearRegression.Parameters*
+Parameters are exactly the same as in stochasticLinearRegression: 
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`. 
+For more information see [parameters](#parameters).
 ```text
-linearRegression(1.0, 1.0, 10, 'SGD')
+stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
 1. *Fitting*
 
-    See *linearRegression.Fitting*
-    Targets have to be in {-1, 1}.
+    See *stochasticLinearRegression.Fitting*
+    
+    Predicted labels have to be in {-1, 1}.
     
 2. *Predicting*
 
-    Using saved state we can preidct probabilities of belonging element to label *1*.
+    Using saved state we can predict probability of object having label *1*.
     ```sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
     The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
-    We can also set a bound of probability, which assignments elements to different labels.
+    We can also set a bound of probability, which assigns elements to different labels.
     ```sql
     SELECT ans < 1.1 AND ans > 0.5 FROM
     (WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) AS ans FROM test_data)
     ```
-    Then result will be labels.
+    Then the result will be labels.
 
     `test_data` is a table like `train_data` but may not contain target value.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
