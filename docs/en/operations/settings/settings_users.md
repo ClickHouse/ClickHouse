@@ -100,7 +100,7 @@ You can assign a settings profile for the user. Settings profiles are configured
 Quotas allow you to limit resource usage over a period of time, or track the use of resources. Quotas are configured in the `quotas`
 section of the `users.xml` configuration file.
 
-You can assign a quotas set for the user. For the detailed description of quotas configuration see the [Quotas](../quotas.md) topic in the document.
+You can assign a quotas set for the user. For the detailed description of quotas configuration see the [Quotas](../quotas.md#quotas) section.
 
 ### user_name/databases
 
