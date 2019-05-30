@@ -2,25 +2,72 @@
 
 Hash functions can be used for deterministic pseudo-random shuffling of elements.
 
-## halfMD5
+## halfMD5 {#hash_functions-halfmd5}
 
-Calculates the MD5 from a string. Then it takes the first 8 bytes of the hash and interprets them as UInt64 in big endian.
-Accepts a String-type argument. Returns UInt64.
-This function works fairly slowly (5 million short strings per second per processor core).
-If you don't need MD5 in particular, use the 'sipHash64' function instead.
+Produces 64-bit hash value.
 
-## MD5
+```
+halfMD5(par1, ...)
+```
+
+The function converts all the input parameters to strings, and concatenate them. Then calculates the MD5 hash value from resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
+
+The function works relatively slow (5 million short strings per second per processor core).
+Consider using the [sipHash64](#hash_functions-siphash64) function instead.
+
+**Parameters**
+
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type
+```
+```text
+┌────────halfMD5hash─┬─type───┐
+│ 186182704141653334 │ UInt64 │
+└────────────────────┴────────┘
+```
+
+## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you don't need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64
+## sipHash64 {#hash_functions-siphash64}
 
-Calculates SipHash from a string.
-Accepts a String-type argument. Returns UInt64.
-SipHash is a cryptographic hash function. It works at least three times faster than MD5.
-For more information, see the link: <https://131002.net/siphash/>
+Produces 64-bit [SipHash](https://131002.net/siphash/) hash value.
+
+```
+sipHash64(par1,...)
+```
+
+This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) function.
+
+**Parameters**
+
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
+```
+```
+┌──────────────SipHash─┬─type───┐
+│ 13726873534472839665 │ UInt64 │
+└──────────────────────┴────────┘
+```
 
 ## sipHash128
 
@@ -30,11 +77,41 @@ Differs from sipHash64 in that the final xor-folding state is only done up to 12
 
 ## cityHash64
 
-Calculates CityHash64 from a string or a similar hash function for any number of any type of arguments.
-For String-type arguments, CityHash is used. This is a fast non-cryptographic hash function for strings with decent quality.
-For other types of arguments, a decent implementation-specific fast non-cryptographic hash function is used.
-If multiple arguments are passed, the function is calculated using the same rules and chain combinations using the CityHash combinator.
-For example, you can compute the checksum of an entire table with accuracy up to the row order: `SELECT sum(cityHash64(*)) FROM table`.
+Produces 64-bit hash value.
+
+```
+cityHash64(par1,...)
+```
+
+This is the fast non-cryptographic hash function. It uses [CityHash](https://github.com/google/cityhash) algorithm for string parameters and implementation-specific fast non-cryptographic hash function for the parameters with other data types. To get the final result, the function uses the CityHash combinator.
+
+**Parameters**
+
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Examples**
+
+Call example:
+
+```sql
+SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
+```
+```
+┌─────────────CityHash─┬─type───┐
+│ 12072650598913549138 │ UInt64 │
+└──────────────────────┴────────┘
+```
+
+The following example shows how to compute the checksum of the entire table with accuracy up to the row order:
+
+```
+SELECT sum(cityHash64(*)) FROM table
+```
+
 
 ## intHash32
 
@@ -66,9 +143,30 @@ Levels are the same as in URLHierarchy. This function is specific to Yandex.Metr
 
 ## farmHash64
 
-Calculates FarmHash64 from a string.
-Accepts a String-type argument. Returns UInt64.
-For more information, see the link: [FarmHash64](https://github.com/google/farmhash)
+Produces a 64-bit [FarmHash](https://github.com/google/farmhash) hash value.
+
+```
+farmHash64(par1, ...)
+```
+
+**Parameters**
+
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type
+```
+```text
+┌─────────────FarmHash─┬─type───┐
+│ 17790458267262532859 │ UInt64 │
+└──────────────────────┴────────┘
+```
 
 ## javaHash {#hash_functions-javahash}
 
@@ -84,9 +182,30 @@ Same as for [JavaHash](#hash_functions-javahash), except that the return value n
 
 ## metroHash64
 
-Calculates MetroHash from a string.
-Accepts a String-type argument. Returns UInt64.
-For more information, see the link: [MetroHash64](http://www.jandrewrogers.com/2015/05/27/metrohash/)
+Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
+
+```
+metroHash64(par1, ...)
+```
+
+**Parameters**
+
+The function takes a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type
+```
+```text
+┌────────────MetroHash─┬─type───┐
+│ 14235658766382344533 │ UInt64 │
+└──────────────────────┴────────┘
+```
 
 ## jumpConsistentHash
 
@@ -96,15 +215,88 @@ For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1
 
 ## murmurHash2_32, murmurHash2_64
 
-Calculates MurmurHash2 from a string.
-Accepts a String-type argument. Returns UInt64 Or UInt32.
-For more information, see the link: [MurmurHash2](https://github.com/aappleby/smhasher)
+Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
 
-## murmurHash3_32, murmurHash3_64, murmurHash3_128
+```
+murmurHash2_32(par1, ...)
+murmurHash2_64(par1, ...)
+```
 
-Calculates MurmurHash3 from a string.
-Accepts a String-type argument. Returns UInt64 Or UInt32 Or FixedString(16).
-For more information, see the link: [MurmurHash3](https://github.com/aappleby/smhasher)
+**Parameters**
+
+Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+- The `murmurHash2_32` function returns hash value having the [UInt32](../../data_types/int_uint.md) data type.
+- The `murmurHash2_64` function returns hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type
+```
+```text
+┌──────────MurmurHash2─┬─type───┐
+│ 11832096901709403633 │ UInt64 │
+└──────────────────────┴────────┘
+```
+
+## murmurHash3_32, murmurHash3_64
+
+Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
+
+```
+murmurHash3_32(par1, ...)
+murmurHash3_64(par1, ...)
+```
+
+**Parameters**
+
+Both functions take a variable number of input parameters. Parameters can be any of the [supported data types](../../data_types/index.md).
+
+**Returned Value**
+
+- The `murmurHash3_32` function returns hash value having the [UInt32](../../data_types/int_uint.md) data type.
+- The `murmurHash3_64` function returns hash value having the [UInt64](../../data_types/int_uint.md) data type.
+
+**Example**
+
+```sql
+SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type
+```
+```text
+┌─MurmurHash3─┬─type───┐
+│     2152717 │ UInt32 │
+└─────────────┴────────┘
+```
+
+## murmurHash3_128
+
+Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
+
+```
+murmurHash3_128( expr )
+```
+
+**Parameters**
+
+- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions) returning [String](../../data_types/string.md)-typed value.
+
+**Returned Value**
+
+Hash value having [FixedString\[16\] data type](../../data_types/fixedstring.md).
+
+**Example**
+
+```sql
+SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
+```
+```text
+┌─MurmurHash3──────┬─type────────────┐
+│ 6�1�4"S5KT�~~q │ FixedString(16) │
+└──────────────────┴─────────────────┘
+```
 
 ## xxHash32, xxHash64
 
