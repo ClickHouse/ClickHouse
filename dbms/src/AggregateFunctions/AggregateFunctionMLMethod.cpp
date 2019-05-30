@@ -153,10 +153,9 @@ void LinearModelData::returnWeights(IColumn & to) const
             = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
     val_to.reserve(old_size + size);
-    for (size_t i = 0; i != weights.size(); ++i)
-    {
+    for (size_t i = 0; i + 1 < size; ++i)
         val_to.push_back(weights[i]);
-    }
+
     val_to.push_back(bias);
 }
 
