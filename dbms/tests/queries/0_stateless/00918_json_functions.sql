@@ -72,5 +72,9 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c', 'd', 3);
 SELECT JSONExtractRaw('{"passed": true}');
 SELECT JSONExtractRaw('{}');
-select JSONExtractRaw('{"abc":"\\n\\u0000"}', 'abc');
-select JSONExtractRaw('{"abc":"\\u263a"}', 'abc');
+SELECT JSONExtractRaw('{"abc":"\\n\\u0000"}', 'abc');
+SELECT JSONExtractRaw('{"abc":"\\u263a"}', 'abc');
+
+SELECT '--const/non-const mixed--';
+SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
+SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
