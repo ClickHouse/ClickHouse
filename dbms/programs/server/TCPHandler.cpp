@@ -188,7 +188,7 @@ void TCPHandler::runImpl()
             /// Send structure of columns to client for function input()
             query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
             {
-                if (&context != &*query_context)
+                if (&context != &query_context.value())
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
                 state.need_receive_data_for_input = true;
@@ -207,7 +207,7 @@ void TCPHandler::runImpl()
 
             query_context->setInputBlocksReaderCallback([&global_settings, this] (Context & context) -> Block
             {
-                if (&context != &*query_context)
+                if (&context != &query_context.value())
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
                 size_t poll_interval;
