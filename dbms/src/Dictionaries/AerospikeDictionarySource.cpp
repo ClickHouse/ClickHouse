@@ -118,7 +118,9 @@ std::unique_ptr<as_key> AllocateKey(const as_key & key, const char * namespace_n
             char * v = static_cast<char *>(cf_malloc(value_size + 1));
             memcpy(v, key.value.string.value, value_size);
             v[value_size] = 0;
-            return std::unique_ptr<as_key>(as_key_new_str(namespace_name, set_name, v));
+            as_key * current_key = as_key_new_str(namespace_name, set_name, v);
+            current_key->value.string.len = value_size;
+            return std::unique_ptr<as_key>(current_key);
         }
         default:
         {
@@ -167,6 +169,7 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     {
         fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
     }
+    printf(stderr, "len %zu", strlen(keys[0]->value.string.value));
     return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size, namespace_name, set_name);
 }
 

@@ -45,7 +45,6 @@ AerospikeBlockInputStream::AerospikeBlockInputStream(
     , namespace_name{namespace_name}
     , set_name{set_name}
 {
-    fprintf(stderr, "Found here %s %s", namespace_name.c_str(), set_name.c_str());
     description.init(sample_block);
 }
 
@@ -132,7 +131,8 @@ namespace
                     static_cast<ColumnVector<Int64> &>(column).insertValue(key->value.integer.value);
                     break;
                 case ValueType::String: {
-                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(key->value.string.value, key->value.string.len);
+                    String str{key->value.string.value, key->value.string.len};
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
                 }
                 case ValueType::Date:

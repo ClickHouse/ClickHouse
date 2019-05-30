@@ -455,22 +455,15 @@ class SourceAerospike(ExternalSource):
         }
         self.client = aerospike.client(config).connect()
         self.prepared = True
-        print("PREPARED AEROSPIKE")
-        print(config)
 
     def compatible_with_layout(self, layout):
-        print("compatible AEROSPIKE")
-        return layout.is_simple
+        return layout.is_simple or (layout.is_complex and layout.name != "complex_key_cache")
 
     def _flush_aerospike_db(self):
         keys = []
 
         def handle_record((key, metadata, record)):
-            print("Handle record {} {}".format(key, record))
             keys.append(key)
-
-        def print_record((key, metadata, record)):
-            print("Print record {} {}".format(key, record))
 
         scan = self.client.scan(self.namespace_name, self.set_name)
         scan.foreach(handle_record)
@@ -480,11 +473,9 @@ class SourceAerospike(ExternalSource):
     def load_kv_data(self, values):
         self._flush_aerospike_db()
 
-        print("Load KV Data Aerospike")
         if len(values[0]) == 2:
             for value in values:
                 key = (self.namespace_name, self.set_name, value[0])
-                print(key)
                 self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
                 assert self.client.exists(key)
         else:
