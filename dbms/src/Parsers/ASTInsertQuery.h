@@ -31,7 +31,7 @@ public:
     bool has_tail = false;
 
     /// Try to find table function input() in SELECT part
-    void tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function) const;
+    void tryFindInputFunction(ASTPtr & input_function) const;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }

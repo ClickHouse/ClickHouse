@@ -231,7 +231,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (istr)
             {
                 ASTPtr input_function;
-                insert_query->tryFindInputFunction(insert_query->select, input_function);
+                insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
                     StoragePtr storage = context.executeTableFunction(input_function);

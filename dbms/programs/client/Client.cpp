@@ -831,7 +831,7 @@ private:
 
             ASTPtr input_function;
             if (insert && insert->select)
-                insert->tryFindInputFunction(insert->select, input_function);
+                insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
             if (insert && (!insert->select || input_function))
