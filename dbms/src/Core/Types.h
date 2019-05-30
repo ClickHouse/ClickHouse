@@ -32,16 +32,16 @@ using String = std::string;
   */
 template <typename T> constexpr bool IsNumber = false;
 
-template <> constexpr bool IsNumber<UInt8> = true;
-template <> constexpr bool IsNumber<UInt16> = true;
-template <> constexpr bool IsNumber<UInt32> = true;
-template <> constexpr bool IsNumber<UInt64> = true;
-template <> constexpr bool IsNumber<Int8> = true;
-template <> constexpr bool IsNumber<Int16> = true;
-template <> constexpr bool IsNumber<Int32> = true;
-template <> constexpr bool IsNumber<Int64> = true;
-template <> constexpr bool IsNumber<Float32> = true;
-template <> constexpr bool IsNumber<Float64> = true;
+template <> inline constexpr bool IsNumber<UInt8> = true;
+template <> inline constexpr bool IsNumber<UInt16> = true;
+template <> inline constexpr bool IsNumber<UInt32> = true;
+template <> inline constexpr bool IsNumber<UInt64> = true;
+template <> inline constexpr bool IsNumber<Int8> = true;
+template <> inline constexpr bool IsNumber<Int16> = true;
+template <> inline constexpr bool IsNumber<Int32> = true;
+template <> inline constexpr bool IsNumber<Int64> = true;
+template <> inline constexpr bool IsNumber<Float32> = true;
+template <> inline constexpr bool IsNumber<Float64> = true;
 
 template <typename T> struct TypeName;
 
@@ -109,8 +109,8 @@ using Strings = std::vector<String>;
 
 
 using Int128 = __int128;
-template <> constexpr bool IsNumber<Int128> = true;
-template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
+template <> inline constexpr bool IsNumber<Int128> = true;
+template <> struct TypeName<Int128> { static const char * get() { return "Int128";  } };
 template <> struct TypeId<Int128>   { static constexpr const TypeIndex value = TypeIndex::Int128; };
 
 /// Own FieldType for Decimal.
@@ -159,11 +159,10 @@ template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value
 template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
 template <> struct TypeId<Decimal128>   { static constexpr const TypeIndex value = TypeIndex::Decimal128; };
 
-template <typename T>
-constexpr bool IsDecimalNumber = false;
-template <> constexpr bool IsDecimalNumber<Decimal32> = true;
-template <> constexpr bool IsDecimalNumber<Decimal64> = true;
-template <> constexpr bool IsDecimalNumber<Decimal128> = true;
+template <typename T> constexpr bool IsDecimalNumber = false;
+template <> inline constexpr bool IsDecimalNumber<Decimal32> = true;
+template <> inline constexpr bool IsDecimalNumber<Decimal64> = true;
+template <> inline constexpr bool IsDecimalNumber<Decimal128> = true;
 
 template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
