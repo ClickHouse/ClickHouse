@@ -58,22 +58,28 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 }
 
 
-void ASTInsertQuery::tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function) const
+void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
 {
     if (!ast)
         return;
     for (const auto & child : ast->children)
-        tryFindInputFunction(child, input_function);
+        tryFindInputFunctionImpl(child, input_function);
 
-    if (const auto * table_function = ast->as<ASTFunction>())
+    if (const auto * table_function_ast = ast->as<ASTFunction>())
     {
-        if (table_function->name == "input")
+        if (table_function_ast->name == "input")
         {
             if (input_function)
                 throw Exception("You can use 'input()' function only once per request.", ErrorCodes::LOGICAL_ERROR);
             input_function = ast;
         }
     }
+}
+
+
+void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
+{
+    tryFindInputFunctionImpl(select, input_function);
 }
 
 }
