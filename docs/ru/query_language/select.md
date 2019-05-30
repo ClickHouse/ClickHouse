@@ -1,13 +1,13 @@
-# SELECT запросы
+# Синтаксис запросов SELECT
 
 `SELECT` осуществляет выборку данных.
 
-``` sql
+```sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
     [ARRAY JOIN ...]
-    [[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+    [GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
     [PREWHERE expr]
     [WHERE expr]
     [GROUP BY expr_list] [WITH TOTALS]
@@ -17,7 +17,7 @@ SELECT [DISTINCT] expr_list
     [UNION ALL ...]
     [INTO OUTFILE filename]
     [FORMAT format]
-    [LIMIT n BY columns]
+    [LIMIT [offset_value, ]n BY columns]
 ```
 
 Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
@@ -801,6 +801,43 @@ WHERE и HAVING отличаются тем, что WHERE выполняется
 `DISTINCT` не поддерживается, если в `SELECT` присутствует хотя бы один столбец типа массив.
 
 `DISTINCT` работает с [NULL](syntax.md) как если бы `NULL` был конкретным значением, причём `NULL=NULL`. Т.е. в результате `DISTINCT` разные комбинации с `NULL` встретятся только по одному разу.
+
+ClickHouse поддерживает использование в одном запросе секций `DISTINCT` и `ORDER BY` для разных столбцов. Секция `DISTINCT` исполняется перед секцией `ORDER BY`.
+
+Таблица для примера:
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+При выборке данных запросом `SELECT DISTINCT a FROM t1 ORDER BY b ASC`, мы получаем следующий результат:
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+Если изменить направление сортировки `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, то результат получается следующий:
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Строка `2, 4` была удалена перед сортировкой.
+
+Учитывайте эту особенность реализации при программировании запросов.
 
 ### Секция LIMIT
 
