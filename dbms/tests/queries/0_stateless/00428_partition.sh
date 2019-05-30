@@ -26,7 +26,8 @@ done
 $chl "ALTER TABLE test.partition_428 FREEZE"
 
 # Do `cd` for consistent output for reference
-cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428\|increment.txt" | sort
+# Do not check increment.txt - it can be changed by other tests with FREEZE
+cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428" | sed 's!shadow/[0-9]*/data/[a-z0-9_-]*/!shadow/1/data/test/!g' | sort | uniq
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
@@ -40,7 +41,7 @@ done
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"
 
 # Check the backup hasn't changed
-cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428\|increment.txt" | sort
+cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428" | sed 's!shadow/[0-9]*/data/[a-z0-9_-]*/!shadow/1/data/test/!g' | sort | uniq
 
 $chl "OPTIMIZE TABLE test.partition_428"
 
