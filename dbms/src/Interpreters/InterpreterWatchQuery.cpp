@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_STORAGE;
+    extern const int UNKNOWN_TABLE;
     extern const int TOO_MANY_COLUMNS;
 }
 
@@ -48,6 +49,11 @@ BlockIO InterpreterWatchQuery::execute()
 
     /// Get storage
     storage = context.tryGetTable(database, table);
+
+    if (!storage)
+        throw Exception("Table " + backQuoteIfNeed(database) + "." +
+        backQuoteIfNeed(table) + " doesn't exist.",
+        ErrorCodes::UNKNOWN_TABLE);
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getColumns().getNamesOfPhysical();

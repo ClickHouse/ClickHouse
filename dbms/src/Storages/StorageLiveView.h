@@ -88,14 +88,16 @@ public:
     Poco::FastMutex noUsersThreadMutex;
     bool noUsersThreadWakeUp{false};
     Poco::Condition noUsersThreadCondition;
-
+    /// Get blocks hash
+    /// must be called with mutex locked
     String getBlocksHashKey()
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->hash;
         return "";
     }
-
+    /// Get blocks version
+    /// must be called with mutex locked
     UInt64 getBlocksVersion()
     {
         if (*blocks_metadata_ptr)
@@ -295,7 +297,6 @@ public:
         new_blocks = std::make_shared<Blocks>();
         new_blocks_metadata = std::make_shared<BlocksMetadata>();
         new_hash = std::make_shared<SipHash>();
-        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
     }
 
     void writeSuffix() override
@@ -305,6 +306,15 @@ public:
 
         new_hash->get128(key.low, key.high);
         new_blocks_metadata->hash = key.toHexString();
+        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
+
+        for (auto & block : *new_blocks)
+        {
+            block.insert({DataTypeUInt64().createColumnConst(
+                block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeUInt64>(),
+                "_version"});
+        }
 
         (*storage.blocks_ptr) = new_blocks;
         (*storage.blocks_metadata_ptr) = new_blocks_metadata;
@@ -319,10 +329,6 @@ public:
     void write(const Block & block) override
     {
         new_blocks->push_back(block);
-        new_blocks->back().insert({DataTypeUInt64().createColumnConst(
-            block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
-            std::make_shared<DataTypeUInt64>(),
-            "_version"});
         block.updateHash(*new_hash);
     }
 
