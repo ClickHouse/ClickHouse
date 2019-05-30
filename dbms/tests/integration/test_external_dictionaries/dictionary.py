@@ -183,7 +183,7 @@ class DictionaryStructure(object):
                 if isinstance(val, str):
                     val = "'" + val + "'"
                 key_exprs_strs.append('to{type}({value})'.format(type=key.field_type, value=val))
-            key_expr = ', (' + ','.join(key_exprs_strs) + ')'
+            key_expr = ', tuple(' + ','.join(key_exprs_strs) + ')'
 
         date_expr = ''
         if self.layout.is_ranged:
