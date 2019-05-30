@@ -12,7 +12,7 @@ using namespace MySQLProtocol;
 MySQLWireBlockOutputStream::MySQLWireBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context)
     : header(header)
     , context(context)
-    , packet_sender(new PacketSender(buf, context.sequence_id, "MySQLWireBlockOutputStream"))
+    , packet_sender(std::make_shared<PacketSender>(buf, context.sequence_id))
 {
     packet_sender->max_packet_size = context.max_packet_size;
 }
