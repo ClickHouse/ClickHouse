@@ -1,6 +1,6 @@
 # User settings
 
-The `users` section of the `user.xml` aggregates settings for some user.
+The `users` section of the `user.xml` configuration file aggregates settings for users.
 
 Structure of the `users` section:
 
@@ -9,6 +9,8 @@ Structure of the `users` section:
     <!-- If user name was not specified, 'default' user is used. -->
     <user_name>
         <password></password>
+        <!-- Or -->
+        <password_sha256_hex></password_sha256_hex>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -25,22 +27,29 @@ Structure of the `users` section:
             </database_name>
         </databases>
     </user_name>
+    <!-- Other users settings -->
 </users>
 ```
 
 ### user_name/password
 
-Password could be specified in plaintext or in SHA256 (in hex format). If you want to specify password in plaintext (not recommended), place it in 'password' element. For example, `<password>qwerty</password>`. Password could be empty.
+Password could be specified in plaintext or in SHA256 (hex format).
 
-If you want to specify SHA256 hash of a password, place it in `password_sha256_hex` element. For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
+- To specify password in plaintext (not recommended), place it in a `password` element.
 
-To generate decent password, in the command prompt perform the command:
+    For example, `<password>qwerty</password>`. Password can be empty.
 
-```
-PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-```
+- To specify SHA256 hash of a password, place it in a `password_sha256_hex` element.
 
-The first line of the result is the password. The second line is the corresponding SHA256 hash.
+    For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
+
+    To generate password, in the command prompt perform the command:
+
+    ```
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+    ```
+
+    The first line of the result is the password. The second line is the corresponding SHA256 hash.
 
 
 ### user_name/networks
@@ -49,12 +58,19 @@ List of networks which the user can connect to ClickHouse server from.
 
 Each element of list has one of the following forms:
 
-- `<ip>` — IP-address or a network mask. Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
-- `<host>` — Hostname. Example: `server01.yandex.ru`.
+- `<ip>` — IP-address or a network mask.
+
+    Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
+
+- `<host>` — Hostname.
+
+    Example: `server01.yandex.ru`.
 
     To check access, DNS query is performed, and all received addresses compared to peer address.
 
-- `<host_regexp>` — Regular expression for host names. Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
+- `<host_regexp>` — Regular expression for host names.
+
+    Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
 
     To check access, DNS PTR query is performed for peer address and then regexp is applied. Then, for result of PTR query, another DNS query is performed and all received addresses compared to peer address. Strongly recommended that regexp is ends with $
 
@@ -77,30 +93,33 @@ To open access only from localhost, specify:
 
 ### user_name/profile
 
-[Settings profile](settings_profiles.md).
+You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information see the [Settings profile](settings_profiles.md).
 
 ### user_name/quota
 
-???
+Quotas allow you to limit resource usage over a period of time, or track the use of resources. Quotas are configured in the `quotas`
+section of the `users.xml` configuration file.
+
+You can assign a quotas set for the user. For the detailed description of quotas configuration see the [Quotas](../quotas.md) topic in the document.
 
 ### user_name/databases
 
-In this section you can set up the filters, that apply for each row from the results of `SELECT` query. You can use any expression as a filter. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+In this section you can choose which rows ClickHouse returns by `SELECT` query. This feature implements a kind of Row-Level Security in ClickHouse.
 
-**Examples**
+**Example**
 
-The following configurations sets that as a result of `SELECT` query the user sees just that rows where the value of field `a` equals to `1`.
-
-```
-<table1>
-    <filter>a = 1</filter>
-</table1>
-```
-
-The following configuration shows more complicated filter on several fields.
+The following configuration sets that the user `user1` can see only the rows of `table1` as a result of `SELECT` query where the value of field `id` equals to 1000.
 
 ```
-<filtered_table2>
-    <filter>a + b &lt; 1 or c - d &gt; 5</filter>
-</filtered_table2>
+<user1>
+    <databases>
+        <database_name>
+            <table1>
+                <filter>id = 1000</filter>
+            </table1>
+        </database_name>
+    </databases>
+</user1>
 ```
+
+The `filter` can be any expression resulting with the [UInt8](../../data_types/int_uint.md)-typed value. It usually contains comparisons and logical operators. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
