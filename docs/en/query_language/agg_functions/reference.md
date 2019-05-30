@@ -689,3 +689,41 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values. 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
+
+## logisticRegression
+
+
+This function implements stochastic logistic regression. It supports the same custom parameters as linearRegression and works the same way.
+
+**Parameters**
+
+Parameters are exactly the same as in linearRegression: 
+(`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`). 
+For more information see *linearRegression.Parameters*
+```text
+linearRegression(1.0, 1.0, 10, 'SGD')
+```
+
+1. *Fitting*
+
+    See *linearRegression.Fitting*
+    Targets have to be in {-1, 1}.
+    
+2. *Predicting*
+
+    Using saved state we can preidct probabilities of belonging element to label *1*.
+    ```sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+    The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+    We can also set a bound of probability, which assignments elements to different labels.
+    ```sql
+    SELECT ans < 1.1 AND ans > 0.5 FROM
+    (WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) AS ans FROM test_data)
+    ```
+    Then result will be labels.
+
+    `test_data` is a table like `train_data` but may not contain target value.
