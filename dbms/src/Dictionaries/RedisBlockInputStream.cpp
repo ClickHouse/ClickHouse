@@ -1,7 +1,6 @@
 #include <Common/config.h>
 #if USE_POCO_REDIS
 
-#    include <sstream>
 #    include <string>
 #    include <vector>
 
@@ -15,8 +14,8 @@
 #    include <Columns/ColumnsNumber.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
-#    include <Common/FieldVisitors.h>
 #    include <ext/range.h>
+
 #    include "DictionaryStructure.h"
 #    include "RedisBlockInputStream.h"
 
@@ -146,8 +145,7 @@ namespace DB
             return {};
 
         const size_t size = description.sample_block.columns();
-
-        MutableColumns columns(description.sample_block.columns());
+        MutableColumns columns(size);
 
         for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();

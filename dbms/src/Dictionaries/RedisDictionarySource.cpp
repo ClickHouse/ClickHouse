@@ -41,9 +41,9 @@ namespace DB
 #    include <Poco/Redis/Type.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 
-#    include <IO/WriteHelpers.h>
 #    include <Common/FieldVisitors.h>
-#    include <ext/enumerate.h>
+#    include <IO/WriteHelpers.h>
+
 #    include "RedisBlockInputStream.h"
 
 
