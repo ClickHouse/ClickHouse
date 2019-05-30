@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <optional>
 #include <signal.h>
 
 #ifdef __APPLE__
@@ -11,22 +12,30 @@
 #endif
 #include <ucontext.h>
 
+struct NoCapture
+{
+};
 
 class Backtrace
 {
 public:
-    static constexpr size_t capacity = 50;
+    static constexpr size_t capacity = 32;
     using Frames = std::array<void *, capacity>;
 
-    Backtrace() = default;
+    Backtrace(NoCapture)
+    {
+    }
+
     Backtrace(const std::vector<void *>& sourceFrames);
-    Backtrace(const ucontext_t & signal_context);
+    Backtrace(std::optional<ucontext_t> signal_context = std::nullopt);
 
     size_t getSize() const;
     const Frames& getFrames() const;
-    std::string toString(const std::string & delimiter = "") const;
+    std::string toString() const;
 
 protected:
+    static std::string toStringImpl(const Frames& frames, size_t size);
+
     size_t size;
     Frames frames;
 };

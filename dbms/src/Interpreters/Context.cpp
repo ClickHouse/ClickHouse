@@ -50,6 +50,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <common/Backtrace.h>
 
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -220,7 +221,7 @@ struct ContextShared
         static std::atomic<size_t> num_calls{0};
         if (++num_calls > 1)
         {
-            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << Backtrace().toString();
             std::cerr.flush();
             std::terminate();
         }
@@ -294,7 +295,8 @@ struct ContextShared
         ddl_worker.reset();
 
         /// Trace collector is only initialized in server program
-        if (trace_collector != nullptr) {
+        if (trace_collector != nullptr)
+        {
             /// Stop trace collector
             CloseQueryTraceStream();
             trace_collector_thread.join();
