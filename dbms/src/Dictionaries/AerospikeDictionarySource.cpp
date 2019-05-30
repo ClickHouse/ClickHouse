@@ -132,7 +132,8 @@ std::unique_ptr<as_key> AllocateKey(const as_key & key, const char * namespace_n
 
 AerospikeDictionarySource::~AerospikeDictionarySource() = default;
 
-struct AerospikeSpecificKeys {
+struct AerospikeSpecificKeys
+{
     std::vector<std::unique_ptr<as_key>> * keys_ptrs;
     const char * namespace_name;
     const char * set_name;
