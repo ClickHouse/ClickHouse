@@ -49,7 +49,7 @@ namespace
         auto l2_reg_coef = Float64(0.01);
         UInt32 batch_size = 1;
 
-        std::shared_ptr<IWeightsUpdater> weights_updater = std::make_shared<StochasticGradientDescent>();
+        std::string weights_updater_name = "\'SGD\'";
         std::shared_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
@@ -66,19 +66,8 @@ namespace
         }
         if (parameters.size() > 3)
         {
-            if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'SGD\'")
-            {
-                weights_updater = std::make_shared<StochasticGradientDescent>();
-            }
-            else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Momentum\'")
-            {
-                weights_updater = std::make_shared<Momentum>();
-            }
-            else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Nesterov\'")
-            {
-                weights_updater = std::make_shared<Nesterov>();
-            }
-            else
+            weights_updater_name = applyVisitor(FieldVisitorToString(), parameters[3]);
+            if (weights_updater_name != "\'SGD\'" && weights_updater_name != "\'Momentum\'" && weights_updater_name != "\'Nesterov\'")
             {
                 throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
@@ -100,7 +89,7 @@ namespace
         return std::make_shared<Method>(
             argument_types.size() - 1,
             gradient_computer,
-            weights_updater,
+            weights_updater_name,
             learning_rate,
             l2_reg_coef,
             batch_size,
