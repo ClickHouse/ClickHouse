@@ -3,6 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include "AggregateFunctionFactory.h"
@@ -34,7 +36,7 @@ namespace
 
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
-            if (!isNumber(argument_types[i]))
+            if (!isNativeNumber(argument_types[i]))
                 throw Exception(
                     "Argument " + std::to_string(i) + " of type " + argument_types[i]->getName()
                         + " must be numeric for aggregate function " + name,
@@ -147,6 +149,27 @@ void LinearModelData::predict(
     ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
     gradient_computer->predict(container, block, arguments, weights, bias, context);
+}
+
+void LinearModelData::returnWeights(IColumn & to) const
+{
+    size_t size = weights.size() + 1;
+
+    ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+    ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+    size_t old_size = offsets_to.back();
+    offsets_to.push_back(old_size + size);
+
+    typename ColumnFloat64::Container & val_to
+            = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+
+    val_to.reserve(old_size + size);
+
+    for (size_t i = 0; i + 1 < size; ++i)
+        val_to.push_back(weights[i]);
+
+    val_to.push_back(bias);
 }
 
 void LinearModelData::read(ReadBuffer & buf)
@@ -345,7 +368,7 @@ void LogisticRegression::predict(
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNumber(cur_col.type))
+        if (!isNativeNumber(cur_col.type))
         {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
         }
@@ -418,7 +441,7 @@ void LinearRegression::predict(
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNumber(cur_col.type))
+        if (!isNativeNumber(cur_col.type))
         {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
         }

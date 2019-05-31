@@ -2568,6 +2568,39 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+std::vector<DetachedPartInfo>
+MergeTreeData::getDetachedParts() const
+{
+    std::vector<DetachedPartInfo> res;
+
+    for (Poco::DirectoryIterator it(full_path + "detached");
+        it != Poco::DirectoryIterator(); ++it)
+    {
+        auto dir_name = it.name();
+
+        res.emplace_back();
+        auto & part = res.back();
+
+        /// First, try to parse as <part_name>.
+        if (MergeTreePartInfo::tryParsePartName(dir_name, &part, format_version))
+            continue;
+
+        /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
+        part.prefix = dir_name;
+        const auto first_separator = dir_name.find_first_of('_');
+        if (first_separator == String::npos)
+            continue;
+
+        const auto part_name = dir_name.substr(first_separator + 1,
+            dir_name.size() - first_separator - 1);
+        if (!MergeTreePartInfo::tryParsePartName(part_name, &part, format_version))
+           continue;
+
+        part.prefix = dir_name.substr(0, first_separator);
+    }
+    return res;
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
@@ -2796,6 +2829,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
+        part->is_frozen = true;
         ++parts_processed;
     }
 
