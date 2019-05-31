@@ -25,7 +25,6 @@ ${JEMALLOC_SOURCE_DIR}/src/nstime.c
 ${JEMALLOC_SOURCE_DIR}/src/pages.c
 ${JEMALLOC_SOURCE_DIR}/src/prng.c
 ${JEMALLOC_SOURCE_DIR}/src/prof.c
-${JEMALLOC_SOURCE_DIR}/src/safety_check.c
 ${JEMALLOC_SOURCE_DIR}/src/rtree.c
 ${JEMALLOC_SOURCE_DIR}/src/sc.c
 ${JEMALLOC_SOURCE_DIR}/src/stats.c
@@ -42,7 +41,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-missing-attributes")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 endif ()
 
 add_library(jemalloc STATIC ${SRCS})
