@@ -369,6 +369,8 @@ def main(args):
                 continue
 
             jobs = args.jobs
+            if jobs > tests_n:
+                jobs = tests_n
             if jobs > run_total:
                 run_total = jobs
 
@@ -432,7 +434,7 @@ if __name__ == '__main__':
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', default='test', help='Default database for tests')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
-    parser.add_argument('-j', '--jobs', help='Run all tests in parallel', type=int)
+    parser.add_argument('-j', '--jobs', default=multiprocessing.cpu_count(), help='Run all tests in parallel', type=int)
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -489,11 +491,5 @@ if __name__ == '__main__':
             args.extract_from_config = args.binary + '-extract-from-config'
         else:
             args.extract_from_config = args.binary + ' extract-from-config'
-
-    if args.jobs is None:
-        if args.test is None:
-            args.jobs = multiprocessing.cpu_count()
-        else:
-            args.jobs = 1
 
     main(args)
