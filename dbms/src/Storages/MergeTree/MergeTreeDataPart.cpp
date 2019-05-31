@@ -1,5 +1,6 @@
-#include <optional>
+#include "MergeTreeDataPart.h"
 
+#include <optional>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -14,13 +15,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/localBackup.h>
 #include <Compression/CompressionInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <common/logger_useful.h>
 #include <common/JSON.h>
 
@@ -728,7 +726,8 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 void MergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullPath() + "columns.txt";
-    if (!Poco::File(path).exists())
+    Poco::File poco_file_path{path};
+    if (!poco_file_path.exists())
     {
         if (require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -749,6 +748,8 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         return;
     }
+
+    is_frozen = !poco_file_path.canWrite();
 
     ReadBufferFromFile file = openForReading(path);
     columns.readText(file);
