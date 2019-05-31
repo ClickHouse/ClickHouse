@@ -183,7 +183,7 @@ Columns FunctionArrayIntersect::castColumns(
     auto & type_nested = type_array->getNestedType();
     auto type_not_nullable_nested = removeNullable(type_nested);
 
-    const bool is_numeric_or_string = isNumber(type_not_nullable_nested)
+    const bool is_numeric_or_string = isNativeNumber(type_not_nullable_nested)
                                       || isDateOrDateTime(type_not_nullable_nested)
                                       || isStringOrFixedString(type_not_nullable_nested);
 

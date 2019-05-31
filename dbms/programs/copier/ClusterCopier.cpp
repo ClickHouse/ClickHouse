@@ -63,6 +63,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
 
@@ -2169,6 +2170,7 @@ void ClusterCopierApp::mainImpl()
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     static const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
