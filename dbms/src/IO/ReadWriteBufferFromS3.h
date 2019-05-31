@@ -137,7 +137,7 @@ private:
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
-        const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST or PUT only
+        const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST for inserting, PUT for replacing.
         const ConnectionTimeouts & timeouts = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
