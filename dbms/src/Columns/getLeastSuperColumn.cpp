@@ -57,7 +57,7 @@ ColumnWithTypeAndName getLeastSuperColumn(std::vector<const ColumnWithTypeAndNam
     }
 
     if (save_constness)
-        result.column = result.type->createColumnConst(1, static_cast<const ColumnConst &>(*columns[0]->column).getField());
+        result.column = result.type->createColumnConst(0, static_cast<const ColumnConst &>(*columns[0]->column).getField());
     else
         result.column = result.type->createColumn();
 
