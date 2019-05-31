@@ -29,102 +29,29 @@ namespace DB
 /** Perform S3 HTTP POST request and provide response to read.
   */
 
-namespace detail
+class ReadWriteBufferFromS3 : public ReadBuffer
 {
-    template <typename SessionPtr>//FIXME Можно избавиться от template, или переделать на нормальное.
-    class ReadWriteBufferFromS3Base : public ReadBuffer
-    {
-    protected:
-        Poco::URI uri;
-        std::string method;
+protected:
+    Poco::URI uri;
+    std::string method;
 
-        SessionPtr session;
-        std::istream * istr; /// owned by session
-        std::unique_ptr<ReadBuffer> impl;
-
-    public:
-        using OutStreamCallback = std::function<void(std::ostream &)>;
-
-        explicit ReadWriteBufferFromS3Base(Poco::URI uri,
-            const ConnectionTimeouts & timeouts = {},
-            const std::string & method = {},
-            OutStreamCallback out_stream_callback = {},
-            const Poco::Net::HTTPBasicCredentials & credentials = {},
-            size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-            : ReadBuffer(nullptr, 0)
-            , uri {uri}
-            , method {!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
-            , session(makeHTTPSession(uri, timeouts))
-        {
-            Poco::Net::HTTPResponse response;
-            std::unique_ptr<Poco::Net::HTTPRequest> request;
-
-            for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_REDIRECT; ++i)
-            {
-                // With empty path poco will send "POST  HTTP/1.1" its bug.
-                if (uri.getPath().empty())
-                    uri.setPath("/");
-
-                request = std::make_unique<Poco::Net::HTTPRequest>(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                request->setHost(uri.getHost()); // use original, not resolved host name in header
-
-                if (out_stream_callback)
-                    request->setChunkedTransferEncoding(true);
-
-                if (!credentials.getUsername().empty())
-                    credentials.authenticate(*request);
-
-                LOG_TRACE((&Logger::get("ReadWriteBufferFromS3")), "Sending request to " << uri.toString());
-
-                auto & stream_out = session->sendRequest(*request);
-
-                if (out_stream_callback)
-                    out_stream_callback(stream_out);
-
-                istr = &session->receiveResponse(response);
-
-                if (response.getStatus() != 307)
-                    break;
-
-                auto location_iterator = response.find("Location");
-                if (location_iterator == response.end())
-                    break;
-
-                uri = location_iterator->second;
-                session = makeHTTPSession(uri, timeouts);
-            }
-
-            assertResponseIsOk(*request, response, istr);
-            impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
-        }
-
-
-        bool nextImpl() override
-        {
-            if (!impl->next())
-                return false;
-            internal_buffer = impl->buffer();
-            working_buffer = internal_buffer;
-            return true;
-        }
-    };
-}
-
-class ReadWriteBufferFromS3 : public detail::ReadWriteBufferFromS3Base<HTTPSessionPtr>
-{
-    using Parent = detail::ReadWriteBufferFromS3Base<HTTPSessionPtr>;
+    HTTPSessionPtr session;
+    std::istream * istr; /// owned by session
+    std::unique_ptr<ReadBuffer> impl;
 
 public:
+    using OutStreamCallback = std::function<void(std::ostream &)>;
+
     explicit ReadWriteBufferFromS3(Poco::URI uri_,
         const std::string & method_ = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : Parent(uri_, timeouts, method_, out_stream_callback, credentials, buffer_size_)
-    {
-    }
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+
+    bool nextImpl() override;
 };
+
 
 /* Perform S3 HTTP POST/PUT request.
  */
