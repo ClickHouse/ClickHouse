@@ -13,7 +13,7 @@ CREATE TABLE test.model ENGINE = Memory AS SELECT IncrementalClusteringState(4)(
 DROP TABLE IF EXISTS test.answer;
 create table test.answer engine = Memory as
 select rowNumberInAllBlocks() as row_number, ans from
-(with (select state from test.model) as model select evalMLMethod(model, param1, param2) as ans from test.defaults);
+(with (select state from remote('127.0.0.1', test.model)) as model select evalMLMethod(model, param1, param2) as ans from remote('127.0.0.1', test.defaults));
 
 select row_number from test.answer where ans = (select ans from test.answer where row_number = 0) order by row_number;
 select row_number from test.answer where ans = (select ans from test.answer where row_number = 1) order by row_number;
