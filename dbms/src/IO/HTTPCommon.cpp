@@ -45,7 +45,7 @@ namespace ErrorCodes
 
 namespace
 {
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
 #if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);

@@ -31,7 +31,7 @@ namespace DB
 
 namespace detail
 {
-    template <typename SessionPtr>
+    template <typename SessionPtr>//FIXME Можно избавиться от template, или переделать на нормальное.
     class ReadWriteBufferFromS3Base : public ReadBuffer
     {
     protected:
@@ -45,8 +45,8 @@ namespace detail
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
-        explicit ReadWriteBufferFromS3Base(SessionPtr session_,
-            Poco::URI uri,
+        explicit ReadWriteBufferFromS3Base(Poco::URI uri,
+            const ConnectionTimeouts & timeouts = {},
             const std::string & method = {},
             OutStreamCallback out_stream_callback = {},
             const Poco::Net::HTTPBasicCredentials & credentials = {},
@@ -54,7 +54,7 @@ namespace detail
             : ReadBuffer(nullptr, 0)
             , uri {uri}
             , method {!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
-            , session {session_}
+            , session(makeHTTPSession(uri, timeouts))
         {
             Poco::Net::HTTPResponse response;
             std::unique_ptr<Poco::Net::HTTPRequest> request;
@@ -91,6 +91,7 @@ namespace detail
                     break;
 
                 uri = location_iterator->second;
+                session = makeHTTPSession(uri, timeouts);
             }
 
             assertResponseIsOk(*request, response, istr);
@@ -120,7 +121,7 @@ public:
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : Parent(makeHTTPSession(uri_, timeouts), uri_, method_, out_stream_callback, credentials, buffer_size_)
+        : Parent(uri_, timeouts, method_, out_stream_callback, credentials, buffer_size_)
     {
     }
 };
