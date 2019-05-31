@@ -1,12 +1,12 @@
-DROP TABLE IF EXISTS test.test_local;
-DROP TABLE IF EXISTS test.test_distributed;
+DROP TABLE IF EXISTS local_00952;
+DROP TABLE IF EXISTS distributed_00952;
 
-CREATE TABLE test.test_local (date Date, value Date MATERIALIZED toDate('2017-08-01')) ENGINE = MergeTree(date, date, 8192);
-CREATE TABLE test.test_distributed AS test.test_local ENGINE = Distributed('test_shard_localhost', 'test', test_local, rand());
+CREATE TABLE local_00952 (date Date, value Date MATERIALIZED toDate('2017-08-01')) ENGINE = MergeTree(date, date, 8192);
+CREATE TABLE distributed_00952 AS local_00952 ENGINE = Distributed('test_shard_localhost', currentDatabase(), local_00952, rand());
 
 SET insert_distributed_sync=1;
 
-INSERT INTO test.test_distributed VALUES ('2018-08-01');
-SELECT * FROM test.test_distributed;
-SELECT * FROM test.test_local;
-SELECT date, value FROM test.test_local;
+INSERT INTO distributed_00952 VALUES ('2018-08-01');
+SELECT * FROM distributed_00952;
+SELECT * FROM local_00952;
+SELECT date, value FROM local_00952;
