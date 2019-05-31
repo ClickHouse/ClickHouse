@@ -1,82 +1,88 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/URI.h>
-
 #include <common/logger_useful.h>
-
-#include <atomic>
-#include <shared_mutex>
 #include <ext/shared_ptr_helper.h>
-
 
 namespace DB
 {
-
-class StorageS3BlockInputStream;
-class StorageS3BlockOutputStream;
-
-class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
+/**
+ * This class represents table engine for external urls.
+ * It sends HTTP GET to server when select is called and
+ * HTTP POST when insert is called. In POST request the data is send
+ * using Chunked transfer encoding, so server have to support it.
+ */
+class IStorageS3Base : public IStorage
 {
 public:
-    std::string getName() const override
-    {
-        return "S3";
-    }
-
-    std::string getTableName() const override
+    String getTableName() const override
     {
         return table_name;
     }
 
-    BlockInputStreams read(
-        const Names & column_names,
+    BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
-        const ASTPtr & query,
-        const Context & context) override;
-
-    void drop() override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 protected:
-    friend class StorageS3BlockInputStream;
-    friend class StorageS3BlockOutputStream;
-
-    /** there are three options (ordered by priority):
-    - use specified file descriptor if (fd >= 0)
-    - use specified table_path if it isn't empty
-    - create own table inside data/db/table/
-    */
-    StorageS3(
-        const std::string & table_uri_,
+    IStorageS3Base(const Poco::URI & uri_,
+        const Context & context_,
         const std::string & table_name_,
-        const std::string & format_name_,
-        const ColumnsDescription & columns_,
-        Context & context_);
-
-private:
-
-    std::string table_name;
-    std::string format_name;
-    Context & context_global;
+        const String & format_name_,
+        const ColumnsDescription & columns_);
 
     Poco::URI uri;
+    const Context & context_global;
 
-    bool is_db_table = true;                     /// Table is stored in real database, not user's file
+private:
+    String format_name;
+    String table_name;
 
-    mutable std::shared_mutex rwlock;
+    virtual std::string getReadMethod() const;
 
-    Logger * log = &Logger::get("StorageS3");
+    virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size) const;
+
+    virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size) const;
+
+    virtual Block getHeaderBlock(const Names & column_names) const = 0;
 };
 
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorageS3Base
+{
+public:
+    StorageS3(const Poco::URI & uri_,
+        const std::string & table_name_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        Context & context_)
+        : IStorageS3Base(uri_, context_, table_name_, format_name_, columns_)
+    {
+    }
+
+    String getName() const override
+    {
+        return "S3";
+    }
+
+    Block getHeaderBlock(const Names & /*column_names*/) const override
+    {
+        return getSampleBlock();
+    }
+};
 }
