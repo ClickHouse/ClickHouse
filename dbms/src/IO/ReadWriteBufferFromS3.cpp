@@ -14,6 +14,7 @@ WriteBufferFromS3::WriteBufferFromS3(
 {
     request.setHost(uri.getHost());
     request.setChunkedTransferEncoding(true);
+    request.setExpectContinue(true);
 
     LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << uri.toString());
 
