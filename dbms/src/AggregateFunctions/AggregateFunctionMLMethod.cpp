@@ -50,7 +50,7 @@ namespace
         UInt32 batch_size = 1;
 
         std::string weights_updater_name = "\'SGD\'";
-        std::shared_ptr<IGradientComputer> gradient_computer;
+        std::unique_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
         {
@@ -75,11 +75,11 @@ namespace
 
         if (std::is_same<Method, FuncLinearRegression>::value)
         {
-            gradient_computer = std::make_shared<LinearRegression>();
+            gradient_computer = std::make_unique<LinearRegression>();
         }
         else if (std::is_same<Method, FuncLogisticRegression>::value)
         {
-            gradient_computer = std::make_shared<LogisticRegression>();
+            gradient_computer = std::make_unique<LogisticRegression>();
         }
         else
         {
