@@ -20,7 +20,6 @@ import termcolor
 from random import random
 import commands
 import multiprocessing
-#from multiprocessing import Pool
 from contextlib import closing
 
 
