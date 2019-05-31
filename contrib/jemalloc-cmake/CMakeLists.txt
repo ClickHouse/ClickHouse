@@ -25,6 +25,7 @@ ${JEMALLOC_SOURCE_DIR}/src/nstime.c
 ${JEMALLOC_SOURCE_DIR}/src/pages.c
 ${JEMALLOC_SOURCE_DIR}/src/prng.c
 ${JEMALLOC_SOURCE_DIR}/src/prof.c
+${JEMALLOC_SOURCE_DIR}/src/safety_check.c
 ${JEMALLOC_SOURCE_DIR}/src/rtree.c
 ${JEMALLOC_SOURCE_DIR}/src/sc.c
 ${JEMALLOC_SOURCE_DIR}/src/stats.c
