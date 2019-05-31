@@ -547,9 +547,9 @@ This method is appropriate when you know exactly which replica is preferable.
 load_balancing = first_or_random
 ```
 
-This algorithm chooses the first replica in order or a random replica if the first one is unavailable. It is effective in cross-replication topology setups, but it useless in other configurations.
+This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
 
-The `first or random` algorithm solves the problem of the `in order` algorithm. The problem is: if one replica goes down, the next one handles twice the usual load while remaining ones handle usual traffic. When using the `first or random` algorithm, the load on replicas is leveled.
+The `first or random` algorithm solves the problem of the `in order` algorithm. With `in order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first or random` algorithm, loads are evenly distributed among replicas.
 
 ## prefer_localhost_replica {#settings-prefer_localhost_replica}
 
