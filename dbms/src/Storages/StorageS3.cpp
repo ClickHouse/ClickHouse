@@ -5,8 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/WriteBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromS3.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -49,7 +48,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts);
+            read_buf = std::make_unique<ReadWriteBufferFromS3>(uri, method, callback, timeouts);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
@@ -81,7 +80,7 @@ namespace
 
     private:
         String name;
-        std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
+        std::unique_ptr<ReadWriteBufferFromS3> read_buf;
         BlockInputStreamPtr reader;
     };
 
@@ -95,7 +94,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
-            write_buf = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            write_buf = std::make_unique<WriteBufferFromS3>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -123,7 +122,7 @@ namespace
 
     private:
         Block sample_block;
-        std::unique_ptr<WriteBufferFromHTTP> write_buf;
+        std::unique_ptr<WriteBufferFromS3> write_buf;
         BlockOutputStreamPtr writer;
     };
 }

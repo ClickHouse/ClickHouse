@@ -217,6 +217,11 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
 {
     auto istr = &session.receiveResponse(response);
+    assertResponseIsOk(request, response, istr);
+    return istr;
+}
+
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream * istr) {
     auto status = response.getStatus();
 
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -229,7 +234,6 @@ std::istream * receiveResponse(
             status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                                              : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-    return istr;
 }
 
 }
