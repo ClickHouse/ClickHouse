@@ -15,7 +15,6 @@
 #include <exception>
 #include <algorithm>
 #include <numeric>
-#include <fstream>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -135,7 +134,6 @@ public:
                  const ColumnNumbers &arguments,
                  const Context & context) const
     {
-        print_clusters(); // TODO: delete
         if (dimensions + 1 != arguments.size())
         {
             throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
@@ -184,37 +182,6 @@ public:
                 }
             }
             container.emplace_back(closest);
-        }
-    }
-
-    /// Function for testing
-    void print_clusters() const
-    {
-        make_prediction();
-        std::ofstream out("/home/max/programming/clickhouse/my1_clusters");
-        for (auto&& cluster : clusters)
-        {
-            out << cluster.size() << '\n';
-            for (auto&& coord : cluster.center())
-            {
-                out << coord << '\n';
-            }
-        }
-        for (auto&& cluster : predicted_clusters)
-        {
-            out << 0 << '\n';
-            for (auto&& coord : cluster)
-            {
-                out << coord << '\n';
-            }
-        }
-        for (auto&& cluster : initialized_clusters)
-        {
-            out << 0 << '\n';
-            for (auto&& coord : cluster)
-            {
-                out << coord << '\n';
-            }
         }
     }
 
@@ -332,7 +299,7 @@ private:
 
     static Float64 compute_distance(const std::vector<Float64> & point1, const std::vector<Float64> & point2)
     {
-        Float64 distance = 0;
+        Float64 distance = 0.0;
         for (size_t i = 0; i != point1.size(); ++i)
         {
             Float64 coordinate_diff = point1[i] - point2[i];
@@ -385,11 +352,11 @@ private:
     }
 
 
-    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<std::vector<Float64>>& clusters, size_t from = 0)
+    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<std::vector<Float64>>& clusters)
     {
-        Float64 min_dist = compute_distance(point, clusters[from]);
-        UInt32 closest = from;
-        for (size_t i = from + 1; i != clusters.size(); ++i)
+        Float64 min_dist = compute_distance(point, clusters[0]);
+        UInt32 closest = 0;
+        for (size_t i = 1; i != clusters.size(); ++i)
         {
             Float64 dist = compute_distance(point, clusters[i]);
             if (dist < min_dist)
@@ -401,11 +368,11 @@ private:
         return closest;
     }
 
-    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<Cluster>& clusters)
+    static size_t find_closest_cluster(const std::vector<Float64>& point, const std::vector<Cluster>& clusters, size_t from = 0)
     {
-        Float64 min_dist = compute_distance(point, clusters[0].center());
-        UInt32 closest = 0;
-        for (size_t i = 1; i != clusters.size(); ++i)
+        Float64 min_dist = compute_distance(point, clusters[from].center());
+        UInt32 closest = from;
+        for (size_t i = from + 1; i != clusters.size(); ++i)
         {
             Float64 dist = compute_distance(point, clusters[i].center());
             if (dist < min_dist)
@@ -422,24 +389,54 @@ private:
         return std::sqrt(cluster_size);
     }
 
+    static Float64 min_squared_distance(const std::vector<Float64>& point, const std::vector<std::vector<Float64>>& clusters)
+    {
+        Float64 min_squared_dist = 0.0;
+        for (size_t i = 0; i != point.size(); ++i)
+        {
+            Float64 d = point[i] - clusters[0][i];
+            min_squared_dist += d * d;
+        }
+        for (size_t cluster_idx = 1; cluster_idx != clusters.size(); ++cluster_idx)
+        {
+            Float64 squared_dist = 0.0;
+            for (size_t i = 0; i != point.size(); ++i)
+            {
+                Float64 d = point[i] - clusters[cluster_idx][i];
+                squared_dist += d * d;
+            }
+            min_squared_dist = std::min(min_squared_dist, squared_dist);
+        }
+        return min_squared_dist;
+    }
+
     static std::vector<std::vector<Float64>> k_means_initialize_clusters(const std::vector<Cluster>& points, UInt32 clusters_num)
     {
-        /// Initialize clusters with random points
         std::vector<std::vector<Float64>> clusters;
         clusters.reserve(clusters_num);
-        std::vector<size_t> idxs(points.size());
-        std::iota(idxs.begin(), idxs.end(), 0);
-        for (size_t i = 0; i != clusters_num; ++i)
+        // TODO: change std::rand
+        size_t first_cluster = std::rand() % points.size();
+        clusters.emplace_back(points[first_cluster].center());
+        for (size_t i = 1; i != clusters_num; ++i)
         {
-            // TODO change std::rand
-            size_t j = std::rand() % (idxs.size() - i);
-            std::swap(idxs[i], idxs[i + j]);
-            clusters.emplace_back(points[idxs[i]].center());
+            /// just search point that has the maximum squared distance from it's nearest cluster
+            Float64 max_min_squared_dist = -1.0;
+            size_t farest_point = 0;
+            for (size_t point_idx = 0; point_idx != points.size(); ++point_idx)
+            {
+                Float64 min_squared_dist = min_squared_distance(points[point_idx].center(), clusters);
+                if (min_squared_dist > max_min_squared_dist)
+                {
+                    max_min_squared_dist = min_squared_dist;
+                    farest_point = point_idx;
+                }
+            }
+            clusters.emplace_back(points[farest_point].center());
         }
         return clusters;
     }
 
-    // Returns sum of squared differences between new and old clusters
+    /// Returns squared distance between new and old clusters
     static Float64 k_means_update_clusters(std::vector<std::vector<Float64>>& clusters, const std::vector<Cluster>& points, const std::vector<size_t>& closest_cluster)
     {
         Float64 diff = 0.0;
@@ -502,9 +499,9 @@ private:
     {
         if (predicted_clusters.empty())
         {
-            /// Searching for the best result over 10 tries
+            /// Searching for the best result over max_tries tries
             Float64 min_mean_distance;
-            new_predicted_clusters = k_means(clusters, clusters_num, min_mean_distance);
+            predicted_clusters = k_means(clusters, clusters_num, min_mean_distance);
             for (size_t i = 1; i != max_tries; ++i)
             {
                 Float64 mean_distance;
@@ -521,7 +518,8 @@ private:
 
     static const UInt32 multiplication_factor = 30;
     static const UInt32 max_iter = 1000;
-    static const UInt32 max_tries = 10;
+    static const UInt32 max_tries = 1;
+
     UInt32 clusters_num;
     UInt32 dimensions;
 
