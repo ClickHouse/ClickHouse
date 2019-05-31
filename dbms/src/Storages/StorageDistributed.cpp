@@ -84,21 +84,17 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block, const ColumnsDescription & columns)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->database = database;
     query->table = table;
 
-    auto block_columns = std::make_shared<ASTExpressionList>();
-    query->columns = block_columns;
-    query->children.push_back(block_columns);
-    for (const auto & col : sample_block)
-    {
-        if (columns.get(col.name).default_desc.kind == DB::ColumnDefaultKind::Materialized)
-            continue;
-        block_columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
-    }
+    auto columns = std::make_shared<ASTExpressionList>();
+    query->columns = columns;
+    query->children.push_back(columns);
+    for (const auto & col : sample_block_non_materialized)
+        columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
 }
@@ -335,11 +331,9 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
     bool insert_sync = settings.insert_distributed_sync || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
-    const ColumnsDescription & columns = getColumns();
-
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlock(), columns), cluster,
+        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
         insert_sync, timeout);
 }
 
