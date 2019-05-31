@@ -16,7 +16,8 @@ select * from (
     select 'v2' as c1, '' as c2
 ) ALL FULL JOIN (
     select 'v1' as c1, 'w1' as c2
-) using c1,c2;
+) using c1,c2
+order by c1, c2;
 
 select key, s1.value, s2.value
 from (
