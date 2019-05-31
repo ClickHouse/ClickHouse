@@ -6,6 +6,69 @@
 namespace DB
 {
 
+ReadWriteBufferFromS3::ReadWriteBufferFromS3(Poco::URI uri_,
+    const std::string & method_,
+    OutStreamCallback out_stream_callback,
+    const ConnectionTimeouts & timeouts,
+    const Poco::Net::HTTPBasicCredentials & credentials,
+    size_t buffer_size_)
+    : ReadBuffer(nullptr, 0)
+    , uri {uri_}
+    , method {!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
+    , session(makeHTTPSession(uri_, timeouts))
+{
+    Poco::Net::HTTPResponse response;
+    std::unique_ptr<Poco::Net::HTTPRequest> request;
+
+    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_REDIRECT; ++i)
+    {
+        // With empty path poco will send "POST  HTTP/1.1" its bug.
+        if (uri.getPath().empty())
+            uri.setPath("/");
+
+        request = std::make_unique<Poco::Net::HTTPRequest>(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        request->setHost(uri.getHost()); // use original, not resolved host name in header
+
+        if (out_stream_callback)
+            request->setChunkedTransferEncoding(true);
+
+        if (!credentials.getUsername().empty())
+            credentials.authenticate(*request);
+
+        LOG_TRACE((&Logger::get("ReadWriteBufferFromS3")), "Sending request to " << uri.toString());
+
+        auto & stream_out = session->sendRequest(*request);
+
+        if (out_stream_callback)
+            out_stream_callback(stream_out);
+
+        istr = &session->receiveResponse(response);
+
+        if (response.getStatus() != 307)
+            break;
+
+        auto location_iterator = response.find("Location");
+        if (location_iterator == response.end())
+            break;
+
+        uri = location_iterator->second;
+        session = makeHTTPSession(uri, timeouts);
+    }
+
+    assertResponseIsOk(*request, response, istr);
+    impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+}
+
+
+bool ReadWriteBufferFromS3::nextImpl()
+{
+    if (!impl->next())
+        return false;
+    internal_buffer = impl->buffer();
+    working_buffer = internal_buffer;
+    return true;
+}
+
 WriteBufferFromS3::WriteBufferFromS3(
     const Poco::URI & uri, const std::string & method, const ConnectionTimeouts & timeouts, size_t buffer_size_)
     : WriteBufferFromOStream(buffer_size_)
