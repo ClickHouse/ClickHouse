@@ -256,7 +256,7 @@ public:
 
     explicit AggregateFunctionMLMethod(
         UInt32 param_num,
-        std::shared_ptr<IGradientComputer> gradient_computer,
+        std::unique_ptr<IGradientComputer> gradient_computer,
         std::string weights_updater_name,
         Float64 learning_rate,
         Float64 l2_reg_coef,
