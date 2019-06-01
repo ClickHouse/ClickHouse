@@ -63,10 +63,11 @@ received_data = []
 
 
 class PreservingDataServer(http.server.BaseHTTPRequestHandler):
-    def do_POST(self):
+    def do_PUT(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
+        assert self.headers.get('Content-Length')
         received_data.append(self.rfile.read())
         self.wfile.flush()
 
