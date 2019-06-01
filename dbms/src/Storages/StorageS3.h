@@ -8,14 +8,37 @@
 namespace DB
 {
 /**
- * This class represents table engine for external urls.
+ * This class represents table engine for external S3 urls.
  * It sends HTTP GET to server when select is called and
- * HTTP POST when insert is called. In POST request the data is send
- * using Chunked transfer encoding, so server have to support it.
+ * HTTP PUT when insert is called.
  */
-class IStorageS3Base : public IStorage
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 {
 public:
+    StorageS3(const Poco::URI & uri_,
+        const std::string & table_name_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        Context & context_
+    )
+        : IStorage(columns_)
+        , uri(uri_)
+        , context_global(context_)
+        , format_name(format_name_)
+        , table_name(table_name_)
+    {
+    }
+
+    String getName() const override
+    {
+        return "S3";
+    }
+
+    Block getHeaderBlock(const Names & /*column_names*/) const
+    {
+        return getSampleBlock();
+    }
+
     String getTableName() const override
     {
         return table_name;
@@ -33,56 +56,12 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 protected:
-    IStorageS3Base(const Poco::URI & uri_,
-        const Context & context_,
-        const std::string & table_name_,
-        const String & format_name_,
-        const ColumnsDescription & columns_);
-
     Poco::URI uri;
     const Context & context_global;
 
 private:
     String format_name;
     String table_name;
-
-    virtual std::string getReadMethod() const;
-
-    virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size) const;
-
-    virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size) const;
-
-    virtual Block getHeaderBlock(const Names & column_names) const = 0;
 };
 
-class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorageS3Base
-{
-public:
-    StorageS3(const Poco::URI & uri_,
-        const std::string & table_name_,
-        const String & format_name_,
-        const ColumnsDescription & columns_,
-        Context & context_)
-        : IStorageS3Base(uri_, context_, table_name_, format_name_, columns_)
-    {
-    }
-
-    String getName() const override
-    {
-        return "S3";
-    }
-
-    Block getHeaderBlock(const Names & /*column_names*/) const override
-    {
-        return getSampleBlock();
-    }
-};
 }
