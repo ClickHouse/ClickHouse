@@ -88,7 +88,7 @@ namespace
 
         return std::make_shared<Method>(
             argument_types.size() - 1,
-            gradient_computer,
+            std::move(gradient_computer),
             weights_updater_name,
             learning_rate,
             l2_reg_coef,
