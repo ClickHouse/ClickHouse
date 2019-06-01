@@ -26,10 +26,9 @@
 
 namespace DB
 {
-/** Perform S3 HTTP POST request and provide response to read.
+/** Perform S3 HTTP GET request and provide response to read.
   */
-
-class ReadWriteBufferFromS3 : public ReadBuffer
+class ReadBufferFromS3 : public ReadBuffer
 {
 protected:
     Poco::URI uri;
@@ -40,36 +39,12 @@ protected:
     std::unique_ptr<ReadBuffer> impl;
 
 public:
-    using OutStreamCallback = std::function<void(std::ostream &)>;
-
-    explicit ReadWriteBufferFromS3(Poco::URI uri_,
-        const std::string & method_ = {},
-        OutStreamCallback out_stream_callback = {},
+    explicit ReadBufferFromS3(Poco::URI uri_,
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
-};
-
-
-/* Perform S3 HTTP POST/PUT request.
- */
-class WriteBufferFromS3 : public WriteBufferFromOStream
-{
-private:
-    HTTPSessionPtr session;
-    Poco::Net::HTTPRequest request;
-    Poco::Net::HTTPResponse response;
-
-public:
-    explicit WriteBufferFromS3(const Poco::URI & uri,
-        const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST for inserting, PUT for replacing.
-        const ConnectionTimeouts & timeouts = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
-
-    /// Receives response from the server after sending all data.
-    void finalize();
 };
 
 }
