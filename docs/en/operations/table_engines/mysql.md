@@ -1,7 +1,7 @@
 
 # MySQL
 
-The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
+The MySQL engine allows you to perform `SELECT` queries on tables stored on a remote MySQL server. This engine behaves like a table stored in Clickhouse but acts as link to specified MySQL table.
 
 ## Creating a Table
 
@@ -18,17 +18,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
-The table structure can be not the same as the original MySQL table structure:
+The table structure can be different than original MySQL table structure:
 
-- Names of columns should be the same as in the original MySQL table, but you can use just some of these columns in any order.
-- Types of columns may differ from the types in the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values into the ClickHouse data types.
+- Specified column names in the query must be identical to ones in MySQL table. That's how Clickhouse maps both columns.
+- Any number of colums can be specified. So you are not forced to use all columns in MySQL table. Also, column order in table definition is not important.
+- If type of a column differs from the type of corresponding column in the MySQL table, then ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values into the ClickHouse data types.
 
 **Engine Parameters**
 
 - `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — MySQL user.
+- `database` — MySQL database name.
+- `table` — MySQL table name.
+- `user` — MySQL username that has access to specified table.
 - `password` — User password.
 - `replace_query` — Flag that sets query substitution `INSERT INTO` to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
 - `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
@@ -37,7 +38,7 @@ The table structure can be not the same as the original MySQL table structure:
 
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-At this time, simple `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
+Currently, all predicates in `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
