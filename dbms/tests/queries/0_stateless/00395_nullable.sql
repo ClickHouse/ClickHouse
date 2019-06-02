@@ -148,18 +148,18 @@ SELECT col1 FROM test1 WHERE col1 IS NULL;
 
 SELECT '----- if -----';
 
-DROP TABLE IF EXISTS test.test1;
-CREATE TABLE test.test1 (col1 Nullable(String)) ENGINE=TinyLog;
-INSERT INTO test.test1 VALUES ('a'), ('b'), ('c'), (NULL);
+DROP TABLE IF EXISTS test1;
+CREATE TABLE test1 (col1 Nullable(String)) ENGINE=TinyLog;
+INSERT INTO test1 VALUES ('a'), ('b'), ('c'), (NULL);
 
-SELECT col1, if(col1 IN ('a' ,'b'), 1, 0) AS t, toTypeName(t) FROM test.test1;
-SELECT col1, if(col1 IN ('a' ,'b'), NULL, 0) AS t, toTypeName(t) FROM test.test1;
+SELECT col1, if(col1 IN ('a' ,'b'), 1, 0) AS t, toTypeName(t) FROM test1;
+SELECT col1, if(col1 IN ('a' ,'b'), NULL, 0) AS t, toTypeName(t) FROM test1;
 
 SELECT '----- case when -----';
 
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 ELSE 0 END AS t, toTypeName(t) FROM test.test1;
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN NULL ELSE 0 END AS t, toTypeName(t) FROM test.test1;
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 END AS t, toTypeName(t) FROM test.test1;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 ELSE 0 END AS t, toTypeName(t) FROM test1;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN NULL ELSE 0 END AS t, toTypeName(t) FROM test1;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 END AS t, toTypeName(t) FROM test1;
 
 SELECT '----- multiIf -----';
 
