@@ -1,10 +1,15 @@
 # Machine learning methods
 
-## Prediction
+## evalMLMethod (prediction)
 
 Prediction using fitted regression models uses `evalMLMethod` function. See link in `linearRegression`.
 
-## Linear Regression
+## Stochastic Linear Regression
 
-`linearRegression` aggregate function implements stochastic gradient descent method and uses `evalMLMethod` to predict on new data.
+`stochasticLinearRegression` aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
 See examples and notes [here](../agg_functions/reference.md#linearregression).
+
+## Stochastic Logistic Regression
+
+`stochasticLogisticRegression` aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.
+See examples and notes [here](../agg_functions/reference.md#logisticregression).
