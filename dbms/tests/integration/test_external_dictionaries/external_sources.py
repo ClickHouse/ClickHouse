@@ -423,9 +423,9 @@ class SourceRedis(ExternalSource):
 
 class SourceAerospike(ExternalSource):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password, storage_type=None):
+                 docker_hostname, docker_port, user, password):
         ExternalSource.__init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password, storage_type)
+                 docker_hostname, docker_port, user, password)
         self.namespace = "test"
         self.set = "test_set"
 
@@ -439,7 +439,6 @@ class SourceAerospike(ExternalSource):
         '''.format(
             host=self.docker_hostname,
             port=self.docker_port,
-            storage_type=self.storage_type,  # simple or hash_map
         )
 
     def prepare(self, structure, table_name, cluster):
