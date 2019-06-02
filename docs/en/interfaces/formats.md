@@ -720,7 +720,7 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
-| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`) |
 | -------------------- | ------------------ | ---- |
 | `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
 | `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
@@ -758,8 +758,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Also look at the `HDFS` and `URL` storage engines to process data from the remote servers.
-
+To exchange data with the Hadoop ecosystem, you can use `HDFS` and `URL` table engines.
 
 ## Format Schema {#formatschema}
 
