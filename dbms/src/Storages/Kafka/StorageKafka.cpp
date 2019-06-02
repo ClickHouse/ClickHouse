@@ -610,7 +610,7 @@ void registerStorageKafka(StorageFactory & factory)
             skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
         }
 
-        bool intermediate_commit = false;
+        bool intermediate_commit = static_cast<bool>(kafka_settings.kafka_commit_every_batch);
         if (args_count >= 10)
         {
             const auto * ast = engine_args[9]->as<ASTLiteral>();
