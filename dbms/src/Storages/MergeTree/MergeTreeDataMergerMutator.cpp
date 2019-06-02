@@ -1,4 +1,5 @@
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include "MergeTreeDataMergerMutator.h"
+
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -25,12 +26,9 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
-#include <Common/localBackup.h>
 #include <Common/createHardLink.h>
-
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <cmath>
 #include <numeric>
 #include <iomanip>

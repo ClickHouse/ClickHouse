@@ -93,6 +93,11 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
 endif ()
 
+if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
+    # Warnings in protobuf generating
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
+endif ()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # clang: warning: argument unused during compilation: '-stdlib=libc++'
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
