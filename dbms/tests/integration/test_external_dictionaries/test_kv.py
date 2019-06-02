@@ -116,14 +116,15 @@ LAYOUTS = [
     Layout("flat"),
     Layout("hashed"),
     Layout("cache"),
-    Layout("complex_key_hashed"),
+    Layout('complex_key_hashed_one_key'),
+    Layout('complex_key_hashed_two_keys'),
     Layout("complex_key_cache"),
     Layout("range_hashed"),
 ]
 
 SOURCES = [
     SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
-    # SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
+    SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
     # SourceAerospike("Aerospike", "localhost", "3000", "aerospike1", "3000", "", ""),
 ]
 
@@ -165,8 +166,12 @@ def setup_module(module):
                 elif layout.layout_type == "complex":
                     fields_len = len(FIELDS["complex"])
                     for i in range(fields_len - 2):
-                        local_fields = [FIELDS['complex'][1], FIELDS['complex'][i + 2]]
-                        local_values = [[value[1], value[i + 2]] for value in VALUES["complex"]]
+                        if layout.name == 'complex_key_hashed_two_keys':
+                            local_fields = [FIELDS['complex'][0], FIELDS['complex'][1], FIELDS['complex'][i + 2]]
+                            local_values = [[value[0], value[1], value[i + 2]] for value in VALUES["complex"]]
+                        else:
+                            local_fields = [FIELDS['complex'][1], FIELDS['complex'][i + 2]]
+                            local_values = [[value[1], value[i + 2]] for value in VALUES["complex"]]
                         setup_kv_dict(i + 2, layout, local_fields, source, dict_configs_path, local_values)
                 elif layout.layout_type == "ranged":
                     fields_len = len(FIELDS["ranged"])
@@ -184,7 +189,6 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    # TODO: add your kv source flag below
     node = cluster.add_instance('node', main_configs=main_configs, with_redis=True)
     cluster.add_instance('clickhouse1')
 

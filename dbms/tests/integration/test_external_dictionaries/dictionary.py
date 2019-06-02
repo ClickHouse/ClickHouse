@@ -8,6 +8,8 @@ class Layout(object):
         'hashed': '<hashed/>',
         'cache': '<cache><size_in_cells>128</size_in_cells></cache>',
         'complex_key_hashed': '<complex_key_hashed/>',
+        'complex_key_hashed_one_key': '<complex_key_hashed/>',
+        'complex_key_hashed_two_keys': '<complex_key_hashed/>',
         'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
         'range_hashed': '<range_hashed/>',
     }
