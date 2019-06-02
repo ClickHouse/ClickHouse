@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS test.test_low_null_float;
 DROP TABLE IF EXISTS test.dist;
 

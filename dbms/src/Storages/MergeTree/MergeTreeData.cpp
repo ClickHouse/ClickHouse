@@ -2831,6 +2831,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
+        part->is_frozen = true;
         ++parts_processed;
     }
 
