@@ -192,22 +192,19 @@ namespace DB
                 }
 
                 Poco::Redis::Command commandForValues("HMGET");
-                const auto & primary_key = *keys_array.begin();
-                commandForValues.addRedisType(primary_key);
-                for (size_t i = 1; i < keys_array.size(); ++i)
+                for (size_t i = 0; i < keys_array.size(); ++i)
                 {
                     const auto & secondary_key = *(keys_array.begin() + i);
-                    insertValueByIdx(0, primary_key);
-                    insertValueByIdx(1, secondary_key);
                     commandForValues.addRedisType(secondary_key);
                 }
                 ++cursor;
 
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-                if (commandForValues.size() != values.size() + 2) // 'HMGET' primary_key secondary_keys
+                if (keys_array.size() != values.size() + 1) // 'HMGET' primary_key secondary_keys
                     throw Exception{"Inconsistent sizes of keys and values in Redis request",
                                     ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
+                const auto & primary_key = *keys_array.begin();
                 for (size_t i = 0; i < values.size(); ++i)
                 {
                     const auto & secondary_key = *(keys_array.begin() + i + 1);

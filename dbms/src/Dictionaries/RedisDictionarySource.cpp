@@ -147,14 +147,15 @@ namespace DB
             {
                 Poco::Redis::Command command_for_secondary_keys("HKEYS");
                 command_for_secondary_keys.addRedisType(key);
+
                 Poco::Redis::Array reply_for_primary_key = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
 
-                Poco::SharedPtr<Poco::Redis::Array> primary_with_secondary;
-                primary_with_secondary->addRedisType(key);
+                Poco::Redis::Array primary_with_secondary;
+                primary_with_secondary.addRedisType(key);
                 for (const auto & secondary_key : reply_for_primary_key)
-                    primary_with_secondary->addRedisType(secondary_key);
+                    primary_with_secondary.addRedisType(secondary_key);
 
-                hkeys.add(*primary_with_secondary);
+                hkeys.add(primary_with_secondary);
             }
             keys = hkeys;
         }
