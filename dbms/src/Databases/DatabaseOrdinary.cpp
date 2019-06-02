@@ -516,6 +516,7 @@ void DatabaseOrdinary::alterTable(
     const String & table_name,
     const ColumnsDescription & columns,
     const IndicesDescription & indices,
+    const ConstraintsDescription & constraints,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -538,6 +539,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
 
@@ -545,6 +547,11 @@ void DatabaseOrdinary::alterTable(
         ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
     else
         ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
+
+    if (ast_create_query.columns_list->constraints)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);

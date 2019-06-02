@@ -46,6 +46,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
     skip_indices = data.getIndices().toString();
+    constraints = data.getConstraints().toString();
     index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
     ttl_table = formattedAST(data.ttl_table_ast);
 }
@@ -226,6 +227,21 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     "Existing table metadata in ZooKeeper differs in skip indexes."
                     " Stored in ZooKeeper: " + from_zk.skip_indices +
                     ", local: " + skip_indices,
+                    ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (constraints != from_zk.constraints)
+    {
+        if (allow_alter)
+        {
+            diff.constraints_changed = true;
+            diff.new_constraints = from_zk.constraints;
+        }
+        else
+            throw Exception(
+                    "Existing table metadata in ZooKeeper differs in constraints."
+                    " Stored in ZooKeeper: " + from_zk.constraints +
+                    ", local: " + constraints,
                     ErrorCodes::METADATA_MISMATCH);
     }
 

@@ -32,6 +32,9 @@ public:
         ADD_INDEX,
         DROP_INDEX,
 
+        ADD_CONSTRAINT,
+        DROP_CONSTRAINT,
+
         DROP_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
@@ -69,7 +72,15 @@ public:
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
      */
-     ASTPtr index;
+    ASTPtr index;
+
+    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
+    */
+    ASTPtr constraint_decl;
+
+    /** The DROP CONSTRAINT query stores the name for deletion.
+    */
+    ASTPtr constraint;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
