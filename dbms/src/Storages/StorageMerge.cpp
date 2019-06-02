@@ -417,8 +417,9 @@ void StorageMerge::alter(
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
     setColumns(new_columns);
 }
 
