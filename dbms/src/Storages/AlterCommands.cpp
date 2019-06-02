@@ -356,7 +356,8 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
                 });
 
-        if (erase_it == constraints_description.constraints.end()) {
+        if (erase_it == constraints_description.constraints.end())
+        {
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
