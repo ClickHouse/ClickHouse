@@ -7,12 +7,11 @@ import aerospike
 from tzlocal import get_localzone
 import datetime
 import os
-import time
 
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password, storage_type=None):
+                 docker_hostname, docker_port, user, password):
         self.name = name
         self.internal_hostname = internal_hostname
         self.internal_port = int(internal_port)
@@ -20,7 +19,6 @@ class ExternalSource(object):
         self.docker_port = int(docker_port)
         self.user = user
         self.password = password
-        self.storage_type = storage_type
 
     def get_source_str(self, table_name):
         raise NotImplementedError("Method {} is not implemented for {}".format(
@@ -379,6 +377,14 @@ class SourceHTTPS(SourceHTTPBase):
 
 
 class SourceRedis(ExternalSource):
+    def __init__(
+            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, storage_type
+    ):
+        super(SourceRedis, self).__init__(
+            name, internal_hostname, internal_port, docker_hostname, docker_port, user, password
+        )
+        self.storage_type = storage_type
+
     def get_source_str(self, table_name):
         return '''
             <redis>
@@ -397,19 +403,6 @@ class SourceRedis(ExternalSource):
         self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
         self.prepared = True
 
-    def load_data(self, data, table_name):
-        self.client.flushdb()
-        for row in data:
-            for cell_name, cell_value in row.data.items():
-                value_type = "$"
-                if isinstance(cell_value, int):
-                    value_type = ":"
-                else:
-                    cell_value = '"' + str(cell_value).replace(' ', '\s') + '"'
-                cmd = "SET ${} {}{}".format(cell_name, value_type, cell_value)
-                print(cmd)
-                self.client.execute_command(cmd)
-
     def load_kv_data(self, values):
         self.client.flushdb()
         if len(values[0]) == 2:
@@ -421,7 +414,8 @@ class SourceRedis(ExternalSource):
     def compatible_with_layout(self, layout):
         if (
             layout.is_simple and self.storage_type == "simple" or
-            layout.is_complex and self.storage_type == "simple" and layout.name != "complex_key_cache"
+            layout.is_complex and self.storage_type == "simple" and layout.name == "complex_key_hashed_one_key" or
+            layout.is_complex and self.storage_type == "hash_map" and layout.name == "complex_key_hashed_two_keys"
         ):
             return True
         return False
