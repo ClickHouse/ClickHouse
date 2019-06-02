@@ -1,7 +1,4 @@
-DROP TABLE IF EXISTS test.test;
-DROP TABLE IF EXISTS test.test_view;
-DROP TABLE IF EXISTS test.test_nested_view;
-DROP TABLE IF EXISTS test.test_joined_view;
+CREATE DATABASE test;
 
 USE test;
 CREATE VIEW test AS SELECT 1 AS N;
@@ -17,7 +14,3 @@ USE default;
 SELECT * FROM test.test_view;
 SELECT * FROM test.test_nested_view;
 SELECT * FROM test.test_joined_view;
-
-DROP TABLE IF EXISTS test.test;
-DROP TABLE IF EXISTS test.test_view;
-DROP TABLE IF EXISTS test.test_nested_view;
