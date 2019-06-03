@@ -1462,8 +1462,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
                 prefix_order_descr.push_back(order_descr[i]);
             }
         }
-
-        query_info.do_not_steal_task = false;
+        query_info.do_not_steal_task = true;
         query_info.read_in_pk_order = true;
         if (order_direction == -1)
         {
