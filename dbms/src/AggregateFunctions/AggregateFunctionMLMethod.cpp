@@ -359,7 +359,7 @@ void LogisticRegression::predict(
 {
     size_t rows_num = block.rows();
 
-    if (!(offset < rows_num && offset + limit < rows_num))
+    if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
                         "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
                         " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
@@ -428,7 +428,7 @@ void LinearRegression::predict(
 
     size_t rows_num = block.rows();
 
-    if (!(offset < rows_num && offset + limit < rows_num))
+    if (offset > rows_num || offset + limit > rows_num)
         throw Exception("Invalid offset and limit for LogisticRegression::predict. "
                         "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
                         " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
