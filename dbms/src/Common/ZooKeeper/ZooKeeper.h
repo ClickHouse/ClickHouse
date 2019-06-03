@@ -30,6 +30,7 @@ namespace zkutil
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
+const std::string DEFAULT_ZOOKEEPER_IMPLEMENTATION = "zookeeper";
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -55,7 +56,8 @@ public:
     ZooKeeper(const std::string & hosts, const std::string & identity = "",
               int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT,
               int32_t operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT,
-              const std::string & chroot = "");
+              const std::string & chroot = "",
+              const std::string implementation = DEFAULT_ZOOKEEPER_IMPLEMENTATION);
 
     /** Config of the form:
         <zookeeper>
@@ -127,7 +129,7 @@ public:
     bool tryGetWatch(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback, int * code = nullptr);
 
     void set(const std::string & path, const std::string & data,
-            int32_t version = -1, Coordination::Stat * stat = nullptr);
+             int32_t version = -1, Coordination::Stat * stat = nullptr);
 
     /// Creates the node if it doesn't exist. Updates its contents otherwise.
     void createOrUpdate(const std::string & path, const std::string & data, int32_t mode);
@@ -136,7 +138,7 @@ public:
     /// * The node doesn't exist.
     /// * Versions do not match.
     int32_t trySet(const std::string & path, const std::string & data,
-                            int32_t version = -1, Coordination::Stat * stat = nullptr);
+                   int32_t version = -1, Coordination::Stat * stat = nullptr);
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
@@ -149,12 +151,12 @@ public:
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
     int32_t tryGetChildren(const std::string & path, Strings & res,
-                        Coordination::Stat * stat = nullptr,
-                        const EventPtr & watch = nullptr);
+                           Coordination::Stat * stat = nullptr,
+                           const EventPtr & watch = nullptr);
 
     int32_t tryGetChildrenWatch(const std::string & path, Strings & res,
-                        Coordination::Stat * stat,
-                        Coordination::WatchCallback watch_callback);
+                                Coordination::Stat * stat,
+                                Coordination::WatchCallback watch_callback);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -235,7 +237,7 @@ public:
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & hosts_, const std::string & identity_,
+    void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
     void removeChildrenRecursive(const std::string & path);
@@ -257,6 +259,7 @@ private:
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
     std::string chroot;
+    std::string implementation;
 
     std::mutex mutex;
 
@@ -274,7 +277,7 @@ public:
     using Ptr = std::shared_ptr<EphemeralNodeHolder>;
 
     EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
-        : path(path_), zookeeper(zookeeper_)
+            : path(path_), zookeeper(zookeeper_)
     {
         if (create)
             path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
@@ -320,5 +323,4 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
-
 }
