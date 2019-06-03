@@ -1,3 +1,4 @@
+                }
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 
@@ -852,7 +853,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrd
             prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
-        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.sorting_key_expr));
+        to_merge.emplace_back(source_stream);
     }
 
     return to_merge;
