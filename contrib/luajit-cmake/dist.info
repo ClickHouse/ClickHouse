@@ -1,0 +1,22 @@
+--- This file is part of LuaDist project
+
+name = "luajit"
+version = "2.0.3"
+
+desc = "LuaJIT is JIT compiler for the Lua language."
+author = "Mike Pall"
+license = "MIT/X11"
+url = "http://www.luajit.org"
+maintainer = "Peter Drahoš"
+
+-- Offers functionality of the following packages
+provides = { 
+    "lua-5.1.5",
+    "bit32-5.2.0",
+    "luaffi-1.0"
+}
+
+-- These packages conflict (shared library clash)
+conflicts = {
+	"lua"
+}

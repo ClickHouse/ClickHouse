@@ -423,4 +423,27 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 
+
+### Aerospike {#dicts-external_dicts_dict_sources-aerospike}
+
+Example of settings:
+
+```xml
+<source>
+    <aerospike>
+        <host>localhost</host>
+        <port>3000</port>
+        <namespace>test</namespace>
+        <set>test_set</set>
+    </aerospike>
+</source>
+```
+
+Setting fields:
+
+- `host` – The Aerospike host.
+- `port` – The port on the Aerospike server.
+- `namespace` – Name of the namespace.
+- `set` – Name of the set in the namespace.
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

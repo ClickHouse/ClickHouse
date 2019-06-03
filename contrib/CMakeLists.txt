@@ -310,6 +310,16 @@ if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
 
+if (USE_AEROSPIKE)
+    set(LUA_USE_READLINE 0 CACHE INTERNAL "")
+    set(LUA_USE_CURSES 0 CACHE INTERNAL "")
+
+    #add_subdirectory (aerospike/modules/luajit)
+    add_subdirectory (aerospike-cmake)
+    add_subdirectory (luajit-cmake)
+    # target_include_directories(aerospike BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+endif()
+
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
 endif()

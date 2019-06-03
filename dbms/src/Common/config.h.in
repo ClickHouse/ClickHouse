@@ -16,6 +16,7 @@
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_SNAPPY
 #cmakedefine01 USE_PARQUET
+#cmakedefine01 USE_AEROSPIKE
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_XXHASH
 #cmakedefine01 USE_INTERNAL_LLVM_LIBRARY

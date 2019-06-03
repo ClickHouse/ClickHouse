@@ -1,0 +1,6 @@
+version: '2.2'
+services:
+    aerospike1:
+        image: aerospike/aerospike-server
+        ports:
+          - 3000:3000

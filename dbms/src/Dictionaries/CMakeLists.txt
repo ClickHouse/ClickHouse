@@ -39,4 +39,10 @@ if(USE_POCO_MONGODB)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
+if(USE_AEROSPIKE)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ${AEROSPIKE_LIBRARY})
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${AEROSPIKE_INCLUDE_DIR})
+endif()
+
+
 add_subdirectory(Embedded)
