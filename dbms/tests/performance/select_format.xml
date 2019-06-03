@@ -2,6 +2,8 @@
     <name>test_select_format</name>
     <type>loop</type>
 
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+
     <stop_conditions>
         <all_of>
             <iterations>5</iterations>
@@ -38,7 +40,8 @@
                 <value>PrettyCompact</value>
                 <value>PrettyCompactMonoBlock</value>
                 <value>PrettyNoEscapes</value>
-                <value>PrettySpace</value>
+                <value>RowBinary</value>
+                <value>Native</value>
                 <value>XML</value>
             </values>
         </substitution>
@@ -48,6 +51,8 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-<query>SELECT * FROM test.hits LIMIT 1000000 FORMAT {format}</query>
+    <query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 
 </test>
