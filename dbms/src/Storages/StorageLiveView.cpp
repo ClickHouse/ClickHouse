@@ -243,9 +243,9 @@ void StorageLiveView::noUsersThread()
     bool drop_table = false;
 
     {
-        Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
         while (1)
         {
+            Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
             if (!noUsersThreadWakeUp && !noUsersThreadCondition.tryWait(noUsersThreadMutex, global_context.getSettingsRef().temporary_live_view_timeout.totalSeconds() * 1000))
             {
                 noUsersThreadWakeUp = false;
@@ -271,6 +271,7 @@ void StorageLiveView::noUsersThread()
                 auto drop_query = std::make_shared<ASTDropQuery>();
                 drop_query->database = database_name;
                 drop_query->table = table_name;
+                drop_query->kind = ASTDropQuery::Kind::Drop;
                 ASTPtr ast_drop_query = drop_query;
                 InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
                 drop_interpreter.execute();

@@ -481,7 +481,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty())
+    if (create.temporary && !create.database.empty() && !create.is_live_view)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
@@ -539,7 +539,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         String data_path;
         DatabasePtr database;
 
-        if (!create.temporary)
+        if (!create.temporary || create.is_live_view)
         {
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
@@ -582,7 +582,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             create.attach,
             false);
 
-        if (create.temporary)
+        if (create.temporary && !create.is_live_view)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
