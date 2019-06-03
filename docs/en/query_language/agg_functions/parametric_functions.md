@@ -8,7 +8,7 @@ Pattern matching for event chains.
 
 `pattern` is a string containing a pattern to match. The pattern is similar to a regular expression.
 
-`time` is the time of the event with the DateTime type.
+`time` is the time of the event, type support: `Date`,`DateTime`, and other unsigned integer types.
 
 `cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event.
 
@@ -59,7 +59,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Parameters:**
 
 - `window` — Length of the sliding window in seconds.
-- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md) or [UInt32](../../data_types/int_uint.md).
+- `timestamp` — Name of the column containing the timestamp. Data type support: `Date`,`DateTime`, and other unsigned integer types(Note that though timestamp support `UInt64` type, there is a limitation it's value can't overflow maximum of Int64, which is 2^63 - 1).
 - `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
 **Algorithm**

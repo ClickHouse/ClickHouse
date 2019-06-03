@@ -683,9 +683,10 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
+    The `index` attribute is not used in ClickHouse. The only reason for this attribute is to allow some other programs to use the same configuraton.
 
-- `session_timeout` — Maximum timeout for client session in milliseconds.
+- `session_timeout_ms` — Maximum timeout for client session in milliseconds (default: 30000).
+- `operation_timeout_ms` — Maximum timeout for operation in milliseconds (default: 10000).
 - `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
 - `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
 
@@ -702,6 +703,7 @@ This parameter section contains the following parameters:
         <port>2181</port>
     </node>
     <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
     <!-- Optional. Chroot suffix. Should exist. -->
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->

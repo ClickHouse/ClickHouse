@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
+    extern const int SAMPLING_NOT_SUPPORTED;
 }
 
 
@@ -205,6 +206,7 @@ BlockInputStreams StorageMerge::read(
         query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
 
     if (selected_tables.empty())
+        /// FIXME: do we support sampling in this case?
         return createSourceStreams(
             query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
@@ -220,6 +222,10 @@ BlockInputStreams StorageMerge::read(
 
         StoragePtr storage = it->first;
         TableStructureReadLockHolder struct_lock = it->second;
+
+        /// If sampling requested, then check that table supports it.
+        if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
+            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
         BlockInputStreams source_streams;
 

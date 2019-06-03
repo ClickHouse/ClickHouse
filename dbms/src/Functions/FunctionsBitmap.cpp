@@ -21,5 +21,7 @@ void registerFunctionsBitmap(FunctionFactory & factory)
     factory.registerFunction<FunctionBitmapXor>();
     factory.registerFunction<FunctionBitmapAndnot>();
 
+    factory.registerFunction<FunctionBitmapHasAll>();
+    factory.registerFunction<FunctionBitmapHasAny>();
 }
 }
