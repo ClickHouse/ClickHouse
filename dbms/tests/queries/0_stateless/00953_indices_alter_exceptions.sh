@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE test_drop_indices
 )
 ENGINE = MergeTree ORDER BY (a);"
 
-# Must throw exception
+# Must throw an exception
 EXCEPTION_TEXT="Cannot find index \`test_index\` to drop.."
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test_drop_indices DROP INDEX test_index;" 2>&1 \
     | grep -q "$EXCEPTION_TEXT" && echo "$EXCEPTION_SUCCESS_TEXT" || echo "Did not thrown an exception"
