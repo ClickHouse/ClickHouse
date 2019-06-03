@@ -24,7 +24,7 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
     M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.") \
     M(SettingUInt64, kafka_max_block_size, 0, "The maximum block size per table for Kafka engine.") \
     M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block") \
-    M(SettingUInt64, kafka_commit_every_batch, 1, "Commit every consumed and handled batch instead of a single commit after writing a whole block")
+    M(SettingUInt64, kafka_commit_every_batch, 0, "Commit every consumed and handled batch instead of a single commit after writing a whole block")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_KAFKA_SETTINGS)
 
