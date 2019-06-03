@@ -1,12 +1,13 @@
 ## ClickHouse release 19.7.3.9, 2019-05-30
 
 ### New Features
-* Allow setting constraints such as `max_memory_usage` in users.xml.
-  [#4931](https://github.com/yandex/ClickHouse/pull/4931) ([Vitaly
+* Allow to limit the range of a setting that can be specified by user.
+  These constraints can be set up in user settings profile.
+[#4931](https://github.com/yandex/ClickHouse/pull/4931) ([Vitaly
 Baranov](https://github.com/vitlibar))
 * Add a second version of the function `groupUniqArray` with an optional
   `max_size` parameter that limits the size of the resulting array. This
-behavior is to `groupArray(max_size)(x)` function.
+behavior is similar to `groupArray(max_size)(x)` function.
 [#5026](https://github.com/yandex/ClickHouse/pull/5026) ([Guillaume
 Tassery](https://github.com/YiuRULE))
 * For TSVWithNames/CSVWithNames input file formats, column order can now be
@@ -28,11 +29,10 @@ Kutenin](https://github.com/danlark1))
 
 ### Performance Improvements
 * Use radix sort for sorting by single numeric column in `ORDER BY` without
-  `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106)
-([alexey-milovidov](https://github.com/alexey-milovidov))
-* Implement radix sort for `ORDER BY`.
-  [#4439](https://github.com/yandex/ClickHouse/pull/4439) ([Evgenii
-Pravda](https://github.com/kvinty))
+  `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106),
+[#4439](https://github.com/yandex/ClickHouse/pull/4439)
+([Evgenii Pravda](https://github.com/kvinty),
+[alexey-milovidov](https://github.com/alexey-milovidov)
 
 ### Documentation
 * Translate documentation for some table engines to Chinese.
