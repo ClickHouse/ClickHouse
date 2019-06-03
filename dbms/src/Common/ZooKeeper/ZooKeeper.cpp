@@ -1,6 +1,7 @@
 #include "ZooKeeper.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
+#include "TestKeeper.h"
 
 #include <random>
 #include <pcg_random.hpp>
