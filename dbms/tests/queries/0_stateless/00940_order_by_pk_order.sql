@@ -11,15 +11,20 @@ INSERT INTO test.pk_order(a, b, c, d) VALUES (2, 2, 107, 2), (2, 3, 108, 2), (2,
 
 SELECT b FROM test.pk_order ORDER BY a, b;
 SELECT a FROM test.pk_order ORDER BY a, b;
-SELECT c FROM test.pk_order ORDER BY a, b;
-SELECT d FROM test.pk_order ORDER BY a, b;
-SELECT d FROM test.pk_order ORDER BY a;
 
+SELECT a, b FROM test.pk_order ORDER BY a, b;
+SELECT a, b FROM test.pk_order ORDER BY a DESC, b;
+SELECT a, b FROM test.pk_order ORDER BY a, b DESC;
+SELECT a, b FROM test.pk_order ORDER BY a DESC, b DESC;
+SELECT a FROM test.pk_order ORDER BY a DESC;
 
-SELECT b FROM test.pk_order ORDER BY a, b DESC;
-SELECT a FROM test.pk_order ORDER BY a, b DESC;
-SELECT c FROM test.pk_order ORDER BY a, b DESC;
-SELECT d FROM test.pk_order ORDER BY a, b DESC;
-SELECT d FROM test.pk_order ORDER BY a DESC;
+SELECT a, b, c FROM test.pk_order ORDER BY a, b, c;
+SELECT a, b, c FROM test.pk_order ORDER BY a DESC, b, c;
+SELECT a, b, c FROM test.pk_order ORDER BY a, b DESC, c;
+SELECT a, b, c FROM test.pk_order ORDER BY a, b, c DESC;
+SELECT a, b, c FROM test.pk_order ORDER BY a DESC, b DESC, c;
+SELECT a, b, c FROM test.pk_order ORDER BY a DESC, b, c DESC;
+SELECT a, b, c FROM test.pk_order ORDER BY a, b DESC, c DESC;
+SELECT a, b, c FROM test.pk_order ORDER BY a DESC, b DESC, c DESC;
 
 DROP TABLE IF EXISTS test.pk_order;
