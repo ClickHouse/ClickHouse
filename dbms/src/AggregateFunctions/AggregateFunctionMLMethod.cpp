@@ -45,7 +45,7 @@ namespace
 
         /// Such default parameters were picked because they did good on some tests,
         /// though it still requires to fit parameters to achieve better result
-        auto learning_rate = Float64(0.00001);
+        auto learning_rate = Float64(0.01);
         auto l2_reg_coef = Float64(0.1);
         UInt32 batch_size = 15;
 
