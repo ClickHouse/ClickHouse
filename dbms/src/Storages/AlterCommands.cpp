@@ -292,8 +292,12 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 });
 
         if (erase_it == indices_description.indices.end())
+        {
+            if (if_exists)
+                return;
             throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
-                    ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::LOGICAL_ERROR);
+        }
 
         indices_description.indices.erase(erase_it);
     }
