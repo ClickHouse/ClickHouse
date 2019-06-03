@@ -134,9 +134,14 @@ void LinearModelData::update_state()
 }
 
 void LinearModelData::predict(
-    ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const
+    ColumnVector<Float64>::Container & container,
+    Block & block,
+    size_t offset,
+    size_t limit,
+    const ColumnNumbers & arguments,
+    const Context & context) const
 {
-    gradient_computer->predict(container, block, arguments, weights, bias, context);
+    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -345,42 +350,38 @@ void IWeightsUpdater::add_to_batch(
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
     Block & block,
+    size_t offset,
+    size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & context) const
+    const Context & /*context*/) const
 {
     size_t rows_num = block.rows();
-    std::vector<Float64> results(rows_num, bias);
+
+    if (!(offset < rows_num && offset + limit < rows_num))
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+
         if (!isNativeNumber(cur_col.type))
-        {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
-        }
 
-        /// If column type is already Float64 then castColumn simply returns it
-        auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
-        auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+        auto & features_column = cur_col.column;
 
-        if (!features_column)
-        {
-            throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
-        }
-
-        for (size_t row_num = 0; row_num != rows_num; ++row_num)
-        {
-            results[row_num] += weights[i - 1] * features_column->getElement(row_num);
-        }
+        for (size_t row_num = 0; row_num < limit; ++row_num)
+            results[row_num] += weights[i - 1] * features_column->getFloat64(offset + row_num);
     }
 
-    container.reserve(rows_num);
-    for (size_t row_num = 0; row_num != rows_num; ++row_num)
-    {
+    container.reserve(container.size() + limit);
+    for (size_t row_num = 0; row_num < limit; ++row_num)
         container.emplace_back(1 / (1 + exp(-results[row_num])));
-    }
 }
 
 void LogisticRegression::compute(
@@ -413,10 +414,12 @@ void LogisticRegression::compute(
 void LinearRegression::predict(
     ColumnVector<Float64>::Container & container,
     Block & block,
+    size_t offset,
+    size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & context) const
+    const Context & /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {
@@ -424,36 +427,33 @@ void LinearRegression::predict(
     }
 
     size_t rows_num = block.rows();
-    std::vector<Float64> results(rows_num, bias);
+
+    if (!(offset < rows_num && offset + limit < rows_num))
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNativeNumber(cur_col.type))
-        {
-            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
-        }
 
-        /// If column type is already Float64 then castColumn simply returns it
-        auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
-        auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+        if (!isNativeNumber(cur_col.type))
+            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
+
+        auto features_column = cur_col.column;
 
         if (!features_column)
-        {
             throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
-        }
 
-        for (size_t row_num = 0; row_num != rows_num; ++row_num)
-        {
-            results[row_num] += weights[i - 1] * features_column->getElement(row_num);
-        }
+        for (size_t row_num = 0; row_num < limit; ++row_num)
+            results[row_num] += weights[i - 1] * features_column->getFloat64(row_num + offset);
     }
 
-    container.reserve(rows_num);
-    for (size_t row_num = 0; row_num != rows_num; ++row_num)
-    {
+    container.reserve(container.size() + limit);
+    for (size_t row_num = 0; row_num < limit; ++row_num)
         container.emplace_back(results[row_num]);
-    }
 }
 
 void LinearRegression::compute(
