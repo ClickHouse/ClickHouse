@@ -10,7 +10,7 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
     /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
     consumer->unsubscribe();
     consumer->unassign();
-    while(consumer->get_consumer_queue().next_event(1s));
+    while (consumer->get_consumer_queue().next_event(1s));
 }
 
 void ReadBufferFromKafkaConsumer::commit()
