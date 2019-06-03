@@ -80,7 +80,7 @@ wait_for_done()
     while is_running; do
         attempts=$(($attempts + 1))
         if [ -n "$timeout" ] && [ $attempts -gt $timeout ]; then
-            return 2
+            return 1
         fi
         sleep 1
     done
