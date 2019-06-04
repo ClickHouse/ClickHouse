@@ -470,9 +470,9 @@ ClickHouse doesn't support the syntax with commas directly, so we don't recommen
 
 #### Strictness
 
-- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior for standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
-- `ASOF` — For joining sequences with an uncertain match. Usage of `ASOF JOIN` is described below.
+- `ASOF` — For joining sequences with a non-exact match. Usage of `ASOF JOIN` is described below.
 
 **ASOF JOIN Usage**
 
@@ -499,9 +499,9 @@ Use the following syntax for `ASOF JOIN`:
 SELECT expression_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... equi_columnN, asof_column)
 ```
 
-`ASOF JOIN` uses `equi_columnX` for joining on equality (`user_id` in our example) and `asof_column` for joining on uncertain match.
+`ASOF JOIN` uses `equi_columnX` for joining on equality (`user_id` in our example) and `asof_column` for joining on the closest match.
 
-Implementation features:
+Implementation details:
 
 - The `asof_column` should be the last in the `USING` clause.
 - The `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
