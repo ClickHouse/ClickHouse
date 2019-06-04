@@ -430,20 +430,29 @@ private:
         Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
     {
         const ColumnAggregateFunction * columns[2];
+        bool isColumnConst[2];
         for (size_t i = 0; i < 2; ++i)
         {
-            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
-            else
-                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+            if (auto argument_column_const = typeid_cast<const ColumnConst*>(block.getByPosition(arguments[i]).column.get()))
+            {
+                columns[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
+                isColumnConst[i] = true;
+            } else
+            {
+                columns[i] = typeid_cast<const ColumnAggregateFunction*>(block.getByPosition(arguments[i]).column.get());
+                isColumnConst[i] = false;
+            }
         }
-
+        const PaddedPODArray<AggregateDataPtr>& container0 = columns[0]->getData();
+        const PaddedPODArray<AggregateDataPtr>& container1 = columns[1]->getData();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateFunctionGroupBitmapData<T> & bd1
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(columns[0]->getData()[i]);
-            const AggregateFunctionGroupBitmapData<T> & bd2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(columns[1]->getData()[i]);
+            const AggregateDataPtr dataPtr0 = isColumnConst[0] ? container0[0] : container0[i];
+            const AggregateDataPtr dataPtr1 = isColumnConst[1] ? container1[0] : container1[i];
+            const AggregateFunctionGroupBitmapData<T>& bd1
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
+            const AggregateFunctionGroupBitmapData<T>& bd2
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr1);
             vec_to[i] = Impl<T>::apply(bd1, bd2);
         }
     }
