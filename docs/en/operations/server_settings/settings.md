@@ -686,8 +686,8 @@ This section contains the following parameters:
     The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
 - `session_timeout` — Maximum timeout for the client session in milliseconds.
-- `root` — The ZNode that is used as the root for znodes used by the ClickHouse server. Optional.
-- `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 

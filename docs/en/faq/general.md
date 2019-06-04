@@ -13,7 +13,7 @@ Most MapReduce implementations allow you to execute arbitrary code on a cluster.
 
 ## What If I Have a Problem with Encodings When Using Oracle Through ODBC? {#oracle-odbc-encodings}
 
-If you use Oracle through the ODBC driver as a source of external dictionaries, you need to set the correct value for the `NLS_LANG` variable in `/etc/default/clickhouse`. For more information, see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+If you use Oracle through the ODBC driver as a source of external dictionaries, you need to set the correct value for the `NLS_LANG` environment variable in `/etc/default/clickhouse`. For more information, see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Example**
 
