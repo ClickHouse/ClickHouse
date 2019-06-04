@@ -30,20 +30,20 @@ RUN apt-get update -y \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-COPY zookeeper.xml /etc/clickhouse-server/config.d/zookeeper.xml
-COPY listen.xml /etc/clickhouse-server/config.d/listen.xml
-COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
-COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
-COPY readonly.xml /etc/clickhouse-server/users.d/readonly.xml
-COPY ints_dictionary.xml /etc/clickhouse-server/ints_dictionary.xml
-COPY strings_dictionary.xml /etc/clickhouse-server/strings_dictionary.xml
-COPY decimals_dictionary.xml /etc/clickhouse-server/decimals_dictionary.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb; \
+    ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/; \
+    ln -s /usr/share/clickhouse-test/config/readonly.xml /etc/clickhouse-server/users.d/; \
+    ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer; \
     echo "TSAN_OPTIONS='halt_on_error=1 history_size=7'" >> /etc/environment; \
     echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
