@@ -4,16 +4,19 @@
 
 #include <typeinfo>
 
-namespace Coordination{
+namespace Coordination
+{
 Watches watches;
 Watches list_watches;
 std::mutex watches_mutex;
 
 
-String parentPath(const String& path) {
+String parentPath(const String& path)
+{
     unsigned long rslash_pos = path.rfind('/');
     std::string parent_path;
-    if (rslash_pos > 0) {
+    if (rslash_pos > 0)
+    {
         parent_path = path.substr(0, rslash_pos);
     }
     return parent_path;
@@ -29,7 +32,8 @@ String parentPath(const String& path) {
 //        std::cerr << "*************************************"  << std::endl;
 //    }
 
-std::vector<String> children(const String & path) {
+std::vector<String> children(const String & path)
+{
     std::vector<String> children;
     for (auto it = architecture.begin(); it != architecture.end(); it++)
     {
@@ -185,7 +189,8 @@ struct TestKeeperCheckResponse final : CheckResponse, TestKeeperResponse
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     TestKeeper::OpNum getOpNum() const override { return 8; }
-    TestKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls){
+    TestKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
+    {
         requests.reserve(generic_requests.size());
 
         for (const auto & generic_request : generic_requests)

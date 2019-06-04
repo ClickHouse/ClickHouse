@@ -57,7 +57,8 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     chroot = chroot_;
     implementation = implementation_;
 
-    if (implementation.find("zookeeper") != std::string::npos) {
+    if (implementation.find("zookeeper") != std::string::npos)
+    {
         if (hosts.empty())
             throw KeeperException("No addresses passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
 
@@ -66,11 +67,14 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
         Coordination::ZooKeeper::Addresses addresses;
         addresses.reserve(addresses_strings.size());
 
-        for (const auto &address_string : addresses_strings) {
-            try {
+        for (const auto &address_string : addresses_strings)
+        {
+            try
+            {
                 addresses.emplace_back(address_string);
             }
-            catch (const Poco::Net::DNSException &e) {
+            catch (const Poco::Net::DNSException &e)
+            {
                 LOG_ERROR(log, "Cannot use ZooKeeper address " << address_string << ", reason: " << e.displayText());
             }
         }

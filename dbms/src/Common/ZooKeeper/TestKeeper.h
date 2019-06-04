@@ -11,7 +11,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
-namespace Coordination {
+namespace Coordination
+{
 String parentPath(const String& path);
 
 std::vector<String> children(const String& path);
@@ -27,7 +28,8 @@ struct TestKeeperRequest;
 
 using clock = std::chrono::steady_clock;
 
-struct RequestInfo {
+struct RequestInfo
+{
     std::shared_ptr<TestKeeperRequest> request;
     ResponseCallback callback;
     WatchCallback watch;
@@ -49,10 +51,8 @@ extern long int global_zxid;
 
 struct TestKeeperRequest;
 
-
-class TestKeeper : public IKeeper {
-
-
+class TestKeeper : public IKeeper
+{
 public:
     TestKeeper(
             const String & root_path,
