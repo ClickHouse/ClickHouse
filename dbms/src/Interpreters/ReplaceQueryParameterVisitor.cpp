@@ -1,4 +1,6 @@
+#include <boost/algorithm/string/replace.hpp>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
@@ -35,9 +37,15 @@ String ReplaceQueryParameterVisitor::getParamValue(const String & name)
 void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
 {
     auto ast_param = ast->as<ASTQueryParameter>();
-    String value = getParamValue(ast_param->name);
-    const auto data_type = DataTypeFactory::instance().get(ast_param->type);
+    const String value = getParamValue(ast_param->name);
+    String type = ast_param->type;
 
+    /// Replacing all occurrences of types Date and DateTime with String.
+    /// String comparison is used in "WHERE" conditions with this types.
+    boost::replace_all(type, "DateTime", "String");
+    boost::replace_all(type, "Date", "String");
+
+    const auto data_type = DataTypeFactory::instance().get(type);
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};

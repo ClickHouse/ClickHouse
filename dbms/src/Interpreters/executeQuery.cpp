@@ -208,6 +208,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+        if (context.hasQueryParameters())    /// Avoid change from TCPHandler.
+            /// Get new query after substitutions.
+            query = serializeAST(*ast);
+
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
         /// Check the limits.
