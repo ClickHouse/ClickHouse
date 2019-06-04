@@ -205,11 +205,16 @@ Ok.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
-Включает или отключает пропускание вставки дополнительных данных.
+Включает или отключает пропускание вставки неизвестных данных.
 
-При записи данных, если входные данные содержат столбцы, которых нет в целевой таблице, ClickHouse генерирует исключение. Если пропускание вставки включено, ClickHouse не вставляет дополнительные данные и не генерирует исключение.
+При записи данных, если входные данные содержат столбцы, которых нет в целевой таблице, ClickHouse генерирует исключение. Если пропускание вставки включено, ClickHouse не вставляет неизвестные данные и не генерирует исключение.
 
-Поддерживаемые форматы: [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames), [TSKV](../../interfaces/formats.md#tskv).
+Поддерживаемые форматы:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TSKV](../../interfaces/formats.md#tskv)
 
 Возможные значения:
 
@@ -222,9 +227,12 @@ Ok.
 
 Включает или отключает проверку порядка столбцов при вставке данных.
 
-Чтобы повысить производительность ClickHouse, рекомендуется отключить эту проверку, если вы уверены, что порядок столбцов входных данных такой же, как в целевой таблице.
+Чтобы повысить производительность вставки, рекомендуется отключить эту проверку, если вы уверены, что порядок столбцов входных данных такой же, как в целевой таблице.
 
-Поддерживаемые форматы: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
+Поддерживаемые форматы:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Возможные значения:
 
@@ -461,6 +469,7 @@ ClickHouse использует этот параметр при чтении д
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Использовать ли кэш разжатых блоков. Принимает 0 или 1. По умолчанию - 0 (выключено).
+
 Использование кэша несжатых блоков (только для таблиц семейства MergeTree) может существенно сократить задержку и увеличить пропускную способность при работе с большим количеством коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) (настраивается только в конфигурационном файле) – размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности, а наиболее невостребованные данные автоматически удаляются.
 
 Для запросов, читающих хоть немного приличный объём данных (миллион строк и больше), кэш разжатых блоков автоматически выключается, чтобы оставить место для действительно мелких запросов. Поэтому, можно держать настройку `use_uncompressed_cache` всегда выставленной в 1.
@@ -616,4 +625,3 @@ ClickHouse использует этот параметр при чтении д
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
-
