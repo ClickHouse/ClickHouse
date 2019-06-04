@@ -25,10 +25,12 @@ Converts an input string to the value of [Nullable(Decimal(P,S))](../../data_typ
 - `toDecimal64OrNull( expr, S)` — Results with Nullable(Decimal64(S)) data type.
 - `toDecimal128OrNull( expr, S)` — Results with Nullable(Decimal128(S)) data type.
 
+These functions should be used instead of `toDecimal*()` functions, if you prefer to get the `NULL` value instead of exception, when input value parsing error.
+
 **Parameters**
 
-- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions), returning a value of the [String](../../data_types/string.md) data type. For example, `'1.111'`.
-- `S` — Number of decimal places in the resulting value.
+- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions), returning a value of the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+- `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
@@ -63,10 +65,12 @@ Converts an input value to the [Decimal(P,S)](../../data_types/decimal.md) data 
 - `toDecimal64OrZero( expr, S)` — Results with Decimal64(S) data type.
 - `toDecimal128OrZero( expr, S)` — Results with Decimal128(S) data type.
 
+These functions should be used instead of `toDecimal*()` functions, if you prefer to get the `0` value instead of exception, when input value parsing error.
+
 **Parameters**
 
-- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions), returning a value of the [String](../../data_types/string.md) data type. For example, `'1.111'`.
-- `S` — Number of decimal places in the resulting value.
+- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions), returning a value of the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+- `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
