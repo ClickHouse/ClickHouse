@@ -23,3 +23,4 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE test_drop_indices DROP INDEX test_index;
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test_drop_indices DROP INDEX IF EXISTS test_index"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_drop_indices;"
+
