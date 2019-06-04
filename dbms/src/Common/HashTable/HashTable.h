@@ -775,13 +775,15 @@ public:
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value, DB::Arena & pool)
     {
         if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
-        if constexpr (std::is_same_v<Key, StringRef>)
         {
-            if (inserted)
+            emplaceNonZero(x, it, inserted, hash_value);
+            if constexpr (std::is_same_v<Key, StringRef>)
             {
-                auto & key = it->getKey();
-                key.data = pool.insert(key.data, key.size);
+                if (inserted)
+                {
+                    auto & key = it->getKey();
+                    key.data = pool.insert(key.data, key.size);
+                }
             }
         }
     }

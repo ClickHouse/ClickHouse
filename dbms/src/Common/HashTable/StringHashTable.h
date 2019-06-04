@@ -43,11 +43,6 @@ using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
 struct StringKey24
 {
-#if !__clang__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     UInt64 a;
     UInt64 b;
     UInt64 c;
@@ -56,10 +51,6 @@ struct StringKey24
     bool operator!=(const StringKey24 rhs) const { return !operator==(rhs); }
     bool operator==(const UInt64 rhs) const { return a == rhs && b == 0 && c == 0; }
     bool operator!=(const UInt64 rhs) const { return !operator==(rhs); }
-
-#if !__clang__
-#    pragma GCC diagnostic pop
-#endif
 
     StringKey24 & operator=(const UInt64 rhs)
     {
@@ -70,22 +61,22 @@ struct StringKey24
     }
 };
 
-struct ToStringRef
+inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 {
-    StringRef ALWAYS_INLINE operator()(const StringKey8 & n)
-    {
-        return {reinterpret_cast<const char *>(&n), 8ul - (__builtin_clzll(n) >> 3)};
-    }
-    StringRef ALWAYS_INLINE operator()(const StringKey16 & n)
-    {
-        return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.high) >> 3)};
-    }
-    StringRef ALWAYS_INLINE operator()(const StringKey24 & n)
-    {
-        return {reinterpret_cast<const char *>(&n), 24ul - (__builtin_clzll(n.c) >> 3)};
-    }
-    const StringRef & ALWAYS_INLINE operator()(const StringRef & s) { return s; }
-};
+    return {reinterpret_cast<const char *>(&n), 8ul - (__builtin_clzll(n) >> 3)};
+}
+inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
+{
+    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.high) >> 3)};
+}
+inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
+{
+    return {reinterpret_cast<const char *>(&n), 24ul - (__builtin_clzll(n.c) >> 3)};
+}
+inline const StringRef & ALWAYS_INLINE toStringRef(const StringRef & s)
+{
+    return s;
+}
 
 struct StringHashTableHash
 {
@@ -360,13 +351,13 @@ public:
         value_type getValue() const { return value; }
         ValueHolder() : value{} {}
         template <typename Iterator>
-        ValueHolder(const Iterator & iter) : value(ToStringRef{}(iter->getValue()))
+        ValueHolder(const Iterator & iter) : value(toStringRef(iter->getValue()))
         {
         }
         template <typename Iterator>
         void operator=(const Iterator & iter)
         {
-            value = ToStringRef{}(iter->getValue());
+            value = toStringRef(iter->getValue());
         }
         // Only used to check if it's end() in find
         bool operator==(const ValueHolder & that) const { return value.size == 0 && that.value.size == 0; }
@@ -467,11 +458,7 @@ public:
         ms.readText(rb);
     }
 
-    size_t size() const
-    {
-        return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes() + m2.getBufferSizeInBytes() + m3.getBufferSizeInBytes()
-            + ms.getBufferSizeInBytes();
-    }
+    size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }
 
     bool empty() const { return m0.empty() && m1.empty() && m2.empty() && m3.empty() && ms.empty(); }
 

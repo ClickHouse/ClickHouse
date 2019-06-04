@@ -103,13 +103,13 @@ public:
         value_type getValue() const { return {key, *mapped}; }
         ValueHolder() : key{}, mapped{} {}
         template <typename Value>
-        ValueHolder(Value & value) : key(ToStringRef{}(value.getFirst())), mapped(&value.getSecond())
+        ValueHolder(Value & value) : key(toStringRef(value.getFirst())), mapped(&value.getSecond())
         {
         }
         template <typename Value>
         void operator=(Value & value)
         {
-            key = ToStringRef{}(value.getFirst());
+            key = toStringRef(value.getFirst());
             mapped = &value.getSecond();
         }
         // Only used to check if it's end() in find
