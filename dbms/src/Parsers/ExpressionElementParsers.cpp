@@ -1211,7 +1211,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (pos->type != TokenType::BareWord)
     {
-        expected.add(pos, "string literal");
+        expected.add(pos, "substitution name (identifier)");
         return false;
     }
 
@@ -1228,12 +1228,20 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (pos->type != TokenType::BareWord)
     {
-        expected.add(pos, "string literal");
+        expected.add(pos, "substitution type");
         return false;
     }
 
-    type = String(pos->begin, pos->end);
-    ++pos;
+    auto old_pos = pos;
+
+    while ((pos->type == TokenType::OpeningRoundBracket || pos->type == TokenType::ClosingRoundBracket
+        || pos->type == TokenType::Comma || pos->type == TokenType::BareWord)
+        && pos->type != TokenType::ClosingCurlyBrace)
+    {
+        ++pos;
+    }
+
+    type = String(old_pos->begin, pos->begin);
 
     if (pos->type != TokenType::ClosingCurlyBrace)
     {
