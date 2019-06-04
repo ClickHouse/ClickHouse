@@ -1,5 +1,5 @@
+# docker build -t yandex/clickhouse-integration-tests-runner .
 FROM ubuntu:18.04
-# yandex/clickhouse-integration-tests-runner
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
