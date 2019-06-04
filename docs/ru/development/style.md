@@ -307,14 +307,15 @@ size_t max_block_size;
 
 **2.** Имена функций (методов) camelCase с маленькой буквы.
 
-    ```cpp
-    std::string getName() const override { return "Memory"; }
-    ```
+```cpp
+std::string getName() const override { return "Memory"; }
+```
+
 **3.** Имена классов (структур) - CamelCase с большой буквы. Префиксы кроме I для интерфейсов - не используются.
 
-    ```cpp
-    class StorageMemory : public IStorage
-    ```
+```cpp
+class StorageMemory : public IStorage
+```
 
 **4.** `using` называются также, как классы, либо с `_t` на конце.
 

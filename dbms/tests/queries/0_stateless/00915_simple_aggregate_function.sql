@@ -22,6 +22,9 @@ drop table if exists test.simple;
 create table test.simple (id UInt64,nullable_str SimpleAggregateFunction(anyLast,Nullable(String)),low_str SimpleAggregateFunction(anyLast,LowCardinality(Nullable(String))),ip SimpleAggregateFunction(anyLast,IPv4)) engine=AggregatingMergeTree order by id;
 insert into test.simple values(1,'1','1','1.1.1.1');
 insert into test.simple values(1,null,'2','2.2.2.2');
+-- String longer then MAX_SMALL_STRING_SIZE (actual string length is 100)
+insert into test.simple values(10,'10','10','10.10.10.10');
+insert into test.simple values(10,'2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222','20','20.20.20.20');
 
 select * from test.simple final;
 select toTypeName(nullable_str),toTypeName(low_str),toTypeName(ip) from test.simple limit 1;

@@ -227,7 +227,7 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 Possible values:
 
 - Positive integer.
-- 0 — Rows control is disabled.
+- 0 — Unlimited number of rows.
 
 Default value: 0.
 
@@ -235,7 +235,7 @@ Default value: 0.
 
 Limits hash table size in bytes that is used when joining tables.
 
-This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md).
 
 If query contains some joins, ClickHouse checks this setting for every intermediate result.
 
@@ -266,5 +266,22 @@ Default value: `THROW`.
 
 - [JOIN clause](../../query_language/select.md#select-join)
 - [Join table engine](../table_engines/join.md)
+
+
+## max_partitions_per_insert_block
+
+Limits the maximum number of partitions in a single inserted block.
+
+- Positive integer.
+- 0 — Unlimited number of partitions.
+
+Default value: 100.
+
+**Details**
+
+When inserting data ClickHouse calculates the number of partitions in the inserted block, and if the number of partitions is more than `max_partitions_per_insert_block` then ClickHouse throws an exception with the following text:
+
+
+"Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

@@ -312,11 +312,13 @@ void HTTPHandler::processQuery(
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Zlib;
         }
+#if USE_BROTLI
         else if (http_response_compression_methods == "br")
         {
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Brotli;
         }
+#endif
     }
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
@@ -453,30 +455,6 @@ void HTTPHandler::processQuery(
         return false;
     };
 
-    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
-    std::string full_query;
-
-    /// Support for "external data for query processing".
-    if (startsWith(request.getContentType().data(), "multipart/form-data"))
-    {
-        ExternalTablesHandler handler(context, params);
-        params.load(request, istr, handler);
-
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-
-        /// Params are of both form params POST and uri (GET params)
-        for (const auto & it : params)
-            if (it.first == "query")
-                full_query += it.second;
-
-        in = std::make_unique<ReadBufferFromString>(full_query);
-    }
-    else
-        in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
-
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not
     /// belong to the Settings class.
@@ -497,29 +475,62 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    SettingsChanges settings_changes;
-    for (auto it = params.begin(); it != params.end(); ++it)
+    bool isExternalData = startsWith(request.getContentType().data(), "multipart/form-data");
+
+    if (isExternalData)
     {
-        if (it->first == "database")
+        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+        reserved_param_suffixes.reserve(3);
+        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+        reserved_param_suffixes.emplace_back("_format");
+        reserved_param_suffixes.emplace_back("_types");
+        reserved_param_suffixes.emplace_back("_structure");
+    }
+
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : params)
+    {
+        if (key == "database")
         {
-            context.setCurrentDatabase(it->second);
+            context.setCurrentDatabase(value);
         }
-        else if (it->first == "default_format")
+        else if (key == "default_format")
         {
-            context.setDefaultFormat(it->second);
+            context.setDefaultFormat(value);
         }
-        else if (param_could_be_skipped(it->first))
+        else if (param_could_be_skipped(key))
         {
         }
         else
         {
             /// All other query parameters are treated as settings.
-            settings_changes.push_back({it->first, it->second});
+            settings_changes.push_back({key, value});
         }
     }
 
+    /// For external data we also want settings
     context.checkSettingsConstraints(settings_changes);
     context.applySettingsChanges(settings_changes);
+
+    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
+    std::string full_query;
+
+    /// Support for "external data for query processing".
+    if (isExternalData)
+    {
+        ExternalTablesHandler handler(context, params);
+        params.load(request, istr, handler);
+
+        /// Params are of both form params POST and uri (GET params)
+        for (const auto & it : params)
+            if (it.first == "query")
+                full_query += it.second;
+
+        in = std::make_unique<ReadBufferFromString>(full_query);
+    }
+    else
+        in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.

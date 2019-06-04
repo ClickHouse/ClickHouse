@@ -77,6 +77,8 @@ private:
 
     size_t skip_broken;
 
+    bool intermediate_commit;
+
     // Stream thread
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
@@ -99,7 +101,8 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
+        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
+        bool intermediate_commit_);
 };
 
 }

@@ -7,6 +7,8 @@
 
 #include <Core/Types.h>
 #include <Core/Field.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Block.h>
 #include <Common/Exception.h>
 
 
@@ -45,6 +47,12 @@ public:
 
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
+
+    /// Get type which will be used for prediction result in case if function is an ML method.
+    virtual DataTypePtr getReturnTypeToPredict() const
+    {
+        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     virtual ~IAggregateFunction() {}
 
@@ -91,6 +99,13 @@ public:
 
     /// Inserts results into a column.
     virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
+
+    /// This function is used for machine learning methods
+    virtual void predictValues(ConstAggregateDataPtr /* place */, IColumn & /*to*/,
+                               Block & /*block*/, const ColumnNumbers & /*arguments*/, const Context & /*context*/) const
+    {
+        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Returns true for aggregate functions of type -State.
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
@@ -149,7 +164,6 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
-
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
             : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 

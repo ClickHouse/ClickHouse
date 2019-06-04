@@ -98,11 +98,6 @@ template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
 
 
-template <typename T> struct NativeType { using Type = T; };
-template <> struct NativeType<Decimal32> { using Type = Int32; };
-template <> struct NativeType<Decimal64> { using Type = Int64; };
-template <> struct NativeType<Decimal128> { using Type = Int128; };
-
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;
@@ -359,27 +354,27 @@ template <bool V, typename T> struct Case : std::bool_constant<V> { using type =
 template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
 
 template <typename DataType> constexpr bool IsIntegral = false;
-template <> constexpr bool IsIntegral<DataTypeUInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt64> = true;
-template <> constexpr bool IsIntegral<DataTypeInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
-template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
-template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
 template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 
