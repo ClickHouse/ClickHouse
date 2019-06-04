@@ -75,12 +75,21 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation state to the storage disk and continues query processing with much lower performance then in RAM. Memory consumption is calculated at local server even if the query is distributed.
+Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption exceeds the value of this setting, ClickHouse dumps operation state to the filesystem and continues query processing with much lower performance then in RAM. When processing a distributed query, ClickHouse calculates memory consumption at each individual server.
+
+The `GROUP BY` aggregation has two stages:
+
+1. Reading of data from disk and creating a temporary data in RAM.
+2. Merging of temporary data.
+
+Dumping of operation state to the filesystem is available only at the first stage. The second stage may require up to the same amount of RAM that is used by the first stage. Thus, you need to set the [max_memory_usage](#settings_max_memory_usage) setting with the `2 * max_bytes_before_external_group_by` value.
+
+For more details, see [GROUP BY in External Memory](../../#select-group-by-in-external-memory).
 
 Possible values:
 
 - Positive integer.
-- 0 — Control of the RAM consumption is disabled.
+- 0 — Unlimited number of rows in join.
 
 Default value: 0.
 
@@ -209,9 +218,9 @@ What to do when the amount of data exceeds one of the limits: 'throw' or 'break'
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md).
 
-If query contains some joins, ClickHouse checks this setting for every intermediate result.
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
 ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
 
@@ -241,9 +250,7 @@ Default value: 0.
 
 ## join_overflow_mode {#settings-join_overflow_mode}
 
-Defines an action that ClickHouse performs, when the corresponding limit is reached.
-
-Controlled limits:
+Defines an action that ClickHouse performs, when any of the following join limits is reached:
 
 - [max_bytes_in_join](#settings-max_bytes_in_join)
 - [max_rows_in_join](#settings-max_rows_in_join)
@@ -257,7 +264,7 @@ Default value: `THROW`.
 
 **See Also**
 
-- [JOIN Clause](../../query_language/select.md#select-join)
-- [Join engine](../table_engines/join.md)
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->
