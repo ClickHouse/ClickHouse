@@ -2,7 +2,7 @@
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-Для реализации соединения по JDBC ClickHouse использует программу [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). Программу следует запускать как демон.
+Для реализации соединения по JDBC ClickHouse использует отдельную программу [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge), которая должна запускаться как демон.
 
 Движок поддерживает тип данных [Nullable](../../data_types/nullable.md).
 
@@ -21,12 +21,11 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 - `external_database` — база данных во внешней СУБД.
-
 - `external_table` — таблица в `external_database`.
 
 ## Пример использования
 
-Создадим таблицу в MySQL (используя собственный движок MySQL):
+Создадим таблицу в MySQL (используя табличный движок MySQL):
 
 ```
 mysql> CREATE TABLE `test`.`test` (

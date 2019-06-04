@@ -2,7 +2,7 @@
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement the JDBC connection, ClickHouse uses the program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). You should run it as a daemon.
+To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) that should run as a daemon.
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
@@ -21,7 +21,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 - `external_database` — Database in an external DBMS.
-- `external_table` — The name of the table in `external_database`.
+- `external_table` — Name of the table in `external_database`.
 
 ## Usage Example
 
