@@ -701,16 +701,16 @@ But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting 
 
 ### LIMIT BY Clause
 
-The query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](syntax.md#syntax-expressions).
+A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](syntax.md#syntax-expressions).
 
 ClickHouse supports the following syntax:
 
 - `LIMIT [offset_value, ]n BY expressions`
 - `LIMIT n OFFSET offset_value BY expressions`
 
-During the query processing, ClickHouse selects data ordered by sorting key. Sorting key is set explicitly by [ORDER BY](#select-order-by) clause or implicitly as a property of table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block, belonging to a distinct combination of `expressions`, ClickHouse skips `offset_value` rows from the beginning of the block, and returns not more than `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, then ClickHouse returns no rows from the block.
+During query processing, ClickHouse selects data ordered by sorting key. The sorting key is set explicitly using an [ORDER BY](#select-order-by) clause or implicitly as a property of the table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block that belongs to a distinct combination of `expressions`, ClickHouse skips `offset_value` number of rows from the beginning of the block and returns a maximum of `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, ClickHouse returns zero rows from the block.
 
-`LIMIT BY` is not related to `LIMIT`, they can both be used in the same query.
+`LIMIT BY` is not related to `LIMIT`. They can both be used in the same query.
 
 **Examples**
 
@@ -747,7 +747,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 
 The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
 
-The following query returns the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
+The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
 
 ``` sql
 SELECT
