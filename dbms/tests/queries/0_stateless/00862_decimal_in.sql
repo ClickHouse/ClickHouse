@@ -1,3 +1,6 @@
+USE test;
+
+DROP TABLE IF EXISTS temp;
 CREATE TABLE temp
 (
     x Decimal(38,2),
@@ -27,3 +30,5 @@ SELECT * FROM temp WHERE x IN (toDecimal64(64, 3));
 SELECT * FROM temp WHERE y IN (toDecimal64(64, 1));
 SELECT * FROM temp WHERE y IN (toDecimal64(64, 2));
 SELECT * FROM temp WHERE y IN (toDecimal64(64, 3));
+
+DROP TABLE IF EXISTS temp;

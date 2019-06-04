@@ -1,6 +1,7 @@
-CREATE DATABASE test;
-
 USE test;
+
+DROP TABLE IF EXISTS fact_cpc_clicks;
+DROP TABLE IF EXISTS dim_model;
 
 CREATE TABLE fact_cpc_clicks (model_id UInt8) ENGINE = Memory;
 CREATE TABLE dim_model (model_id UInt8) ENGINE = Memory;
@@ -13,3 +14,6 @@ select f.model_id from fact_cpc_clicks as f left join dim_model as d on f.model_
 USE default;
 
 select f.model_id from test.fact_cpc_clicks as f left join test.dim_model as d on f.model_id=d.model_id limit 10;
+
+DROP TABLE test.fact_cpc_clicks;
+DROP TABLE test.dim_model;
