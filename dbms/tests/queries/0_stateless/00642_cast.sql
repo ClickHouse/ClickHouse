@@ -5,7 +5,7 @@ SELECT CAST(1, 'Enum8(\'hello\' = 1, \'world\' = 2)');
 SELECT cast(1, 'Enum8(\'hello\' = 1, \'world\' = 2)');
 
 SELECT CAST(1 AS Enum8(
-    'hello' = 1,
+    'hello' = 1, 
     'world' = 2));
 
 SELECT cast(1 AS Enum8(
@@ -17,7 +17,8 @@ SELECT cast(1, 'Enum8(\'hello\' = 1,\n\t\'world\' = 2)');
 
 SELECT toTimeZone(CAST(1 AS TIMESTAMP), 'UTC');
 
-CREATE TABLE cast
+DROP TABLE IF EXISTS test.cast;
+CREATE TABLE test.cast
 (
     x UInt8,
     e Enum8
@@ -38,8 +39,10 @@ CREATE TABLE cast
     )
 ) ENGINE = MergeTree ORDER BY e;
 
-SHOW CREATE TABLE cast FORMAT TSVRaw;
-DESC TABLE cast;
+SHOW CREATE TABLE test.cast FORMAT TSVRaw;
+DESC TABLE test.cast;
 
-INSERT INTO cast (x) VALUES (1);
-SELECT * FROM cast;
+INSERT INTO test.cast (x) VALUES (1);
+SELECT * FROM test.cast;
+
+DROP TABLE test.cast;

@@ -1,6 +1,11 @@
+USE test;
+DROP TABLE IF EXISTS t_local;
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
 CREATE TABLE t_local (dummy UInt8) ENGINE = Memory;
-CREATE TABLE t1 (dummy UInt8) ENGINE = Distributed(test_shard_localhost, 'default', 't_local');
-CREATE TABLE t2 (dummy UInt8) ENGINE = Distributed(test_shard_localhost, 'default', 't_local');
+CREATE TABLE t1 (dummy UInt8) ENGINE = Distributed(test_shard_localhost, 'test', 't_local');
+CREATE TABLE t2 (dummy UInt8) ENGINE = Distributed(test_shard_localhost, 'test', 't_local');
 
 INSERT INTO t_local VALUES (1);
 
