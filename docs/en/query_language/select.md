@@ -717,7 +717,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 
 The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
 
-The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows (`LIMIT n BY + LIMIT`).
+The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
 
 ``` sql
 SELECT
