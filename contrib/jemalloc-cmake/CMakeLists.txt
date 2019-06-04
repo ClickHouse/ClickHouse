@@ -40,6 +40,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+endif ()
+
 add_library(jemalloc STATIC ${SRCS})
 
 target_include_directories(jemalloc PUBLIC

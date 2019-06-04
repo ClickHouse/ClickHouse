@@ -34,6 +34,8 @@
                 <value>Values</value>
                 <value>JSONEachRow</value>
                 <value>TSKV</value>
+                <value>RowBinary</value>
+                <value>Native</value>
             </values>
         </substitution>
     </substitutions>
