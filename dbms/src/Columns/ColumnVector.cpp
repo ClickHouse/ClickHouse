@@ -216,6 +216,12 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 }
 
 template <typename T>
+Float64 ColumnVector<T>::getFloat64(size_t n) const
+{
+    return static_cast<Float64>(data[n]);
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = static_cast<const ColumnVector &>(src);
