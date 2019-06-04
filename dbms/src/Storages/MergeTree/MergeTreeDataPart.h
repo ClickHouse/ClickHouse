@@ -106,6 +106,9 @@ struct MergeTreeDataPart
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
+    /// Frozen by ALTER TABLE ... FREEZE ...
+    mutable bool is_frozen = false;
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.

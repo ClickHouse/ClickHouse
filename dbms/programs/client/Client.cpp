@@ -435,7 +435,7 @@ private:
 #if USE_READLINE
                     int res = read_history(history_file.c_str());
                     if (res)
-                        throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+                        std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
 #endif
                 }
                 else    /// Create history file.
@@ -612,7 +612,7 @@ private:
 
 #if USE_READLINE && HAVE_READLINE_HISTORY
                     if (!history_file.empty() && append_history(1, history_file.c_str()))
-                        throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+                        std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
                     prev_input = input;
@@ -866,7 +866,7 @@ private:
             std::cout << std::endl
                 << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
-            if (progress.rows >= 1000)
+            if (progress.read_rows >= 1000)
                 writeFinalProgress();
 
             std::cout << std::endl << std::endl;
@@ -1420,23 +1420,23 @@ private:
             << " Progress: ";
 
         message
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             message << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             message << ". ";
 
         written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-        if (progress.total_rows > 0)
+        if (progress.total_rows_to_read > 0)
         {
-            size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
+            size_t total_rows_corrected = std::max(progress.read_rows, progress.total_rows_to_read);
 
             /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
             ///  and the query is less than halfway done.
@@ -1444,7 +1444,7 @@ private:
             if (elapsed_ns > 500000000)
             {
                 /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
-                if (progress.rows * 2 < total_rows_corrected)
+                if (progress.read_rows * 2 < total_rows_corrected)
                     show_progress_bar = true;
 
                 if (show_progress_bar)
@@ -1452,7 +1452,7 @@ private:
                     ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
-                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
+                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
                         message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
                             message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
@@ -1461,7 +1461,7 @@ private:
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            message << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
         }
 
         message << ENABLE_LINE_WRAPPING;
@@ -1474,14 +1474,14 @@ private:
     void writeFinalProgress()
     {
         std::cout << "Processed "
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             std::cout << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             std::cout << ". ";
     }

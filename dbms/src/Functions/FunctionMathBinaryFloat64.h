@@ -59,7 +59,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!isNumber(arg))
+            if (!isNativeNumber(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         };

@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static void replaceConstFunction(IAST & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
@@ -44,19 +49,33 @@ static bool isCompatible(const IAST & node)
 {
     if (const auto * function = node.as<ASTFunction>())
     {
+        if (function->parameters)   /// Parametric aggregate functions
+            return false;
+
+        if (!function->arguments)
+            throw Exception("Logical error: function->arguments is not set", ErrorCodes::LOGICAL_ERROR);
+
         String name = function->name;
+
         if (!(name == "and"
             || name == "or"
             || name == "not"
             || name == "equals"
             || name == "notEquals"
+            || name == "less"
+            || name == "greater"
+            || name == "lessOrEquals"
+            || name == "greaterOrEquals"
             || name == "like"
             || name == "notLike"
             || name == "in"
-            || name == "greater"
-            || name == "less"
-            || name == "lessOrEquals"
-            || name == "greaterOrEquals"))
+            || name == "notIn"
+            || name == "tuple"))
+            return false;
+
+        /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
+        /// but a normal tuple with more than one element is represented as a parenthesed expression (x, y) and is perfectly compatible.
+        if (name == "tuple" && function->arguments->children.size() <= 1)
             return false;
 
         for (const auto & expr : function->arguments->children)
@@ -68,9 +87,8 @@ static bool isCompatible(const IAST & node)
 
     if (const auto * literal = node.as<ASTLiteral>())
     {
-        /// Foreign databases often have no support for Array and Tuple literals.
-        if (literal->value.getType() == Field::Types::Array
-            || literal->value.getType() == Field::Types::Tuple)
+        /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
+        if (literal->value.getType() == Field::Types::Array)
             return false;
 
         return true;

@@ -1,30 +1,24 @@
-#include <Databases/IDatabase.h>
+#include "StorageMergeTree.h"
 
+#include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
-#include <Common/localBackup.h>
-
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-
 #include <optional>
 
 
@@ -736,10 +730,10 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
-            clearOldPartsFromFilesystem();
             {
                 /// TODO: Implement tryLockStructureForShare.
                 auto lock_structure = lockStructureForShare(false, "");
+                clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
             }
             clearOldMutations();
