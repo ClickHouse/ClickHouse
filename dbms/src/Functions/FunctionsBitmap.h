@@ -55,6 +55,12 @@ namespace ErrorCodes
   *
   * Two bitmap andnot calculation, return cardinality:
   * bitmapAndnotCardinality: bitmap,bitmap -> integer
+  *
+  * Judge if a bitmap is superset of the another one:
+  * bitmapHasAll: bitmap,bitmap -> bool
+  *
+  * Judge if the intersection of two bitmap is nonempty:
+  * bitmapHasAny: bitmap,bitmap -> bool
   */
 
 template <typename Name>
