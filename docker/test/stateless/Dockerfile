@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-stateless-test .
 FROM yandex/clickhouse-deb-builder
 
 RUN apt-get update -y \
