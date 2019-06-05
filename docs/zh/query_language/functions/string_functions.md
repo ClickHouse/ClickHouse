@@ -60,6 +60,31 @@
 
 检查字符串是否为有效的UTF-8编码，是则返回1，否则返回0。
 
+## toValidUTF8
+
+用`�`（U+FFFD）字符替换无效的UTF-8字符。所有连续的无效字符都会被替换为一个替换字符。
+
+```
+toValidUTF8( input_string )
+```
+
+参数：
+
+- input_string — 任何一个[String](../../data_types/string.md)类型的对象。
+
+返回值： 有效的UTF-8字符串。
+
+### 示例
+
+```sql
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+```
+```text
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
+```
+
 ## reverse
 
 反转字符串。
@@ -67,6 +92,24 @@
 ## reverseUTF8
 
 以code point为单位反转UTF-8编码的字符串。如果字符串不是UTF-8编码，则可能获取到一个非预期的结果（不会抛出异常）。
+
+## format(pattern, s0, s1, ...)
+
+使用常量字符串`pattern`格式话其他参数。`pattern`字符串中包含由大括号`{}`包围的“替换字段”。 未被包含在大括号中的任何内容都被视为文本内容，它将原样保留在返回值中。 如果你需要在文本内容中包含一个大括号字符，它可以通过加倍来转义：`{{`和`}}`。 字段名称可以是数字（从零开始）或空（然后将它们视为连续数字）
+
+```sql
+SELECT format('{1} {0} {1}', 'World', 'Hello')
+
+┌─format('{1} {0} {1}', 'World', 'Hello')─┐
+│ Hello World Hello                       │
+└─────────────────────────────────────────┘
+
+SELECT format('{} {}', 'Hello', 'World')
+
+┌─format('{} {}', 'Hello', 'World')─┐
+│ Hello World                       │
+└───────────────────────────────────┘
+```
 
 ## concat(s1, s2, ...)
 

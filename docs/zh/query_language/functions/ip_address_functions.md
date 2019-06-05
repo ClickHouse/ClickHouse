@@ -178,5 +178,68 @@ SELECT IPv6CIDRtoIPv6Range(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## toIPv4(string)
+
+`IPv4StringToNum()`的别名，它采用字符串形式的IPv4地址并返回[IPv4](../../data_types/domains/ipv4.md)类型的值，该二进制值等于`IPv4StringToNum()`返回的值。
+
+``` sql
+WITH
+    '171.225.130.45' as IPv4_string
+SELECT
+    toTypeName(IPv4StringToNum(IPv4_string)),
+    toTypeName(toIPv4(IPv4_string))
+```
+
+```
+┌─toTypeName(IPv4StringToNum(IPv4_string))─┬─toTypeName(toIPv4(IPv4_string))─┐
+│ UInt32                                   │ IPv4                            │
+└──────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+``` sql
+WITH
+    '171.225.130.45' as IPv4_string
+SELECT
+    hex(IPv4StringToNum(IPv4_string)),
+    hex(toIPv4(IPv4_string))
+```
+
+```
+┌─hex(IPv4StringToNum(IPv4_string))─┬─hex(toIPv4(IPv4_string))─┐
+│ ABE1822D                          │ ABE1822D                 │
+└───────────────────────────────────┴──────────────────────────┘
+```
+
+## toIPv6(string)
+
+`IPv6StringToNum()`的别名，它采用字符串形式的IPv6地址并返回[IPv6](../../data_types/domains/ipv6.md)类型的值，该二进制值等于`IPv6StringToNum()`返回的值。
+
+``` sql
+WITH
+    '2001:438:ffff::407d:1bc1' as IPv6_string
+SELECT
+    toTypeName(IPv6StringToNum(IPv6_string)),
+    toTypeName(toIPv6(IPv6_string))
+```
+
+```
+┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
+│ FixedString(16)                          │ IPv6                            │
+└──────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+``` sql
+WITH
+    '2001:438:ffff::407d:1bc1' as IPv6_string
+SELECT
+    hex(IPv6StringToNum(IPv6_string)),
+    hex(toIPv6(IPv6_string))
+```
+
+```
+┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
+│ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
+└───────────────────────────────────┴──────────────────────────────────┘
+```
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

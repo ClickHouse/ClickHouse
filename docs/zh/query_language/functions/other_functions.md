@@ -4,6 +4,55 @@
 
 返回一个字符串，其中包含执行此函数的主机的名称。 对于分布式处理，如果在远程服务器上执行此函数，则将返回远程服务器主机的名称。
 
+## basename
+
+在最后一个斜杠或反斜杠后的字符串文本。 此函数通常用于从路径中提取文件名。
+
+```
+basename( expr )
+```
+
+**参数**
+
+- `expr` — 任何一个返回[String](../../data_types/string.md)结果的表达式。[String](../../data_types/string.md)
+
+**返回值**
+
+一个String类型的值，其包含：
+
+- 在最后一个斜杠或反斜杠后的字符串文本内容。
+
+    如果输入的字符串以斜杆或反斜杆结尾，例如：`/`或`c:\`，函数将返回一个空字符串。
+
+- 如果输入的字符串中不包含斜杆或反斜杠，函数返回输入字符串本身。
+
+**示例**
+
+```sql
+SELECT 'some/long/path/to/file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some-file-name' AS a, basename(a)
+```
+```text
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
+```
+
 ## visibleWidth(x)
 
 以文本格式（以制表符分隔）向控制台输出值时，计算近似宽度。
