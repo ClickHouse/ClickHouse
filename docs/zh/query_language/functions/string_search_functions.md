@@ -15,27 +15,27 @@
 
 对于不区分大小写的搜索，请使用函数`positionCaseInsensitiveUTF8`。
 
-## multiSearchAllPositions(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-与`position`相同，但函数返回一个数组，其中包含所有匹配`needle_i`的位置。
+与`position`相同，但函数返回一个数组，其中包含所有匹配needle<sub>i</sub>的位置。
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchAllPositionsCaseInsensitive，multiSearchAllPositionsUTF8，multiSearchAllPositionsCaseInsensitiveUTF8`。
 
-## multiSearchFirstPosition(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
 与`position`相同，但返回在`haystack`中与needles字符串匹配的最左偏移。
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchFirstPositionCaseInsensitive，multiSearchFirstPositionUTF8，multiSearchFirstPositionCaseInsensitiveUTF8`。
 
-## multiSearchFirstIndex(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstIndex(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-返回在字符串`haystack`中最先查找到的`needle_i`的索引`i`（从1开始），没有找到任何匹配项则返回0。
+返回在字符串`haystack`中最先查找到的needle<sub>i</sub>的索引`i`（从1开始），没有找到任何匹配项则返回0。
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchFirstIndexCaseInsensitive，multiSearchFirstIndexUTF8，multiSearchFirstIndexCaseInsensitiveUTF8`。
 
-## multiSearchAny(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-如果`haystack`中至少存在一个`needle_i`匹配则返回1，否则返回0。
+如果`haystack`中至少存在一个needle<sub>i</sub>匹配则返回1，否则返回0。
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchAnyCaseInsensitive，multiSearchAnyUTF8，multiSearchAnyCaseInsensitiveUTF8`。
 
@@ -52,23 +52,25 @@
 正则表达式与字符串一起使用，就像它是一组字节一样。正则表达式中不能包含空字节。
 对于在字符串中搜索子字符串的模式，最好使用LIKE或“position”，因为它们更加高效。
 
-## multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+## multiMatchAny(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 与`match`相同，但如果所有正则表达式都不匹配，则返回0；如果任何模式匹配，则返回1。它使用[hyperscan](https://github.com/intel/hyperscan)库。对于在字符串中搜索子字符串的模式，最好使用“multisearchany”，因为它更高效。
 
 **注意：任何`haystack`字符串的长度必须小于2<sup>32</ sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。**
 
-## multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 与`multiMatchAny`相同，但返回与haystack匹配的任何内容的索引位置。
 
-## multiFuzzyMatchAny(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAny(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 与`multiMatchAny`相同，但如果在haystack能够查找到任何模式匹配能够在指定的[编辑距离](https://en.wikipedia.org/wiki/Edit_distance)内进行匹配，则返回1。此功能也处于实验模式，可能非常慢。有关更多信息，请参阅[hyperscan文档](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching)。
 
-## multiFuzzyMatchAnyIndex(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAnyIndex(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 与`multiFuzzyMatchAny`相同，但返回匹配项的匹配能容的索引位置。
+
+**注意：`multiFuzzyMatch*`函数不支持UTF-8正则表达式，由于hyperscan限制，这些表达式被按字节解析。**
 
 **注意：如要关闭所有hyperscan函数的使用，请设置`SET allow_hyperscan = 0;`。**
 
@@ -100,11 +102,17 @@
 
 ## ngramDistance(haystack, needle)
 
-基于4-gram计算`haystack`和`needle`之间的距离：计算两个4-gram集合之间的对称差异，并用它们的基数和对其进行归一化。返回0到1之间的任何浮点数 -- 越接近0则表示越多的字符串彼此相似。如果`needle`超过32KB，函数将抛出异常。如果`haystack`字符串超过32Kb，则距离始终为1。
+基于4-gram计算`haystack`和`needle`之间的距离：计算两个4-gram集合之间的对称差异，并用它们的基数和对其进行归一化。返回0到1之间的任何浮点数 -- 越接近0则表示越多的字符串彼此相似。如果常量的`needle`或`haystack`超过32KB，函数将抛出异常。如果非常量的`haystack`或`needle`字符串超过32Kb，则距离始终为1。
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`ngramDistanceCaseInsensitive，ngramDistanceUTF8，ngramDistanceCaseInsensitiveUTF8`。
 
-**注意：对于UTF-8，我们使用3-gram。所有这些都不是完全公平的n-gram距离。我们使用2字节哈希来散列n-gram，然后计算这些哈希表之间的对称差异 - 可能会发生冲突。对于UTF-8不区分大小写的格式，我们不使用公平的`tolower`函数 - 我们将每个代码点字节的第5位（从零开始）归零 - 这适用于拉丁语，主要用于所有西里尔字母。**
+## ngramSearch(haystack, needle)
+
+与`ngramDistance`相同，但计算`needle`和`haystack`之间的非对称差异——`needle`的n-gram减去`needle`归一化n-gram。可用于模糊字符串搜索。
+
+对于不区分大小写的搜索或/和UTF-8格式，使用函数`ngramSearchCaseInsensitive，ngramSearchUTF8，ngramSearchCaseInsensitiveUTF8`。
+
+**注意：对于UTF-8，我们使用3-gram。所有这些都不是完全公平的n-gram距离。我们使用2字节哈希来散列n-gram，然后计算这些哈希表之间的（非）对称差异 - 可能会发生冲突。对于UTF-8不区分大小写的格式，我们不使用公平的`tolower`函数 - 我们将每个code point字节的第5位（从零开始）和字节的第一位归零 - 这适用于拉丁语，主要用于所有西里尔字母。**
 
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

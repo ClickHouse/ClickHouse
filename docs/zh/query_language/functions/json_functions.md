@@ -55,5 +55,142 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 目前不支持`\uXXXX\uYYYY`这些字符编码，这些编码不在基本多文种平面中（它们被转化为CESU-8而不是UTF-8）。
 
+以下函数基于[simdjson](https://github.com/lemire/simdjson)，专为更复杂的JSON解析要求而设计。但上述假设2仍然适用。
+
+## JSONHas(json[, indices_or_keys]...)
+
+如果JSON中存在该值，则返回`1`。
+
+如果该值不存在，则返回`0`。
+
+示例：
+
+```
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
+```
+
+`indices_or_keys`可以是零个或多个参数的列表，每个参数可以是字符串或整数。
+
+* String = 按成员名称访问JSON对象成员。
+* 正整数 = 从头开始访问第n个成员/成员名称。
+* 负整数 = 从末尾访问第n个成员/成员名称。
+
+您可以使用整数来访问JSON数组和JSON对象。
+
+例如：
+
+```
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+```
+
+## JSONLength(json[, indices_or_keys]...)
+
+返回JSON数组或JSON对象的长度。
+
+如果该值不存在或类型错误，将返回`0`。
+
+示例：
+
+```
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+```
+
+## JSONType(json[, indices_or_keys]...)
+
+返回JSON值的类型。
+
+如果该值不存在，将返回`Null`。
+
+示例：
+
+```
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+```
+
+## JSONExtractUInt(json[, indices_or_keys]...)
+## JSONExtractInt(json[, indices_or_keys]...)
+## JSONExtractFloat(json[, indices_or_keys]...)
+## JSONExtractBool(json[, indices_or_keys]...)
+
+解析JSON并提取值。这些函数类似于`visitParam*`函数。
+
+如果该值不存在或类型错误，将返回`0`。
+
+示例:
+
+```
+select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```
+
+## JSONExtractString(json[, indices_or_keys]...)
+
+解析JSON并提取字符串。此函数类似于`visitParamExtractString`函数。
+
+如果该值不存在或类型错误，则返回空字符串。
+
+该值未转义。如果unescaping失败，则返回一个空字符串。
+
+示例:
+
+```
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
+select JSONExtractString('{"abc":"hello}', 'abc') = ''
+```
+
+## JSONExtract(json[, indices_or_keys...], return_type)
+
+解析JSON并提取给定ClickHouse数据类型的值。
+
+这是以前的`JSONExtract<type>函数的变体。
+这意味着
+`JSONExtract(..., 'String')`返回与`JSONExtractString()`返回完全相同。
+`JSONExtract(..., 'Float64')`返回于`JSONExtractFloat()`返回完全相同。
+
+示例:
+
+```
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(Int64)') = NULL
+SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
+SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Thursday'
+SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
+```
+
+## JSONExtractKeysAndValues(json[, indices_or_keys...], value_type)
+
+从JSON中解析键值对，其中值是给定的ClickHouse数据类型。
+
+示例：
+
+```
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+```
+
+## JSONExtractRaw(json[, indices_or_keys]...)
+
+返回JSON的部分。
+
+如果部件不存在或类型错误，将返回空字符串。
+
+示例:
+
+```
+select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->

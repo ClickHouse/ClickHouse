@@ -98,5 +98,57 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
+## geohashEncode
+
+将经度和纬度编码为geohash-string，请参阅（http://geohash.org/,https://en.wikipedia.org/wiki/Geohash）。
+```
+geohashEncode(longitude, latitude, [precision])
+```
+
+**输入值**
+
+- longitude - 要编码的坐标的经度部分。其值应在`[-180°，180°]`范围内
+- latitude - 要编码的坐标的纬度部分。其值应在`[-90°，90°]`范围内
+- precision - 可选，生成的geohash-string的长度，默认为`12`。取值范围为`[1,12]`。任何小于`1`或大于`12`的值都会默认转换为`12`。
+
+**返回值**
+
+- 坐标编码的字符串（使用base32编码的修改版本）。
+
+**示例**
+
+``` sql
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
+```
+
+```
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+## geohashDecode
+
+将任何geohash编码的字符串解码为经度和纬度。
+
+**输入值**
+
+- encoded string - geohash编码的字符串。
+
+**返回值**
+
+- (longitude, latitude) - 经度和纬度的`Float64`值的2元组。
+
+**示例**
+
+``` sql
+SELECT geohashDecode('ezs42') AS res
+```
+
+```
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->

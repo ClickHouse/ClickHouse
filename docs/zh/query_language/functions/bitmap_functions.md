@@ -51,6 +51,55 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapHasAny
+
+与`hasAny(array，array)`类似，如果位图有任何公共元素则返回1，否则返回0。
+对于空位图，返回0。
+
+```
+bitmapHasAny(bitmap,bitmap)
+```
+
+**参数**
+
+- `bitmap` – bitmap对象。
+
+**示例**
+
+``` sql
+SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  1  │
+└─────┘
+```
+
+## bitmapHasAll
+
+与`hasAll(array，array)`类似，如果第一个位图包含第二个位图的所有元素，则返回1，否则返回0。
+如果第二个参数是空位图，则返回1。
+
+```
+bitmapHasAll(bitmap,bitmap)
+```
+
+**参数**
+
+- `bitmap` – bitmap 对象。
+
+**示例**
+
+``` sql
+SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  0  │
+└─────┘
+```
 
 ## bitmapAnd
 
