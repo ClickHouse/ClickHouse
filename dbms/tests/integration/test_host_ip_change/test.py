@@ -7,13 +7,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
-#node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True, ipv4_address='10.5.1.233')
-#node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True, ipv4_address='10.5.1.122')
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/listen_host.xml'], with_zookeeper=True, ipv6_address='2001:3984:3989::1:1111')
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml', 'configs/listen_host.xml'], with_zookeeper=True, ipv6_address='2001:3984:3989::1:1112')
-#node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-#node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +18,6 @@ def start_cluster():
         cluster.start()
 
         for node in [node1, node2]:
-            print "Creating tables", node.name
             node.query(
                 '''
                 CREATE DATABASE IF NOT EXISTS test;
@@ -42,22 +37,30 @@ def start_cluster():
         pass
 
 
-# Test that outdated parts are not removed when they cannot be removed from zookeeper
 def test_merge_doesnt_work_without_zookeeper(start_cluster):
+    # First we check, that normal replication works
     node1.query("INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)")
     assert node1.query("SELECT count(*) from test_table") == "3\n"
     assert_eq_with_retry(node2, "SELECT count(*) from test_table", "3")
 
-    print "IP before:", cluster.get_instance_ip("node1")
+    # We change source node ip
     cluster.restart_instance_with_ip_change(node1, "2001:3984:3989::1:7777")
-    print "IP after:", cluster.get_instance_ip("node1")
 
-    assert_eq_with_retry(node2, "SELECT count(*) from test_table", "3")
+    # Put some data to source node1
     node1.query("INSERT INTO test_table VALUES ('2018-10-01', 5), ('2018-10-02', 6), ('2018-10-03', 7)")
+    # Check that data is placed on node1
     assert node1.query("SELECT count(*) from test_table") == "6\n"
 
+    # Because of DNS cache dest node2 cannot download data from node1
     with pytest.raises(Exception):
         assert_eq_with_retry(node2, "SELECT count(*) from test_table", "6")
 
+    # drop DNS cache
     node2.query("SYSTEM DROP DNS CACHE")
+    # Data is downloaded
     assert_eq_with_retry(node2, "SELECT count(*) from test_table", "6")
+
+    # Just to be sure check one more time
+    node1.query("INSERT INTO test_table VALUES ('2018-10-01', 8)")
+    assert node1.query("SELECT count(*) from test_table") == "7\n"
+    assert_eq_with_retry(node2, "SELECT count(*) from test_table", "7")
