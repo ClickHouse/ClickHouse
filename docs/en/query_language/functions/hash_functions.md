@@ -4,13 +4,11 @@ Hash functions can be used for deterministic pseudo-random shuffling of elements
 
 ## halfMD5 {#hash_functions-halfmd5}
 
-Produces 64-bit hash value.
+Converts all the input parameters to strings and concatenates them. Then calculates the MD5 hash value from the resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
 
 ```
 halfMD5(par1, ...)
 ```
-
-The function converts all the input parameters to strings, and concatenate them. Then calculates the MD5 hash value from resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
 
 The function works relatively slow (5 million short strings per second per processor core).
 Consider using the [sipHash64](#hash_functions-siphash64) function instead.
@@ -281,11 +279,11 @@ murmurHash3_128( expr )
 
 **Parameters**
 
-- `expr` — Any of ClickHouse [expressions](../syntax.md#syntax-expressions) returning [String](../../data_types/string.md)-typed value.
+- `expr` — [Expressions](../syntax.md#syntax-expressions) returning [String](../../data_types/string.md)-typed value.
 
 **Returned Value**
 
-Hash value having [FixedString\[16\] data type](../../data_types/fixedstring.md).
+Hash value having [FixedString(16) data type](../../data_types/fixedstring.md).
 
 **Example**
 
