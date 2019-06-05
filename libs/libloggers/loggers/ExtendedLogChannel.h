@@ -1,7 +1,10 @@
 #pragma once
-#include <Core/Types.h>
-#include <Poco/Message.h>
+#include <string>
+//#include <Poco/Message.h>
 
+namespace Poco {
+    class Message;
+}
 
 namespace DB
 {
@@ -19,10 +22,10 @@ public:
     // Do not copy for efficiency reasons
     const Poco::Message & base;
 
-    UInt32 time_seconds = 0;
-    UInt32 time_microseconds = 0;
+    int32_t time_seconds = 0;
+    int32_t time_microseconds = 0;
 
-    UInt32 thread_number = 0;
+    int32_t thread_number = 0;
     std::string query_id;
 };
 

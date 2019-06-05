@@ -1,4 +1,5 @@
-#include <daemon/ExtendedLogChannel.h>
+#include "ExtendedLogChannel.h"
+
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <common/getThreadNumber.h>

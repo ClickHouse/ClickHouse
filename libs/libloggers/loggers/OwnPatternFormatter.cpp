@@ -1,18 +1,18 @@
-#include <daemon/OwnPatternFormatter.h>
+#include "OwnPatternFormatter.h"
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-
 #include <functional>
 #include <optional>
 #include <sys/time.h>
 #include <common/getThreadNumber.h>
-#include <daemon/BaseDaemon.h>
+//#include <daemon/BaseDaemon.h>
+#include "Loggers.h"
 
 
-OwnPatternFormatter::OwnPatternFormatter(const BaseDaemon * daemon_, OwnPatternFormatter::Options options_)
+OwnPatternFormatter::OwnPatternFormatter(const /*BaseDaemon*/ Loggers * daemon_, OwnPatternFormatter::Options options_)
     : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
 

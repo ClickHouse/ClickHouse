@@ -1,5 +1,5 @@
-#include <daemon/OwnFormattingChannel.h>
-#include <daemon/OwnPatternFormatter.h>
+#include "OwnFormattingChannel.h"
+#include "OwnPatternFormatter.h"
 
 
 namespace DB

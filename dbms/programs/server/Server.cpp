@@ -405,7 +405,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
+            buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },

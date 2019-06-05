@@ -1,13 +1,11 @@
-#include <daemon/OwnSplitChannel.h>
+#include "OwnSplitChannel.h"
 
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Core/Block.h>
-
 #include <Poco/Message.h>
 #include <common/getThreadNumber.h>
-
 #include <sys/time.h>
 #include <iostream>
 

@@ -107,6 +107,7 @@ endif()
 
 target_link_libraries (common
         PUBLIC
+    ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE

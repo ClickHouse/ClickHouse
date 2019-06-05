@@ -1,5 +1,5 @@
 #pragma once
-#include <daemon/ExtendedLogChannel.h>
+#include "ExtendedLogChannel.h"
 #include <Poco/Channel.h>
 #include <Poco/AutoPtr.h>
 #include <vector>
