@@ -86,7 +86,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        BlockOutputStreamPtr output = storage->write(query_ptr, context);
+        BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(*live_view);
         StorageLiveView::writeIntoLiveView(*live_view, block, context, output);
     }
     else

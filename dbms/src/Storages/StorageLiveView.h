@@ -121,10 +121,6 @@ public:
 
     void refresh(const Context & context);
 
-    BlockOutputStreamPtr write(
-        const ASTPtr &,
-        const Context &) override;
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -177,9 +173,11 @@ public:
             auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
             BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
             auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams), QueryProcessingStage::FetchColumns);
-            InterpreterSelectQuery select_block(live_view.getInnerQuery(), context, proxy_storage,
-                                                QueryProcessingStage::WithMergeableState);
-            auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(select_block.execute().in);
+            InterpreterSelectQuery select_block(live_view.getInnerQuery(),
+                context, proxy_storage,
+                QueryProcessingStage::WithMergeableState);
+            auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
+                select_block.execute().in);
             while (Block this_block = data_mergeable_stream->read())
                 new_mergeable_blocks->push_back(this_block);
         }
@@ -196,7 +194,8 @@ public:
                 mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
                 BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
                 InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names{});
-                auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
+                auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
+                    interpreter.execute().in);
                 while (Block this_block = view_mergeable_stream->read())
                     base_mergeable_blocks->push_back(this_block);
                 mergeable_blocks->push_back(base_mergeable_blocks);

@@ -117,6 +117,9 @@ void WriteBufferValidUTF8::nextImpl()
         memory[i] = p[i];
 
     working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
+
+    /// Propagate next() to the output buffer
+    output_buffer.next();
 }
 
 

@@ -448,11 +448,6 @@ BlockInputStreams StorageLiveView::watch(
     }
 }
 
-BlockOutputStreamPtr StorageLiveView::write(const ASTPtr & /*query*/, const Context & /*context*/)
-{
-    return std::make_shared<LiveViewBlockOutputStream>(*this);
-}
-
 void registerStorageLiveView(StorageFactory & factory)
 {
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
