@@ -102,10 +102,12 @@ class IO(object):
     def write(self, data):
         return os.write(self.master, data)
 
-    def expect(self, pattern, timeout=None):
+    def expect(self, pattern, timeout=None, escape=False):
         self.match = None
         self.before = None
         self.after = None
+        if escape:
+            pattern = re.escape(pattern)
         pattern = re.compile(pattern)
         if timeout is None:
             timeout = self._timeout
@@ -151,7 +153,7 @@ class IO(object):
             pass
         return data
 
-def spawn(*command):
+def spawn(command):
     master, slave = pty.openpty()
     process = Popen(command, preexec_fn=os.setsid, stdout=slave, stdin=slave, stderr=slave, bufsize=1)
     os.close(slave)
@@ -169,7 +171,7 @@ def reader(out, queue):
         queue.put(data)
 
 if __name__ == '__main__':
-   io = spawn('/bin/bash')
+   io = spawn(['/bin/bash','--noediting'])
    prompt = '\$ '
    io.logger(sys.stdout)
    io.timeout(2)
@@ -182,6 +184,6 @@ if __name__ == '__main__':
    io.send('SELECT 1')
    io.expect(prompt)
    io.send('SHOW TABLES')
-   io.expect('test')
+   io.expect('.*\r\n.*')
    io.expect(prompt)
    io.close()
