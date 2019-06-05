@@ -25,9 +25,12 @@ $CLICKHOUSE_CLIENT --max_threads=1 --param_d_a="[[1, 1], [2, 2]]"\
     -q "SELECT dt FROM ps WHERE da = {d_a:Array(Array(UInt8))}";
 $CLICKHOUSE_CLIENT --max_threads=1 --param_tisd="(10, 'Test')"\
     -q "SELECT a FROM ps WHERE t = {tisd:Tuple(Int16, String)}";
-$CLICKHOUSE_CLIENT --max_threads=1 --param_d_t="(10, ('dt', 10)))"\
+$CLICKHOUSE_CLIENT --max_threads=1 --param_d_t="(10, ('dt', 10))"\
     -q "SELECT da FROM ps WHERE dt = {d_t:Tuple(UInt8, Tuple(String, UInt8))}";
 $CLICKHOUSE_CLIENT --max_threads=1 --param_nd="2015-02-15"\
     -q "SELECT * FROM ps WHERE n = {nd:Nullable(Date)}";
+$CLICKHOUSE_CLIENT --max_threads=1 --param_injection="[1] OR 1"\
+    -q "SELECT * FROM ps WHERE a = {injection:Array(UInt32)}" 2>&1\
+    && grep 'Expected correct value in parameter';
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ps";
