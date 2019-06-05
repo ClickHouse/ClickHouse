@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (1, 2);"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
 
 # This one must throw and exception
-EXCEPTION_TEXT="Some constraints are not satisfied"
+EXCEPTION_TEXT="Constraint b_constraint is not satisfied"
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_constraints VALUES (1, 0);" 2>&1 \
     | grep -q "$EXCEPTION_TEXT" && echo "$EXCEPTION_SUCCESS_TEXT" || echo "Did not thrown an exception"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test_constraints;"
