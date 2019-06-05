@@ -8,7 +8,7 @@ They are located in the 'system' database.
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Contains metrics which are calculated periodically. For example, RAM in use.
+Contains metrics which are calculated periodically in background. For example, the amount of RAM in use.
 
 Columns:
 
@@ -38,9 +38,9 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **See Also**
 
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
 - [system.events](#system_tables-events) — Contains a number of happened events.
-- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.clusters
 
@@ -124,8 +124,8 @@ Contains information about the number of events that have occurred in the system
 Columns:
 
 - `event` ([String](../data_types/string.md)) — Event name.
-- `value` ([UInt64](../data_types/int_uint.md)) — Quantity.
-- `description` ([String](../data_types/string.md)) — Description of event.
+- `value` ([UInt64](../data_types/int_uint.md)) — Count of events occurred.
+- `description` ([String](../data_types/string.md)) — Description of an event.
 
 **Example**
 
@@ -197,7 +197,7 @@ Columns:
 
 ## system.metrics {#system_tables-metrics}
 
-Contains metrics which can be calculated instantly, or have an instant value. For example, a number of simultaneously processed queries, the current value for replica delay. This table is always up to date.
+Contains metrics which can be calculated instantly, or have an current value. For example, a number of simultaneously processed queries, the current value for replica delay. This table is always up to date.
 
 Columns:
 
