@@ -58,8 +58,12 @@ LocalServer::~LocalServer()
 
 void LocalServer::initialize(Poco::Util::Application & self)
 {
+    config().setString("logger", "local");
+    buildLoggers(config(), logger());
+
     Poco::Util::Application::initialize(self);
 
+/*
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
@@ -89,6 +93,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
             Poco::Logger::root().setLevel(log_level);
         }
     }
+*/
 }
 
 void LocalServer::applyCmdSettings()
