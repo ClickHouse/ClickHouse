@@ -78,7 +78,7 @@ required-columns
 patterns
 ```
 
-### Required columns
+### Required Columns
 
 Set the following parameters only if the name of columns differs from their default values:
 
@@ -112,14 +112,12 @@ default
     ...
 ```
 
-!!! note "Attention"
-    Patterns must be strictly ordered. Read about it below.
+!!! warning "Attention"
+    Patterns must be strictly ordered:
 
-Order of patterns:
-
-1. Patterns without `function` or `retention`.
-1. Patterns with both `function` and `retention`.
-1. Pattern `default`.
+    1. Patterns without `function` or `retention`.
+    1. Patterns with both `function` and `retention`.
+    1. Pattern `default`.
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
