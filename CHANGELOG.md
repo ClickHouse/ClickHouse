@@ -38,7 +38,7 @@ Kutenin](https://github.com/danlark1))
 * Translate documentation for some table engines to Chinese.
   [#5107](https://github.com/yandex/ClickHouse/pull/5107),
 [#5094](https://github.com/yandex/ClickHouse/pull/5094),
-[#5087](https://github.com/yandex/ClickHouse/pull/5087),
+[#5087](https://github.com/yandex/ClickHouse/pull/5087)
 ([张风啸](https://github.com/AlexZFX),
 [#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
 lee](https://github.com/neverlee))
@@ -47,7 +47,7 @@ lee](https://github.com/neverlee))
 * Print UTF-8 characters properly in `clickhouse-test`.
   [#5084](https://github.com/yandex/ClickHouse/pull/5084)
 ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Adde command line parameter for clickhouse-client to always load suggestion
+* Add command line parameter for clickhouse-client to always load suggestion
   data. [#5102](https://github.com/yandex/ClickHouse/pull/5102)
 ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Resolve some of PVS-Studio warnings.
