@@ -151,6 +151,11 @@ protected:
                     {
                         return { Block(), false };
                     }
+                    if (!end_of_blocks)
+                    {
+                        end_of_blocks = true;
+                        return { getHeader(), true };
+                    }
                     while (true)
                     {
                         bool signaled = condition.tryWait(mutex, std::max((UInt64)0, heartbeat_delay - ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
@@ -165,9 +170,9 @@ protected:
                         }
                         else
                         {
-                            //hashmap["blocks"] = blocks_hash;
+                            // heartbeat
                             last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
-                            //heartbeat(Heartbeat(last_event_timestamp, std::move(hashmap)));
+                            return { getHeader(), true };
                         }
                     }
                 }
@@ -181,6 +186,7 @@ protected:
 
         if (it == end)
         {
+            end_of_blocks = false;
             if (length > 0)
                 --length;
         }
@@ -204,6 +210,7 @@ private:
     Poco::FastMutex & mutex;
     /// Length specifies number of updates to send, default -1 (no limit)
     int64_t length;
+    bool end_of_blocks{0};
     UInt64 heartbeat_delay;
     String blocks_hash;
     UInt64 last_event_timestamp{0};

@@ -17,6 +17,8 @@ limitations under the License. */
 #include <Poco/Condition.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageLiveView.h>
@@ -62,7 +64,18 @@ public:
         condition.broadcast();
     }
 
-    Block getHeader() const override { return storage.getHeader(); }
+    Block getHeader() const override {
+        return {
+            ColumnWithTypeAndName(
+                ColumnUInt64::create(),
+                std::make_shared<DataTypeUInt64>(),
+                "version"),
+            ColumnWithTypeAndName(
+                ColumnString::create(),
+                std::make_shared<DataTypeString>(),
+                "hash")
+        };
+    }
 
     void refresh()
     {
@@ -94,6 +107,21 @@ public:
         return tryRead_(false);
     }
 
+    Block getEventBlock()
+    {
+        Block res{
+            ColumnWithTypeAndName(
+                DataTypeUInt64().createColumnConst(1, blocks_metadata->version)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeUInt64>(),
+                "version"),
+            ColumnWithTypeAndName(
+                DataTypeString().createColumnConst(1, blocks_metadata->hash)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeString>(),
+                "hash"),
+
+        };
+        return res;
+    }
 protected:
     Block readImpl() override
     {
@@ -153,6 +181,11 @@ protected:
                     {
                         return { Block(), false };
                     }
+                    if (!end_of_blocks)
+                    {
+                        end_of_blocks = true;
+                        return { getHeader(), true };
+                    }
                     while (true)
                     {
                         bool signaled = condition.tryWait(mutex, std::max((UInt64)0, heartbeat_delay - ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
@@ -167,10 +200,9 @@ protected:
                         }
                         else
                         {
-                            // return Block(version, hash)
-                            //hashmap["blocks"] = blocks_hash;
+                            // repeat the event block as a heartbeat
                             last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
-                            //heartbeat(Heartbeat(last_event_timestamp, std::move(hashmap)));
+                            return { getHeader(), true };
                         }
                     }
                 }
@@ -183,25 +215,14 @@ protected:
 
         if (it == end)
         {
+            end_of_blocks = false;
             if (length > 0)
                 --length;
         }
 
         last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
 
-        Block res{
-            ColumnWithTypeAndName(
-                DataTypeUInt64().createColumnConst(1, blocks_metadata->version)->convertToFullColumnIfConst(),
-                std::make_shared<DataTypeUInt64>(),
-                "version"),
-            ColumnWithTypeAndName(
-                DataTypeString().createColumnConst(1, blocks_metadata->hash)->convertToFullColumnIfConst(),
-                std::make_shared<DataTypeString>(),
-                "hash"),
-
-        };
-
-        return { res, true };
+        return { getEventBlock(), true };
     }
 
 private:
@@ -219,6 +240,7 @@ private:
     Poco::FastMutex & mutex;
     /// Length specifies number of updates to send, default -1 (no limit)
     int64_t length;
+    bool end_of_blocks{0};
     UInt64 heartbeat_delay;
     UInt64 last_event_timestamp{0};
     Poco::Timestamp timestamp;
