@@ -2266,6 +2266,8 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 {
     auto committed_parts_range = getDataPartsStateRange(state);
 
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Committed);
+
     /// The part can be covered only by the previous or the next one in data_parts.
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
 
@@ -2598,6 +2600,7 @@ MergeTreeData::getDetachedParts() const
 
         part.prefix = dir_name.substr(0, first_separator);
     }
+
     return res;
 }
 
