@@ -1,14 +1,18 @@
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
-
+#include <Parsers/formatAST.h>
 
 namespace DB
 {
 
 void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
-    for (auto & constraint_expr: expressions)
+    for (size_t i = 0; i < expressions.size(); ++i)
+    {
+        auto constraint_expr = expressions[i];
         if (!checkConstraintOnBlock(block, constraint_expr))
-            throw Exception{"Some constraints are not satisfied", ErrorCodes::QUERY_WAS_CANCELLED};
+            throw Exception{"Constraint " + constraints.constraints[i]->name + " is not satisfied at, constraint expression: " +
+            serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::LOGICAL_ERROR};
+    }
     output->write(block);
 }
 
