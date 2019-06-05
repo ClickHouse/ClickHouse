@@ -30,7 +30,7 @@ String ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != parameters_substitution.end())
         return search->second;
     else
-        throw Exception("Expected name " + name + " in argument --param_{name}", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Expected name '" + name + "' in argument --param_{name}", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
@@ -41,6 +41,7 @@ void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
 
     /// Replacing all occurrences of types Date and DateTime with String.
     /// String comparison is used in "WHERE" conditions with this types.
+
     boost::replace_all(type, "DateTime", "String");
     boost::replace_all(type, "Date", "String");
 
@@ -50,6 +51,9 @@ void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
+
+    if (!read_buffer.eof())
+        throw Exception("Expected correct value in parameter with name '" + ast_param->name + "'", ErrorCodes::BAD_ARGUMENTS);
 
     Field field = temp_column[0];
     ast = std::make_shared<ASTLiteral>(std::move(field));
