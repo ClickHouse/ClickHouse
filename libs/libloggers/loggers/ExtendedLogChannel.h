@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-//#include <Poco/Message.h>
 
 namespace Poco {
     class Message;

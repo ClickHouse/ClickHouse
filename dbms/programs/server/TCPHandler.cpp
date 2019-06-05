@@ -1,8 +1,6 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
-//#include <daemon/OwnSplitChannel.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>

@@ -19,7 +19,6 @@
   * Также сделан чуть более эффективным (что имеет мало значения).
   */
 
-//class BaseDaemon;
 class Loggers;
 
 class OwnPatternFormatter : public Poco::PatternFormatter
@@ -33,13 +32,12 @@ public:
         ADD_LAYER_TAG = 1 << 0
     };
 
-    OwnPatternFormatter(const /*BaseDaemon*/ Loggers * daemon_, Options options_ = ADD_NOTHING);
+    OwnPatternFormatter(const Loggers * daemon_, Options options_ = ADD_NOTHING);
 
     void format(const Poco::Message & msg, std::string & text) override;
     void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
 
 private:
-    //const BaseDaemon * daemon;
     const Loggers * daemon;
     Options options;
 };

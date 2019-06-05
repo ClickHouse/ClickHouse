@@ -6,7 +6,6 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
-//#include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Interpreters/Context.h>
@@ -71,7 +70,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    if (config().has("logger") || config().has("logger.level") || config().has("logger.log")) 
+    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
     {
         buildLoggers(config(), logger());
     }
@@ -84,22 +83,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
             Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
         }
     }
-
-/*
-
-    auto log_file = config().getString("logger.log", "");
-    if (!log_file.empty()) {
-        Poco::AutoPtr<Poco::SimpleFileChannel> channel(new Poco::SimpleFileChannel);
-        channel->setProperty(Poco::SimpleFileChannel::PROP_PATH, log_file);
-        Poco::Logger::root().setChannel(channel);
-
-        auto log_level = config().getString("logger.level", "trace");
-        if (!log_level.empty()) {
-            Poco::Logger::root().setLevel(log_level);
-        }
-    }
-*/
-
 }
 
 void LocalServer::applyCmdSettings()

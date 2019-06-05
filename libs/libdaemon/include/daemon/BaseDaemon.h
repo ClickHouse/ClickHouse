@@ -199,8 +199,6 @@ protected:
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
-    //std::optional<size_t> layer;
-
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
     std::atomic_size_t terminate_signals_counter{0};
