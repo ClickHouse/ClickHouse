@@ -63,6 +63,7 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <common/argsToConfig.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -206,8 +207,9 @@ private:
 
     void initialize(Poco::Util::Application & self)
     {
+DUMP(argv().size());
         Poco::Util::Application::initialize(self);
-
+DUMP(argv().size());
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
@@ -1802,6 +1804,11 @@ public:
         }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+
+DUMP(Client::argv().size());
+
+        argsToConfig(Client::argv(), config(), PRIO_APPLICATION - 100);
+
     }
 };
 
