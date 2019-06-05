@@ -311,7 +311,7 @@ skewPop( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning value of the ???? type.
+`expr` — Any of ClickHouse expressions returning a number.
 
 **Returned value**
 
@@ -325,7 +325,9 @@ SELECT skewPop( value ) FROM series_with_value_column
 
 ## skewSamp
 
-Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+
+It represents an unbiased estimate of the skewness of a random variable, if the values passed to the function are a sample of this random amount.
 
 ```
 skewSamp( expr )
@@ -333,11 +335,12 @@ skewSamp( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning value of the ???? type.
+`expr` — Any of ClickHouse expressions returning a number.
 
 **Returned value**
 
 The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+When `n <= 1`, returns `nan`.
 
 **Example of Use**
 
@@ -355,7 +358,7 @@ kurtPop( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning value of the ???? type.
+`expr` — Any of ClickHouse expressions returning a number.
 
 **Returned value**
 
@@ -369,7 +372,9 @@ SELECT kurtPop( value ) FROM series_with_value_column
 
 ## kurtSamp
 
-Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+
+It represents an unbiased estimate of the kurtosis of a random variable, if the values passed to the function are a sample of this random amount.
 
 ```
 kurtSamp( expr )
@@ -377,11 +382,12 @@ kurtSamp( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning value of the ???? type.
+`expr` — Any of ClickHouse expressions returning a number.
 
 **Returned value**
 
 The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+When `n <= 1`, returns `nan`.
 
 **Example of Use**
 
@@ -683,7 +689,7 @@ Parameters:
 
 Returned values:
 
-Parameters `(a, b)` of the resulting line `x = a*y + b`.
+Parameters `(a, b)` of the resulting line `y = a*x + b`.
 
 **Examples**
 
