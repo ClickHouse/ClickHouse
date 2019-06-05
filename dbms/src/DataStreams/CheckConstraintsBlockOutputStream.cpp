@@ -13,7 +13,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
     {
         auto constraint_expr = expressions[i];
         if (!checkConstraintOnBlock(block, constraint_expr))
-            throw Exception{"Constraint " + constraints.constraints[i]->name + " is not satisfied at, constraint expression: " +
+            throw Exception{"Constraint " + constraints.constraints[i]->name + " is not satisfied, constraint expression: " +
             serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::LOGICAL_ERROR};
     }
     output->write(block);
