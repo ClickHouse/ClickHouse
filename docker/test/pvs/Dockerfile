@@ -1,3 +1,5 @@
+# docker build -t yandex/clickhouse-pvs-test .
+
 FROM yandex/clickhouse-binary-builder
 
 RUN apt-get --allow-unauthenticated update -y \
