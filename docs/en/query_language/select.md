@@ -450,9 +450,9 @@ See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) descriptio
 
 #### Multiple JOIN
 
-When running queries, ClickHouse rewrites multiple joins as a combination of two-table joins and processes them sequentially. If there are four tables to join, ClickHouse combines the first and second table, then joins the result with the third, then finally with the fourth.
+ClickHouse rewrites multiple joins as a combination of two-table joins and processes them sequentially. For example, if there are four tables to join, ClickHouse joins the first and second table, then joins the result with the third, then finally with the fourth.
 
-If a query contains the `WHERE` clause, ClickHouse tries to push filters from this clause down to the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+If a query contains the `WHERE` clause, ClickHouse tries to pushdown filters from this clause through the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
 
 We recommend the `JOIN ON` or `JOIN USING` syntax for creating queries. For example:
 
@@ -460,7 +460,7 @@ We recommend the `JOIN ON` or `JOIN USING` syntax for creating queries. For exam
 SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
 ```
 
-You can use comma-separated lists of tables with join. This works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting. For example:
+You can use comma-separated lists of tables in the `FROM` clause. This works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting. For example:
 
 ```
 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
@@ -468,7 +468,7 @@ SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
 
 Don't mix these syntaxes.
 
-ClickHouse doesn't directly support syntax with commas, so we don't recommend using them. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts them to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
+ClickHouse doesn't directly support syntax with commas, so we don't recommend using them. The algorithm tries to rewrite the query in terms of `CROSS JOIN` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts `INNER JOIN` to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
 
 #### ANY or ALL Strictness
 

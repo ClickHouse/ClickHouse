@@ -221,10 +221,10 @@ ARRAY JOIN arr;
 
 ``` sql
 SELECT s, arr
-FROM arrays_test 
+FROM arrays_test
 LEFT ARRAY JOIN arr;
 ```
-``` 
+```
 ┌─s───────────┬─arr─┐
 │ Hello       │   1 │
 │ Hello       │   2 │
@@ -233,7 +233,7 @@ LEFT ARRAY JOIN arr;
 │ World       │   5 │
 │ Goodbye     │   0 │
 └─────────────┴─────┘
-``` 
+```
 
 #### Использование алиасов
 
@@ -245,7 +245,7 @@ FROM arrays_test
 ARRAY JOIN arr AS a;
 ```
 
-``` 
+```
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -259,7 +259,7 @@ ARRAY JOIN arr AS a;
 
 ``` sql
 SELECT s, arr_external
-FROM arrays_test 
+FROM arrays_test
 ARRAY JOIN [1, 2, 3] AS arr_external;
 ```
 
@@ -330,7 +330,7 @@ INSERT INTO nested_test
 VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
 ```
 
-``` 
+```
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
@@ -344,7 +344,7 @@ FROM nested_test
 ARRAY JOIN nest;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -362,7 +362,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`, `nest.y`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -380,7 +380,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -398,7 +398,7 @@ FROM nested_test
 ARRAY JOIN nest AS n;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -416,7 +416,7 @@ FROM nested_test
 ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -464,7 +464,7 @@ FROM <left_subquery>
 SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
 ```
 
-Вы можете использовать разделенные запятыми списки таблиц для объединения. Этот синтаксис работает только при включённой настройке [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion). Например:
+В секции `FROM` вы можете использовать разделенные запятыми списки таблиц для объединения. Этот синтаксис работает только при включённой настройке [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion). Например:
 
 ```
 SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
@@ -472,7 +472,7 @@ SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
 
 Не смешивайте синтаксисы.
 
-ClickHouse не поддерживает синтаксис с запятыми напрямую и мы не рекомендуем его использовать. Алгоритм пытается переписать запрос с помощью секций `CROSS` и `INNER JOIN` и затем продолжает его выполнение. При переписывании запроса, ClickHouse пытается оптимизировать производительность и потребление памяти. По умолчанию, ClickHouse трактует запятые как `INNER JOIN` и конвертирует их в  `CROSS JOIN` когда не может гарантировать, что `INNER JOIN` возвращает запрошенные данные.
+ClickHouse не поддерживает синтаксис с запятыми напрямую и мы не рекомендуем его использовать. Алгоритм пытается переписать запрос с помощью секций `CROSS JOIN` и `INNER JOIN` и затем продолжает его выполнение. При переписывании запроса, ClickHouse пытается оптимизировать производительность и потребление памяти. По умолчанию, ClickHouse трактует запятые как `INNER JOIN` и конвертирует их в `CROSS JOIN` когда не может гарантировать, что `INNER JOIN` возвращает запрошенные данные.
 
 #### ANY или ALL - строгость:
 
