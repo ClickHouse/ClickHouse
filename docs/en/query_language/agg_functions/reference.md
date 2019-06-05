@@ -595,7 +595,7 @@ Parameters:
 
 Returned values:
 
-Parameters `(a, b)` of the resulting line `x = a*y + b`.
+Constants `(a, b)` of the resulting line `x = a*y + b`.
 
 **Examples**
 

@@ -219,7 +219,7 @@ ORDER BY c3 DESC;
 Better version of the same query:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10)*100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q6. The previous request for a broader range of years, 2000-2008
@@ -251,7 +251,7 @@ ORDER BY c3 DESC;
 Better version of the same query:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10)*100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q7. Percentage of flights delayed for more than 10 minutes, by year

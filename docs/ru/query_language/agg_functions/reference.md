@@ -497,7 +497,7 @@ simpleLinearRegression(x, y)
 
 Возвращаемые значения:
 
-Параметры `(a, b)` результирующей прямой `x = a*y + b`.
+Константы `(a, b)` результирующей прямой `x = a*y + b`.
 
 **Примеры**
 
@@ -522,4 +522,3 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
-
