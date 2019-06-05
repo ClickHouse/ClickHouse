@@ -24,7 +24,6 @@ class Loggers;
 class OwnPatternFormatter : public Poco::PatternFormatter
 {
 public:
-
     /// ADD_LAYER_TAG is needed only for Yandex.Metrika, that share part of ClickHouse code.
     enum Options
     {

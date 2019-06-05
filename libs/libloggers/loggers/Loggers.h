@@ -1,15 +1,17 @@
+#include <optional>
 #include <string>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
-#include <optional>
 #include <Poco/Util/Application.h>
 
-namespace Poco::Util {
-    class AbstractConfiguration;
+namespace Poco::Util
+{
+class AbstractConfiguration;
 }
 
 
-class Loggers {
+class Loggers
+{
 public:
     /// Строит необходимые логгеры
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
@@ -19,7 +21,7 @@ public:
 
     std::optional<size_t> getLayer() const
     {
-        return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
+        return layer; /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
 protected:

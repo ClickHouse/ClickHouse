@@ -1,13 +1,12 @@
 #pragma once
-#include "ExtendedLogChannel.h"
-#include <Poco/Channel.h>
-#include <Poco/AutoPtr.h>
 #include <vector>
+#include <Poco/AutoPtr.h>
+#include <Poco/Channel.h>
+#include "ExtendedLogChannel.h"
 
 
 namespace DB
 {
-
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging

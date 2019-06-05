@@ -1,14 +1,13 @@
 #include "ExtendedLogChannel.h"
 
-#include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <common/getThreadNumber.h>
 #include <sys/time.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <common/getThreadNumber.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int CANNOT_GETTIMEOFDAY;

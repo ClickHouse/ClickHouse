@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())

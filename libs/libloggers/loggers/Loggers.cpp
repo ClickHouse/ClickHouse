@@ -1,15 +1,15 @@
 #include "Loggers.h"
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/SyslogChannel.h>
-#include "OwnSplitChannel.h"
-#include "OwnPatternFormatter.h"
+#include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
+#include "OwnPatternFormatter.h"
+#include "OwnSplitChannel.h"
 
-#include <Poco/Path.h>
-#include <Poco/File.h>
-#include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/ConsoleChannel.h>
+#include <Poco/File.h>
 #include <Poco/Logger.h>
+#include <Poco/Net/RemoteSyslogChannel.h>
+#include <Poco/Path.h>
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -98,7 +98,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
+            syslog_channel->setProperty(
+                Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
         }
         else
         {
@@ -115,7 +116,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log);
     }
 
-    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
+    if (config.getBool("logger.console", false)
+        || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
     {
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(new OwnPatternFormatter(this), new Poco::ConsoleChannel);
         logger.warning("Logging " + log_level + " to console");
@@ -130,7 +132,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.setLevel(log_level);
 
     // Set level to all already created loggers
-    std::vector <std::string> names;
+    std::vector<std::string> names;
     //logger_root = Logger::root();
     logger.root().names(names);
     for (const auto & name : names)

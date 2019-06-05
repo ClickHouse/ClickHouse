@@ -1,13 +1,13 @@
 #pragma once
 #include <string>
 
-namespace Poco {
-    class Message;
+namespace Poco
+{
+class Message;
 }
 
 namespace DB
 {
-
 /// Poco::Message with more ClickHouse-specific info
 /// NOTE: Poco::Message is not polymorphic class, so we can't use inheritance in couple with dynamic_cast<>()
 class ExtendedLogMessage
