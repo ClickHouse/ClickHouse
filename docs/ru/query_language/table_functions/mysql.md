@@ -53,7 +53,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Выборка данных в ClickHouse:
+Получение данных в ClickHouse:
 
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
