@@ -1,6 +1,6 @@
 # User settings
 
-The `users` section of the `user.xml` configuration file aggregates settings for users.
+The `users` section of the `user.xml` configuration file contains settings for users.
 
 Structure of the `users` section:
 
@@ -35,7 +35,7 @@ Structure of the `users` section:
 
 Password could be specified in plaintext or in SHA256 (hex format).
 
-- To specify password in plaintext (not recommended), place it in a `password` element.
+- To specify password in plaintext (**not recommended**), place it in a `password` element.
 
     For example, `<password>qwerty</password>`. Password can be empty.
 
@@ -43,7 +43,7 @@ Password could be specified in plaintext or in SHA256 (hex format).
 
     For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
 
-    To generate password, in the command prompt perform the command:
+    Example of how to generate password from shell:
 
     ```
     PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
@@ -66,13 +66,13 @@ Each element of list has one of the following forms:
 
     Example: `server01.yandex.ru`.
 
-    To check access, DNS query is performed, and all received addresses compared to peer address.
+    To check access, DNS query is performed, and all returned IP-addresses are compared to peer address.
 
-- `<host_regexp>` — Regular expression for host names.
+- `<host_regexp>` — Regular expression for hostnames.
 
     Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
 
-    To check access, DNS PTR query is performed for peer address and then regexp is applied. Then, for result of PTR query, another DNS query is performed and all received addresses compared to peer address. Strongly recommended that regexp is ends with $
+    To check access, [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for peer address and then regexp is applied. Then, for result of PTR query, another DNS query is performed and all received addresses compared to peer address. Strongly recommended that regexp is ends with $
 
 All results of DNS requests are cached till server restart.
 
@@ -84,6 +84,10 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
+!!! warning "Warning"
+    It's insecure to open access from any network, unless you have a firewall properly configured or server is not directly connected to Internet.
+
+
 To open access only from localhost, specify:
 
 ```
@@ -93,7 +97,7 @@ To open access only from localhost, specify:
 
 ### user_name/profile
 
-You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information see the [Settings profile](settings_profiles.md).
+You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information see the [Profiles of Settings](settings_profiles.md).
 
 ### user_name/quota
 
@@ -104,7 +108,7 @@ You can assign a quotas set for the user. For the detailed description of quotas
 
 ### user_name/databases
 
-In this section you can choose which rows ClickHouse returns by `SELECT` query. This feature implements a kind of Row-Level Security in ClickHouse.
+In this section you can you can limit rows that are returned by ClickHouse for `SELECT` queries of current user, thus implementing basic row level security.
 
 **Example**
 
@@ -122,4 +126,4 @@ The following configuration sets that the user `user1` can see only the rows of 
 </user1>
 ```
 
-The `filter` can be any expression resulting with the [UInt8](../../data_types/int_uint.md)-typed value. It usually contains comparisons and logical operators. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+The `filter` can be any expression resulting with the [UInt8](../../data_types/int_uint.md)-typed value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization. 
