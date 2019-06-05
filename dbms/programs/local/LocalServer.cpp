@@ -6,7 +6,7 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
-#include <Poco/SimpleFileChannel.h>
+//#include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Interpreters/Context.h>
@@ -58,12 +58,8 @@ LocalServer::~LocalServer()
 
 void LocalServer::initialize(Poco::Util::Application & self)
 {
-    config().setString("logger", "local");
-    buildLoggers(config(), logger());
-
     Poco::Util::Application::initialize(self);
 
-/*
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
@@ -75,12 +71,21 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    // Turn off server logging to stderr
-    if (!config().has("verbose"))
+    if (config().has("logger") || config().has("logger.level") || config().has("logger.log")) 
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        buildLoggers(config(), logger());
     }
+    else
+    {
+        // Turn off server logging to stderr
+        if (!config().has("verbose"))
+        {
+            Poco::Logger::root().setLevel("none");
+            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        }
+    }
+
+/*
 
     auto log_file = config().getString("logger.log", "");
     if (!log_file.empty()) {
@@ -94,6 +99,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         }
     }
 */
+
 }
 
 void LocalServer::applyCmdSettings()

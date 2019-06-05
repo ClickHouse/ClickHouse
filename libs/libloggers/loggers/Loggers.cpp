@@ -25,7 +25,7 @@ static std::string commandName() {return "";} //TODO!!!!!!!!
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/)
 {
-    auto current_logger = config.getString("logger");
+    auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
         return;
     config_logger = current_logger;
