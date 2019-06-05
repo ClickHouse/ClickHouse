@@ -4,7 +4,7 @@ Hash functions can be used for deterministic pseudo-random shuffling of elements
 
 ## halfMD5 {#hash_functions-halfmd5}
 
-Converts all the input parameters to strings and concatenates them. Then calculates the MD5 hash value from the resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
+[Interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes. Then from the resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
 
 ```
 halfMD5(par1, ...)
@@ -45,6 +45,8 @@ Produces 64-bit [SipHash](https://131002.net/siphash/) hash value.
 ```
 sipHash64(par1,...)
 ```
+
+This function [interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes.
 
 This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) function.
 
@@ -146,6 +148,8 @@ Produces a 64-bit [FarmHash](https://github.com/google/farmhash) hash value.
 ```
 farmHash64(par1, ...)
 ```
+
+The function uses the `Hash64` method from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
 **Parameters**
 
