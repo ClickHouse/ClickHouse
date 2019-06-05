@@ -80,6 +80,26 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
+### Constraints {#constraints}
+
+WARNING: This feature is experimental. Correct work is not guaranteed on non-MergeTree family engines.
+
+Along with columns descriptions constraints could be defined:
+
+``sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+`boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
+
+Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
+
 ### TTL expression
 
 Can be specified only for MergeTree-family tables. An expression for setting storage time for values. It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
