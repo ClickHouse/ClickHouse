@@ -31,6 +31,6 @@ $CLICKHOUSE_CLIENT --max_threads=1 --param_nd="2015-02-15"\
     -q "SELECT * FROM ps WHERE n = {nd:Nullable(Date)}";
 $CLICKHOUSE_CLIENT --max_threads=1 --param_injection="[1] OR 1"\
     -q "SELECT * FROM ps WHERE a = {injection:Array(UInt32)}" 2>&1\
-    && grep 'Expected correct value in parameter';
+    | grep 'Expected correct value in parameter';
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ps";
