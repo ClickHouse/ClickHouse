@@ -35,6 +35,8 @@ public:
     void writePrefix() override;
     void writeSuffix() override;
 
+    bool checkImplMemory(const Block & block, const ExpressionActionsPtr & constraint);
+    bool checkImplBool(const Block & block, const ExpressionActionsPtr & constraint);
     bool checkConstraintOnBlock(const Block & block, const ExpressionActionsPtr & constraint);
 
 private:
