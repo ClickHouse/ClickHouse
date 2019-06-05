@@ -21,9 +21,7 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-static std::string commandName() {return "";} //TODO!!!!!!!!
-
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/)
+void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
@@ -88,7 +86,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
-        const std::string & cmd_name = commandName();
+        //const std::string & cmd_name = commandName();
 
         if (config.has("logger.syslog.address"))
         {

@@ -1,21 +1,18 @@
-#include<string>
-#include<Poco/AutoPtr.h>
+#include <string>
+#include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <optional>
 #include <Poco/Util/Application.h>
 
-namespace Poco {
-//class Channel;
-}
 namespace Poco::Util {
     class AbstractConfiguration;
 }
 
 
-class Loggers /*: public Poco::Util::Application*/ /*, public Poco::Logger */ {
+class Loggers {
 public:
     /// Строит необходимые логгеры
-    void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger_root);
+    void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
 
     /// Закрыть файлы с логами. При следующей записи, будут созданы новые файлы.
     void closeLogs(Poco::Logger & logger);
