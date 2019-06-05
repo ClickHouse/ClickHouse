@@ -1,6 +1,5 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
