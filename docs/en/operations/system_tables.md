@@ -210,7 +210,7 @@ Formats:
 
 - engine (String) – Name of the table engine without parameters.
 
-- is_frozen (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup not exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+- is_frozen (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
 
 ## system.part_log {#system_tables-part-log}
 
