@@ -102,7 +102,7 @@ class ClickHouseCluster:
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
-        self.with_net = False
+        self.with_net_trics = False
 
         self.docker_client = None
         self.is_up = False
@@ -138,17 +138,18 @@ class ClickHouseCluster:
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
-            self.with_net = True
+            self.with_net_trics = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
+        cmds = []
         if with_zookeeper and not self.with_zookeeper:
             self.with_zookeeper = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
-            if self.with_net:
-                self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                           self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml'), '--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')]
+            self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                           self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+            cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
@@ -156,11 +157,14 @@ class ClickHouseCluster:
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
 
+            cmds.append(self.base_mysql_cmd)
+
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+            cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -169,29 +173,39 @@ class ClickHouseCluster:
                 self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                cmds.append(self.base_mysql_cmd)
+
             if not self.with_postgres:
                 self.with_postgres = True
                 self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+            cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+            cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+            cmds.append(self.base_mongo_cmd)
+
+        if self.with_net_trics:
+            for cmd in cmds:
+                cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
 
         return instance
 
