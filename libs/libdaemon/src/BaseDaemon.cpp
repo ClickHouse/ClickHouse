@@ -28,8 +28,6 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Message.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
@@ -44,7 +42,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/config_version.h>
-#include <Common/CurrentThread.h>
 #include <common/argsToConfig.h>
 
 #if USE_UNWIND

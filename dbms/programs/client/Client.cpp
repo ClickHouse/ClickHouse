@@ -65,6 +65,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
+#include <common/argsToConfig.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -207,6 +208,7 @@ private:
     void initialize(Poco::Util::Application & self)
     {
         Poco::Util::Application::initialize(self);
+
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
@@ -1548,7 +1550,7 @@ public:
           *   where possible args are file, name, format, structure, types.
           * Split these groups before processing.
           */
-        using Arguments = std::vector<const char *>;
+        using Arguments = std::vector<std::string>;
 
         Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
@@ -1670,8 +1672,7 @@ public:
             ("types", po::value<std::string>(), "types")
         ;
         /// Parse main commandline options.
-        po::parsed_options parsed = po::command_line_parser(
-            common_arguments.size(), common_arguments.data()).options(main_description).run();
+        po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -1704,8 +1705,7 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed_tables = po::command_line_parser(
-                external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
+            po::parsed_options parsed_tables = po::command_line_parser(external_tables_arguments[i]).options(external_description).run();
             po::variables_map external_options;
             po::store(parsed_tables, external_options);
 
@@ -1801,6 +1801,9 @@ public:
         }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+
+        argsToConfig(common_arguments, config(), 100);
+
     }
 };
 
