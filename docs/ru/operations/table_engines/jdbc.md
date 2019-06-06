@@ -25,7 +25,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 ## Пример использования
 
-Создадим таблицу в MySQL (используя табличный движок MySQL):
+Создадим таблицу в на сервере MySQL с помощью консольного клиента MySQL:
 
 ```
 mysql> CREATE TABLE `test`.`test` (
@@ -48,7 +48,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Выбор данных из таблицы в ClickHouse:
+Создадим таблицу на сервере ClickHouse и получим из неё данные:
 
 ```
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')

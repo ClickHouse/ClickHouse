@@ -25,7 +25,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 ## Usage Example
 
-Creating a table in MySQL (using the native MySQL engine):
+Creating a table in MySQL server by connecting directly with it's console client:
 
 ```
 mysql> CREATE TABLE `test`.`test` (
@@ -48,7 +48,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Selecting data from the table in ClickHouse:
+Creating a table in ClickHouse server and selecting data from it:
 
 ```
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
