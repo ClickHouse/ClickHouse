@@ -4,6 +4,55 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## basename
+
+Extracts trailing part of a string after the last slash or backslash. This function if often used to extract the filename from the path.
+
+```
+basename( expr )
+```
+
+**Parameters**
+
+- `expr` — Expression, resulting in the [String](../../data_types/string.md)-type value. All the backslashes must be escaped in the resulting value.
+
+**Returned Value**
+
+A String-type value that contains:
+
+- Trailing part of a string after the last slash or backslash in it.
+
+    If the input string contains a path, ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+
+- Original string if there are no slashes or backslashes in it.
+
+**Example**
+
+```sql
+SELECT 'some/long/path/to/file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some-file-name' AS a, basename(a)
+```
+```text
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
+```
+
 ## visibleWidth(x)
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
@@ -150,7 +199,7 @@ Types:
 
 `T` and `U` can be numeric, string, or Date or DateTime types.
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
-For example, the first argument can have the Int64 type, while the second has the Array(Uint16) type.
+For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the existing element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'default'. If there are multiple matching elements in 'array_from', it returns one of the matches.
 

@@ -130,6 +130,7 @@ void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
+void registerOutputFormatMySQLWire(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -168,6 +169,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatODBCDriver(*this);
     registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
+    registerOutputFormatMySQLWire(*this);
 }
 
 }

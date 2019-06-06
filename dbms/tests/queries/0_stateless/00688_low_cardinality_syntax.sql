@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types = 1;
 drop table if exists lc_str_0;
 drop table if exists lc_str_1;
 drop table if exists lc_null_str_0;

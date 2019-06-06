@@ -246,9 +246,9 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
 ///
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
