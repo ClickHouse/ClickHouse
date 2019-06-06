@@ -237,7 +237,7 @@ The key for partitioning by month allows reading only those data blocks which co
 
 ### Use of Index for Partially-Monotonic Primary Keys
 
-Consider, for example, the days of the month. They are the monotonic sequence inside one month, but they are not monotonic for a more extended period. This is the partially-monotonic sequence. If a user creates the table with such partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from such a table, ClickHouse analyzes query conditions. If the user wants to get data between two marks of the index and both this marks are within one month, ClickHouse can use the index in this particular case because it can calculate the distance between parameters of query and index marks.
+Consider, for example, the days of the month. They are the [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) inside one month, but they are not monotonic for a more extended period. This is the partially-monotonic sequence. If a user creates the table with such partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from such a table, ClickHouse analyzes query conditions. If the user wants to get data between two marks of the index and both this marks are within one month, ClickHouse can use the index in this particular case because it can calculate the distance between parameters of query and index marks.
 
 ClickHouse cannot use an index if the values of the primary key on the query parameters range don't represent the monotonic sequence. In this case, ClickHouse uses full scan method.
 
