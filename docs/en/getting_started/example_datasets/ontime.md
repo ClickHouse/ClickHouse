@@ -163,7 +163,12 @@ clickhouse-client --query "select count(*) from datasets.ontime"
 Q0.
 
 ``` sql
-select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
+SELECT avg(c1)
+FROM (
+    SELECT Year, Month, count(*) AS c1
+    FROM ontime
+    GROUP BY Year, Month
+);
 ```
 
 Q1. The number of flights per day from the year 2000 to 2008
