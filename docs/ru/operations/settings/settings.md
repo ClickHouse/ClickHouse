@@ -602,6 +602,6 @@ ClickHouse использует этот параметр при чтении д
 
 **Смотрите также**
 
-- [Multiple JOIN](../../query_language/select.md#select-join)
+- [Множественный JOIN](../../query_language/select.md#select-join)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
