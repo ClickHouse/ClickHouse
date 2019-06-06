@@ -98,7 +98,7 @@ nav:
     - 'Buffer': 'operations/table_engines/buffer.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
-    
+
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
