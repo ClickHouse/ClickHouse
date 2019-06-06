@@ -17,7 +17,7 @@
 
 Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
-## toDecimal*OrNull
+## toDecimal(32|64|128)OrNull
 
 Converts an input string to the value of [Nullable(Decimal(P,S))](../../data_types/decimal.md) data type. This family of functions include:
 
@@ -59,7 +59,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 ```
 
 
-## toDecimal*OrZero
+## toDecimal(32|64|128)OrZero
 
 Converts an input value to the [Decimal(P,S)](../../data_types/decimal.md) data type. This family of functions include:
 
