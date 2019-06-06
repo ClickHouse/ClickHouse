@@ -1785,7 +1785,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNumber(from_type) || isEnum(from_type))
+        else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
 
