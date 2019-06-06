@@ -115,10 +115,10 @@ public:
                 n[1] >>= s;
                 res = _mm_crc32_u64(res, n[1]);
                 buck = getBucketFromHash(res);
-                return func(impls[buck].m2, *reinterpret_cast<StringKey16 *>(n), res);
+                return func(impls[buck].m2, *reinterpret_cast<StringKey16 *>(&n[0]), res);
             }
             CASE_17_24 : {
-                memcpy(&n, p, 16);
+                memcpy(&n[0], p, 16);
                 res = _mm_crc32_u64(res, n[0]);
                 res = _mm_crc32_u64(res, n[1]);
                 const char * lp = x.data + x.size - 8;
@@ -126,7 +126,7 @@ public:
                 n[2] >>= s;
                 res = _mm_crc32_u64(res, n[2]);
                 buck = getBucketFromHash(res);
-                return func(impls[buck].m3, *reinterpret_cast<StringKey24 *>(n), res);
+                return func(impls[buck].m3, *reinterpret_cast<StringKey24 *>(&n[0]), res);
             }
             default: {
                 memcpy(&n, x.data, 24);

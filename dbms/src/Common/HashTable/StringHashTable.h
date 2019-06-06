@@ -311,17 +311,17 @@ public:
                 memcpy(&n[1], lp, 8);
                 n[1] >>= s;
                 res = _mm_crc32_u64(res, n[1]);
-                return func(m2, *reinterpret_cast<StringKey16 *>(n), res);
+                return func(m2, *reinterpret_cast<StringKey16 *>(&n[0]), res);
             }
             CASE_17_24 : {
-                memcpy(&n, p, 16);
+                memcpy(&n[0], p, 16);
                 res = _mm_crc32_u64(res, n[0]);
                 res = _mm_crc32_u64(res, n[1]);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
                 n[2] >>= s;
                 res = _mm_crc32_u64(res, n[2]);
-                return func(m3, *reinterpret_cast<StringKey24 *>(n), res);
+                return func(m3, *reinterpret_cast<StringKey24 *>(&n[0]), res);
             }
             default: {
                 memcpy(&n, x.data, 24);
