@@ -73,7 +73,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ## cityHash64
 
@@ -303,7 +303,7 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 ## xxHash32, xxHash64
 
 Calculates xxHash from a string.
-ccepts a String-type argument. Returns UInt64 Or UInt32.
+Accepts a String-type argument. Returns UInt64 Or UInt32.
 For more information, see the link: [xxHash](http://cyan4973.github.io/xxHash/)
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->
