@@ -514,7 +514,7 @@ load_balancing = first_or_random
 
 ## prefer_localhost_replica {#settings-prefer_localhost_replica}
 
-Включает / выключает предпочтительное использование localhost реплики при обработке распределенных запросов.
+Включает или выключает предпочтительное использование localhost реплики при обработке распределенных запросов.
 
 Возможные значения:
 
@@ -522,6 +522,9 @@ load_balancing = first_or_random
 - 0 — ClickHouse использует балансировку, заданную настройкой [load_balancing](#settings-load_balancing).
 
 Значение по умолчанию: 1.
+
+!!! warning "Warning"
+    Отключайте эту настройку при использовании [max_parallel_replicas](#settings-max_parallel_replicas).
 
 ## totals_mode
 
@@ -533,7 +536,7 @@ load_balancing = first_or_random
 Порог для `totals_mode = 'auto'`.
 Смотрите раздел "Модификатор WITH TOTALS".
 
-## max_parallel_replicas
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 Максимальное количество используемых реплик каждого шарда при выполнении запроса.
 Для консистентности (чтобы получить разные части одного и того же разбиения), эта опция работает только при заданном ключе сэмплирования.
