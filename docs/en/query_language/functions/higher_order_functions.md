@@ -139,7 +139,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
 
-The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to improve sorting efficiency.
 
 Example:
 

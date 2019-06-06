@@ -62,10 +62,7 @@ public:
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
-        if (!col_needle_const)
-            throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
-
-        if (col_haystack_const)
+        if (col_haystack_const && col_needle_const)
         {
             ResultType res{};
             const String & needle = col_needle_const->getValue<String>();
@@ -88,8 +85,9 @@ public:
         vec_res.resize(column_haystack->size());
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
 
-        if (col_haystack_vector)
+        if (col_haystack_vector && col_needle_const)
         {
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
@@ -100,6 +98,27 @@ public:
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+        }
+        else if (col_haystack_vector && col_needle_vector)
+        {
+            Impl::vector_vector(
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
+                vec_res);
+        }
+        else if (col_haystack_const && col_needle_vector)
+        {
+            const String & haystack = col_haystack_const->getValue<String>();
+            if (haystack.size() > Impl::max_string_size)
+            {
+                throw Exception(
+                    "String size of haystack is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
+            Impl::constant_vector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {

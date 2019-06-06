@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>

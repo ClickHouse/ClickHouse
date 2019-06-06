@@ -2,7 +2,7 @@ add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP
 
 link_directories(${LLVM_LIBRARY_DIRS})
 
-add_library(clickhouse-compiler-lib ${LINK_MODE}
+add_library(clickhouse-compiler-lib
     driver.cpp
     cc1_main.cpp
     cc1gen_reproducer_main.cpp

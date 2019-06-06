@@ -136,7 +136,7 @@ class QuantileTDigest
     {
         if (unmerged > 0)
         {
-            RadixSort<RadixSortTraits>::execute(summary.data(), summary.size());
+            RadixSort<RadixSortTraits>::executeLSD(summary.data(), summary.size());
 
             if (summary.size() > 3)
             {

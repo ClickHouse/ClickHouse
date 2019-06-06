@@ -3,13 +3,13 @@
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/CapnProtoRowInputStream.h> // Y_IGNORE
+#include <Formats/CapnProtoRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <capnp/serialize.h> // Y_IGNORE
-#include <capnp/dynamic.h> // Y_IGNORE
-#include <capnp/common.h> // Y_IGNORE
+#include <capnp/serialize.h>
+#include <capnp/dynamic.h>
+#include <capnp/common.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
@@ -302,12 +302,18 @@ void registerInputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "CapnProto",
-        [](ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, const FormatSettings & settings)
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const Context & context,
+           UInt64 max_block_size,
+           UInt64 rows_portion_size,
+           const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<CapnProtoRowInputStream>(buf, sample, FormatSchemaInfo(context, "CapnProto")),
                 sample,
                 max_block_size,
+                rows_portion_size,
                 settings);
         });
 }

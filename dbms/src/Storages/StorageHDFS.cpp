@@ -3,12 +3,12 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h> // Y_IGNORE
+#include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadBufferFromHDFS.h> // Y_IGNORE
-#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
+#include <IO/ReadBufferFromHDFS.h>
+#include <IO/WriteBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>

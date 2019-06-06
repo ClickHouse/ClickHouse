@@ -21,6 +21,8 @@ INSERT INTO test.zero_rows_per_granule1 (p, k, v1, v2) VALUES ('2018-05-15', 1, 
 
 SYSTEM SYNC REPLICA test.zero_rows_per_granule2;
 
+SELECT 'Replica synced';
+
 SELECT COUNT(*) FROM test.zero_rows_per_granule1;
 
 SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule1' and database='test' and active=1;
@@ -39,7 +41,11 @@ SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.zero_rows_per_granule2 FINAL;
 
+SELECT 'Parts optimized';
+
 SYSTEM SYNC REPLICA test.zero_rows_per_granule1;
+
+SELECT 'Replica synced';
 
 SELECT COUNT(*) FROM test.zero_rows_per_granule2;
 
@@ -79,12 +85,16 @@ SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' 
 
 SYSTEM SYNC REPLICA test.four_rows_per_granule2;
 
+SELECT 'Replica synced';
+
 SELECT COUNT(*) FROM test.four_rows_per_granule2;
 
 SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' and database='test' and active=1;
 
 DETACH TABLE test.four_rows_per_granule2;
 ATTACH TABLE test.four_rows_per_granule2;
+
+SELECT 'Table attached';
 
 INSERT INTO test.four_rows_per_granule2 (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
 
@@ -95,6 +105,7 @@ SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' 
 SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.four_rows_per_granule2 FINAL;
+SELECT 'Parts optimized';
 
 DETACH TABLE test.four_rows_per_granule2;
 
@@ -102,13 +113,14 @@ ATTACH TABLE test.four_rows_per_granule2;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule2;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' and database='test' and active=1;
+--SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.four_rows_per_granule1;
+SELECT 'Replica synced';
 
 SELECT COUNT(*) FROM test.four_rows_per_granule1;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' and database='test' and active=1;
+--SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.four_rows_per_granule1;
 DROP TABLE IF EXISTS test.four_rows_per_granule2;
@@ -139,6 +151,7 @@ SELECT COUNT(*) FROM test.adaptive_granularity_alter1;
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter1' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.adaptive_granularity_alter2;
+SELECT 'Replica synced';
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter2;
 
@@ -155,6 +168,7 @@ SELECT COUNT(*) FROM test.adaptive_granularity_alter2;
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter2' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.adaptive_granularity_alter1;
+SELECT 'Replica synced';
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter1;
 
@@ -183,14 +197,16 @@ INSERT INTO test.adaptive_granularity_alter1 (p, k, v1, v2) VALUES ('2018-05-15'
 SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.adaptive_granularity_alter1 FINAL;
+SELECT 'Parts optimized';
 
-SELECT k, v2 FROM test.adaptive_granularity_alter1 WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter1 WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter1' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.adaptive_granularity_alter2;
+SELECT 'Replica synced';
 
-SELECT k, v2 FROM test.adaptive_granularity_alter2 WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter2 WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter2' and database='test' and active=1;
 
