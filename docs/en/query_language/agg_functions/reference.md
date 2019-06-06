@@ -1,4 +1,3 @@
-
 # Function reference
 
 ## count() {#agg_function-count}
@@ -311,7 +310,7 @@ skewPop( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning a number.
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -335,7 +334,7 @@ skewSamp( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning a number.
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
@@ -358,11 +357,11 @@ kurtPop( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning a number.
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
 
 **Example of Use**
 
@@ -382,11 +381,11 @@ kurtSamp( expr )
 
 **Parameters**
 
-`expr` — Any of ClickHouse expressions returning a number.
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
 When `n <= 1`, returns `nan`.
 
 **Example of Use**
