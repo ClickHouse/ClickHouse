@@ -14,7 +14,7 @@
 
 Для функций, перечисленных ниже, лямбда-функцию должна быть указана всегда:
 
-- [arrayMap](#higher_order_functions-array-count)
+- [arrayMap](#higher_order_functions-array-map)
 - [arrayFilter](#higher_order_functions-array-filter)
 - [arrayFirst](#higher_order_functions-array-first)
 - [arrayFirstIndex](#higher_order_functions-array-first-index)
@@ -42,6 +42,8 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
 ```
+
+Обратите внимание, что у функции `arrayMap` первый аргумент (лямбда-функция) не может быть опущен.
 
 ### arrayFilter(func, arr1, ...) {#higher_order_functions-array-filter}
 
@@ -74,6 +76,8 @@ SELECT
 └─────┘
 ```
 
+Обратите внимание, что у функции `arrayFilter` первый аргумент (лямбда-функция) не может быть опущен.
+
 ### arrayCount(\[func,\] arr1, ...)
 Вернуть количество элементов массива `arr`, для которых функция func возвращает не 0. Если func не указана - вернуть количество ненулевых элементов массива.
 
@@ -89,9 +93,13 @@ SELECT
 ### arrayFirst(func, arr1, ...) {#higher_order_functions-array-first}
 Вернуть первый элемент массива `arr1`, для которого функция func возвращает не 0.
 
+Обратите внимание, что у функции `arrayFirst` первый аргумент (лямбда-функция) не может быть опущен.
+
 ### arrayFirstIndex(func, arr1, ...) {#higher_order_functions-array-first-index}
 
 Вернуть индекс первого элемента массива `arr1`, для которого функция func возвращает не 0.
+
+Обратите внимание, что у функции `arrayFirstFilter` первый аргумент (лямбда-функция) не может быть опущен.
 
 ### arrayCumSum(\[func,\] arr1, ...)
 
