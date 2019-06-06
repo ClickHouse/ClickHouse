@@ -220,7 +220,6 @@ file ( GLOB SRC_BUILDVM ${LUAJIT_SOURCE_DIR}/host/buildvm*.c )
 add_executable ( buildvm ${SRC_BUILDVM} ${DASM_T} )
 
 macro(add_buildvm_target _target _mode)
-    message("SEE ${LUAJIT_SOURCE_DIR}/${_target}")
     add_custom_command(OUTPUT ${LUAJIT_SOURCE_DIR}/${_target}
             COMMAND buildvm ARGS -m ${_mode} -o ${LUAJIT_SOURCE_DIR}/${_target} ${ARGN}
             WORKING_DIRECTORY ${LUAJIT_DIR}
@@ -232,8 +231,6 @@ if ( WIN32 AND NOT CYGWIN )
     add_buildvm_target ( lj_vm.obj peobj )
     set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.obj)
 else ()
-    message("LOL0 ${LUAJIT_SOURCE_DIR}")
-    message("LOL ${LUAJIT_SOURCE_DIR}")
     add_buildvm_target ( lj_vm.s ${LJVM_MODE} )
     set (LJ_VM_SRC ${LUAJIT_SOURCE_DIR}/lj_vm.s)
 endif ()

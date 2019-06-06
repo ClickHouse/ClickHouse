@@ -274,7 +274,6 @@ Block AerospikeBlockInputStream::readImpl()
             if (results[i].result == AEROSPIKE_OK)
             {
                 records_handler->HandleRecordBins(results[i].record);
-                fprintf(stderr, "  AEROSPIKE_OK");
             }
             else if (results[i].result == AEROSPIKE_ERR_RECORD_NOT_FOUND)
             {

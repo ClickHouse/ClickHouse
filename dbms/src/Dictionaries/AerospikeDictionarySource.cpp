@@ -64,14 +64,9 @@ AerospikeDictionarySource::AerospikeDictionarySource(
     aerospike_init(&client, &config);
     // Check connection
     as_error err;
-    fprintf(stderr, "namespace: %s set: %s", namespace_name.c_str(), set_name.c_str());
     if (aerospike_connect(&client, &err) != AEROSPIKE_OK)
     {
         fprintf(stderr, "error(%d) %s at [%s:%d] \n", err.code, err.message, err.file, err.line);
-    }
-    else
-    {
-        fprintf(stderr, "Connected to Aerospike. Host: %s port: %u", host.c_str(), port);
     }
 }
 
@@ -152,13 +147,11 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     {
         if (!p_val)
         {
-            printf("scan callback returned null - scan is complete");
             return true;
         }
         as_record * record = as_record_fromval(p_val);
         if (!record)
         {
-            printf("scan callback returned non-as_record object");
             return false;
         }
         AerospikeSpecificKeys& global_keys_object = *(static_cast<AerospikeSpecificKeys*>(udata));
@@ -170,7 +163,6 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
     {
         fprintf(stderr, "SCAN ERROR(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
     }
-    printf(stderr, "len %zu", strlen(keys[0]->value.string.value));
     return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size, namespace_name, set_name);
 }
 
