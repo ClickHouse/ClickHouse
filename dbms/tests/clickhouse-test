@@ -19,7 +19,7 @@ from errno import ESRCH
 import termcolor
 from random import random
 import commands
-from multiprocessing import Pool
+import multiprocessing
 from contextlib import closing
 
 
@@ -93,15 +93,6 @@ def colored(text, args, color=None, on_color=None, attrs=None):
            return termcolor.colored(text, color, on_color, attrs)
        else:
            return text
-
-def print_err(*args):
-    sys.stderr.write(' '.join(map(str,args)) + '\n')
-
-def report_failure(name, msg):
-    print(msg)
-    # If stderr is not the same as stdout, duplicate the test name there.
-    if os.fstat(2) != os.fstat(1):
-        print_err(name, ":", msg)
 
 SERVER_DIED = False
 exit_code = 0
@@ -181,7 +172,7 @@ def run_tests_array(all_tests_with_params):
                                 raise
 
                         failures += 1
-                        report_failure(name, "{0} - Timeout!".format(MSG_FAIL))
+                        print("{0} - Timeout!".format(MSG_FAIL))
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
@@ -194,10 +185,10 @@ def run_tests_array(all_tests_with_params):
                         if proc.returncode != 0:
                             failures += 1
                             failures_chain += 1
-                            report_failure(name, "{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+                            print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
 
                             if stderr:
-                                print_err(stderr.encode('utf-8'))
+                                print(stderr.encode('utf-8'))
 
                             if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 SERVER_DIED = True
@@ -205,20 +196,20 @@ def run_tests_array(all_tests_with_params):
                         elif stderr:
                             failures += 1
                             failures_chain += 1
-                            report_failure(name, "{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
+                            print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
-                            report_failure(name, "{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
+                            print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
                         elif not os.path.isfile(reference_file):
-                            report_failure(name, "{0} - no reference file".format(MSG_UNKNOWN))
+                            print("{0} - no reference file".format(MSG_UNKNOWN))
                         else:
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                             if result_is_different:
                                 diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                 failures += 1
-                                report_failure(name, "{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+                                print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
                             else:
                                 passed_total += 1
                                 failures_chain = 0
@@ -234,7 +225,7 @@ def run_tests_array(all_tests_with_params):
             import traceback
             exc_type, exc_value, tb = sys.exc_info()
             failures += 1
-            print_err("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
+            print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
 
         if failures_chain >= 20:
             break
@@ -242,7 +233,7 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print_err(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
         exit_code = 1
     else:
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
@@ -378,6 +369,8 @@ def main(args):
                 continue
 
             jobs = args.jobs
+            if jobs > tests_n:
+                jobs = tests_n
             if jobs > run_total:
                 run_total = jobs
 
@@ -388,7 +381,7 @@ def main(args):
                 all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
 
             if jobs > 1:
-                with closing(Pool(processes=jobs)) as pool:
+                with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, all_tests_array)
                     pool.terminate()
             else:
@@ -398,11 +391,11 @@ def main(args):
         processlist = get_processlist(args.client_with_database)
         if processlist:
             server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
-            print_err(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
-            print_err(processlist)
+            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+            print(processlist)
             if server_pid:
-                print_err("\nStacktraces of all threads:")
-                print_err(get_stacktraces(server_pid))
+                print("\nStacktraces of all threads:")
+                print(get_stacktraces(server_pid))
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -441,7 +434,7 @@ if __name__ == '__main__':
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', default='test', help='Default database for tests')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
-    parser.add_argument('-j', '--jobs', default=1, help='Run all tests in parallel', type=int)
+    parser.add_argument('-j', '--jobs', default=1, help='Run all tests in parallel', type=int) # default=multiprocessing.cpu_count()
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')

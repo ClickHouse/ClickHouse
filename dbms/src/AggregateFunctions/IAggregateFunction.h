@@ -48,6 +48,12 @@ public:
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
 
+    /// Get type which will be used for prediction result in case if function is an ML method.
+    virtual DataTypePtr getReturnTypeToPredict() const
+    {
+        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */
@@ -94,9 +100,16 @@ public:
     /// Inserts results into a column.
     virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
 
-    /// This function is used for machine learning methods
-    virtual void predictValues(ConstAggregateDataPtr /* place */, IColumn & /*to*/,
-                               Block & /*block*/, const ColumnNumbers & /*arguments*/, const Context & /*context*/) const
+    /// Used for machine learning methods. Predict result from trained model.
+    /// Will insert result into `to` column for rows in range [offset, offset + limit).
+    virtual void predictValues(
+        ConstAggregateDataPtr /* place */,
+        IColumn & /*to*/,
+        Block & /*block*/,
+        size_t /*offset*/,
+        size_t /*limit*/,
+        const ColumnNumbers & /*arguments*/,
+        const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

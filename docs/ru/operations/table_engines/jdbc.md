@@ -79,3 +79,5 @@ FROM jdbc_table
 ## Смотрите также
 
 - [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/jdbc/) <!--hide-->

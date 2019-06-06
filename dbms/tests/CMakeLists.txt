@@ -9,7 +9,7 @@ endif ()
 
 install (PROGRAMS clickhouse-test clickhouse-test-server DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 install (
-    DIRECTORY queries performance
+    DIRECTORY queries performance config
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
     USE_SOURCE_PERMISSIONS
     COMPONENT clickhouse

@@ -400,11 +400,13 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.client_info       = client_info;
     res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
-    res.read_rows         = progress_in.rows;
-    res.read_bytes        = progress_in.bytes;
-    res.total_rows        = progress_in.total_rows;
-    res.written_rows      = progress_out.rows;
-    res.written_bytes     = progress_out.bytes;
+    res.read_rows         = progress_in.read_rows;
+    res.read_bytes        = progress_in.read_bytes;
+    res.total_rows        = progress_in.total_rows_to_read;
+
+    /// TODO: Use written_rows and written_bytes when real time progress is implemented
+    res.written_rows      = progress_out.read_rows;
+    res.written_bytes     = progress_out.read_bytes;
 
     if (thread_group)
     {
