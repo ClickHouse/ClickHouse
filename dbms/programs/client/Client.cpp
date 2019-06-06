@@ -67,7 +67,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
-#include "Suggest.h" // Y_IGNORE
+#include "Suggest.h"
 #endif
 
 #ifndef __clang__

@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:18.04
 
 RUN apt-get --allow-unauthenticated update -y \
