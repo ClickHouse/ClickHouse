@@ -435,7 +435,7 @@ private:
         bool isColumnConst[2];
         const PaddedPODArray<AggregateDataPtr> * container0;
         const PaddedPODArray<UInt32> * container1;
-        
+
         for (size_t i = 0; i < 2; ++i)
         {
             columns[i] = block.getByPosition(arguments[i]).column.get();
@@ -449,7 +449,7 @@ private:
             container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
         else
             container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
-        
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateDataPtr dataPtr0 = isColumnConst[0] ? (*container0)[0] : (*container0)[i];
