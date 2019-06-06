@@ -1,9 +1,9 @@
 #include <Common/config.h>
 
 #if USE_HDFS
-#include <Storages/StorageHDFS.h> // Y_IGNORE
+#include <Storages/StorageHDFS.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionHDFS.h> // Y_IGNORE
+#include <TableFunctions/TableFunctionHDFS.h>
 
 namespace DB
 {

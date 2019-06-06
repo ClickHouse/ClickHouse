@@ -1,3 +1,5 @@
+#include "StorageSystemParts.h"
+
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,9 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/System/StorageSystemParts.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -40,6 +39,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"data_version",                               std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
+        {"is_frozen",                                  std::make_shared<DataTypeUInt8>()},
 
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
@@ -53,11 +53,16 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
 void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPart::State;
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
 
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    all_parts = info.getParts(all_parts_state, has_state_column);
+
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
+
         MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
@@ -93,6 +98,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
         columns[i++]->insert(part->getIndexSizeInBytes());
         columns[i++]->insert(part->getIndexSizeInAllocatedBytes());
+        columns[i++]->insert(part->is_frozen);
 
         columns[i++]->insert(info.database);
         columns[i++]->insert(info.table);

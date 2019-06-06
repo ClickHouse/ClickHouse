@@ -2,14 +2,16 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Types.h>
-#include <Interpreters/ClientInfo.h>
 #include <Core/Settings.h>
+#include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Common/config.h>
+#include <Storages/IStorage_fwd.h>
 
 #include <atomic>
 #include <chrono>
@@ -65,19 +67,14 @@ struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
 class DDLWorker;
-class IStorage;
 class ITableFunction;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
-class IBlockInputStream;
-class IBlockOutputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class SettingsConstraints;
+
 
 #if USE_EMBEDDED_COMPILER
 
@@ -125,6 +122,7 @@ private:
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
+    std::shared_ptr<const SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -161,8 +159,8 @@ public:
     static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
-    Context(const Context &) = default;
-    Context & operator=(const Context &) = default;
+    Context(const Context &);
+    Context & operator=(const Context &);
     ~Context();
 
     String getPath() const;
@@ -211,6 +209,10 @@ public:
     void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
+
+    /// Functions where we can lock the context manually
+    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
@@ -263,11 +265,15 @@ public:
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
-    /// Set a setting by name.
+    /// Set settings by name.
+    void setSetting(const String & name, const String & value);
     void setSetting(const String & name, const Field & value);
+    void applySettingChange(const SettingChange & change);
+    void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
-    void setSetting(const String & name, const std::string & value);
+    /// Checks the constraints.
+    void checkSettingsConstraints(const SettingChange & change);
+    void checkSettingsConstraints(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
@@ -473,12 +479,18 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
+    /// MySQL wire protocol state.
+    size_t sequence_id = 0;
+    uint32_t client_capabilities = 0;
+    size_t max_packet_size = 0;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
     void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
+
+    void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;

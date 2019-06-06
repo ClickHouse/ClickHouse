@@ -1,13 +1,13 @@
-DROP TABLE IF EXISTS test.view1;
-DROP TABLE IF EXISTS test.view2;
-DROP TABLE IF EXISTS test.merge_view;
+DROP TABLE IF EXISTS view1_00270;
+DROP TABLE IF EXISTS view2_00270;
+DROP TABLE IF EXISTS merge_view_00270;
 
-CREATE VIEW test.view1 AS SELECT number FROM system.numbers LIMIT 10;
-CREATE VIEW test.view2 AS SELECT number FROM system.numbers LIMIT 10;
-CREATE TABLE test.merge_view (number UInt64) ENGINE = Merge(test, '^view');
+CREATE VIEW view1_00270 AS SELECT number FROM system.numbers LIMIT 10;
+CREATE VIEW view2_00270 AS SELECT number FROM system.numbers LIMIT 10;
+CREATE TABLE merge_view_00270 (number UInt64) ENGINE = Merge(currentDatabase(), '^view');
 
-SELECT 'Hello, world!' FROM test.merge_view LIMIT 5;
+SELECT 'Hello, world!' FROM merge_view_00270 LIMIT 5;
 
-DROP TABLE test.view1;
-DROP TABLE test.view2;
-DROP TABLE test.merge_view;
+DROP TABLE view1_00270;
+DROP TABLE view2_00270;
+DROP TABLE merge_view_00270;

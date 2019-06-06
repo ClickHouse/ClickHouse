@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
+#include <Core/Block.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include "DictionaryStructure.h"
@@ -204,10 +205,6 @@ private:
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
-
-    template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsNumber(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(

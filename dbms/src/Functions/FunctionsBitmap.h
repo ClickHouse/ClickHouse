@@ -55,6 +55,12 @@ namespace ErrorCodes
   *
   * Two bitmap andnot calculation, return cardinality:
   * bitmapAndnotCardinality: bitmap,bitmap -> integer
+  *
+  * Judge if a bitmap is superset of the another one:
+  * bitmapHasAll: bitmap,bitmap -> bool
+  *
+  * Judge if the intersection of two bitmap is nonempty:
+  * bitmapHasAny: bitmap,bitmap -> bool
   */
 
 template <typename Name>
@@ -342,7 +348,27 @@ struct BitmapAndnotCardinalityImpl
     }
 };
 
-template <template <typename> class Impl, typename Name>
+template <typename T>
+struct BitmapHasAllImpl
+{
+    using ReturnType = UInt8;
+    static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bd1, const AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        return bd1.rbs.rb_is_subset(bd2.rbs);
+    }
+};
+
+template <typename T>
+struct BitmapHasAnyImpl
+{
+    using ReturnType = UInt8;
+    static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bd1, const AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        return bd1.rbs.rb_intersect(bd2.rbs);
+    }
+};
+
+template <template <typename> class Impl, typename Name, typename ToType>
 class FunctionBitmapCardinality : public IFunction
 {
 public:
@@ -369,6 +395,13 @@ public:
             throw Exception(
                 "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
+            throw Exception(
+                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
+                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
@@ -398,22 +431,37 @@ public:
     }
 
 private:
-    using ToType = UInt64;
-
     template <typename T>
     void executeIntType(
         Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
     {
         const ColumnAggregateFunction * columns[2];
+        bool isColumnConst[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst*>(block.getByPosition(arguments[i]).column.get()))
+            {
+                columns[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
+                isColumnConst[i] = true;
+            }
+            else
+            {
+                columns[i] = typeid_cast<const ColumnAggregateFunction*>(block.getByPosition(arguments[i]).column.get());
+                isColumnConst[i] = false;
+            }
+        }
+
+        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            const AggregateDataPtr dataPtr0 = isColumnConst[0] ? container0[0] : container0[i];
+            const AggregateDataPtr dataPtr1 = isColumnConst[1] ? container1[0] : container1[i];
             const AggregateFunctionGroupBitmapData<T> & bd1
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(columns[0]->getData()[i]);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
             const AggregateFunctionGroupBitmapData<T> & bd2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(columns[1]->getData()[i]);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr1);
             vec_to[i] = Impl<T>::apply(bd1, bd2);
         }
     }
@@ -482,6 +530,13 @@ public:
             throw Exception(
                 "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
+            throw Exception(
+                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
+                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return arguments[0];
     }
 
@@ -511,7 +566,12 @@ private:
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+            else
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        }
 
         auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
 
@@ -561,12 +621,22 @@ struct NameBitmapAndnotCardinality
 {
     static constexpr auto name = "bitmapAndnotCardinality";
 };
+struct NameBitmapHasAll
+{
+    static constexpr auto name = "bitmapHasAll";
+};
+struct NameBitmapHasAny
+{
+    static constexpr auto name = "bitmapHasAny";
+};
 
 using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<NameBitmapCardinality>;
-using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality>;
-using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality>;
-using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality>;
-using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCardinalityImpl, NameBitmapAndnotCardinality>;
+using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality, UInt64>;
+using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality, UInt64>;
+using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality, UInt64>;
+using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCardinalityImpl, NameBitmapAndnotCardinality, UInt64>;
+using FunctionBitmapHasAll = FunctionBitmapCardinality<BitmapHasAllImpl, NameBitmapHasAll, UInt8>;
+using FunctionBitmapHasAny = FunctionBitmapCardinality<BitmapHasAnyImpl, NameBitmapHasAny, UInt8>;
 
 struct NameBitmapAnd
 {

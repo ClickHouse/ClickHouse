@@ -28,7 +28,7 @@
 - [Исполняемый файл](#ispolniaemyi-fail)
 - [HTTP(s)](#http-s)
 -   СУБД:
-    - [ODBC](#odbc)
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
     - [MySQL](#mysql)
     - [ClickHouse](#clickhouse)
     - [MongoDB](#mongodb)
@@ -97,7 +97,7 @@
 -   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
 
 
-## ODBC
+## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 Этим способом можно подключить любую базу данных, имеющую ODBC драйвер.
 
@@ -299,7 +299,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ## СУБД
 
 
-### MySQL
+### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Пример настройки:
 
