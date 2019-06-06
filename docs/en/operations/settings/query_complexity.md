@@ -75,21 +75,12 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption exceeds the value of this setting, ClickHouse dumps operation state to the filesystem and continues query processing with much lower performance then in RAM. When processing a distributed query, ClickHouse calculates memory consumption at each individual server.
-
-The `GROUP BY` aggregation has two stages:
-
-1. Reading of data from disk and creating a temporary data in RAM.
-2. Merging of temporary data.
-
-Dumping of operation state to the filesystem is available only at the first stage. The second stage may require up to the same amount of RAM that is used by the first stage. Thus, you need to set the [max_memory_usage](#settings_max_memory_usage) setting with the `2 * max_bytes_before_external_group_by` value.
-
-For more details, see [GROUP BY in External Memory](../../#select-group-by-in-external-memory).
+Enables of disables execution of `GROUP BY` clause in external memory. For more details on how it works, see [GROUP BY in external memory](../../#select-group-by-in-external-memory).
 
 Possible values:
 
-- Positive integer.
-- 0 — Unlimited number of rows in join.
+- Maximum volume or RAM (in bytes) that can be used by [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+- 0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
 
