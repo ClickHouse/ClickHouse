@@ -305,7 +305,7 @@ GROUP BY timeslot
 Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
 
 ```
-skewPop( expr )
+skewPop(expr)
 ```
 
 **Parameters**
@@ -319,17 +319,17 @@ The skewness of given distribution. Type — [Float64](../../data_types/float.md
 **Example of Use**
 
 ```sql
-SELECT skewPop( value ) FROM series_with_value_column
+SELECT skewPop(value) FROM series_with_value_column
 ```
 
 ## skewSamp
 
 Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
 
-It represents an unbiased estimate of the skewness of a random variable, if the values passed to the function are a sample of this random amount.
+It represents an unbiased estimate of the skewness of a random variable, if passed values form it's sample.
 
 ```
-skewSamp( expr )
+skewSamp(expr)
 ```
 
 **Parameters**
@@ -338,13 +338,12 @@ skewSamp( expr )
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md)
-When `n <= 1`, returns `nan`.
+The skewness of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
 
 **Example of Use**
 
 ```sql
-SELECT skewSamp( value ) FROM series_with_value_column
+SELECT skewSamp(value) FROM series_with_value_column
 ```
 
 ## kurtPop
@@ -352,7 +351,7 @@ SELECT skewSamp( value ) FROM series_with_value_column
 Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
 
 ```
-kurtPop( expr )
+kurtPop(expr)
 ```
 
 **Parameters**
@@ -366,17 +365,17 @@ The kurtosis of given distribution. Type — [Float64](../../data_types/float.md
 **Example of Use**
 
 ```sql
-SELECT kurtPop( value ) FROM series_with_value_column
+SELECT kurtPop(value) FROM series_with_value_column
 ```
 
 ## kurtSamp
 
 Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
 
-It represents an unbiased estimate of the kurtosis of a random variable, if the values passed to the function are a sample of this random amount.
+It represents an unbiased estimate of the kurtosis of a random variable, if passed values form it's sample.
 
 ```
-kurtSamp( expr )
+kurtSamp(expr)
 ```
 
 **Parameters**
@@ -385,13 +384,12 @@ kurtSamp( expr )
 
 **Returned value**
 
-The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
-When `n <= 1`, returns `nan`.
+The kurtosis of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
 
 **Example of Use**
 
 ```sql
-SELECT kurtSamp( value ) FROM series_with_value_column
+SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
 ## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
