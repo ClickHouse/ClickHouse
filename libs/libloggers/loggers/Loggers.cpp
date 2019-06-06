@@ -1,10 +1,11 @@
 #include "Loggers.h"
+
+#include <iostream>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
 #include "OwnSplitChannel.h"
-
 #include <Poco/ConsoleChannel.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
