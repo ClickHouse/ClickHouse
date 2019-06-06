@@ -18,7 +18,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#include <llvm/IR/IRBuilder.h>
 #pragma GCC diagnostic pop
 #endif
 
@@ -309,8 +309,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < arguments.size(); ++i)
-            if (!(isNumber(arguments[i])
-                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || isNumber(removeNullable(arguments[i]))))))
+            if (!(isNativeNumber(arguments[i])
+                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || isNativeNumber(removeNullable(arguments[i]))))))
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -488,7 +488,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isNumber(arguments[0]))
+        if (!isNativeNumber(arguments[0]))
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),

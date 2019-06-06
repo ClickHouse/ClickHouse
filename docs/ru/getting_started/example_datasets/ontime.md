@@ -251,7 +251,11 @@ ORDER BY c3 DESC;
 Более оптимальная версия того же запроса:
 
 ``` sql
+<<<<<<< HEAD
 SELECT Carrier, avg(DepDelay > 10)*100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+=======
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+>>>>>>> e6cea46bbb4b91b778b80af1adace4818805d860
 ```
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
