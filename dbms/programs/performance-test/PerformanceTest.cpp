@@ -1,6 +1,7 @@
 #include "PerformanceTest.h"
 
 #include <Core/Types.h>
+#include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -71,6 +72,7 @@ bool PerformanceTest::checkPreconditions() const
     Strings preconditions;
     config->keys("preconditions", preconditions);
     size_t table_precondition_index = 0;
+    size_t cpu_precondition_index = 0;
 
     for (const std::string & precondition : preconditions)
     {
@@ -135,6 +137,30 @@ bool PerformanceTest::checkPreconditions() const
                 LOG_WARNING(log, "Table " << table_to_check << " doesn't exist");
                 return false;
             }
+        }
+
+        if (precondition == "cpu")
+        {
+            std::string precondition_key = "preconditions.cpu[" + std::to_string(cpu_precondition_index++) + "]";
+            std::string flag_to_check = config->getString(precondition_key);
+
+            #define CHECK_CPU_PRECONDITION(OP) \
+            if (flag_to_check == #OP) \
+            { \
+                if (!Cpu::CpuFlagsCache::have_##OP) \
+                { \
+                    LOG_WARNING(log, "CPU doesn't support " << #OP); \
+                    return false; \
+                } \
+            } else
+
+            CPU_ID_ENUMERATE(CHECK_CPU_PRECONDITION)
+            {
+                LOG_WARNING(log, "CPU doesn't support " << flag_to_check);
+                return false;
+            }
+
+            #undef CHECK_CPU_PRECONDITION
         }
     }
 

@@ -67,7 +67,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
-#include "Suggest.h" // Y_IGNORE
+#include "Suggest.h"
 #endif
 
 #ifndef __clang__
@@ -435,7 +435,7 @@ private:
 #if USE_READLINE
                     int res = read_history(history_file.c_str());
                     if (res)
-                        throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+                        std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
 #endif
                 }
                 else    /// Create history file.
@@ -612,7 +612,7 @@ private:
 
 #if USE_READLINE && HAVE_READLINE_HISTORY
                     if (!history_file.empty() && append_history(1, history_file.c_str()))
-                        throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+                        std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
                     prev_input = input;

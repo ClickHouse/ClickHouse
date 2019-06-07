@@ -1,9 +1,70 @@
+## ClickHouse release 19.7.3.9, 2019-05-30
+
+### New Features
+* Allow to limit the range of a setting that can be specified by user.
+  These constraints can be set up in user settings profile.
+[#4931](https://github.com/yandex/ClickHouse/pull/4931) ([Vitaly
+Baranov](https://github.com/vitlibar))
+* Add a second version of the function `groupUniqArray` with an optional
+  `max_size` parameter that limits the size of the resulting array. This
+behavior is similar to `groupArray(max_size)(x)` function.
+[#5026](https://github.com/yandex/ClickHouse/pull/5026) ([Guillaume
+Tassery](https://github.com/YiuRULE))
+* For TSVWithNames/CSVWithNames input file formats, column order can now be
+  determined from file header. This is controlled by
+`input_format_with_names_use_header` parameter.
+[#5081](https://github.com/yandex/ClickHouse/pull/5081)
+([Alexander](https://github.com/Akazz))
+
+### Bug Fixes
+* Crash with uncompressed_cache + JOIN during merge (#5197)
+[#5133](https://github.com/yandex/ClickHouse/pull/5133) ([Danila
+Kutenin](https://github.com/danlark1))
+* Segmentation fault on a clickhouse-client query to system tables. #5066
+[#5127](https://github.com/yandex/ClickHouse/pull/5127)
+([Ivan](https://github.com/abyss7))
+* Data loss on heavy load via KafkaEngine (#4736)
+[#5080](https://github.com/yandex/ClickHouse/pull/5080)
+([Ivan](https://github.com/abyss7))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Performance Improvements
+* Use radix sort for sorting by single numeric column in `ORDER BY` without
+  `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106),
+[#4439](https://github.com/yandex/ClickHouse/pull/4439)
+([Evgenii Pravda](https://github.com/kvinty),
+[alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Documentation
+* Translate documentation for some table engines to Chinese.
+  [#5107](https://github.com/yandex/ClickHouse/pull/5107),
+[#5094](https://github.com/yandex/ClickHouse/pull/5094),
+[#5087](https://github.com/yandex/ClickHouse/pull/5087)
+([张风啸](https://github.com/AlexZFX)),
+[#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
+lee](https://github.com/neverlee))
+ 
+### Build/Testing/Packaging Improvements
+* Print UTF-8 characters properly in `clickhouse-test`.
+  [#5084](https://github.com/yandex/ClickHouse/pull/5084)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Add command line parameter for clickhouse-client to always load suggestion
+  data. [#5102](https://github.com/yandex/ClickHouse/pull/5102)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Resolve some of PVS-Studio warnings.
+  [#5082](https://github.com/yandex/ClickHouse/pull/5082)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Update LZ4 [#5040](https://github.com/yandex/ClickHouse/pull/5040) ([Danila
+  Kutenin](https://github.com/danlark1))
+* Add gperf to build requirements for upcoming pull request #5030.
+  [#5110](https://github.com/yandex/ClickHouse/pull/5110)
+([proller](https://github.com/proller))
+
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
 ### New Features
 * TTL expressions for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
 * Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
-* Added a new aggregate function `simpleLinearRegression(x, y)` which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([hcz](https://github.com/hczhcz))
 * Added new function `isValidUTF8` for checking whether a set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
 * Add new load balancing policy `first_or_random` which sends queries to the first specified host and if it's inaccessible send queries to random hosts of shard. Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
@@ -30,6 +91,7 @@
 * Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
 * Partially fix distributed_product_mode = local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix potentially wrong result for `SELECT DISTINCT` with `JOIN` [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Build/Testing/Packaging Improvements
 * Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
@@ -346,7 +408,7 @@
 * Added support of `Nullable` types in `mysql` table function. [#4198](https://github.com/yandex/ClickHouse/pull/4198) ([Emmanuel Donin de Rosière](https://github.com/edonin))
 * Support for arbitrary constant expressions in `LIMIT` clause. [#4246](https://github.com/yandex/ClickHouse/pull/4246) ([k3box](https://github.com/k3box))
 * Added `topKWeighted` aggregate function that takes additional argument with (unsigned integer) weight. [#4245](https://github.com/yandex/ClickHouse/pull/4245) ([Andrew Golman](https://github.com/andrewgolman))
-* `StorageJoin` now supports `join_overwrite` setting that allows overwriting existing values of the same key. [#3973](https://github.com/yandex/ClickHouse/pull/3973) ([Amos Bird](https://github.com/amosbird)
+* `StorageJoin` now supports `join_any_take_last_row` setting that allows overwriting existing values of the same key. [#3973](https://github.com/yandex/ClickHouse/pull/3973) ([Amos Bird](https://github.com/amosbird)
 * Added function `toStartOfInterval`. [#4304](https://github.com/yandex/ClickHouse/pull/4304) ([Vitaly Baranov](https://github.com/vitlibar))
 * Added `RowBinaryWithNamesAndTypes` format. [#4200](https://github.com/yandex/ClickHouse/pull/4200) ([Oleg V. Kozlyuk](https://github.com/DarkWanderer))
 * Added `IPv4` and `IPv6` data types. More effective implementations of `IPv*` functions. [#3669](https://github.com/yandex/ClickHouse/pull/3669) ([Vasily Nemkov](https://github.com/Enmk))

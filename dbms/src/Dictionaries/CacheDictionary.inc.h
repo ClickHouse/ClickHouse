@@ -34,34 +34,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-template <typename OutputType, typename DefaultGetter>
-void CacheDictionary::getItemsNumber(
-    Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
-{
-    if (false)
-    {
-    }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) \
-        getItemsNumberImpl<TYPE, OutputType>(attribute, ids, out, std::forward<DefaultGetter>(get_default));
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
-
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
