@@ -132,6 +132,7 @@ StorageLiveView::StorageLiveView(
         DatabaseAndTableName(database_name, table_name));
 
     is_temporary = query.temporary;
+    temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
@@ -235,7 +236,7 @@ void StorageLiveView::checkTableCanBeDropped() const
     }
 }
 
-void StorageLiveView::noUsersThread()
+void StorageLiveView::noUsersThread(const UInt64 & timeout)
 {
     if (shutdown_called)
         return;
@@ -246,7 +247,8 @@ void StorageLiveView::noUsersThread()
         while (1)
         {
             Poco::FastMutex::ScopedLock lock(noUsersThreadMutex);
-            if (!noUsersThreadWakeUp && !noUsersThreadCondition.tryWait(noUsersThreadMutex, global_context.getSettingsRef().temporary_live_view_timeout.totalSeconds() * 1000))
+            if (!noUsersThreadWakeUp && !noUsersThreadCondition.tryWait(noUsersThreadMutex,
+                timeout * 1000))
             {
                 noUsersThreadWakeUp = false;
                 if (shutdown_called)
@@ -283,7 +285,7 @@ void StorageLiveView::noUsersThread()
     }
 }
 
-void StorageLiveView::startNoUsersThread()
+void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
 {
     bool expected = false;
     if (!startnousersthread_called.compare_exchange_strong(expected, true))
@@ -308,14 +310,14 @@ void StorageLiveView::startNoUsersThread()
             noUsersThreadWakeUp = false;
         }
         if (!is_dropped)
-            no_users_thread = std::thread(&StorageLiveView::noUsersThread, this);
+            no_users_thread = std::thread(&StorageLiveView::noUsersThread, this, timeout);
     }
     startnousersthread_called = false;
 }
 
 void StorageLiveView::startup()
 {
-    startNoUsersThread();
+    startNoUsersThread(temporary_live_view_timeout);
 }
 
 void StorageLiveView::shutdown()
@@ -400,7 +402,8 @@ BlockInputStreams StorageLiveView::watch(
 
     if (query.is_watch_events)
     {
-        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().heartbeat_delay);
+        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
         {
@@ -424,7 +427,8 @@ BlockInputStreams StorageLiveView::watch(
     }
     else
     {
-        auto reader = std::make_shared<LiveViewBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().heartbeat_delay);
+        auto reader = std::make_shared<LiveViewBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
         {

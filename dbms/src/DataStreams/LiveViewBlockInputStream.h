@@ -37,15 +37,17 @@ public:
         /// Start storage no users thread
         /// if we are the last active user
         if (!storage.is_dropped && blocks_ptr.use_count() < 3)
-            storage.startNoUsersThread();
+            storage.startNoUsersThread(temporary_live_view_timeout);
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
     LiveViewBlockInputStream(StorageLiveView & storage_, std::shared_ptr<BlocksPtr> blocks_ptr_,
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_, Poco::Condition & condition_, Poco::FastMutex & mutex_,
-        int64_t length_, const UInt64 & heartbeat_delay_)
-        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_delay(heartbeat_delay_), blocks_hash("")
+        int64_t length_, const UInt64 & heartbeat_interval_,
+        const UInt64 & temporary_live_view_timeout_)
+        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_interval(heartbeat_interval_), temporary_live_view_timeout(temporary_live_view_timeout_),
+        blocks_hash("")
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -158,7 +160,9 @@ protected:
                     }
                     while (true)
                     {
-                        bool signaled = condition.tryWait(mutex, std::max((UInt64)0, heartbeat_delay - ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
+                        bool signaled = condition.tryWait(mutex, 
+                            std::max((UInt64)0, (heartbeat_interval * 1000000) - 
+                            ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
 
                         if (isCancelled() || storage.is_dropped)
                         {
@@ -211,7 +215,8 @@ private:
     /// Length specifies number of updates to send, default -1 (no limit)
     int64_t length;
     bool end_of_blocks{0};
-    UInt64 heartbeat_delay;
+    UInt64 heartbeat_interval;
+    UInt64 temporary_live_view_timeout;
     String blocks_hash;
     UInt64 last_event_timestamp{0};
     Poco::Timestamp timestamp;

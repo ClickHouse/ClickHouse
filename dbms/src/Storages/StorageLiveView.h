@@ -84,7 +84,7 @@ public:
     }
     /// Background thread for temporary tables
     /// which drops this table if there are no users
-    void startNoUsersThread();
+    void startNoUsersThread(const UInt64 & timeout);
     Poco::FastMutex noUsersThreadMutex;
     bool noUsersThreadWakeUp{false};
     Poco::Condition noUsersThreadCondition;
@@ -110,7 +110,8 @@ public:
     void reset()
     {
         (*blocks_ptr).reset();
-        (*blocks_metadata_ptr).reset();
+        if (*blocks_metadata_ptr)
+            (*blocks_metadata_ptr)->hash.clear();
         mergeable_blocks.reset();
     }
 
@@ -163,8 +164,6 @@ public:
             }
         }
 
-        SipHash hash;
-        UInt128 key;
         BlockInputStreams from;
         BlocksPtr blocks = std::make_shared<Blocks>();
         BlocksPtrs mergeable_blocks;
@@ -234,22 +233,13 @@ public:
 
         while (Block this_block = data->read())
         {
-            this_block.updateHash(hash);
             blocks->push_back(this_block);
         }
-        /// get hash key
-        hash.get128(key.low, key.high);
-        /// Update blocks only if hash keys do not match
-        /// NOTE: hash could be different for the same result
-        ///       if blocks are not in the same order
-        if (live_view.getBlocksHashKey() != key.toHexString())
-        {
-            auto sample_block = blocks->front().cloneEmpty();
-            BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
-            {
-                copyData(*new_data, *output);
-            }
-        }
+
+        auto sample_block = blocks->front().cloneEmpty();
+        BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
+
+        copyData(*new_data, *output);
     }
 
 private:
@@ -272,10 +262,11 @@ private:
     BlocksMetadataPtr new_blocks_metadata;
     BlocksPtrs mergeable_blocks;
 
-    void noUsersThread();
+    void noUsersThread(const UInt64 & timeout);
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called{false};
     std::atomic<bool> startnousersthread_called{false};
+    UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
         const String & table_name_,
@@ -300,29 +291,36 @@ public:
 
     void writeSuffix() override
     {
-        Poco::FastMutex::ScopedLock lock(storage.mutex);
         UInt128 key;
+        String key_str;
 
         new_hash->get128(key.low, key.high);
-        new_blocks_metadata->hash = key.toHexString();
-        new_blocks_metadata->version = storage.getBlocksVersion() + 1;
+        key_str = key.toHexString();
 
-        for (auto & block : *new_blocks)
+        Poco::FastMutex::ScopedLock lock(storage.mutex);
+
+        if (storage.getBlocksHashKey() != key_str)
         {
-            block.insert({DataTypeUInt64().createColumnConst(
-                block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
-                std::make_shared<DataTypeUInt64>(),
-                "_version"});
-        }
+            new_blocks_metadata->hash = key_str;
+            new_blocks_metadata->version = storage.getBlocksVersion() + 1;
 
-        (*storage.blocks_ptr) = new_blocks;
-        (*storage.blocks_metadata_ptr) = new_blocks_metadata;
+            for (auto & block : *new_blocks)
+            {
+                block.insert({DataTypeUInt64().createColumnConst(
+                    block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
+                    std::make_shared<DataTypeUInt64>(),
+                    "_version"});
+            }
+
+            (*storage.blocks_ptr) = new_blocks;
+            (*storage.blocks_metadata_ptr) = new_blocks_metadata;
+
+            storage.condition.broadcast();
+        }
 
         new_blocks.reset();
         new_blocks_metadata.reset();
         new_hash.reset();
-
-        storage.condition.broadcast();
     }
 
     void write(const Block & block) override
