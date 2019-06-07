@@ -117,5 +117,5 @@ INSERT INTO compression_codec_multiple_tiny_log select modulo(number, 100), toSt
 
 SELECT sum(cityHash64(*)) FROM compression_codec_multiple_tiny_log;
 
-DROP TABLE compression_codec_log;
-DROP TABLE compression_codec_tiny_log;
+DROP TABLE compression_codec_multiple_log;
+DROP TABLE compression_codec_multiple_tiny_log;
