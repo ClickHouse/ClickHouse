@@ -132,7 +132,7 @@ class IO(object):
                 self.buffer = self.buffer[self.match.end():]
                 break
         if self._logger:
-            self._logger.write(self.before + self.after)
+            self._logger.write((self.before or '') + (self.after or ''))
             self._logger.flush()
         return self.match
 
@@ -159,14 +159,18 @@ def spawn(command):
     os.close(slave)
 
     queue = Queue()
-    thread = Thread(target=reader, args=(master, queue))
+    thread = Thread(target=reader, args=(process, master, queue))
     thread.daemon = True
     thread.start()
 
     return IO(process, master, queue)
 
-def reader(out, queue):
+def reader(process, out, queue):
     while True:
+        if process.poll() is not None:
+            data = os.read(out)
+            queue.put(data)
+            break
         data = os.read(out, 65536)
         queue.put(data)
 

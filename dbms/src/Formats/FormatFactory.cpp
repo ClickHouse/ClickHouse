@@ -113,6 +113,7 @@ void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory);
+void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
@@ -153,6 +154,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatTSKV(*this);
     registerInputFormatJSONEachRow(*this);
     registerOutputFormatJSONEachRow(*this);
+    registerOutputFormatJSONEachRowWithProgress(*this);
     registerInputFormatProtobuf(*this);
     registerOutputFormatProtobuf(*this);
     registerInputFormatCapnProto(*this);

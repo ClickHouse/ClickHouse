@@ -27,7 +27,7 @@ public:
         ostr.next();
     }
 
-private:
+protected:
     WriteBuffer & ostr;
     size_t field_number = 0;
     Names fields;
