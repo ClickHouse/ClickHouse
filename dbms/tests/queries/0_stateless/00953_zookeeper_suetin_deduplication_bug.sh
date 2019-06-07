@@ -29,8 +29,6 @@ $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 3 rows
 
 count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
 
-echo $count # 3 blocks
-
 while [[ $count != 2 ]]
 do
     sleep 1
@@ -41,8 +39,6 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 1, 'h
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 4 rows
 count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
-
-echo $count # 3 blocks
 
 while [[ $count != 2 ]]
 do
@@ -55,8 +51,6 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'h
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # 5 rows
 
 count=`$CLICKHOUSE_CLIENT --query="SELECT COUNT(*) FROM system.zookeeper where path = '/clickhouse/tables/elog/blocks'"`
-
-echo $count # 3 blocks
 
 while [[ $count != 2 ]]
 do
