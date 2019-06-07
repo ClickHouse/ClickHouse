@@ -168,7 +168,9 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UIn
         memcpy(partial, res, 8 * sizeof(UInt64));
     }
 
-    _T upper = min >> num_bits << num_bits;
+    _T upper = 0;
+    if (num_bits < 64)
+        upper = min >> num_bits << num_bits;
 
     auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
 
@@ -378,7 +380,7 @@ void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
     {
         type_idx = typeIdx(data_type);
         if (type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for type " + data_type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
     }
 }
 
@@ -396,7 +398,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for type " + type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+            throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         return std::make_shared<CompressionCodecT64>(type_idx);
     };
 
