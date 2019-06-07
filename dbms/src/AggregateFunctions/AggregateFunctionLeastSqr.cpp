@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionSimpleLinearRegression.h>
+#include <AggregateFunctions/AggregateFunctionLeastSqr.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <Core/TypeListNumber.h>
 
 namespace DB
 {
@@ -11,7 +10,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
+AggregateFunctionPtr createAggregateFunctionLeastSqr(
     const String & name,
     const DataTypes & arguments,
     const Array & params
@@ -21,11 +20,16 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
     assertBinary(name, arguments);
 
     const IDataType * x_arg = arguments.front().get();
-    WhichDataType which_x = x_arg;
+
+    WhichDataType which_x {
+        x_arg
+    };
 
     const IDataType * y_arg = arguments.back().get();
-    WhichDataType which_y = y_arg;
 
+    WhichDataType which_y {
+        y_arg
+    };
 
     #define FOR_LEASTSQR_TYPES_2(M, T) \
         M(T, UInt8) \
@@ -51,7 +55,7 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
         FOR_LEASTSQR_TYPES_2(M, Float64)
     #define DISPATCH(T1, T2) \
         if (which_x.idx == TypeIndex::T1 && which_y.idx == TypeIndex::T2) \
-            return std::make_shared<AggregateFunctionSimpleLinearRegression<T1, T2>>( \
+            return std::make_shared<AggregateFunctionLeastSqr<T1, T2>>( \
                 arguments, \
                 params \
             );
@@ -73,9 +77,9 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 }
 
-void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
+void registerAggregateFunctionLeastSqr(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("simpleLinearRegression", createAggregateFunctionSimpleLinearRegression);
+    factory.registerFunction("leastSqr", createAggregateFunctionLeastSqr);
 }
 
 }
