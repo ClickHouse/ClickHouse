@@ -166,8 +166,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     const ArraysDepths arrays_depths = getArraysDepths(args);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
-    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
-    {
+    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
         {
@@ -234,8 +233,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             throw Exception(
                 getName() + ": Passed array number " + std::to_string(array_num) + " depth ("
-                    + std::to_string(arrays_depths.depths[array_num]) + ") is more than the actual array depth (" + std::to_string(col_depth)
-                    + ").",
+                    + std::to_string(arrays_depths.depths[array_num]) + ") is more than the actual array depth ("
+                    + std::to_string(col_depth) + ").",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
 
@@ -342,7 +341,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                 const auto offsets_by_depth_size = offsets_by_depth[depth]->size();
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
-                    if(current_offset_n_by_depth[depth] + 1 >= offsets_by_depth_size)
+                    if (current_offset_n_by_depth[depth] + 1 >= offsets_by_depth_size)
                         break; // only one empty array: SELECT arrayEnumerateUniqRanked([]);
                     ++current_offset_n_by_depth[depth];
                 }
