@@ -87,7 +87,7 @@ Extracts all the fragments of a string using a regular expression. If 'haystack'
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
 
-``% indicates any quantity of any bytes (including zero characters).
+`%` indicates any quantity of any bytes (including zero characters).
 
 `_` indicates any one byte.
 
@@ -106,11 +106,11 @@ Calculates the 4-gram distance between `haystack` and `needle`: counts the symme
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 
-## ngramEntry(haystack, needle)
+## ngramSearch(haystack, needle)
 
 Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Can be useful for fuzzy string search.
 
-For case-insensitive search or/and in UTF-8 format use functions `ngramEntryCaseInsensitive, ngramEntryUTF8, ngramEntryCaseInsensitiveUTF8`.
+For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
 
 **Note: For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one -- this works for Latin and mostly for all Cyrillic letters.**
 

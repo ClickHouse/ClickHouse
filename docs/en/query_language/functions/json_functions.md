@@ -55,9 +55,6 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
-
 The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
 ## JSONHas(json[, indices_or_keys]...)
@@ -195,3 +192,5 @@ Example:
 ```
 select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->

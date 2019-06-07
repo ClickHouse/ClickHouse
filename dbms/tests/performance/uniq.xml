@@ -8,9 +8,6 @@
     </preconditions>
 
     <stop_conditions>
-        <all_of>
-            <total_time_ms>8000</total_time_ms>
-        </all_of>
         <any_of>
             <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
