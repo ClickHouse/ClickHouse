@@ -29,3 +29,6 @@ from (
     where dt = '2019-01-14' and id = 1
 )
 group by dt, id;
+
+DROP TABLE table1;
+DROP TABLE table2;

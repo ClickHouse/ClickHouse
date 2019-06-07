@@ -1,4 +1,3 @@
-USE test;
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]));
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
@@ -62,17 +61,17 @@ CREATE TABLE bitmap_state_test
 (
 	pickup_date Date,
 	city_id UInt32,
-    uv AggregateFunction( groupBitmap, UInt32 )	
+    uv AggregateFunction( groupBitmap, UInt32 )
 )
 ENGINE = AggregatingMergeTree( pickup_date, ( pickup_date, city_id ), 8192);
 
-INSERT INTO bitmap_state_test SELECT 
-    pickup_date, 
+INSERT INTO bitmap_state_test SELECT
+    pickup_date,
     city_id,
     groupBitmapState(uid) AS uv
 FROM bitmap_test
 GROUP BY pickup_date, city_id;
-	
+
 SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date;
 
 -- between column and expression test

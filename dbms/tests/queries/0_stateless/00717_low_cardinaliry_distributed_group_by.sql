@@ -1,12 +1,12 @@
 set allow_suspicious_low_cardinality_types = 1;
-DROP TABLE IF EXISTS test.test_low_null_float;
-DROP TABLE IF EXISTS test.dist;
+DROP TABLE IF EXISTS test_low_null_float;
+DROP TABLE IF EXISTS dist;
 
-CREATE TABLE test.test_low_null_float (a LowCardinality(Nullable(Float64))) ENGINE = Memory;
-CREATE TABLE test.dist (a LowCardinality(Nullable(Float64))) ENGINE = Distributed('test_cluster_two_shards_localhost', 'test', 'test_low_null_float', rand());
+CREATE TABLE test_low_null_float (a LowCardinality(Nullable(Float64))) ENGINE = Memory;
+CREATE TABLE dist (a LowCardinality(Nullable(Float64))) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), 'test_low_null_float', rand());
 
-INSERT INTO test.dist (a) SELECT number FROM system.numbers LIMIT 1000000;
-SELECT a, count() FROM test.dist GROUP BY a ORDER BY a ASC, count() ASC LIMIT 10;
+INSERT INTO dist (a) SELECT number FROM system.numbers LIMIT 1000000;
+SELECT a, count() FROM dist GROUP BY a ORDER BY a ASC, count() ASC LIMIT 10;
 
-DROP TABLE IF EXISTS test.test_low_null_float;
-DROP TABLE IF EXISTS test.dist;
+DROP TABLE test_low_null_float;
+DROP TABLE dist;

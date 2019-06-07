@@ -22,3 +22,6 @@ INSERT INTO t2 VALUES ('ccc', 4, 3, 2), ('ddd', 7, 6, 5);
 SELECT k1, k2, k3, val_t1, val_t2 FROM t1 ANY FULL JOIN t2 USING (k3, k1, k2 AS k2_alias) ORDER BY k1, k2, k3;
 
 SELECT k1, k2, k3, val_t1, val_t2 FROM t1 ANY RIGHT JOIN t2 USING (k3, k1, k2 AS k2_alias) ORDER BY k1, k2, k3;
+
+DROP TABLE t1;
+DROP TABLE t2;

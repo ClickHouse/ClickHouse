@@ -2,8 +2,34 @@ import pytest
 
 import difflib
 import os
+import random
+import string
 import subprocess
 import sys
+
+
+def run_client(bin_prefix, port, query, reference, replace_map={}):
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result, error = client.communicate(query)
+    assert client.returncode is not None, "Client should exit after processing all queries"
+
+    for old, new in replace_map.iteritems():
+        result = result.replace(old, new)
+
+    if client.returncode != 0:
+        print >> sys.stderr, error
+        pytest.fail('Client died unexpectedly with code {code}'.format(code=client.returncode), pytrace=False)
+    elif result != reference:
+        pytest.fail("Query output doesn't match reference:{eol}{diff}".format(
+                eol=os.linesep,
+                diff=os.linesep.join(l.strip() for l in difflib.unified_diff(reference.splitlines(), result.splitlines(), fromfile='expected', tofile='actual'))),
+            pytrace=False)
+
+
+def random_str(length=10):
+    alphabet = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(alphabet) for _ in range(length))
 
 
 @pytest.mark.timeout(timeout=10, method='signal')
@@ -21,16 +47,8 @@ def test_query(bin_prefix, sql_query, standalone_server):
     with open(reference_path, 'r') as file:
         reference = file.read()
 
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(tcp_port), '-m', '-n', '--testmode'],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    result, error = client.communicate(query)
-    assert client.returncode is not None, "Client should exit after processing all queries"
+    random_name = 'test_{random}'.format(random=random_str())
+    query = 'CREATE DATABASE {random}; USE {random}; {query};\nDROP DATABASE {random};'.format(random=random_name, query=query)
 
-    if client.returncode != 0:
-        print >> sys.stderr, error
-        pytest.fail('Client died unexpectedly with code {code}'.format(code=client.returncode), pytrace=False)
-    elif result != reference:
-        pytest.fail("Query output doesn't match reference:{eol}{diff}".format(
-                eol=os.linesep,
-                diff=os.linesep.join(l.strip() for l in difflib.unified_diff(reference.splitlines(), result.splitlines(), fromfile='expected', tofile='actual'))),
-            pytrace=False)
+    run_client(bin_prefix, tcp_port, query, reference, {random_name: 'default'})
+    run_client(bin_prefix, tcp_port, "SELECT 'SHOW DATABASES AND TABLES'; SHOW DATABASES; SHOW TABLES;", 'SHOW DATABASES AND TABLES\ndefault\nsystem\n')

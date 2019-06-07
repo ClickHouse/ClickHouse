@@ -9,3 +9,5 @@ ALTER TABLE alter_update UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)
 SELECT sleep(1); -- TODO: there should be setting for sync ALTER UPDATE someday.
 
 SELECT e FROM alter_update ORDER BY d;
+
+DROP TABLE alter_update;
