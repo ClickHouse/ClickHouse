@@ -2,14 +2,15 @@
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement JDBC connection, ClickHouse uses the third-party program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge). Installation instructions are in it's documentation. You should run it as a daemon.
+To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) that should run as a daemon.
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
 ## Creating a Table
 
-```
-CREATE TABLE [IF NOT EXISTS] [db.]table_name  ENGINE = JDBC(dbms_uri, external_database, external_table)
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
 **Engine Parameters**
@@ -20,11 +21,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name  ENGINE = JDBC(dbms_uri, external_d
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 - `external_database` — Database in an external DBMS.
-- `external_table` — A name of the table in `external_database`.
+- `external_table` — Name of the table in `external_database`.
 
 ## Usage Example
 
-Creating a table in MySQL (using native MySQL engine):
+Creating a table in MySQL server by connecting directly with it's console client:
 
 ```
 mysql> CREATE TABLE `test`.`test` (
@@ -47,7 +48,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Selecting data from the table in ClickHouse:
+Creating a table in ClickHouse server and selecting data from it:
 
 ```
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')

@@ -4,4 +4,4 @@ INSERT INTO tab_00481 SELECT today() as date, number as value, '' as s, toFixedS
 SET preferred_max_column_in_block_size_bytes = 32;
 SELECT blockSize(), * from tab_00481 format Null;
 SELECT 0;
-DROP TABLE tab_00481;
+

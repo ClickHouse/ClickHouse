@@ -1,7 +1,9 @@
-DROP TABLE IF EXISTS set;
-DROP TABLE IF EXISTS set2;
+DROP TABLE IF EXISTS test.set;
+DROP TABLE IF EXISTS test.set2;
 
-CREATE TABLE set (x String) ENGINE = Set;
+CREATE TABLE test.set (x String) ENGINE = Set;
+
+USE test;
 
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set;
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s NOT IN set;
@@ -12,10 +14,10 @@ SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s
 RENAME TABLE set TO set2;
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set2;
 
-INSERT INTO set2 VALUES ('Hello'), ('World');
+INSERT INTO test.set2 VALUES ('Hello'), ('World');
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set2;
 
-INSERT INTO set2 VALUES ('abc'), ('World');
+INSERT INTO test.set2 VALUES ('abc'), ('World');
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set2;
 
 DETACH TABLE set2;
@@ -26,4 +28,6 @@ SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s
 RENAME TABLE set2 TO set;
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set;
 
-DROP TABLE set;
+USE default;
+
+DROP TABLE test.set;

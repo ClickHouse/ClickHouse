@@ -1,11 +1,15 @@
-DROP TABLE IF EXISTS join;
+DROP TABLE IF EXISTS test.join;
 
-CREATE TABLE join (k UInt64, s String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE test.join (k UInt64, s String) ENGINE = Join(ANY, LEFT, k);
 
-INSERT INTO join VALUES (1, 'abc'), (2, 'def');
+USE test;
+
+INSERT INTO test.join VALUES (1, 'abc'), (2, 'def');
 SELECT k, s FROM (SELECT number AS k FROM system.numbers LIMIT 10) ANY LEFT JOIN join USING k;
 
-INSERT INTO join VALUES (6, 'ghi');
+INSERT INTO test.join VALUES (6, 'ghi');
 SELECT k, s FROM (SELECT number AS k FROM system.numbers LIMIT 10) ANY LEFT JOIN join USING k;
 
-DROP TABLE join;
+USE default;
+
+DROP TABLE test.join;

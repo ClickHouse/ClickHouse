@@ -1,13 +1,13 @@
-DROP TABLE IF EXISTS test;
-DROP TABLE IF EXISTS test_view;
+DROP TABLE IF EXISTS test.test_00599;
+DROP TABLE IF EXISTS test.test_view_00599;
 
-CREATE TABLE test(id UInt64) ENGINE = Log;
-CREATE VIEW test_view AS SELECT * FROM test WHERE id = (SELECT 1);
+CREATE TABLE test.test_00599(id UInt64) ENGINE = Log;
+CREATE VIEW test.test_view_00599 AS SELECT * FROM test.test_00599 WHERE id = (SELECT 1);
 
-DETACH TABLE test_view;
-ATTACH TABLE test_view;
+DETACH TABLE test.test_view_00599;
+ATTACH TABLE test.test_view_00599;
 
-SHOW CREATE TABLE test_view;
+SHOW CREATE TABLE test.test_view_00599;
 
-DROP TABLE test;
-DROP TABLE test_view;
+DROP TABLE IF EXISTS test.test_00599;
+DROP TABLE IF EXISTS test.test_view_00599;
