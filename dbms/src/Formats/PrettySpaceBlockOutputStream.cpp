@@ -3,7 +3,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettySpaceBlockOutputStream.h>
 
-
 namespace DB
 {
 
@@ -25,12 +24,6 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
     Widths max_widths;
     Widths name_widths;
     calculateWidths(block, widths, max_widths, name_widths, format_settings);
-
-    /// Do not align on too long values.
-    if (terminal_width > 80)
-        for (size_t i = 0; i < columns; ++i)
-            if (max_widths[i] > terminal_width / 2)
-                max_widths[i] = terminal_width / 2;
 
     /// Names
     for (size_t i = 0; i < columns; ++i)
@@ -64,14 +57,12 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
         }
     }
     writeCString("\n\n", ostr);
-
     for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
     {
         for (size_t j = 0; j < columns; ++j)
         {
             if (j != 0)
                 writeCString("   ", ostr);
-
             writeValueWithPadding(block.getByPosition(j), i, widths[j].empty() ? max_widths[j] : widths[j][i], max_widths[j]);
         }
 
