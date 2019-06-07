@@ -483,6 +483,22 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
+void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpaceMonitor::ReservationPtr & reservation) const
+{
+    auto & reserved_disk = reservation->getDisk();
+    if (reserved_disk->getName() == disk->getName())
+        throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
+
+    String path_to_clone = storage.getFullPathOnDisk(reserved_disk) + "detached/";
+
+    if (Poco::File(path_to_clone + relative_path).exists())
+        throw Exception("Path " + path_to_clone + relative_path + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    Poco::File(path_to_clone).createDirectory();
+
+    Poco::File cloning_directory(getFullPath());
+    cloning_directory.copyTo(path_to_clone);
+}
+
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     /// Memory should not be limited during ATTACH TABLE query.

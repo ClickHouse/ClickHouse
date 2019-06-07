@@ -7,6 +7,7 @@
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserMoveQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
@@ -32,6 +33,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
+    ParserMoveQuery move_p;
 
     ASTPtr query;
 
@@ -57,7 +59,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected);
+        || optimize_p.parse(pos, query, expected)
+        || move_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

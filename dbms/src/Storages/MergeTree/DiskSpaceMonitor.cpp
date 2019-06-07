@@ -187,9 +187,9 @@ DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserveAtDisk(const Disk
     size_t disks_num = disks.size();
     for (size_t i = 0; i != disks_num; ++i)
     {
-        if (disks[i] != disk) {
+        if (disks[i] != disk)
             continue;
-        }
+
         auto reservation = DiskSpaceMonitor::tryToReserve(disks[i], expected_size);
 
         if (reservation && reservation->isValid())
@@ -262,6 +262,14 @@ DiskPtr StoragePolicy::getAnyDisk() const
         throw Exception("StoragePolicy Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
     }
     return volumes[0].disks[0];
+}
+
+DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const {
+    for (auto && volume : volumes)
+        for (auto && disk : volume.disks)
+            if (disk->getName() == disk_name)
+                return disk;
+    return {};
 }
 
 UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
