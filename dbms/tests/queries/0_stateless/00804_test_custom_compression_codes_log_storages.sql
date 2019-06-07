@@ -116,3 +116,6 @@ TRUNCATE TABLE compression_codec_multiple_tiny_log;
 INSERT INTO compression_codec_multiple_tiny_log select modulo(number, 100), toString(number), toDate('2018-12-01'), 5.5 * number FROM system.numbers limit 10000;
 
 SELECT sum(cityHash64(*)) FROM compression_codec_multiple_tiny_log;
+
+DROP TABLE compression_codec_log;
+DROP TABLE compression_codec_tiny_log;
