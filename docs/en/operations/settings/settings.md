@@ -210,11 +210,16 @@ Default value: 0.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
-Enables or disables skipping of insertion of extra data.
+Enables or disables skipping insertion of extra data.
 
 When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn't insert extra data and doesn't throw an exception.
 
-Supported formats: [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames), [TSKV](../../interfaces/formats.md#tskv).
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TSKV](../../interfaces/formats.md#tskv)
 
 Possible values:
 
@@ -227,9 +232,12 @@ Default value: 0.
 
 Enables or disables checking the column order when inserting data.
 
-We recommend disabling check, if you are sure that the column order of the input data is the same as in the target table. It increases ClickHouse performance.
+To improve insert performance, we recommend disabling this check if you are sure that the column order of the input data is the same as in the target table.
 
-Supported formats: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
+Supported formats:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Possible values:
 
@@ -547,9 +555,9 @@ This method is appropriate when you know exactly which replica is preferable.
 load_balancing = first_or_random
 ```
 
-This algorithm chooses the first replica in order or a random replica if the first one is unavailable. It is effective in cross-replication topology setups, but it useless in other configurations.
+This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
 
-The `first or random` algorithm solves the problem of the `in order` algorithm. The problem is: if one replica goes down, the next one handles twice the usual load while remaining ones handle usual traffic. When using the `first or random` algorithm, the load on replicas is leveled.
+The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, load is evenly distributed among replicas that are still available.
 
 ## prefer_localhost_replica {#settings-prefer_localhost_replica}
 
@@ -562,6 +570,9 @@ Possible values:
 
 Default value: 1.
 
+!!! warning "Warning"
+    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+
 ## totals_mode
 
 How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
@@ -572,7 +583,7 @@ See the section "WITH TOTALS modifier".
 The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
 
-## max_parallel_replicas
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 The maximum number of replicas for each shard when executing a query.
 For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
