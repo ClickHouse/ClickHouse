@@ -2,6 +2,7 @@
 
 #include <thread>
 #include <atomic>
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
@@ -157,6 +158,8 @@ protected:
     bool is_prepared = false;
     void prepareTable();
 
+    std::atomic<bool> can_flush = true;
+    std::condition_variable flush_condvar;
     void flushImpl(bool quiet);
 };
 
@@ -251,8 +254,13 @@ void SystemLog<LogElement>::threadFunction()
                 }
                 else
                 {
+                    /// We need condvar to be sure that all pulled from queue log entries will be flushed by 
+                    /// "SYSTEM FLUSH LOGS" query, so we need to push last entry to data even if mutex is locked
+                    can_flush = false;
                     std::unique_lock lock(data_mutex);
                     data.push_back(element.second);
+                    can_flush = true;
+                    flush_condvar.notify_one();
                 }
             }
 
@@ -283,6 +291,24 @@ void SystemLog<LogElement>::flushImpl(bool quiet)
     {
         if (quiet && data.empty())
             return;
+
+        /// Flush elements from queue if flush was initiated by "SYSTEM FLUSH LOGS" query
+        if (!quiet)
+        {
+            QueueItem element;
+            size_t size = queue.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                if (!queue.tryPop(element))
+                    break;
+                data.push_back(element.second);
+            }
+            if (!can_flush)
+            {
+                flush_condvar.wait(lock);
+                can_flush = true;
+            }
+        }
 
         LOG_TRACE(log, "Flushing system log");
 
