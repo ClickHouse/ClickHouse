@@ -199,7 +199,7 @@ Types:
 
 `T` and `U` can be numeric, string, or Date or DateTime types.
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
-For example, the first argument can have the Int64 type, while the second has the Array(Uint16) type.
+For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the existing element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'default'. If there are multiple matching elements in 'array_from', it returns one of the matches.
 

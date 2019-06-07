@@ -971,6 +971,10 @@ void DDLWorker::runMainThread()
                     }
                 }
             }
+            else if (e.code == Coordination::ZNONODE)
+            {
+                LOG_ERROR(log, "ZooKeeper error: " << getCurrentExceptionMessage(true));
+            }
             else
             {
                 LOG_ERROR(log, "Unexpected ZooKeeper error: " << getCurrentExceptionMessage(true) << ". Terminating.");
