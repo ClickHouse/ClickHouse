@@ -51,7 +51,10 @@ def test_query(bin_prefix, sql_query, standalone_server):
     query = 'CREATE DATABASE {random}; USE {random}; {query}'.format(random=random_name, query=query)
     run_client(bin_prefix, tcp_port, query, reference, {random_name: 'default'})
 
-    query = "SELECT 'SHOW ORPHANED TABLES'; SELECT database, name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
+    query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
     run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED TABLES\n')
 
     run_client(bin_prefix, tcp_port, 'DROP DATABASE {random};'.format(random=random_name), '')
+
+    query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
+    run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
