@@ -656,7 +656,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 ## arrayJoin(arr) {#array_functions-join}
 
-一个特殊的功能。请参见[“ArrayJoin函数”](array_join.md＃functions_arrayjoin)部分。
+一个特殊的功能。请参见[“ArrayJoin函数”](array_join.md#functions_arrayjoin)部分。
 
 ## arrayDifference(arr)
 
