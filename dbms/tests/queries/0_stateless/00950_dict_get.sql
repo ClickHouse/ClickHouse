@@ -1,5 +1,4 @@
 -- Must use `test` database and this tables - they configured in dbms/tests/*_dictionary.xml
-use test;
 drop table if exists ints;
 drop table if exists strings;
 drop table if exists decimals;
