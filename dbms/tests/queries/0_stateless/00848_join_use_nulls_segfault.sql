@@ -65,3 +65,4 @@ SELECT t3.id = 'l', t3.not_id = 'l' FROM t1 LEFT JOIN t3 USING(id);
 
 DROP TABLE t1;
 DROP TABLE t2;
+DROP TABLE t3;

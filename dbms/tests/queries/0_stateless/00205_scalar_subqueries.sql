@@ -6,4 +6,3 @@ SELECT (SELECT toDate('2015-01-02')) = toDate('2015-01-02'), 'Hello' = (SELECT '
 SELECT (SELECT toDate('2015-01-02'), 'Hello');
 SELECT (SELECT toDate('2015-01-02'), 'Hello') AS x, x, identity((SELECT 1)), identity((SELECT 1) AS y);
 -- SELECT (SELECT uniqState(''));
-
