@@ -135,6 +135,7 @@ nav:
     - 'arrayJoin函数': 'query_language/functions/array_join.md'
     - 'GEO函数': 'query_language/functions/geo.md'
     - 'Nullable处理函数': 'query_language/functions/functions_for_nulls.md'
+    - '机器学习函数': 'query_language/functions/machine_learning_methods.md'
     - '其他函数': 'query_language/functions/other_functions.md'
   - 'Aggregate functions':
     - 'Introduction': 'query_language/agg_functions/index.md'

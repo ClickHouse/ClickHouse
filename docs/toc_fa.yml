@@ -136,6 +136,7 @@ nav:
     - 'arrayJoin': 'query_language/functions/array_join.md'
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
+    - 'Machine learning': 'query_language/functions/machine_learning_methods.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'

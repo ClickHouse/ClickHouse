@@ -617,7 +617,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## linearRegression
+## linearRegression {#agg_functions-linearregression}
 
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient,
@@ -654,11 +654,11 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
         param2 Float64,
         target Float64
     ) ENGINE = Memory;
-    
+
     CREATE TABLE your_model ENGINE = Memory AS SELECT
     stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
-    
+
     ```
     Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
     Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
@@ -671,7 +671,7 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     evalMLMethod(model, param1, param2) FROM test_data
     ```
     The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
-    
+
     `test_data` is a table like `train_data` but may not contain target value.
 
 **Some notes**
@@ -681,23 +681,23 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     SELECT state1 + state2 FROM your_models
     ```
     where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
-    
+
 2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
     ```sql
     SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values. 
+    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
 
 
-## logisticRegression
+## logisticRegression {#agg_functions-logisticregression}
 
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
 #### Parameters
 
-Parameters are exactly the same as in stochasticLinearRegression: 
-`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`. 
+Parameters are exactly the same as in stochasticLinearRegression:
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
 For more information see [parameters](#parameters).
 ```text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -706,9 +706,9 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 1. *Fitting*
 
     See *stochasticLinearRegression.Fitting*
-    
+
     Predicted labels have to be in {-1, 1}.
-    
+
 2. *Predicting*
 
     Using saved state we can predict probability of object having label *1*.

@@ -7,9 +7,9 @@
 ## Stochastic Linear Regression
 
 `stochasticLinearRegression`聚合函数使用线性模型和MSE损失函数实现随机梯度下降法。 使用`evalMLMethod`来预测新数据。
-请参阅示例和注释[此处](../agg_functions/reference.md#linearregression)。
+请参阅示例和注释[此处](../agg_functions/reference.md#agg_functions-linearregression)。
 
 ## Stochastic Logistic Regression
 
 `stochasticLogisticRegression`聚合函数实现了二元分类问题的随机梯度下降法。 使用`evalMLMethod`来预测新数据。
-请参阅示例和注释[此处](../agg_functions/reference.md#logisticregression)。
+请参阅示例和注释[此处](../agg_functions/reference.md#agg_functions-logisticregression)。
