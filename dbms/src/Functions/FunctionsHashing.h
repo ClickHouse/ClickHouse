@@ -12,7 +12,7 @@
 
 #include <Common/config.h>
 #if USE_XXHASH
-#   include <xxhash.h> // Y_IGNORE
+#   include <xxhash.h>
 #endif
 
 #if USE_SSL

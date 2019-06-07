@@ -1,35 +1,33 @@
-CREATE DATABASE IF NOT EXISTS test00508;
+DROP TABLE IF EXISTS test.src;
+DROP TABLE IF EXISTS test.dst;
+DROP TABLE IF EXISTS test.mv_00508;
 
-DROP TABLE IF EXISTS test00508.src;
-DROP TABLE IF EXISTS test00508.dst;
-DROP TABLE IF EXISTS test00508.mv_00508;
+CREATE TABLE test.src (x UInt8) ENGINE = Null;
+CREATE TABLE test.dst (x UInt8) ENGINE = Memory;
 
-CREATE TABLE test00508.src (x UInt8) ENGINE = Null;
-CREATE TABLE test00508.dst (x UInt8) ENGINE = Memory;
+USE test;
 
-USE test00508;
-
-CREATE MATERIALIZED VIEW test00508.mv_00508 TO dst AS SELECT * FROM src;
+CREATE MATERIALIZED VIEW test.mv_00508 TO dst AS SELECT * FROM src;
 
 INSERT INTO src VALUES (1), (2);
-SELECT * FROM test00508.mv_00508 ORDER BY x;
+SELECT * FROM test.mv_00508 ORDER BY x;
 
 -- Detach MV and see if the data is still readable
-DETACH TABLE test00508.mv_00508;
+DETACH TABLE test.mv_00508;
 SELECT * FROM dst ORDER BY x;
 
+USE default;
+
 -- Reattach MV (shortcut)
-ATTACH TABLE test00508.mv_00508;
+ATTACH TABLE test.mv_00508;
 
-INSERT INTO test00508.src VALUES (3);
+INSERT INTO test.src VALUES (3);
 
-SELECT * FROM test00508.mv_00508 ORDER BY x;
+SELECT * FROM test.mv_00508 ORDER BY x;
 
 -- Drop the MV and see if the data is still readable
-DROP TABLE test00508.mv_00508;
-SELECT * FROM test00508.dst ORDER BY x;
+DROP TABLE test.mv_00508;
+SELECT * FROM test.dst ORDER BY x;
 
-DROP TABLE test00508.src;
-DROP TABLE test00508.dst;
-
-DROP DATABASE test00508;
+DROP TABLE test.src;
+DROP TABLE test.dst;

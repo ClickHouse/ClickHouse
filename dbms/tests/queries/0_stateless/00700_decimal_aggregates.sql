@@ -94,5 +94,3 @@ SELECT 1 LIMIT 0;
 -- TODO: other quantile(s)
 -- TODO: groupArray, groupArrayInsertAt, groupUniqArray
 -- TODO: topK
-
-DROP TABLE decimal;

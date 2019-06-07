@@ -1,3 +1,4 @@
+USE test;
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]));
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
@@ -55,23 +56,29 @@ ALL LEFT JOIN
 )
 USING city_id;
 
+SELECT count(*) FROM bitmap_test WHERE bitmapHasAny((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), bitmapBuild([uid]));
+
+SELECT count(*) FROM bitmap_test WHERE bitmapHasAny(bitmapBuild([uid]), (SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'));
+
+SELECT count(*) FROM bitmap_test WHERE 0 = bitmapHasAny((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), bitmapBuild([uid]));
+
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
 CREATE TABLE bitmap_state_test
 (
 	pickup_date Date,
 	city_id UInt32,
-    uv AggregateFunction( groupBitmap, UInt32 )
+    uv AggregateFunction( groupBitmap, UInt32 )	
 )
 ENGINE = AggregatingMergeTree( pickup_date, ( pickup_date, city_id ), 8192);
 
-INSERT INTO bitmap_state_test SELECT
-    pickup_date,
+INSERT INTO bitmap_state_test SELECT 
+    pickup_date, 
     city_id,
     groupBitmapState(uid) AS uv
 FROM bitmap_test
 GROUP BY pickup_date, city_id;
-
+	
 SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date;
 
 -- between column and expression test
