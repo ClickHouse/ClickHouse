@@ -102,7 +102,8 @@ struct MergeTreeDataPart
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
-    bool is_temp = false;
+    /// We can change temp state when move part to another disk
+    mutable bool is_temp = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
@@ -155,6 +156,8 @@ struct MergeTreeDataPart
         }
         return false;
     }
+
+    void deleteOnDestroy() const { is_temp = true; }
 
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<State> & affordable_states) const;
@@ -263,6 +266,9 @@ struct MergeTreeDataPart
 
     /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
+
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const DiskSpaceMonitor::ReservationPtr & reservation) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

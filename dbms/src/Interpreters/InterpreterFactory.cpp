@@ -6,6 +6,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTMoveQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Interpreters/InterpreterMoveQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -112,6 +114,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         throwIfNoAccess(context);
         return std::make_unique<InterpreterRenameQuery>(query, context);
+    }
+    else if (query->as<ASTMoveQuery>())
+    {
+        return std::make_unique<InterpreterMoveQuery>(query, context);
     }
     else if (query->as<ASTShowTablesQuery>())
     {

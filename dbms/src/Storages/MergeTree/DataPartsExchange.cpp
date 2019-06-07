@@ -236,7 +236,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         if (!protocol_error)
             throw;
-        LOG_WARNING(log, "Looks like old ClickHouse version node. Trying to use fetch protocol version 0"); ///@TODO_IGR ASK new msg
+        LOG_WARNING(log, "Looks like old ClickHouse version node. Trying to use fetch protocol version 0 (" + String(e.what()) + ")"); ///@TODO_IGR ASK new msg
     }
 
     /// Protocol error

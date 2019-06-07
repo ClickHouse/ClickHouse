@@ -423,6 +423,8 @@ public:
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
+    DataPartPtr swapActivePart(MergeTreeData::DataPartPtr part);
+
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
 
@@ -515,6 +517,8 @@ public:
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+
+    void move(const String & part_name, const String & destination_disk_name) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.

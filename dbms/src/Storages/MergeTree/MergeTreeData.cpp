@@ -1145,6 +1145,38 @@ void MergeTreeData::rename(const String & /*new_path_to_db*/, const String & new
     table_name = new_table_name;
 }
 
+void MergeTreeData::move(const String & part_name, const String & destination_disk_name)
+{
+    auto part = getActiveContainingPart(part_name);
+    if (!part)
+        throw Exception("Part " + part_name + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+
+    auto disk = storage_policy->getDiskByName(destination_disk_name);
+    if (!disk)
+        throw Exception("Disk " + destination_disk_name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    auto reservation = reserveSpaceAtDisk(disk, part->bytes_on_disk);
+    if (!reservation)
+        throw Exception("Move is not possible. Not enought space on disk " + destination_disk_name, ErrorCodes::NOT_ENOUGH_SPACE);
+
+    LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
+    part->makeCloneOnDiskDetached(reservation);
+
+    MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(*this,
+                                                                                              reservation->getDisk(), part_name);
+    copied_part->relative_path = "detached/" + part_name;
+
+    copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+
+    copied_part->renameTo(part_name);
+
+    auto old_active_part = swapActivePart(copied_part);
+
+    old_active_part->deleteOnDestroy();
+
+    std::cerr << "USE COUNT" << old_active_part.use_count() << std::endl;
+}
+
 void MergeTreeData::dropAllData()
 {
     LOG_TRACE(log, "dropAllData: waiting for locks.");
@@ -2319,6 +2351,27 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     }
 
     return nullptr;
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part)
+{
+    auto data_parts_lock = lockParts();
+
+    for (auto && active_part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (part->name == active_part->name)
+        {
+            auto it = data_parts_by_info.find(active_part->info);
+            if (it == data_parts_by_info.end())
+                throw Exception("No such active part by info. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
+
+            data_parts_indexes.erase(it);
+            auto part_it = data_parts_indexes.insert(part).first;
+            modifyPartState(part_it, DataPartState::Committed);
+            return active_part;
+        }
+    }
+    throw Exception("No such active part. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)

@@ -251,6 +251,12 @@ public:
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Move part between disks
+    virtual void move(const String & /*part_name*/, const String & /*destination_disk_name*/)
+    {
+        throw Exception("Moves are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {

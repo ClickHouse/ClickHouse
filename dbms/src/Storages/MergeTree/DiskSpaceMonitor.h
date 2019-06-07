@@ -197,9 +197,7 @@ public:
             valid = true;
         }
 
-        bool isValid() const {
-            return valid;
-        }
+        bool isValid() const { return valid; }
 
     private:
         UInt64 size;
@@ -339,6 +337,8 @@ public:
     Disks getDisks() const;
 
     DiskPtr getAnyDisk() const;
+
+    DiskPtr getDiskByName(const String & disk_name) const;
 
     UInt64 getMaxUnreservedFreeSpace() const;
 
