@@ -47,6 +47,8 @@ public:
     Names getColumnsRequiredForSampling() const override { return storage->getColumnsRequiredForSampling(); }
     Names getColumnsRequiredForFinal() const override { return storage->getColumnsRequiredForFinal(); }
 
+    const ColumnsDescription & getColumns() const override { return storage->getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return storage->setColumns(columns_); }
     NameAndTypePair getColumn(const String & column_name) const override { return storage->getColumn(column_name); }
     bool hasColumn(const String & column_name) const override { return storage->hasColumn(column_name); }
     static StoragePtr createProxyStorage(StoragePtr storage, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
