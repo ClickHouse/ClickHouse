@@ -82,8 +82,8 @@ public:
 
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    const ColumnsDescription & getColumns() const;
-    void setColumns(ColumnsDescription columns_);
+    virtual const ColumnsDescription & getColumns() const;
+    virtual void setColumns(ColumnsDescription columns_);
 
     const IndicesDescription & getIndices() const;
     void setIndices(IndicesDescription indices_);

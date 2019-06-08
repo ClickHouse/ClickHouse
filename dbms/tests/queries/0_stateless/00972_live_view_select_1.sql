@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS test.lv;
+CREATE LIVE VIEW test.lv AS SELECT 1;
+SHOW TABLES LIKE 'lv';
+SELECT * FROM test.lv;
+DROP TABLE test.lv;
