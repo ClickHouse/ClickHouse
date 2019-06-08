@@ -75,7 +75,7 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Enables of disables execution of `GROUP BY` clause in external memory. For more details on how it works, see [GROUP BY in external memory](../../#select-group-by-in-external-memory).
+Enables or disables execution of `GROUP BY` clause in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
 
 Possible values:
 
