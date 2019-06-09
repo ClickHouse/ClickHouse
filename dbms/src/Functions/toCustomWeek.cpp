@@ -1,17 +1,19 @@
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/CustomDateTransforms.h>
-#include <Functions/FunctionCustomDateToSomething.h>
+#include <Functions/CustomWeekTransforms.h>
+#include <Functions/FunctionCustomWeekToSomething.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
 
 namespace DB
 {
-using FunctionToCustomWeek = FunctionCustomDateToSomething<DataTypeUInt8, ToCustomWeekImpl>;
+using FunctionWeek = FunctionCustomWeekToSomething<DataTypeUInt8, WeekImpl>;
+using FunctionYearWeek = FunctionCustomWeekToSomething<DataTypeUInt32, YearWeekImpl>;
 
 void registerFunctionToCustomWeek(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionToCustomWeek>();
+    factory.registerFunction<FunctionWeek>();
+    factory.registerFunction<FunctionYearWeek>();
 }
 
 }
