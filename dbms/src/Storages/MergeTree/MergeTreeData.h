@@ -228,17 +228,17 @@ public:
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
+        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        const DataPartPtr & getDataPart() const { return data_part; }
+        bool isValid() const;
+
     private:
         friend class MergeTreeData;
+        void clear();
 
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        bool valid = true;
 
-        void clear()
-        {
-            alter_lock.unlock();
-            data_part = nullptr;
-        }
-
+        //don't interchange order of data_part & alter_lock
         DataPartPtr data_part;
         DataPartsLock alter_lock;
 
@@ -414,6 +414,9 @@ public:
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
+    /// Returns all detached parts
+    std::vector<DetachedPartInfo> getDetachedParts() const;
+
     /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
@@ -531,11 +534,11 @@ public:
     /// Returns an object allowing to rename temporary files to permanent files.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
-    AlterDataPartTransactionPtr alterDataPart(
-        const DataPartPtr & part,
+    void alterDataPart(
         const NamesAndTypesList & new_columns,
         const IndicesASTs & new_indices,
-        bool skip_sanity_checks);
+        bool skip_sanity_checks,
+        AlterDataPartTransactionPtr& transaction);
 
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);

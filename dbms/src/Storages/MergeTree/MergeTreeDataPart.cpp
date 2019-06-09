@@ -1,5 +1,6 @@
-#include <optional>
+#include "MergeTreeDataPart.h"
 
+#include <optional>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -14,13 +15,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/localBackup.h>
 #include <Compression/CompressionInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <common/logger_useful.h>
 #include <common/JSON.h>
 
@@ -440,25 +438,26 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
 
 String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
+    /// Do not allow underscores in the prefix because they are used as separators.
+    assert(prefix.find_first_of('_') == String::npos);
+
     String res;
-    unsigned try_no = 0;
-    auto dst_name = [&, this] { return "detached/" + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
         * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
         * No more than 10 attempts are made so that there are not too many junk directories left.
         */
-    while (try_no < 10)
+    for (int try_no = 0; try_no < 10; try_no++)
     {
-        res = dst_name();
+        res = "detached/" + (prefix.empty() ? "" : prefix + "_")
+            + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!Poco::File(storage.getFullPathOnDisk(disk) + res).exists())
             return res;
 
-        LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+        LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists."
             " Will detach to directory with '_tryN' suffix.");
-        ++try_no;
     }
 
     return res;
@@ -746,7 +745,8 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 void MergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullPath() + "columns.txt";
-    if (!Poco::File(path).exists())
+    Poco::File poco_file_path{path};
+    if (!poco_file_path.exists())
     {
         if (require)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -767,6 +767,8 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         return;
     }
+
+    is_frozen = !poco_file_path.canWrite();
 
     ReadBufferFromFile file = openForReading(path);
     columns.readText(file);

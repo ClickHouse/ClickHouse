@@ -210,11 +210,16 @@ Default value: 0.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
-Enables or disables skipping of insertion of extra data.
+Enables or disables skipping insertion of extra data.
 
 When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn't insert extra data and doesn't throw an exception.
 
-Supported formats: [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames), [TSKV](../../interfaces/formats.md#tskv).
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TSKV](../../interfaces/formats.md#tskv)
 
 Possible values:
 
@@ -227,9 +232,12 @@ Default value: 0.
 
 Enables or disables checking the column order when inserting data.
 
-We recommend disabling check, if you are sure that the column order of the input data is the same as in the target table. It increases ClickHouse performance.
+To improve insert performance, we recommend disabling this check if you are sure that the column order of the input data is the same as in the target table.
 
-Supported formats: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
+Supported formats:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Possible values:
 
@@ -497,16 +505,31 @@ The default value is 7500.
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
 
-## load_balancing
+## load_balancing {#settings-load_balancing}
 
-Which replicas (among healthy replicas) to preferably send a query to (on the first attempt) for distributed processing.
+Specifies the algorithm of replicas selection that is used for distributed query processing.
 
-### random (default)
+ClickHouse supports the following algorithms of choosing replicas:
+
+- [Random](#load_balancing-random) (by default)
+- [Nearest hostname](#load_balancing-nearest_hostname)
+- [In order](#load_balancing-in_order)
+- [First or random](#load_balancing-first_or_random)
+
+### Random (by default) {#load_balancing-random}
+
+```
+load_balancing = random
+```
 
 The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to any one of them.
 Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
 
-### nearest_hostname
+### Nearest Hostname {#load_balancing-nearest_hostname}
+
+```
+load_balancing = nearest_hostname
+```
 
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a host name that is most similar to the server's host name in the config file (for the number of different characters in identical positions, up to the minimum length of both host names).
 
@@ -516,10 +539,39 @@ This method might seem primitive, but it doesn't require external data about net
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
 
-### in_order
+### In Order {#load_balancing-in_order}
 
-Replicas are accessed in the same order as they are specified. The number of errors does not matter.
+```
+load_balancing = in_order
+```
+
+Replicas with the same number of errors are accessed in the same order as they are specified in configuration.
 This method is appropriate when you know exactly which replica is preferable.
+
+
+### First or Random {#load_balancing-first_or_random}
+
+```
+load_balancing = first_or_random
+```
+
+This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
+
+The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, load is evenly distributed among replicas that are still available.
+
+## prefer_localhost_replica {#settings-prefer_localhost_replica}
+
+Enables/disables preferable using the localhost replica when processing distributed queries.
+
+Possible values:
+
+- 1 — ClickHouse always sends a query to the localhost replica if it exists.
+- 0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#settings-load_balancing) setting.
+
+Default value: 1.
+
+!!! warning "Warning"
+    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
 
 ## totals_mode
 
@@ -531,7 +583,7 @@ See the section "WITH TOTALS modifier".
 The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
 
-## max_parallel_replicas
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 The maximum number of replicas for each shard when executing a query.
 For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
@@ -621,6 +673,20 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
+
+## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
+
+Enables or disables:
+
+1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
+2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

@@ -18,9 +18,8 @@ with 10 as a select a + 1 as a; -- { serverError 179 }
 SELECT 0 as t FROM (SELECT 1 as t) as inn WHERE inn.t = 1;
 SELECT sum(value) as value FROM (SELECT 1 as value) as data WHERE data.value > 0;
 
-USE test;
-DROP TABLE IF EXISTS test;
-CREATE TABLE test (field String, not_field String) ENGINE = Memory;
-INSERT INTO test (field, not_field) VALUES ('123', '456')
-SELECT test.field AS other_field, test.not_field AS field FROM test;
-DROP TABLE test;
+DROP TABLE IF EXISTS test_00818;
+CREATE TABLE test_00818 (field String, not_field String) ENGINE = Memory;
+INSERT INTO test_00818 (field, not_field) VALUES ('123', '456')
+SELECT test_00818.field AS other_field, test_00818.not_field AS field FROM test_00818;
+DROP TABLE test_00818;

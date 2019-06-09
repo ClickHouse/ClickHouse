@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Storages/TableStructureLockHolder.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include <boost/noncopyable.hpp>
-#include <Core/Block.h>
-#include <Storages/TableStructureLockHolder.h>
 
 
 namespace DB
@@ -63,7 +66,5 @@ public:
 private:
     std::vector<TableStructureReadLockHolder> table_locks;
 };
-
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
 }

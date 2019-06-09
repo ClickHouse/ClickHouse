@@ -9,6 +9,7 @@
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
+#include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
@@ -66,6 +67,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
 {
     attachSystemTablesLocal(system_database);
     system_database.attachTable("parts", StorageSystemParts::create("parts"));
+    system_database.attachTable("detached_parts", createDetachedPartsTable());
     system_database.attachTable("parts_columns", StorageSystemPartsColumns::create("parts_columns"));
     system_database.attachTable("disks", StorageSystemDisks::create("disks"));
     system_database.attachTable("storage_policies", StorageSystemStoragePolicies::create("storage_policies"));

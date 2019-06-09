@@ -438,7 +438,7 @@ FROM <left_subquery>
 
 The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md) engine – an array prepared for joining.
 
-**Supported types of `JOIN`**
+#### Supported Types of `JOIN`
 
 - `INNER JOIN` (or `JOIN`)
 - `LEFT JOIN` (or `LEFT OUTER JOIN`)
@@ -448,14 +448,34 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
-**ANY or ALL strictness**
+#### Multiple JOIN
+
+Performing queries, ClickHouse rewrites multiple joins into the sequence of two-table joins. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
+
+If a query contains `WHERE` clause, ClickHouse tries to push down filters from this clause into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+
+We recommend the `JOIN ON` or `JOIN USING` syntax for creating a query. For example:
+
+```
+SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
+```
+
+Also, you can use comma separated list of tables for join. Works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting.
+
+    For example, `SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a`
+
+Don't mix these syntaxes.
+
+ClickHouse doesn't support the syntax with commas directly, so we don't recommend to use it. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER` `JOIN` clauses and then proceeds the query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats comma as an `INNER JOIN` clause and converts it to `CROSS JOIN` when the algorithm cannot guaranty that `INNER JOIN` returns required data.
+
+#### ANY or ALL Strictness
 
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
-**GLOBAL JOIN**
+#### GLOBAL JOIN
 
 When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 
@@ -463,7 +483,7 @@ When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calc
 
 Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#select-distributed-subqueries).
 
-**Usage Recommendations**
+#### Usage Recommendations
 
 All columns that are not needed for the `JOIN` are deleted from the subquery.
 
@@ -511,7 +531,7 @@ LIMIT 10
 ```
 
 Subqueries don't allow you to set names or use them for referencing a column from a specific subquery.
-The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases 'hits' and 'visits').
+The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases `hits` and `visits`).
 
 The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
 
@@ -530,6 +550,16 @@ While joining tables, the empty cells may appear. The setting [join_use_nulls](.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
+#### Syntax Limitations
+
+For multiple `JOIN` clauses in the single `SELECT` query:
+
+- Taking all the columns via `*` is available only if tables are joined, not subqueries.
+- The `PREWHERE` clause is not available.
+
+For `ON`, `WHERE` and `GROUP BY` clauses:
+
+- Arbitrary expressions cannot be used in `ON`, `WHERE` and `GROUP BY` clauses, but you can define an expression in `SELECT` clause and then use it via alias in these clauses.
 
 ### WHERE Clause
 
@@ -671,16 +701,16 @@ But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting 
 
 ### LIMIT BY Clause
 
-The query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](syntax.md#syntax-expressions).
+A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](syntax.md#syntax-expressions).
 
 ClickHouse supports the following syntax:
 
 - `LIMIT [offset_value, ]n BY expressions`
 - `LIMIT n OFFSET offset_value BY expressions`
 
-During the query processing, ClickHouse selects data ordered by sorting key. Sorting key is set explicitly by [ORDER BY](#select-order-by) clause or implicitly as a property of table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block, belonging to a distinct combination of `expressions`, ClickHouse skips `offset_value` rows from the beginning of the block, and returns not more than `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, then ClickHouse returns no rows from the block.
+During query processing, ClickHouse selects data ordered by sorting key. The sorting key is set explicitly using an [ORDER BY](#select-order-by) clause or implicitly as a property of the table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block that belongs to a distinct combination of `expressions`, ClickHouse skips `offset_value` number of rows from the beginning of the block and returns a maximum of `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, ClickHouse returns zero rows from the block.
 
-`LIMIT BY` is not related to `LIMIT`, they can both be used in the same query.
+`LIMIT BY` is not related to `LIMIT`. They can both be used in the same query.
 
 **Examples**
 
@@ -717,7 +747,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 
 The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
 
-The following query returns the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
+The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
 
 ``` sql
 SELECT
@@ -821,6 +851,43 @@ The result will be the same as if GROUP BY were specified across all the fields 
 DISTINCT is not supported if SELECT has at least one array column.
 
 `DISTINCT` works with [NULL](syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
+
+ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
+
+The sample table:
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+When selecting data by the `SELECT DISTINCT a FROM t1 ORDER BY b ASC` query, we get the following result:
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+If we change the direction of ordering `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, we get the following result:
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Row `2, 4` was cut before sorting.
+
+Take into account this implementation specificity when programming queries.
 
 ### LIMIT Clause
 

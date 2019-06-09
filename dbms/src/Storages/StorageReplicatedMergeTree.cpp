@@ -684,7 +684,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        forgetPartAndMoveToDetached(part, "ignored_", true);
+        forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
 
@@ -1524,8 +1524,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false);
-        if (!transaction)
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (!transaction->isValid())
             continue;
 
         updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
@@ -4628,17 +4629,19 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
     zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names, NameSet * parts_should_be_retried)
 {
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
-    exists_futures.reserve(part_names.size());
-    for (const String & part_name : part_names)
-    {
-        String part_path = replica_path + "/parts/" + part_name;
-        exists_futures.emplace_back(zookeeper->asyncExists(part_path));
-    }
-
     std::vector<std::future<Coordination::MultiResponse>> remove_futures;
+    exists_futures.reserve(part_names.size());
     remove_futures.reserve(part_names.size());
     try
     {
+        /// Exception can be thrown from loop
+        /// if zk session will be dropped
+        for (const String & part_name : part_names)
+        {
+            String part_path = replica_path + "/parts/" + part_name;
+            exists_futures.emplace_back(zookeeper->asyncExists(part_path));
+        }
+
         for (size_t i = 0; i < part_names.size(); ++i)
         {
             Coordination::ExistsResponse exists_resp = exists_futures[i].get();

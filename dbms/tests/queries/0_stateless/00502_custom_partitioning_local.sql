@@ -17,6 +17,8 @@ SELECT sum(x) FROM test.not_partitioned;
 ALTER TABLE test.not_partitioned DETACH PARTITION ID 'all';
 SELECT 'Sum after DETACH PARTITION:';
 SELECT sum(x) FROM test.not_partitioned;
+SELECT 'system.detached_parts after DETACH PARTITION:';
+SELECT * FROM system.detached_parts WHERE table = 'not_partitioned';
 
 DROP TABLE test.not_partitioned;
 
