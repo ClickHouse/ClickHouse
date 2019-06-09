@@ -49,19 +49,20 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-
         if (WEVERYTHING)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
         endif ()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int -Wempty-init-stmt")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow-field -Wstring-plus-int")
+        if(NOT APPLE)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wempty-init-stmt")
+        endif()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-        if (WEVERYTHING)
+        if (WEVERYTHING AND NOT APPLE)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
         endif ()
     endif ()
@@ -189,8 +190,17 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
-    ${RE2_LIBRARY}
-    ${RE2_ST_LIBRARY}
+)
+
+if(RE2_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
+endif()
+if(RE2_ST_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_ST_LIBRARY})
+endif()
+
+target_link_libraries(clickhouse_common_io
+        PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
@@ -208,7 +218,9 @@ target_link_libraries (clickhouse_common_io
 )
 
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+if(RE2_INCLUDE_DIR)
+    target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+endif()
 
 if (USE_LFALLOC)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LFALLOC_INCLUDE_DIR})
@@ -356,6 +368,6 @@ if (ENABLE_TESTS AND USE_GTEST)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} dbms clickhouse_common_zookeeper)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper)
     add_check(unit_tests_dbms)
 endif ()

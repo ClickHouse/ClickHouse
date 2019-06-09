@@ -1,4 +1,15 @@
+# docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:18.04
+
+RUN apt-get --allow-unauthenticated update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
+            bash \
+            fakeroot \
+            cmake \
+            ccache \
+            curl \
+            software-properties-common
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list

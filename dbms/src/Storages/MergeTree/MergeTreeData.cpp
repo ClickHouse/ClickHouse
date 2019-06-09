@@ -1518,14 +1518,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     }
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
-    const DataPartPtr & part,
+void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
-    bool skip_sanity_checks)
+    bool skip_sanity_checks,
+    AlterDataPartTransactionPtr & transaction)
 {
     ExpressionActionsPtr expression;
-    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
+    const auto & part = transaction->getDataPart();
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
             getIndices().indices, new_indices,
@@ -1587,7 +1587,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     if (transaction->rename_map.empty() && !force_update_metadata)
     {
         transaction->clear();
-        return nullptr;
+        return;
     }
 
     /// Apply the expression and write the result to temporary files.
@@ -1658,7 +1658,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
 
-    return transaction;
+    return;
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
@@ -1681,9 +1681,11 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     }
 
     LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
-
-    if (auto transaction = alterDataPart(data_part, new_columns, getIndices().indices, false))
+    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
+    alterDataPart(new_columns, getIndices().indices, false, transaction);
+    if (transaction->isValid())
         transaction->commit();
+
     empty_columns.clear();
 }
 
@@ -1692,10 +1694,24 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
+
+bool MergeTreeData::AlterDataPartTransaction::isValid() const
+{
+    return valid && data_part;
+}
+
+void MergeTreeData::AlterDataPartTransaction::clear()
+{
+    valid = false;
+}
+
 void MergeTreeData::AlterDataPartTransaction::commit()
 {
+    if (!isValid())
+        return;
     if (!data_part)
         return;
+
     try
     {
         std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
@@ -1753,11 +1769,14 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 {
+
+    if (!isValid())
+        return;
+    if (!data_part)
+        return;
+
     try
     {
-        if (!data_part)
-            return;
-
         LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
         String path = data_part->getFullPath();
@@ -2655,6 +2674,42 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+std::vector<DetachedPartInfo>
+MergeTreeData::getDetachedParts() const
+{
+    std::vector<DetachedPartInfo> res;
+
+    for (const String & path : getDataPaths())
+    {
+        for (Poco::DirectoryIterator it(path + "detached");
+            it != Poco::DirectoryIterator(); ++it)
+        {
+            auto dir_name = it.name();
+
+            res.emplace_back();
+            auto &part = res.back();
+
+            /// First, try to parse as <part_name>.
+            if (MergeTreePartInfo::tryParsePartName(dir_name, &part, format_version))
+                continue;
+
+            /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
+            part.prefix = dir_name;
+            const auto first_separator = dir_name.find_first_of('_');
+            if (first_separator == String::npos)
+                continue;
+
+            const auto part_name = dir_name.substr(first_separator + 1,
+                                                   dir_name.size() - first_separator - 1);
+            if (!MergeTreePartInfo::tryParsePartName(part_name, &part, format_version))
+                continue;
+
+            part.prefix = dir_name.substr(0, first_separator);
+        }
+    }
+    return res;
+}
+
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
     constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; ///@TODO_IGR ASK Is it OK?
@@ -2926,6 +2981,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
+        part->is_frozen = true;
         ++parts_processed;
     }
 

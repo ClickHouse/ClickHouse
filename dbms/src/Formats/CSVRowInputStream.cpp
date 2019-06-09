@@ -340,7 +340,7 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
             if (curr_position < prev_position)
                 throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-            if (isNumber(current_column_type) || isDateOrDateTime(current_column_type))
+            if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
             {
                 /// An empty string instead of a value.
                 if (curr_position == prev_position)
@@ -478,11 +478,12 @@ void registerInputFormatCSV(FormatFactory & factory)
             const Block & sample,
             const Context &,
             UInt64 max_block_size,
+            UInt64 rows_portion_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<CSVRowInputStream>(buf, sample, with_names, settings),
-                sample, max_block_size, settings);
+                sample, max_block_size, rows_portion_size, settings);
         });
     }
 }
