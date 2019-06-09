@@ -264,7 +264,8 @@ DiskPtr StoragePolicy::getAnyDisk() const
     return volumes[0].disks[0];
 }
 
-DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const {
+DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const
+{
     for (auto && volume : volumes)
         for (auto && disk : volume.disks)
             if (disk->getName() == disk_name)
