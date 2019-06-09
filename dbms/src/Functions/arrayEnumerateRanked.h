@@ -166,7 +166,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     const ArraysDepths arrays_depths = getArraysDepths(args);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
-    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
+    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
+    {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
         {
