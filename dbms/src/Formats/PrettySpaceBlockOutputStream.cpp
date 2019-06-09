@@ -3,9 +3,9 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettySpaceBlockOutputStream.h>
 
+
 namespace DB
 {
-
 
 void PrettySpaceBlockOutputStream::write(const Block & block)
 {
@@ -57,12 +57,14 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
         }
     }
     writeCString("\n\n", ostr);
+
     for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
     {
         for (size_t j = 0; j < columns; ++j)
         {
             if (j != 0)
                 writeCString("   ", ostr);
+
             writeValueWithPadding(block.getByPosition(j), i, widths[j].empty() ? max_widths[j] : widths[j][i], max_widths[j]);
         }
 
