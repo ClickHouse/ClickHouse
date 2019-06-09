@@ -38,8 +38,7 @@ BlockIO InterpreterMoveQuery::execute()
     String current_database = context.getCurrentDatabase();
 
     auto table = context.tryGetTable(move.table.database, move.table.table);
-//    if (!table)
-//        ; ///@TODO_IGR
+//    if (!table) ///@TODO_IGR
 
     TableStructureWriteLockHolder table_lock(table->lockExclusively(context.getCurrentQueryId()));
 
