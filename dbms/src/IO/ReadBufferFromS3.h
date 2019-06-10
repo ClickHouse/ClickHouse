@@ -20,10 +20,6 @@
 #include <common/logger_useful.h>
 
 
-#define DEFAULT_S3_READ_BUFFER_TIMEOUT 1800
-#define DEFAULT_S3_READ_BUFFER_CONNECTION_TIMEOUT 1
-#define DEFAULT_S3_MAX_FOLLOW_REDIRECT 2
-
 namespace DB
 {
 /** Perform S3 HTTP GET request and provide response to read.
