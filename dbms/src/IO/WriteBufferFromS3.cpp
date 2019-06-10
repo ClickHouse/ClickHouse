@@ -13,7 +13,11 @@ WriteBufferFromS3::WriteBufferFromS3(
     , request{Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
     request.setHost(uri.getHost());
-    request.setChunkedTransferEncoding(true);
+
+    // request.setChunkedTransferEncoding(true);
+    // Chunked transfers require additional logic, see:
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
+
     request.setExpectContinue(true);
 
     LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << uri.toString());
