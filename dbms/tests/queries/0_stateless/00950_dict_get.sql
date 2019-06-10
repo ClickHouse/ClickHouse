@@ -1,4 +1,6 @@
--- Must use `test` database and this tables - they configured in dbms/tests/*_dictionary.xml
+-- Must use `test_00950` database and these tables - they're configured in dbms/tests/*_dictionary.xml
+create database test_00950 if not exists;
+use test_00950;
 drop table if exists ints;
 drop table if exists strings;
 drop table if exists decimals;
@@ -243,3 +245,4 @@ select 'dictGetOrDefault', 'complex_cache_decimals' as dict_name, tuple(toUInt64
 drop table ints;
 drop table strings;
 drop table decimals;
+drop database test_00950;
