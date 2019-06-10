@@ -2,7 +2,7 @@
 #if USE_BROTLI
 
 #include "BrotliReadBuffer.h"
-#include <brotli/decode.h> // Y_IGNORE
+#include <brotli/decode.h>
 
 namespace DB
 {

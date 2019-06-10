@@ -38,7 +38,7 @@ Converts a date or date with time to a UInt8 number containing the month number 
 
 ## toDayOfYear
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the year (1-366).
+Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
 
 ## toDayOfMonth
 
@@ -316,7 +316,7 @@ Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1'
 
 Supported unit values:
 
-| unit   | 
+| unit   |
 | ------ |
 |second  |
 |minute  |

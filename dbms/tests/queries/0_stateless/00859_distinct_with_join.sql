@@ -1,5 +1,3 @@
-use test;
-
 drop table if exists fooL;
 drop table if exists fooR;
 create table fooL (a Int32, v String) engine = Memory;
