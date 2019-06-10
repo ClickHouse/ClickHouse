@@ -74,6 +74,12 @@ class IO(object):
         self._logger = None
         self._eol = ''
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
     def logger(self, logger=None, prefix=''):
         if logger:
             self._logger = self.Logger(logger, prefix=prefix)
@@ -90,6 +96,8 @@ class IO(object):
         return self._eol
 
     def close(self):
+        self.process.terminate()
+        os.close(self.master)
         if self._logger:
             self._logger.write('\n')
             self._logger.flush()
@@ -155,9 +163,11 @@ class IO(object):
             if data:
                 return data
             if raise_exception:
+                print 'DEBUG...', timeleft, repr(data),
                 raise TimeoutError(timeout)
             pass
         if not data and raise_exception:
+            print 'DEBUG.... here'
             raise TimeoutError(timeout)
 
         return data
