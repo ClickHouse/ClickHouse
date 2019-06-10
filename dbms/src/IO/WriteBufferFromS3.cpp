@@ -18,11 +18,15 @@ WriteBufferFromS3::WriteBufferFromS3(
 
     LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << uri.toString());
 
-    ostr = &session->sendRequest(request);
+    ostr = &temporary_stream;
 }
 
 void WriteBufferFromS3::finalize()
 {
+    const std::string & data = temporary_stream.str();
+    request.setContentLength(data.size());
+    ostr = &session->sendRequest(request);
+    *ostr << data;
     receiveResponse(*session, request, response);
     /// TODO: Response body is ignored.
 }
