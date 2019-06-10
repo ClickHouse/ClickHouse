@@ -15,10 +15,12 @@ import unittest
 
 format = 'column1 UInt32, column2 UInt32, column3 UInt32'
 values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
+other_values = '(1, 1, 1), (1, 1, 1), (11, 11, 11)'
 redirecting_host = '127.0.0.1'
 redirecting_to_http_port = 12345
 redirecting_to_https_port = 12346
 preserving_data_port = 12347
+redirecting_preserving_data_port = 12348
 fakes3_port = 9990
 localhost = '127.0.0.1'
 bucket = 'abc'
@@ -40,6 +42,12 @@ queries = [
 put_queries = [
     "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}"
         .format(redirecting_host, preserving_data_port, format, values),
+    "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}"
+        .format(redirecting_host, redirecting_preserving_data_port, format, other_values),
+]
+
+check_queries = [
+    "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(localhost, fakes3_port, bucket, format),
 ]
 
 
@@ -77,12 +85,49 @@ received_data = []
 
 
 class PreservingDataServer(http.server.BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
+    def handle_expect_100(self):
+        print('Received Expect-100', file=sys.stderr)
+        return True
+
     def do_PUT(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         print('Content-Length =', self.headers.get('Content-Length'), file=sys.stderr)
         assert self.headers.get('Content-Length')
+        assert self.headers['Expect'] == '100-continue'
+        received_data.append(self.rfile.read())
+        self.wfile.flush()
+
+
+class RedirectingPreservingDataServer(http.server.BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
+    def handle_expect_100(self):
+        print('Received Expect-100', file=sys.stderr)
+        self.send_response(307)
+        self.send_header('Content-type', 'text/xml')
+        self.send_header('Location', 'http://{}:{}/{}/test.csv'.format(localhost, fakes3_port, bucket))
+        self.end_headers()
+        self.wfile.write(bytes(r'''<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>TemporaryRedirect</Code>
+  <Message>Please re-send this request to the specified temporary endpoint.
+  Continue to use the original request endpoint for future requests.</Message>
+  <Endpoint>johnsmith.s3-gztb4pa9sq.amazonaws.com</Endpoint>
+</Error>''', "utf-8"))
+        return False
+
+    def do_PUT(self):
+        assert False
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        print('Content-Length =', self.headers.get('Content-Length'), file=sys.stderr)
+        assert self.headers.get('Content-Length')
+        assert self.headers['Expect'] == '100-continue'
         received_data.append(self.rfile.read())
         self.wfile.flush()
 
@@ -103,11 +148,17 @@ def preserving_thread():
     servers.append(server)
     server.handle_request()
 
+def redirecting_preserving_thread():
+    server = http.server.HTTPServer((redirecting_host, redirecting_preserving_data_port), RedirectingPreservingDataServer)
+    servers.append(server)
+    server.handle_request()
+
 
 jobs = []
 jobs.append(threading.Thread(target=redirecting_to_http_thread))
 jobs.append(threading.Thread(target=redirecting_to_https_thread))
 jobs.append(threading.Thread(target=preserving_thread))
+jobs.append(threading.Thread(target=redirecting_preserving_thread))
 [ job.start() for job in jobs ]
 
 for query in prepare_put_queries:
@@ -150,6 +201,22 @@ for query in put_queries:
     unittest.TestCase().assertEqual(received_data[-1].decode(), '1,2,3\n3,2,1\n78,43,45\n')
     # In chunked encoding:
     # unittest.TestCase().assertEqual(received_data[-1].decode(), '15\r\n1,2,3\n2,3,1\n78,43,45\n\r\n0\r\n\r\n')
+
+for query in check_queries:
+    print(query)
+    result = subprocess.run([
+        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
+        '-c',
+        os.path.expanduser('~/config.xml'),
+        '-q',
+        query
+    ], stdout=subprocess.PIPE, universal_newlines=True)
+    result.check_returncode()
+    unittest.TestCase().assertEqual(list(map(str.split, result.stdout.splitlines())), [
+        ['1', '1', '1', '1'],
+        ['1', '1', '1', '1'],
+        ['11', '11', '11', '1331'],
+    ])
 
 [ server.socket.close() for server in servers ]
 [ job.join() for job in jobs ]
