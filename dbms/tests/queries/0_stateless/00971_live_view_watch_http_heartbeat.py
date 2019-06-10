@@ -20,7 +20,7 @@ def client(name='', command=None):
     return client
 
 prompt = ':\) '
-end_of_block = r'.*\xe2\x94\x82\r\n.*\xe2\x94\x98\r\n'
+end_of_block = r'.*\r\n.*\r\n'
 
 with client('client1>') as client1, client('client2>', ['bash', '--noediting']) as client2:
     client1.expect(prompt)
@@ -49,7 +49,7 @@ with client('client1>') as client1, client('client2>', ['bash', '--noediting']) 
     client2.expect('{"row":{"sum(a)":"6","_version":"2"}}\r\n', escape=True)
 
     ## send Ctrl-C
-    os.kill(client2.process.pid,signal.SIGINT)
+    os.kill(client2.process.pid, signal.SIGINT)
 
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
