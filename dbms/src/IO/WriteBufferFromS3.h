@@ -31,9 +31,6 @@ private:
     Poco::URI uri;
     ConnectionTimeouts timeouts;
     const Poco::Net::HTTPBasicCredentials & credentials;
-    HTTPSessionPtr session;
-    std::istream * istr; /// owned by session
-    Poco::Net::HTTPResponse response;
     std::ostringstream temporary_stream; /// Maybe one shall use some DB:: buffer.
 
 public:

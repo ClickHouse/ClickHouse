@@ -15,7 +15,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , uri {uri_}
     , timeouts {timeouts_}
     , credentials {credentials_}
-    , session {makeHTTPSession(uri_, timeouts_)}
 {
     ostr = &temporary_stream;
 }
@@ -24,9 +23,13 @@ void WriteBufferFromS3::finalize()
 {
     const std::string & data = temporary_stream.str();
 
+    Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
+    HTTPSessionPtr session;
+    std::istream * istr; /// owned by session
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
+        session = makeHTTPSession(uri, timeouts);
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(uri.getHost()); // use original, not resolved host name in header
 
@@ -44,7 +47,7 @@ void WriteBufferFromS3::finalize()
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << uri.toString());
 
         ostr = &session->sendRequest(*request);
-        if (session->peekResponse(response))
+//        if (session->peekResponse(response))
         {
             // Received 100-continue.
             *ostr << data;
@@ -60,7 +63,6 @@ void WriteBufferFromS3::finalize()
             break;
 
         uri = location_iterator->second;
-        session = makeHTTPSession(uri, timeouts);
     }
     assertResponseIsOk(*request, response, istr);
 }
