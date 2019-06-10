@@ -37,8 +37,8 @@ class ExpectTimeoutError(Exception):
     def __str__(self):
         return ('Timeout %.3fs ' % float(self.timeout) +
             'for %s ' % repr(self.pattern.pattern) +
-            'buffer ends with %s ' % repr(self.buffer[-80:]) +
-            'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[-80:]]))
+            'buffer %s ' % repr(self.buffer[:]) +
+            'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]]))
 
 class IO(object):
     class EOF(object):
@@ -111,10 +111,11 @@ class IO(object):
         pattern = re.compile(pattern)
         if timeout is None:
             timeout = self._timeout
-        while timeout >= 0:
+        timeleft = timeout
+        while timeleft >= 0:
             start_time = time.time()
             try:
-                data = self.read(timeout=timeout, raise_exception=True)
+                data = self.read(timeout=timeleft, raise_exception=True)
             except TimeoutError:
                 if self._logger:
                     self._logger.write(self.buffer + '\n')
@@ -122,7 +123,7 @@ class IO(object):
                 exception = ExpectTimeoutError(pattern, timeout, self.buffer)
                 self.buffer = None
                 raise exception
-            timeout -= (time.time() - start_time)
+            timeleft -= (time.time() - start_time)
             if data:
                 self.buffer = self.buffer + data if self.buffer else data
             self.match = pattern.search(self.buffer, 0)
@@ -134,23 +135,31 @@ class IO(object):
         if self._logger:
             self._logger.write((self.before or '') + (self.after or ''))
             self._logger.flush()
+        if self.match is None:
+            exception = ExpectTimeoutError(pattern, timeout, self.buffer)
+            self.buffer = None
+            raise exception
         return self.match
 
     def read(self, timeout=0, raise_exception=False):
         data = ''
+        timeleft = timeout
         try:
-            while timeout >= 0 :
+            while timeleft >= 0 :
                 start_time = time.time()
-                data += self.queue.get(timeout=timeout)
+                data += self.queue.get(timeout=timeleft)
                 if data:
                     break
-                timeout -= (time.time() - start_time)
+                timeleft -= (time.time() - start_time)
         except Empty:
             if data:
                 return data
             if raise_exception:
                 raise TimeoutError(timeout)
             pass
+        if not data and raise_exception:
+            raise TimeoutError(timeout)
+
         return data
 
 def spawn(command):

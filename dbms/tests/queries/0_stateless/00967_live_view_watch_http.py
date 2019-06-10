@@ -34,7 +34,7 @@ client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
 client1.expect(prompt)
 
 client2 = client('client2>', ['bash', '--noediting'])
-client2.expect('\$ ')
+client2.expect('[\$#] ')
 client2.send('wget -O- -q "http://localhost:8123/?query=WATCH test.lv"')
 client2.expect('.*0\t1\r\n')
 
