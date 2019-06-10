@@ -442,7 +442,7 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
 }
 
 ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
-                                                 const String & table_name, bool throw_on_error) const
+                                                 const String & table_name, bool throw_on_error)
 {
     ASTPtr ast;
 
@@ -463,12 +463,12 @@ ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
     return ast;
 }
 
-ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name)
 {
     return getCreateTableQueryImpl(context, table_name, true);
 }
 
-ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name)
 {
     return getCreateTableQueryImpl(context, table_name, false);
 }

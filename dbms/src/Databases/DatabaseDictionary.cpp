@@ -54,7 +54,7 @@ Tables DatabaseDictionary::listTables(const Context & context)
 
 bool DatabaseDictionary::isTableExist(
     const Context & context,
-    const String & table_name) const
+    const String & table_name)
 {
     auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
@@ -63,7 +63,7 @@ bool DatabaseDictionary::isTableExist(
 
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
-    const String & table_name) const
+    const String & table_name)
 {
     auto dict_ptr = context.getExternalDictionaries().tryGetDictionary(table_name);
     if (dict_ptr)
@@ -81,7 +81,7 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
     return std::make_unique<DatabaseSnapshotIterator>(listTables(context));
 }
 
-bool DatabaseDictionary::empty(const Context & context) const
+bool DatabaseDictionary::empty(const Context & context)
 {
     auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
@@ -144,7 +144,7 @@ time_t DatabaseDictionary::getTableMetadataModificationTime(
 }
 
 ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
-                                                   const String & table_name, bool throw_on_error) const
+                                                   const String & table_name, bool throw_on_error)
 {
     String query;
     {
@@ -172,12 +172,12 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     return ast;
 }
 
-ASTPtr DatabaseDictionary::getCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseDictionary::getCreateTableQuery(const Context & context, const String & table_name)
 {
     return getCreateTableQueryImpl(context, table_name, true);
 }
 
-ASTPtr DatabaseDictionary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseDictionary::tryGetCreateTableQuery(const Context & context, const String & table_name)
 {
     return getCreateTableQueryImpl(context, table_name, false);
 }

@@ -76,13 +76,13 @@ class DatabaseWithOwnTablesBase : public IDatabase
 public:
     bool isTableExist(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) override;
 
     StoragePtr tryGetTable(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) override;
 
-    bool empty(const Context & context) const override;
+    bool empty(const Context & context) override;
 
 
     void attachTable(const String & table_name, const StoragePtr & table) override;

@@ -90,7 +90,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 
 bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
-    const String & table_name) const
+    const String & table_name)
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
@@ -98,7 +98,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     const Context & /*context*/,
-    const String & table_name) const
+    const String & table_name)
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
@@ -113,7 +113,7 @@ DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*con
     return std::make_unique<DatabaseSnapshotIterator>(tables);
 }
 
-bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
+bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/)
 {
     std::lock_guard lock(mutex);
     return tables.empty();
