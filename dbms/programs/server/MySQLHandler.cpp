@@ -52,7 +52,7 @@ void MySQLHandler::run()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id, "MySQLHandler");
+    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id);
 
     try
     {
@@ -188,7 +188,7 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
         in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
         out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
         connection_context.sequence_id = 2;
-        packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id, "MySQLHandler");
+        packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id);
         packet_sender->max_packet_size = connection_context.max_packet_size;
         packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
     }

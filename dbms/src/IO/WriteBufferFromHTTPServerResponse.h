@@ -61,7 +61,9 @@ private:
 
     std::optional<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+#if USE_BROTLI
     std::optional<BrotliWriteBuffer> brotli_buf;
+#endif
 
     WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
