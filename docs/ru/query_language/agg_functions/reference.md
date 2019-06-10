@@ -616,7 +616,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
         param2 Float64,
         target Float64
     ) ENGINE = Memory;
-    
+
     CREATE TABLE your_model ENGINE = Memory AS SELECT
     stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
@@ -664,7 +664,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 
 Параметры те же, что и в stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-Смотрите раздел [parameters](#agg_functions-stochasticLinearRegression-parameters).
+Смотрите раздел [parameters](#agg_functions-stochasticlinearregression-parameters).
 
 ```text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -700,4 +700,3 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
     `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
-
