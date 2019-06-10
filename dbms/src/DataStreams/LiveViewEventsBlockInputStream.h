@@ -47,7 +47,7 @@ public:
     /// and LIMIT 0 just returns data without waiting for any updates
     LiveViewEventsBlockInputStream(StorageLiveView & storage_, std::shared_ptr<BlocksPtr> blocks_ptr_, std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_, std::shared_ptr<bool> active_ptr_, Poco::Condition & condition_, Poco::FastMutex & mutex_,
         int64_t length_, const UInt64 & heartbeat_interval_, const UInt64 & temporary_live_view_timeout_)
-        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_interval(heartbeat_interval_), temporary_live_view_timeout(temporary_live_view_timeout_)
+        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_interval(heartbeat_interval_ * 1000000), temporary_live_view_timeout(temporary_live_view_timeout_)
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -64,7 +64,8 @@ public:
         condition.broadcast();
     }
 
-    Block getHeader() const override {
+    Block getHeader() const override 
+    {
         return {
             ColumnWithTypeAndName(
                 ColumnUInt64::create(),
@@ -92,7 +93,8 @@ public:
     {
         active = active_ptr.lock();
         {
-            if (!blocks || blocks.get() != (*blocks_ptr).get()) {
+            if (!blocks || blocks.get() != (*blocks_ptr).get()) 
+            {
                 blocks = (*blocks_ptr);
                 blocks_metadata = (*blocks_metadata_ptr);
             }
@@ -188,9 +190,8 @@ protected:
                     }
                     while (true)
                     {
-                        bool signaled = condition.tryWait(mutex, 
-                            std::max((UInt64)0, (heartbeat_interval * 1000000) - 
-			    ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
+                        UInt64 timestamp_usec = (UInt64)timestamp.epochMicroseconds();
+                        bool signaled = condition.tryWait(mutex, std::max((UInt64)0, heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
 
                         if (isCancelled() || storage.is_dropped)
                         {

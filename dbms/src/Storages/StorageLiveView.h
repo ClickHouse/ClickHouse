@@ -30,7 +30,8 @@ namespace DB
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
-struct BlocksMetadata {
+struct BlocksMetadata 
+{
     String hash;
     UInt64 version;
 };

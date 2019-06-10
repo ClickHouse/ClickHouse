@@ -141,7 +141,7 @@ StorageLiveView::StorageLiveView(
 
 NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
 {
-    if ( column_name == "_version" )
+    if (column_name == "_version")
         return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
 
     return IStorage::getColumn(column_name);
@@ -149,7 +149,7 @@ NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
 
 bool StorageLiveView::hasColumn(const String & column_name) const
 {
-    if ( column_name == "_version" )
+    if (column_name == "_version")
         return true;
 
     return IStorage::hasColumn(column_name);

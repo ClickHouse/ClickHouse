@@ -446,10 +446,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_alter_table.ignore(pos, expected))
     {
         if (!s_alter_live_view.ignore(pos, expected))
-	        if (!s_alter_live_channel.ignore(pos, expected))
+        {
+            if (!s_alter_live_channel.ignore(pos, expected))
                 return false;
             else
                 is_live_channel = true;
+        }
         else
             is_live_view = true;
     }

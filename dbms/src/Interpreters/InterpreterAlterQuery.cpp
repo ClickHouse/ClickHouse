@@ -79,17 +79,17 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!live_view_commands.empty())
     {
-	    live_view_commands.validate(*table);
-	    for (const LiveViewCommand & command : live_view_commands)
-	    {
-		auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
-		switch (command.type)
-		{
-		    case LiveViewCommand::REFRESH:
-		        live_view->refresh(context);
-		        break;
-                }
+        live_view_commands.validate(*table);
+	for (const LiveViewCommand & command : live_view_commands)
+        {
+            auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
+            switch (command.type)
+            {
+                case LiveViewCommand::REFRESH:
+                    live_view->refresh(context);
+                    break;
             }
+        }
     }
 
     if (!alter_commands.empty())
