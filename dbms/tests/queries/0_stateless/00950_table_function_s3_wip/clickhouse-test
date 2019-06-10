@@ -3,6 +3,7 @@
 import http.server
 import os
 import subprocess
+import sys
 import threading
 import unittest
 
@@ -67,6 +68,7 @@ class PreservingDataServer(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
+        print('Content-Length =', self.headers.get('Content-Length'), file=sys.stderr)
         assert self.headers.get('Content-Length')
         received_data.append(self.rfile.read())
         self.wfile.flush()
