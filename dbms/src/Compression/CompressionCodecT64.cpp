@@ -28,31 +28,37 @@ UInt8 codecId()
     return static_cast<UInt8>(CompressionMethodByte::T64);
 }
 
-UInt8 typeSize(TypeIndex type_idx)
+TypeIndex baseType(TypeIndex type_idx)
 {
     switch (type_idx)
     {
         case TypeIndex::Int8:
+            return TypeIndex::Int8;
+        case TypeIndex::Int16:
+            return TypeIndex::Int16;
+        case TypeIndex::Int32:
+        case TypeIndex::Decimal32:
+            return TypeIndex::Int32;
+        case TypeIndex::Int64:
+        case TypeIndex::Decimal64:
+            return TypeIndex::Int64;
         case TypeIndex::UInt8:
         case TypeIndex::Enum8:
-            return 1;
-        case TypeIndex::Int16:
+            return TypeIndex::UInt8;
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
-            return 2;
-        case TypeIndex::Int32:
+            return TypeIndex::UInt16;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
-            return 4;
-        case TypeIndex::Int64:
+            return TypeIndex::UInt32;
         case TypeIndex::UInt64:
-            return 8;
+            return TypeIndex::UInt64;
         default:
             break;
     }
 
-    return 0;
+    return TypeIndex::Nothing;
 }
 
 TypeIndex typeIdx(const DataTypePtr & data_type)
@@ -63,18 +69,20 @@ TypeIndex typeIdx(const DataTypePtr & data_type)
     WhichDataType which(*data_type);
     switch (which.idx)
     {
-        //case TypeIndex::Int8:
+        case TypeIndex::Int8:
         case TypeIndex::UInt8:
         case TypeIndex::Enum8:
-        //case TypeIndex::Int16:
+        case TypeIndex::Int16:
         case TypeIndex::UInt16:
         case TypeIndex::Enum16:
         case TypeIndex::Date:
-        //case TypeIndex::Int32:
+        case TypeIndex::Int32:
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
-        //case TypeIndex::Int64:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Int64:
         case TypeIndex::UInt64:
+        case TypeIndex::Decimal64:
             return which.idx;
         default:
             break;
@@ -151,7 +159,7 @@ void transpose(const char * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename _T>
-void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UInt32 tail = 64)
+void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UInt64 max [[maybe_unused]], UInt32 tail = 64)
 {
     UInt64 mx[64] = {};
     memcpy(mx, src, num_bits * sizeof(UInt64));
@@ -168,32 +176,77 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UIn
         memcpy(partial, res, 8 * sizeof(UInt64));
     }
 
-    _T upper = 0;
-    if (num_bits < 64)
-        upper = min >> num_bits << num_bits;
-
     auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
 
-    for (UInt32 col = 0; col < tail; ++col)
+    if constexpr (std::is_signed_v<_T>)
     {
-        _T value = upper;
+        _T upper_min = min;
+        _T upper_max = max;
+        if (num_bits < 64)
+        {
+            upper_min = min >> num_bits << num_bits;
+            upper_max = max >> num_bits << num_bits;
+        }
 
-        for (UInt32 row = 0; row < meaning_bytes; ++row)
-            value |= _T(mx8[64 * row + col]) << (8 * row);
+        for (UInt32 col = 0; col < tail; ++col)
+        {
+            _T value = 0;
 
-        unalignedStore(dst, value);
-        dst += sizeof(_T);
+            for (UInt32 row = 0; row < meaning_bytes; ++row)
+                value |= _T(mx8[64 * row + col]) << (8 * row);
+
+            if (value & (1 << (num_bits-1)))
+                value |= upper_min;
+            else
+                value |= upper_max;
+
+            unalignedStore(dst, value);
+            dst += sizeof(_T);
+        }
+    }
+    else
+    {
+        _T upper = 0;
+        if (num_bits < 64)
+            upper = min >> num_bits << num_bits;
+
+        for (UInt32 col = 0; col < tail; ++col)
+        {
+            _T value = upper;
+
+            for (UInt32 row = 0; row < meaning_bytes; ++row)
+                value |= _T(mx8[64 * row + col]) << (8 * row);
+
+            unalignedStore(dst, value);
+            dst += sizeof(_T);
+        }
     }
 }
 
 
-UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
+template <typename _T>
+UInt32 getValuableBitsNumber(_T typed_min, _T typed_max)
 {
-    UInt64 diff_bits = min ^ max;
-    if (diff_bits)
-        return 64 - __builtin_clzll(diff_bits);
+    if constexpr (std::is_signed_v<_T>)
+    {
+        Int64 min = typed_min;
+        Int64 max = typed_max;
+        if (min < 0 && max >= 0)
+            return getValuableBitsNumber<UInt64>(min, ~max) + 1;
+        else
+            return getValuableBitsNumber<UInt64>(min, max);
+    }
+    else
+    {
+        UInt64 min = typed_min;
+        UInt64 max = typed_max;
+        UInt64 diff_bits = min ^ max;
+        if (diff_bits)
+            return 64 - __builtin_clzll(diff_bits);
+    }
     return 0;
 }
+
 
 template <typename _T>
 void findMinMax(const char * src, UInt32 src_size, _T & min, _T & max)
@@ -230,6 +283,16 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     findMinMax<_T>(src, bytes_size, min, max);
 
     /// Write header
+    if constexpr (std::is_signed_v<_T>)
+    {
+        Int64 tmp_min = min;
+        Int64 tmp_max = max;
+
+        memcpy(dst, &tmp_min, sizeof(Int64));
+        memcpy(dst + 8, &tmp_max, sizeof(Int64));
+        dst += header_size;
+    }
+    else
     {
         UInt64 tmp_min = min;
         UInt64 tmp_max = max;
@@ -311,13 +374,13 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
 
     for (UInt32 i = 0; i < num_full; ++i)
     {
-        revTranspose<_T>(src, dst, num_bits, min);
+        revTranspose<_T>(src, dst, num_bits, min, max);
         src += src_shift;
         dst += dst_shift;
     }
 
     if (tail)
-        revTranspose<_T>(src, dst, num_bits, min, tail);
+        revTranspose<_T>(src, dst, num_bits, min, max, tail);
 }
 
 }
@@ -327,15 +390,23 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
     memcpy(dst, &type_idx, 1);
     dst += 1;
 
-    switch (typeSize(type_idx))
+    switch (baseType(type_idx))
     {
-        case 1:
+        case TypeIndex::Int8:
+            return 1 + compressData<Int8>(src, src_size, dst);
+        case TypeIndex::Int16:
+            return 1 + compressData<Int16>(src, src_size, dst);
+        case TypeIndex::Int32:
+            return 1 + compressData<Int32>(src, src_size, dst);
+        case TypeIndex::Int64:
+            return 1 + compressData<Int64>(src, src_size, dst);
+        case TypeIndex::UInt8:
             return 1 + compressData<UInt8>(src, src_size, dst);
-        case 2:
+        case TypeIndex::UInt16:
             return 1 + compressData<UInt16>(src, src_size, dst);
-        case 4:
+        case TypeIndex::UInt32:
             return 1 + compressData<UInt32>(src, src_size, dst);
-        case 8:
+        case TypeIndex::UInt64:
             return 1 + compressData<UInt64>(src, src_size, dst);
         default:
             break;
@@ -357,15 +428,23 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     if (actual_type_id == TypeIndex::Nothing)
         actual_type_id = static_cast<TypeIndex>(saved_type_id);
 
-    switch (typeSize(actual_type_id))
+    switch (baseType(actual_type_id))
     {
-        case 1:
+        case TypeIndex::Int8:
+            return decompressData<Int8>(src, src_size, dst, uncompressed_size);
+        case TypeIndex::Int16:
+            return decompressData<Int16>(src, src_size, dst, uncompressed_size);
+        case TypeIndex::Int32:
+            return decompressData<Int32>(src, src_size, dst, uncompressed_size);
+        case TypeIndex::Int64:
+            return decompressData<Int64>(src, src_size, dst, uncompressed_size);
+        case TypeIndex::UInt8:
             return decompressData<UInt8>(src, src_size, dst, uncompressed_size);
-        case 2:
+        case TypeIndex::UInt16:
             return decompressData<UInt16>(src, src_size, dst, uncompressed_size);
-        case 4:
+        case TypeIndex::UInt32:
             return decompressData<UInt32>(src, src_size, dst, uncompressed_size);
-        case 8:
+        case TypeIndex::UInt64:
             return decompressData<UInt64>(src, src_size, dst, uncompressed_size);
         default:
             break;
