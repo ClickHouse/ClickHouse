@@ -34,7 +34,7 @@ client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
 client1.expect(prompt)
 
 client2 = client('client2>', ['bash', '--noediting'])
-client2.expect('\$ ')
+client2.expect('[\$#] ')
 client2.send('wget -O- -q "http://localhost:8123/?live_view_heartbeat_interval=1&query=WATCH test.lv FORMAT JSONEachRowWithProgress"')
 client2.expect('"progress".*',)
 client2.expect('{"row":{"sum(a)":"0","_version":"1"}}\r\n', escape=True)

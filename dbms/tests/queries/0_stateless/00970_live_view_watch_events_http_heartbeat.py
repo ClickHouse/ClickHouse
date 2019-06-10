@@ -34,7 +34,7 @@ client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
 client1.expect(prompt)
 
 client2 = client('client2>', ['bash', '--noediting'])
-client2.expect('\$ ')
+client2.expect('[\$#] ')
 client2.send('wget -O- -q "http://localhost:8123/?live_view_heartbeat_interval=1&query=WATCH test.lv EVENTS FORMAT JSONEachRowWithProgress"')
 client2.expect('{"progress":{"read_rows":"1","read_bytes":"49","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}\r\n', escape=True)
 client2.expect('{"row":{"version":"1","hash":"c9d39b11cce79112219a73aaa319b475"}}', escape=True)
@@ -47,7 +47,6 @@ client1.expect(prompt)
 
 client2.expect('{"row":{"version":"2","hash":"4cd0592103888d4682de9a32a23602e3"}}\r\n', escape=True)
 
-client2.expect('.*2\t.*\r\n')
 ## send Ctrl-C
 os.kill(client2.process.pid,signal.SIGINT)
 

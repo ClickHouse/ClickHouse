@@ -47,7 +47,7 @@ public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     String getTableName() const override { return table_name; }
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const override { return database_name; }
     String getSelectDatabaseName() const { return select_database_name; }
     String getSelectTableName() const { return select_table_name; }
 
@@ -55,7 +55,7 @@ public:
     bool hasColumn(const String & column_name) const override;
 
     // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-    ASTPtr getInnerQuery() const { return inner_query->clone(); };
+    ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -218,10 +218,10 @@ public:
             mergeable_blocks->push_back(new_mergeable_blocks);
 
             /// Create from blocks streams
-            for (auto & blocks : *mergeable_blocks)
+            for (auto & blocks_ : *mergeable_blocks)
             {
                 auto sample_block = mergeable_blocks->front()->front().cloneEmpty();
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
+                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
                 from.push_back(std::move(stream));
             }
         }
