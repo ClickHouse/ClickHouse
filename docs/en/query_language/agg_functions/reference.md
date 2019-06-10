@@ -617,15 +617,14 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## linearRegression
+## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient,
-mini-batch size and has few methods for updating weights (simple SGD, Momentum, Nesterov).
+This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights (simple SGD, Momentum, Nesterov).
 
-This function works as a usual aggregate function in terms of distributed processing of data, which is followed by merges. With regard to `linearRegression` this means that different aggregate function states are merged with weights - the more data was processed by a state, the bigger weight it has during a merge with other state.
+This function works as a usual aggregate function in terms of distributed processing of data, which is followed by merges. With regard to `stochasticLinearRegression` this means that different aggregate function states are merged with weights - the more data was processed by a state, the bigger weight it has during a merge with other state.
 
-#### Parameters
+### Parameters {#agg_functions-stochasticlinearregression-parameters}
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
@@ -639,14 +638,15 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 4. `method for updating weights`, there are 3 of them: `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods. Default is `'SGD'`.
 
 
-**Usage of linearRegression**
+### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
 To predict we use function `evalMLMethod`, which takes a state as an argument as well as features to predict on.
 
-1. *Fitting*
+1. Fitting
 
     Such query may be used.
+
     ```sql
     CREATE TABLE IF NOT EXISTS train_data
     (
@@ -654,76 +654,84 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
         param2 Float64,
         target Float64
     ) ENGINE = Memory;
-    
+
     CREATE TABLE your_model ENGINE = Memory AS SELECT
     stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
-    
+
     ```
+
     Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
     Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-2. *Predicting*
+2. Predicting
 
     After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+
     ```sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
+
     The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
-    
+
     `test_data` is a table like `train_data` but may not contain target value.
 
-**Some notes**
+### Notes {#agg_functions-stochasticlinearregression-notes}
 
 1. To merge two models user may create such query:
     ```sql
     SELECT state1 + state2 FROM your_models
     ```
     where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
-    
+
 2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
     ```sql
     SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values. 
+    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
 
 
-## logisticRegression
+## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-#### Parameters
+### Parameters {#agg_functions-stochasticlogisticregression-parameters}
 
-Parameters are exactly the same as in stochasticLinearRegression: 
-`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`. 
-For more information see [parameters](#parameters).
+Parameters are exactly the same as in stochasticLinearRegression:
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
+For more information see [parameters](#agg_functions-stochasticLinearRegression-parameters).
+
 ```text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. *Fitting*
+1. Fitting
 
-    See *stochasticLinearRegression.Fitting*
-    
+    See the `Fitting` section in the [stochasticLinearRegression](#agg_functions-stochasticlinearregression-parameters) description.
+
     Predicted labels have to be in {-1, 1}.
-    
-2. *Predicting*
 
-    Using saved state we can predict probability of object having label *1*.
+2. Predicting
+
+    Using saved state we can predict probability of object having label `1`.
+
     ```sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
+
     The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
     We can also set a bound of probability, which assigns elements to different labels.
+
     ```sql
     SELECT ans < 1.1 AND ans > 0.5 FROM
     (WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) AS ans FROM test_data)
     ```
+
     Then the result will be labels.
 
     `test_data` is a table like `train_data` but may not contain target value.
