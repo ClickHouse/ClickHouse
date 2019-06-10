@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <sstream>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -34,6 +35,7 @@ private:
     HTTPSessionPtr session;
     Poco::Net::HTTPRequest request;
     Poco::Net::HTTPResponse response;
+    std::ostringstream temporary_stream; /// Maybe one shall use some DB:: buffer.
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
