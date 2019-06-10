@@ -31,7 +31,7 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
 
-You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
+You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
 ## TabSeparated {#tabseparated}
 
