@@ -17,7 +17,7 @@ import time
 import sys
 import re
 
-from threading import Thread
+from threading import Thread, Event
 from subprocess import Popen
 from Queue import Queue, Empty
 
@@ -61,7 +61,7 @@ class IO(object):
         def flush(self):
             self._logger.flush()
 
-    def __init__(self, process, master, queue):
+    def __init__(self, process, master, queue, reader):
         self.process = process
         self.master = master
         self.queue = queue
@@ -70,6 +70,7 @@ class IO(object):
         self.after = None
         self.match = None
         self.pattern = None
+        self.reader = reader
         self._timeout = None
         self._logger = None
         self._eol = ''
@@ -95,8 +96,12 @@ class IO(object):
             self._eol = eol
         return self._eol
 
-    def close(self):
-        self.process.terminate()
+    def close(self, force=True):
+        self.reader['kill_event'].set()
+        if force:
+            self.process.kill()
+        else:
+            self.process.terminate()
         os.close(self.master)
         if self._logger:
             self._logger.write('\n')
@@ -133,9 +138,9 @@ class IO(object):
                 raise exception
             timeleft -= (time.time() - start_time)
             if data:
-                self.buffer = self.buffer + data if self.buffer else data
+                self.buffer = (self.buffer + data) if self.buffer else data
             self.match = pattern.search(self.buffer, 0)
-            if self.match:
+            if self.match is not None:
                 self.after = self.buffer[self.match.start():self.match.end()]
                 self.before = self.buffer[:self.match.start()]
                 self.buffer = self.buffer[self.match.end():]
@@ -163,11 +168,9 @@ class IO(object):
             if data:
                 return data
             if raise_exception:
-                print 'DEBUG...', timeleft, repr(data),
                 raise TimeoutError(timeout)
             pass
         if not data and raise_exception:
-            print 'DEBUG.... here'
             raise TimeoutError(timeout)
 
         return data
@@ -178,20 +181,21 @@ def spawn(command):
     os.close(slave)
 
     queue = Queue()
-    thread = Thread(target=reader, args=(process, master, queue))
-    thread.daemon = True
+    reader_kill_event = Event()
+    thread = Thread(target=reader, args=(process, master, queue, reader_kill_event))
     thread.start()
 
-    return IO(process, master, queue)
+    return IO(process, master, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
 
-def reader(process, out, queue):
+def reader(process, out, queue, kill_event):
     while True:
-        if process.poll() is not None:
-            data = os.read(out)
+        try:
+            data = os.read(out, 65536)
             queue.put(data)
-            break
-        data = os.read(out, 65536)
-        queue.put(data)
+        except OSError, e:
+            if e.errno == 5 and kill_event.is_set():
+                break
+            raise
 
 if __name__ == '__main__':
    io = spawn(['/bin/bash','--noediting'])

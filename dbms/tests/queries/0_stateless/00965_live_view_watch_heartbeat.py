@@ -17,7 +17,7 @@ def client(name=''):
     return client
 
 prompt = ':\) '
-end_of_block = r'.*\xe2\x94\x82\r\n.*\xe2\x94\x98\r\n'
+end_of_block = r'.*\r\n.*\r\n'
 
 with client('client1>') as client1, client('client2>') as client2:
     client1.expect(prompt)
