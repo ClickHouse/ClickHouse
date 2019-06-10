@@ -86,6 +86,59 @@ namespace
     };
 }
 
+template <typename T> static size_t countNaNs(const PaddedPODArray<ValueWithIndex<T>> & pairs, size_t limit, int nan_direction_hint)
+{
+    /// Radix sort treats all NaNs to be greater than all numbers.
+    /// If the user needs the opposite, we must move them accordingly.
+    size_t nans = 0;
+    if (std::is_floating_point_v<T> && nan_direction_hint < 0)
+    {
+        for (ssize_t i = limit - 1; i >= 0; --i)
+        {
+            if (isNaN(pairs[i].value))
+                ++nans;
+            else
+                break;
+        }
+    }
+    return nans;
+}
+
+template <typename T>
+static void unpackPairs(const PaddedPODArray<ValueWithIndex<T>> & pairs, IColumn::Permutation & res, size_t size, bool reverse, size_t nans_to_move)
+{
+    if (reverse)
+    {
+        if (nans_to_move)
+        {
+            for (size_t i = 0; i < size - nans_to_move; ++i)
+                res[i] = pairs[size - nans_to_move - 1 - i].index;
+            for (size_t i = size - nans_to_move; i < size; ++i)
+                res[i] = pairs[size - 1 - (i - (size - nans_to_move))].index;
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                res[size - 1 - i] = pairs[i].index;
+        }
+    }
+    else
+    {
+        if (nans_to_move)
+        {
+            for (size_t i = 0; i < nans_to_move; ++i)
+                res[i] = pairs[i + size - nans_to_move].index;
+            for (size_t i = nans_to_move; i < size; ++i)
+                res[i] = pairs[i - nans_to_move].index;
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                res[i] = pairs[i].index;
+        }
+    }
+}
+
 template <typename T>
 void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
@@ -100,13 +153,30 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 
     if (limit)
     {
+        if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
+        {
+            PaddedPODArray<ValueWithIndex<T>> pairs(s);
+            for (UInt32 i = 0; i < s; ++i)
+                pairs[i] = {data[i], i};
+
+            if (reverse)
+                RadixSort<RadixSortTraits<T>, greater>::executeMSD(pairs.data(), pairs.size(), limit, greater(*this, nan_direction_hint));
+            else
+                RadixSort<RadixSortTraits<T>, less>::executeMSD(pairs.data(), pairs.size(), limit, less(*this, nan_direction_hint));
+
+            size_t nans_to_move = countNaNs(pairs, limit, nan_direction_hint);
+            unpackPairs(pairs, res, s, reverse, nans_to_move);
+
+            return;
+        }
+
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
 
         if (reverse)
-            RadixSort<RadixSortNumTraits<size_t>, greater>::executeMSD(res.data(), res.size(), limit, greater(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
-            RadixSort<RadixSortNumTraits<size_t>, less>::executeMSD(res.data(), res.size(), limit, less(*this, nan_direction_hint));
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
     }
     else
     {
@@ -122,50 +192,8 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                size_t nans_to_move = 0;
-                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
-                {
-                    for (ssize_t i = s - 1; i >= 0; --i)
-                    {
-                        if (isNaN(pairs[i].value))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
-                }
-
-                if (reverse)
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < s - nans_to_move; ++i)
-                            res[i] = pairs[s - nans_to_move - 1 - i].index;
-                        for (size_t i = s - nans_to_move; i < s; ++i)
-                            res[i] = pairs[s - 1 - (i - (s - nans_to_move))].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[s - 1 - i] = pairs[i].index;
-                    }
-                }
-                else
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < nans_to_move; ++i)
-                            res[i] = pairs[i + s - nans_to_move].index;
-                        for (size_t i = nans_to_move; i < s; ++i)
-                            res[i] = pairs[i - nans_to_move].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[i] = pairs[i].index;
-                    }
-                }
+                size_t nans_to_move = countNaNs(pairs, s, nan_direction_hint);
+                unpackPairs(pairs, res, s, reverse, nans_to_move);
 
                 return;
             }

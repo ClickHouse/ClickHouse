@@ -1,7 +1,6 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Columns/ColumnString.h>
-#include <Common/RadixSort.h>
 #include <Common/typeid_cast.h>
 
 #include <pdqsort.h>

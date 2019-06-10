@@ -154,13 +154,7 @@ using RadixSortNumTraits =
             RadixSortIntTraits<T>>,
         RadixSortFloatTraits<T>>;
 
-template <typename T>
-struct DefaultLess
-{
-    bool less(const T &a, const T &b) { return a < b; }
-};
-
-template <typename Traits, typename Less=DefaultLess<typename Traits::Key>>
+template <typename Traits, typename Less = std::less<typename Traits::Key>>
 struct RadixSort
 {
 private:
@@ -188,7 +182,7 @@ private:
     static KeyBits keyToBits(Key x) { return ext::bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return ext::bit_cast<Key>(x); }
 
-    static void insertionSortInternal(Element *arr, size_t size, Less less)
+    static void insertionSortInternal(Element * arr, size_t size, Less less)
     {
         Element * end = arr + size;
         for (Element * i = arr + 1; i < end; ++i)
@@ -209,60 +203,64 @@ private:
      * Puts elements to buckets based on PASS-th digit, then recursively calls insertion sort or itself on the buckets
      */
     template <size_t PASS>
-    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit, Less less __attribute__((unused)))
+    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit, [[maybe_unused]] Less less)
     {
         Element * last_list[HISTOGRAM_SIZE + 1];
         Element ** last = last_list + 1;
         size_t count[HISTOGRAM_SIZE] = {0};
 
         for (Element * i = arr; i < arr + size; ++i)
-            ++count[getPart(PASS, *i)];
+            ++count[getPart(PASS, keyToBits(Traits::extractKey(*i)))];
 
         last_list[0] = last_list[1] = arr;
 
         size_t buckets_for_recursion = HISTOGRAM_SIZE;
-        Element * finish = arr + size;
+        bool finish_found = false;
         for (size_t i = 1; i < HISTOGRAM_SIZE; ++i)
         {
             last[i] = last[i - 1] + count[i - 1];
-            if (last[i] >= arr + limit)
+            if (!finish_found && last[i] >= arr + limit)
             {
                 buckets_for_recursion = i;
-                finish = last[i];
+                finish_found = true;
             }
         }
 
         /* At this point, we have the following variables:
          * count[i] is the size of i-th bucket
-         * last[i] is a pointer to the beginning of i-th bucket, last[-1] == last[0]
+         * last[i] is a pointer to the beginning of i-th bucket, last[-1] == last[0] == arr
          * buckets_for_recursion is the number of buckets that should be sorted, the last of them only partially
-         * finish is a pointer to the end of the first buckets_for_recursion buckets
          */
 
         // Scatter array elements to buckets until the first buckets_for_recursion buckets are full
+        Element * end = arr + size;
         for (size_t i = 0; i < buckets_for_recursion; ++i)
         {
-            Element * end = last[i - 1] + count[i];
-            if (end == finish)
+            Element * finish = last[i - 1] + count[i];
+
+            if (finish == end)
             {
-                last[i] = end;
+                last[i] = finish;
                 break;
             }
-            while (last[i] != end)
+
+            while (last[i] != finish)
             {
                 Element swapper = *last[i];
-                KeyBits tag = getPart(PASS, swapper);
+                KeyBits tag = getPart(PASS, keyToBits(Traits::extractKey(swapper)));
                 if (tag != i)
                 {
                     do
                     {
                         std::swap(swapper, *last[tag]++);
-                    } while ((tag = getPart(PASS, swapper)) != i);
+                    } while ((tag = getPart(PASS, keyToBits(Traits::extractKey(swapper)))) != i);
                     *last[i] = swapper;
                 }
                 ++last[i];
             }
         }
+
+        // Now last[i] is a pointer to the end of i-th bucket, last[-1] == arr
 
         if constexpr (PASS > 0)
         {
@@ -277,7 +275,7 @@ private:
             // Sort last necessary bucket with limit
             Element * start = last[buckets_for_recursion - 2];
             size_t subsize = last[buckets_for_recursion - 1] - last[buckets_for_recursion - 2];
-            size_t sublimit = limit - (last[buckets_for_recursion - 1] - arr);
+            size_t sublimit = limit - (last[buckets_for_recursion - 2] - arr);
             radixSortMSDInternalHelper<PASS - 1>(start, subsize, sublimit, less);
         }
     }
@@ -389,10 +387,11 @@ public:
      * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
      * SOFTWARE.
      */
-    static void executeMSD(Element * arr, size_t size, size_t limit, Less less=Less())
+    static void executeMSD(Element * arr, size_t size, size_t limit, Less less = Less())
     {
         limit = std::min(limit, size);
-        radixSortMSDInternalHelper<NUM_PASSES - 1>(arr, size, limit, less);
+        if (limit != 0)
+            radixSortMSDInternalHelper<NUM_PASSES - 1>(arr, size, limit, less);
     }
 };
 
@@ -401,13 +400,13 @@ public:
 /// Use RadixSort with custom traits for complex types instead.
 
 template <typename T>
-void radixSortLSD(T *arr, size_t size)
+void radixSortLSD(T * arr, size_t size)
 {
     RadixSort<RadixSortNumTraits<T>>::executeLSD(arr, size);
 }
 
 template <typename T>
-void radixSortMSD(T *arr, size_t size, size_t limit)
+void radixSortMSD(T * arr, size_t size, size_t limit)
 {
     RadixSort<RadixSortNumTraits<T>>::executeMSD(arr, size, limit);
 }
