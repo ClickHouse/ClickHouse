@@ -21,10 +21,6 @@
 #include <common/logger_useful.h>
 
 
-#define DEFAULT_S3_READ_BUFFER_TIMEOUT 1800
-#define DEFAULT_S3_READ_BUFFER_CONNECTION_TIMEOUT 1
-#define DEFAULT_S3_MAX_FOLLOW_REDIRECT 2
-
 namespace DB
 {
 /* Perform S3 HTTP PUT request.
@@ -32,14 +28,18 @@ namespace DB
 class WriteBufferFromS3 : public WriteBufferFromOStream
 {
 private:
+    Poco::URI uri;
+    ConnectionTimeouts timeouts;
+    const Poco::Net::HTTPBasicCredentials & credentials;
     HTTPSessionPtr session;
-    Poco::Net::HTTPRequest request;
+    std::istream * istr; /// owned by session
     Poco::Net::HTTPResponse response;
     std::ostringstream temporary_stream; /// Maybe one shall use some DB:: buffer.
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
         const ConnectionTimeouts & timeouts = {},
+        const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Receives response from the server after sending all data.

@@ -3,6 +3,8 @@
 #include <common/logger_useful.h>
 
 
+#define DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT 2
+
 namespace DB
 {
 
@@ -13,12 +15,12 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
     : ReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {Poco::Net::HTTPRequest::HTTP_GET}
-    , session(makeHTTPSession(uri_, timeouts))
+    , session {makeHTTPSession(uri_, timeouts)}
 {
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
 
-    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_REDIRECT; ++i)
+    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT; ++i)
     {
         // With empty path poco will send "POST  HTTP/1.1" its bug.
         if (uri.getPath().empty())
