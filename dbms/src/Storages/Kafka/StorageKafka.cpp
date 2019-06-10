@@ -453,7 +453,7 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         // Get and check broker list
-        String brokers;
+        String brokers = kafka_settings.kafka_broker_list.value;
         if (args_count >= 1)
         {
             const auto * ast = engine_args[0]->as<ASTLiteral>();
@@ -466,22 +466,15 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception(String("Kafka broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_broker_list.changed)
-        {
-            brokers = kafka_settings.kafka_broker_list.value;
-        }
 
         // Get and check topic list
-        String topic_list;
+        String topic_list = kafka_settings.kafka_topic_list.value;
         if (args_count >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
             topic_list = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         }
-        else if (kafka_settings.kafka_topic_list.changed)
-        {
-            topic_list = kafka_settings.kafka_topic_list.value;
-        }
+
         Names topics;
         boost::split(topics, topic_list , [](char c){ return c == ','; });
         for (String & topic : topics)
@@ -490,19 +483,15 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Get and check group name
-        String group;
+        String group = kafka_settings.kafka_group_name.value;
         if (args_count >= 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
             group = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
-        else if (kafka_settings.kafka_group_name.changed)
-        {
-            group = kafka_settings.kafka_group_name.value;
-        }
 
         // Get and check message format name
-        String format;
+        String format = kafka_settings.kafka_format.value;
         if (args_count >= 4)
         {
             engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
@@ -517,13 +506,9 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Format must be a string", ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_format.changed)
-        {
-            format = kafka_settings.kafka_format.value;
-        }
 
         // Parse row delimiter (optional)
-        char row_delimiter = '\0';
+        char row_delimiter = kafka_settings.kafka_row_delimiter.value;
         if (args_count >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
@@ -551,13 +536,9 @@ void registerStorageKafka(StorageFactory & factory)
                 row_delimiter = arg[0];
             }
         }
-        else if (kafka_settings.kafka_row_delimiter.changed)
-        {
-            row_delimiter = kafka_settings.kafka_row_delimiter.value;
-        }
 
         // Parse format schema if supported (optional)
-        String schema;
+        String schema = kafka_settings.kafka_schema.value;
         if (args_count >= 6)
         {
             engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
@@ -572,13 +553,9 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Format schema must be a string", ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_schema.changed)
-        {
-            schema = kafka_settings.kafka_schema.value;
-        }
 
         // Parse number of consumers (optional)
-        UInt64 num_consumers = 1;
+        UInt64 num_consumers = kafka_settings.kafka_num_consumers.value;
         if (args_count >= 7)
         {
             const auto * ast = engine_args[6]->as<ASTLiteral>();
@@ -591,13 +568,9 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_num_consumers.changed)
-        {
-            num_consumers = kafka_settings.kafka_num_consumers.value;
-        }
 
         // Parse max block size (optional)
-        UInt64 max_block_size = 0;
+        UInt64 max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size.value);
         if (args_count >= 8)
         {
             const auto * ast = engine_args[7]->as<ASTLiteral>();
@@ -611,12 +584,8 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Maximum block size must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_max_block_size.changed)
-        {
-            max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size.value);
-        }
 
-        size_t skip_broken = 0;
+        size_t skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
         if (args_count >= 9)
         {
             const auto * ast = engine_args[8]->as<ASTLiteral>();
@@ -629,12 +598,8 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Number of broken messages to skip must be a non-negative integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
-        else if (kafka_settings.kafka_skip_broken_messages.changed)
-        {
-            skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
-        }
 
-        bool intermediate_commit = true;
+        bool intermediate_commit = static_cast<bool>(kafka_settings.kafka_commit_every_batch);
         if (args_count >= 10)
         {
             const auto * ast = engine_args[9]->as<ASTLiteral>();
@@ -646,10 +611,6 @@ void registerStorageKafka(StorageFactory & factory)
             {
                 throw Exception("Flag for committing every batch must be 0 or 1", ErrorCodes::BAD_ARGUMENTS);
             }
-        }
-        else if (kafka_settings.kafka_commit_every_batch.changed)
-        {
-            intermediate_commit = static_cast<bool>(kafka_settings.kafka_commit_every_batch);
         }
 
         return StorageKafka::create(
