@@ -8,17 +8,30 @@ import threading
 import unittest
 
 
+# 1) Run Go FakeS3 server.
+# go run cmd/gofakes3/main.go -backend memory -host :9990
+# 2) Create a bucket.
+# curl -X PUT http://localhost:9990/abc/
+
 format = 'column1 UInt32, column2 UInt32, column3 UInt32'
-values = '(1, 2, 3), (2, 3, 1), (78, 43, 45)'
+values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
 redirecting_host = '127.0.0.1'
 redirecting_to_http_port = 12345
 redirecting_to_https_port = 12346
 preserving_data_port = 12347
+fakes3_port = 9990
+localhost = '127.0.0.1'
+bucket = 'abc'
+
+prepare_put_queries = [
+    "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(localhost, fakes3_port, bucket, format, values),
+]
 
 queries = [
     "select *, column1*column2*column3 from file('{}', 'CSV', '{}')".format(os.path.expanduser('~/test.csv'), format),
     "select *, column1*column2*column3 from url('https://storage.yandexcloud.net/milovidov/test.csv', 'CSV', '{}')".format(format),
     "select *, column1*column2*column3 from s3('http://storage.yandexcloud.net/milovidov/test.csv', 'CSV', '{}')".format(format),
+    "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(localhost, fakes3_port, bucket, format),
     "select *, column1*column2*column3 from s3('https://storage.yandexcloud.net/milovidov/test.csv', 'CSV', '{}')".format(format),
     "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(redirecting_host, redirecting_to_http_port, format),
     "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(redirecting_host, redirecting_to_https_port, format),
@@ -97,6 +110,17 @@ jobs.append(threading.Thread(target=redirecting_to_https_thread))
 jobs.append(threading.Thread(target=preserving_thread))
 [ job.start() for job in jobs ]
 
+for query in prepare_put_queries:
+    print(query)
+    result = subprocess.run([
+        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
+        '-c',
+        os.path.expanduser('~/config.xml'),
+        '-q',
+        query
+    ], stdout=subprocess.PIPE, universal_newlines=True)
+    result.check_returncode()
+
 for query in queries:
     print(query)
     result = subprocess.run([
@@ -123,7 +147,9 @@ for query in put_queries:
         query
     ], stdout=subprocess.PIPE, universal_newlines=True)
     result.check_returncode()
-    unittest.TestCase().assertEqual(received_data[-1].decode(), '15\r\n1,2,3\n2,3,1\n78,43,45\n\r\n0\r\n\r\n')
+    unittest.TestCase().assertEqual(received_data[-1].decode(), '1,2,3\n3,2,1\n78,43,45\n')
+    # In chunked encoding:
+    # unittest.TestCase().assertEqual(received_data[-1].decode(), '15\r\n1,2,3\n2,3,1\n78,43,45\n\r\n0\r\n\r\n')
 
 [ server.socket.close() for server in servers ]
 [ job.join() for job in jobs ]
