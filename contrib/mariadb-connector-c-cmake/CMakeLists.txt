@@ -1,5 +1,5 @@
-set(MARIADB_CLIENT_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
-set(MARIADB_CLIENT_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/mariadb-connector-c)
+set(MARIADB_CLIENT_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c)
+set(MARIADB_CLIENT_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c)
 
 set(SRCS
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/bmove_upp.c
