@@ -38,15 +38,15 @@ public:
 
     bool isTableExist(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) override;
 
     StoragePtr tryGetTable(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) override;
 
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
-    bool empty(const Context & context) const override;
+    bool empty(const Context & context) override;
 
     void createTable(
         const Context & context,
@@ -80,11 +80,11 @@ public:
 
     ASTPtr getCreateTableQuery(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) override;
 
     ASTPtr tryGetCreateTableQuery(
             const Context & context,
-            const String & table_name) const override;
+            const String & table_name) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
@@ -97,7 +97,7 @@ private:
     Poco::Logger * log;
 
     Tables listTables(const Context & context);
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error);
 };
 
 }
