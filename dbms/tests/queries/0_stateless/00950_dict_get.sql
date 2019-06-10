@@ -1,5 +1,5 @@
 -- Must use `test_00950` database and these tables - they're configured in dbms/tests/*_dictionary.xml
-create database test_00950 if not exists;
+create database if not exists test_00950;
 use test_00950;
 drop table if exists ints;
 drop table if exists strings;
