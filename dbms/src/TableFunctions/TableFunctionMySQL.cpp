@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -147,9 +148,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " AND TABLE_NAME = " << quote << table_name
         << " ORDER BY ORDINAL_POSITION";
 
-    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
-
     NamesAndTypesList columns;
+    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
@@ -163,6 +163,9 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
                     (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
 
     }
+
+    if (columns.empty())
+        throw Exception("MySQL table " + database_name + "." + table_name + " doesn't exist..", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
         table_name,
