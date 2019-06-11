@@ -185,6 +185,7 @@ nav:
     - 'Разрешения на выполнение запросов': 'operations/settings/permissions_for_queries.md'
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
+    - 'Ограничения на изменение настроек': 'operations/settings/constraints_on_settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
   - 'Утилиты':
     - 'Введение': 'operations/utils/index.md'
