@@ -10,13 +10,15 @@ namespace DB
 
 WriteBufferFromS3::WriteBufferFromS3(
     const Poco::URI & uri_, const ConnectionTimeouts & timeouts_, 
-    const Poco::Net::HTTPBasicCredentials & credentials_, size_t buffer_size_)
+    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_)
     : WriteBufferFromOStream(buffer_size_)
     , uri {uri_}
     , timeouts {timeouts_}
-    , credentials {credentials_}
+    , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
     ostr = &temporary_stream;
+    if (!credentials.getUsername().empty())
+        credentials.authenticate(auth_request);
 }
 
 void WriteBufferFromS3::finalize()
@@ -26,6 +28,7 @@ void WriteBufferFromS3::finalize()
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
+
     std::istream * istr; /// owned by session
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
@@ -33,8 +36,10 @@ void WriteBufferFromS3::finalize()
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(uri.getHost()); // use original, not resolved host name in header
 
-        if (!credentials.getUsername().empty())
+        if (auth_request.hasCredentials()) {
+            Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
+        }
 
         // request.setChunkedTransferEncoding(true);
         // Chunked transfers require additional logic, see:
