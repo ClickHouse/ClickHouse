@@ -66,8 +66,7 @@ public:
 
     Block getHeader() const override
     {
-        Block header(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version"), ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "hash"));
-        return header;
+        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version"), ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "hash")};
     }
 
     void refresh()
@@ -182,8 +181,8 @@ protected:
                     }
                     while (true)
                     {
-                        UInt64 timestamp_usec = (UInt64)timestamp.epochMicroseconds();
-                        bool signaled = condition.tryWait(mutex, std::max((UInt64)0, heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
+                        UInt64 timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+                        bool signaled = condition.tryWait(mutex, std::max(static_cast<UInt64>(0), heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
 
                         if (isCancelled() || storage.is_dropped)
                         {
@@ -196,7 +195,7 @@ protected:
                         else
                         {
                             // repeat the event block as a heartbeat
-                            last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
+                            last_event_timestamp = static_cast<UInt64>(timestamp.epochMicroseconds());
                             return { getHeader(), true };
                         }
                     }
@@ -215,7 +214,7 @@ protected:
                 --length;
         }
 
-        last_event_timestamp = (UInt64)timestamp.epochMicroseconds();
+        last_event_timestamp = static_cast<UInt64>(timestamp.epochMicroseconds());
 
         return { getEventBlock(), true };
     }
