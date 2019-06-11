@@ -182,17 +182,20 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
     if (num_bits < 64)
         upper_min = min >> num_bits << num_bits;
 
+    _T buf[64];
+
     if constexpr (std::is_signed_v<_T>)
     {
         /// Restore some data as negatives and others as positives
-        if (min < 0 && max >= 0 && num_bits < 64)
+        if (min < 0 && max >= 0 && num_bits > 0 && num_bits < 64)
         {
             _T sign_bit = 1ull << (num_bits-1);
             _T upper_max = max >> num_bits << num_bits;
 
             for (UInt32 col = 0; col < tail; ++col)
             {
-                _T value = 0;
+                _T & value = buf[col];
+                value = 0;
 
                 for (UInt32 row = 0; row < meaning_bytes; ++row)
                     value |= _T(mx8[64 * row + col]) << (8 * row);
@@ -201,24 +204,23 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
                     value |= upper_min;
                 else
                     value |= upper_max;
-
-                unalignedStore(dst, value);
-                dst += sizeof(_T);
             }
+
+            memcpy(dst, buf, tail * sizeof(_T));
             return;
         }
     }
 
-    for (UInt32 col = 0; col < tail; ++col)
+    _T * p_value = buf;
+    for (UInt32 col = 0; col < tail; ++col, ++p_value)
     {
-        _T value = upper_min;
+        *p_value = upper_min;
 
         for (UInt32 row = 0; row < meaning_bytes; ++row)
-            value |= _T(mx8[64 * row + col]) << (8 * row);
-
-        unalignedStore(dst, value);
-        dst += sizeof(_T);
+            *p_value |= _T(mx8[64 * row + col]) << (8 * row);
     }
+
+    memcpy(dst, buf, tail * sizeof(_T));
 }
 
 
