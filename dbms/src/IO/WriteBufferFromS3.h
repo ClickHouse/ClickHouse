@@ -30,7 +30,7 @@ class WriteBufferFromS3 : public WriteBufferFromOStream
 private:
     Poco::URI uri;
     ConnectionTimeouts timeouts;
-    const Poco::Net::HTTPBasicCredentials & credentials;
+    Poco::Net::HTTPRequest auth_request;
     std::ostringstream temporary_stream; /// Maybe one shall use some DB:: buffer.
 
 public:
