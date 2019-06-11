@@ -172,7 +172,6 @@ Block StorageLiveView::getHeader() const
 
 bool StorageLiveView::getNewBlocks()
 {
-    Block block;
     SipHash hash;
     UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
@@ -398,7 +397,7 @@ BlockInputStreams StorageLiveView::watch(
     int64_t length = -2;
 
     if (query.limit_length)
-        length = (int64_t)safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        length = static_cast<int64_t>(safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value));
 
     if (query.is_watch_events)
     {

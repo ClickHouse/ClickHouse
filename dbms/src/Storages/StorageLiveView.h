@@ -257,10 +257,8 @@ private:
     std::shared_ptr<bool> active_ptr;
     /// Current data blocks that store query result
     std::shared_ptr<BlocksPtr> blocks_ptr;
-    BlocksPtr new_blocks;
     /// Current data blocks metadata
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
-    BlocksMetadataPtr new_blocks_metadata;
     BlocksPtrs mergeable_blocks;
 
     void noUsersThread(const UInt64 & timeout);
