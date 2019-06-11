@@ -28,7 +28,6 @@ namespace DB
 {
 
 class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct BlocksMetadata 
 {
@@ -36,6 +35,7 @@ struct BlocksMetadata
     UInt64 version;
 };
 
+using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using SipHashPtr = std::shared_ptr<SipHash>;
 

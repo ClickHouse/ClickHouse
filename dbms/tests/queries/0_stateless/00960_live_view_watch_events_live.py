@@ -6,7 +6,7 @@ import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 
-uexpect = imp.load_source('uexpect', os.path.join(CURDIR, '..', '..', 'integration', 'helpers', 'uexpect.py'))
+uexpect = imp.load_source('uexpect', os.path.join(CURDIR, 'helpers', 'uexpect.py'))
 
 def client(name=''):
     client = uexpect.spawn(os.environ.get('CLICKHOUSE_CLIENT'))
