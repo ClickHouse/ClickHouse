@@ -158,8 +158,8 @@ void transpose(const char * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 }
 
 /// UInt64[N] transposed matrix -> UIntX[64]
-template <typename _T>
-void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UInt64 max [[maybe_unused]], UInt32 tail = 64)
+template <typename _T, typename _MinMaxT = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>>
+void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _MinMaxT max [[maybe_unused]], UInt32 tail = 64)
 {
     UInt64 mx[64] = {};
     memcpy(mx, src, num_bits * sizeof(UInt64));
@@ -178,48 +178,46 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UIn
 
     auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
 
+    _T upper_min = 0;
+    if (num_bits < 64)
+        upper_min = min >> num_bits << num_bits;
+
     if constexpr (std::is_signed_v<_T>)
     {
-        _T upper_min = min;
-        _T upper_max = max;
-        if (num_bits < 64)
+        /// Restore some data as negatives and others as positives
+        if (min < 0 && max >= 0 && num_bits < 64)
         {
-            upper_min = min >> num_bits << num_bits;
-            upper_max = max >> num_bits << num_bits;
-        }
+            _T sign_bit = 1ull << (num_bits-1);
+            _T upper_max = max >> num_bits << num_bits;
 
-        for (UInt32 col = 0; col < tail; ++col)
-        {
-            _T value = 0;
+            for (UInt32 col = 0; col < tail; ++col)
+            {
+                _T value = 0;
 
-            for (UInt32 row = 0; row < meaning_bytes; ++row)
-                value |= _T(mx8[64 * row + col]) << (8 * row);
+                for (UInt32 row = 0; row < meaning_bytes; ++row)
+                    value |= _T(mx8[64 * row + col]) << (8 * row);
 
-            if (value & (1 << (num_bits-1)))
-                value |= upper_min;
-            else
-                value |= upper_max;
+                if (value & sign_bit)
+                    value |= upper_min;
+                else
+                    value |= upper_max;
 
-            unalignedStore(dst, value);
-            dst += sizeof(_T);
+                unalignedStore(dst, value);
+                dst += sizeof(_T);
+            }
+            return;
         }
     }
-    else
+
+    for (UInt32 col = 0; col < tail; ++col)
     {
-        _T upper = 0;
-        if (num_bits < 64)
-            upper = min >> num_bits << num_bits;
+        _T value = upper_min;
 
-        for (UInt32 col = 0; col < tail; ++col)
-        {
-            _T value = upper;
+        for (UInt32 row = 0; row < meaning_bytes; ++row)
+            value |= _T(mx8[64 * row + col]) << (8 * row);
 
-            for (UInt32 row = 0; row < meaning_bytes; ++row)
-                value |= _T(mx8[64 * row + col]) << (8 * row);
-
-            unalignedStore(dst, value);
-            dst += sizeof(_T);
-        }
+        unalignedStore(dst, value);
+        dst += sizeof(_T);
     }
 }
 
@@ -235,7 +233,12 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 UInt32 getValuableBitsNumber(Int64 min, Int64 max)
 {
     if (min < 0 && max >= 0)
-        return getValuableBitsNumber(UInt64(min), UInt64(~max)) + 1;
+    {
+        if (min + max >= 0)
+            return getValuableBitsNumber(0ull, UInt64(max)) + 1;
+        else
+            return getValuableBitsNumber(0ull, UInt64(~min)) + 1;
+    }
     else
         return getValuableBitsNumber(UInt64(min), UInt64(max));
 }
