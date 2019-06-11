@@ -29,7 +29,7 @@ namespace DB
 
 class IAST;
 
-struct BlocksMetadata 
+struct BlocksMetadata
 {
     String hash;
     UInt64 version;

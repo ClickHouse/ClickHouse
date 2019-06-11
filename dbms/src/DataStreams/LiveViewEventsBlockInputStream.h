@@ -64,13 +64,10 @@ public:
         condition.broadcast();
     }
 
-    Block getHeader() const override 
+    Block getHeader() const override
     {
-        return 
-        { 
-            ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version"), 
-            ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "hash")
-        };
+        Block header(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version"), ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "hash"));
+        return header;
     }
 
     void refresh()
@@ -88,7 +85,7 @@ public:
     {
         active = active_ptr.lock();
         {
-            if (!blocks || (blocks.get() != (*blocks_ptr).get())) 
+            if (!blocks || blocks.get() != (*blocks_ptr).get())
             {
                 blocks = (*blocks_ptr);
                 blocks_metadata = (*blocks_metadata_ptr);
