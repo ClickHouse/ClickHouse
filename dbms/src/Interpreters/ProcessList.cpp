@@ -87,9 +87,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     {
         std::unique_lock lock(mutex);
 
+        auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
-            auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
 
             if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
@@ -117,16 +117,31 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
-                auto range = user_process_list->second.queries.equal_range(client_info.current_query_id);
-                if (range.first != range.second)
+
+                auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
-                    /// Ask queries to cancel. They will check this flag.
-                    for (auto it = range.first; it != range.second; ++it)
-                        it->second->is_killed.store(true, std::memory_order_relaxed);
+                    const int sleep_by = 10;
+                    int sleeped = 0;
+                    do
+                    {
+                        /// Ask queries to cancel. They will check this flag.
+                        running_query->second->is_killed.store(true, std::memory_order_relaxed);
+
+                        lock.unlock();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_by));
+                        sleeped += sleep_by;
+                        if (sleeped > max_wait_ms)
+                            throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
+                                ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                        lock.lock();
+                        running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                    }
+                    while (running_query != user_process_list->second.queries.end());
                 }
             }
         }
@@ -136,8 +151,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         {
             if (user_process_list.first == client_info.current_user)
                 continue;
-            auto range = user_process_list.second.queries.equal_range(client_info.current_query_id);
-            if (range.first != range.second)
+            if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
                 throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
                     ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
         }
@@ -237,17 +251,12 @@ ProcessListEntry::~ProcessListEntry()
 
     bool found = false;
 
-    auto range = user_process_list.queries.equal_range(query_id);
-    if (range.first != range.second)
+    if (auto running_query = user_process_list.queries.find(query_id); running_query != user_process_list.queries.end())
     {
-        for (auto jt = range.first; jt != range.second; ++jt)
+        if (running_query->second == process_list_element_ptr)
         {
-            if (jt->second == process_list_element_ptr)
-            {
-                user_process_list.queries.erase(jt);
-                found = true;
-                break;
-            }
+            user_process_list.queries.erase(running_query->first);
+            found = true;
         }
     }
 
