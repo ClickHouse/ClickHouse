@@ -224,27 +224,20 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, UInt64 min, UIn
 }
 
 
-template <typename _T>
-UInt32 getValuableBitsNumber(_T typed_min, _T typed_max)
+UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 {
-    if constexpr (std::is_signed_v<_T>)
-    {
-        Int64 min = typed_min;
-        Int64 max = typed_max;
-        if (min < 0 && max >= 0)
-            return getValuableBitsNumber<UInt64>(min, ~max) + 1;
-        else
-            return getValuableBitsNumber<UInt64>(min, max);
-    }
-    else
-    {
-        UInt64 min = typed_min;
-        UInt64 max = typed_max;
-        UInt64 diff_bits = min ^ max;
-        if (diff_bits)
-            return 64 - __builtin_clzll(diff_bits);
-    }
+    UInt64 diff_bits = min ^ max;
+    if (diff_bits)
+        return 64 - __builtin_clzll(diff_bits);
     return 0;
+}
+
+UInt32 getValuableBitsNumber(Int64 min, Int64 max)
+{
+    if (min < 0 && max >= 0)
+        return getValuableBitsNumber(UInt64(min), UInt64(~max)) + 1;
+    else
+        return getValuableBitsNumber(UInt64(min), UInt64(max));
 }
 
 
@@ -268,6 +261,8 @@ void findMinMax(const char * src, UInt32 src_size, _T & min, _T & max)
 template <typename _T>
 UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 {
+    using MinMaxType = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>;
+
     const UInt32 mx_size = 64;
     const UInt32 header_size = 2 * sizeof(UInt64);
 
@@ -281,28 +276,17 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     _T min, max;
     findMinMax<_T>(src, bytes_size, min, max);
+    MinMaxType min64 = min;
+    MinMaxType max64 = max;
 
     /// Write header
-    if constexpr (std::is_signed_v<_T>)
     {
-        Int64 tmp_min = min;
-        Int64 tmp_max = max;
-
-        memcpy(dst, &tmp_min, sizeof(Int64));
-        memcpy(dst + 8, &tmp_max, sizeof(Int64));
-        dst += header_size;
-    }
-    else
-    {
-        UInt64 tmp_min = min;
-        UInt64 tmp_max = max;
-
-        memcpy(dst, &tmp_min, sizeof(UInt64));
-        memcpy(dst + 8, &tmp_max, sizeof(UInt64));
+        memcpy(dst, &min64, sizeof(MinMaxType));
+        memcpy(dst + 8, &max64, sizeof(MinMaxType));
         dst += header_size;
     }
 
-    UInt32 num_bits = getValuableBitsNumber(min, max);
+    UInt32 num_bits = getValuableBitsNumber(min64, max64);
     if (!num_bits)
         return header_size;
 
@@ -329,6 +313,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 template <typename _T>
 void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
+    using MinMaxType = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>;
+
     const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size < header_size)
@@ -340,13 +326,13 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
                         ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt64 num_elements = uncompressed_size / sizeof(_T);
-    UInt64 min;
-    UInt64 max;
+    MinMaxType min;
+    MinMaxType max;
 
     /// Read header
     {
-        memcpy(&min, src, sizeof(UInt64));
-        memcpy(&max, src + 8, sizeof(UInt64));
+        memcpy(&min, src, sizeof(MinMaxType));
+        memcpy(&max, src + 8, sizeof(MinMaxType));
         src += header_size;
         bytes_size -= header_size;
     }
