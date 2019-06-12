@@ -401,7 +401,7 @@ BlockInputStreams StorageLiveView::watch(
 
     if (query.is_watch_events)
     {
-        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(std::static_pointer_cast<StorageLiveView>(shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
         context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
@@ -426,7 +426,7 @@ BlockInputStreams StorageLiveView::watch(
     }
     else
     {
-        auto reader = std::make_shared<LiveViewBlockInputStream>(*this, blocks_ptr, blocks_metadata_ptr, active_ptr, condition, mutex, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        auto reader = std::make_shared<LiveViewBlockInputStream>(std::static_pointer_cast<StorageLiveView>( shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
         context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
