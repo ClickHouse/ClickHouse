@@ -126,21 +126,71 @@ void revTranspose64x8(const UInt64 * src, UInt64 * dst, UInt32)
     }
 }
 
+template <typename _T>
+void transposeBytes(_T value, UInt64 * mx, UInt32 col)
+{
+    UInt8 * mx8 = reinterpret_cast<UInt8 *>(mx);
+    const UInt8 * value8 = reinterpret_cast<const UInt8 *>(&value);
+
+    if constexpr (sizeof(_T) > 4)
+    {
+        mx8[64 * 7 + col] = value8[7];
+        mx8[64 * 6 + col] = value8[6];
+        mx8[64 * 5 + col] = value8[5];
+        mx8[64 * 4 + col] = value8[4];
+    }
+
+    if constexpr (sizeof(_T) > 2)
+    {
+        mx8[64 * 3 + col] = value8[3];
+        mx8[64 * 2 + col] = value8[2];
+    }
+
+    if constexpr (sizeof(_T) > 1)
+        mx8[64 * 1 + col] = value8[1];
+
+    mx8[64 * 0 + col] = value8[0];
+}
+
+template <typename _T>
+void revTransposeBytes(const UInt64 * mx, UInt32 col, _T & value)
+{
+    auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
+
+    if constexpr (sizeof(_T) > 4)
+    {
+        value |= UInt64(mx8[64 * 7 + col]) << (8 * 7);
+        value |= UInt64(mx8[64 * 6 + col]) << (8 * 6);
+        value |= UInt64(mx8[64 * 5 + col]) << (8 * 5);
+        value |= UInt64(mx8[64 * 4 + col]) << (8 * 4);
+    }
+
+    if constexpr (sizeof(_T) > 2)
+    {
+        value |= UInt32(mx8[64 * 3 + col]) << (8 * 3);
+        value |= UInt32(mx8[64 * 2 + col]) << (8 * 2);
+    }
+
+    if constexpr (sizeof(_T) > 1)
+        value |= UInt32(mx8[64 * 1 + col]) << (8 * 1);
+
+    value |= UInt32(mx8[col]);
+}
+
+
 /// UIntX[64] -> UInt64[N] transposed matrix, N <= X
 template <typename _T>
 void transpose(const char * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt32 full_bytes = num_bits / 8;
     UInt32 part_bits = num_bits % 8;
-    UInt32 meaning_bytes = full_bytes + (part_bits ? 1 : 0);
 
     UInt64 mx[64] = {};
-    for (UInt32 row = 0; row < meaning_bytes; ++row)
+    const char * ptr = src;
+    for (UInt32 col = 0; col < tail; ++col, ptr += sizeof(_T))
     {
-        UInt8 * same_byte_data = reinterpret_cast<UInt8 *>(&mx[row * 8]);
-        const char * byte = src + row;
-        for (UInt32 col = 0; col < tail; ++col, byte += sizeof(_T))
-            same_byte_data[col] = unalignedLoad<UInt8>(byte);
+        _T value = unalignedLoad<_T>(ptr);
+        transposeBytes(value, mx, col);
     }
 
     UInt32 full_size = sizeof(UInt64) * (num_bits - part_bits);
@@ -157,17 +207,6 @@ void transpose(const char * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     }
 }
 
-template <typename _T>
-void revTransposeBytes(const UInt64 * mx, UInt32 col, UInt32 meaning_bytes, _T & value)
-{
-    using UnsignedT = std::conditional_t<(sizeof(_T) <= 4), UInt32, UInt64>;
-
-    auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
-
-    for (UInt32 row = 0; row < meaning_bytes; ++row)
-        value |= UnsignedT(mx8[64 * row + col]) << (8 * row);
-}
-
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename _T, typename _MinMaxT = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>>
 void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _MinMaxT max [[maybe_unused]], UInt32 tail = 64)
@@ -177,7 +216,6 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
 
     UInt32 full_bytes = num_bits / 8;
     UInt32 part_bits = num_bits % 8;
-    UInt32 meaning_bytes = full_bytes + (part_bits ? 1 : 0);
     UInt64 * partial = &mx[full_bytes * 8];
 
     if (part_bits)
@@ -204,7 +242,7 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
             for (UInt32 col = 0; col < tail; ++col)
             {
                 _T & value = buf[col];
-                revTransposeBytes(mx, col, meaning_bytes, value);
+                revTransposeBytes(mx, col, value);
 
                 if (value & sign_bit)
                     value |= upper_min;
@@ -220,7 +258,7 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
     for (UInt32 col = 0; col < tail; ++col)
     {
         _T & value = buf[col];
-        revTransposeBytes(mx, col, meaning_bytes, value);
+        revTransposeBytes(mx, col, value);
 
         value |= upper_min;
     }
