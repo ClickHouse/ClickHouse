@@ -1,4 +1,4 @@
-set(JEMALLOC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/jemalloc)
+set(JEMALLOC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/jemalloc)
 
 set(SRCS
 ${JEMALLOC_SOURCE_DIR}/src/arena.c
