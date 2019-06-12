@@ -38,6 +38,7 @@ void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFacto
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
@@ -85,6 +86,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorState(factory);
         registerAggregateFunctionCombinatorMerge(factory);
         registerAggregateFunctionCombinatorNull(factory);
+        registerAggregateFunctionCombinatorResample(factory);
     }
 }
 
