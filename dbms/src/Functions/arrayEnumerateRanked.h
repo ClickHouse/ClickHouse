@@ -255,7 +255,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     executeMethodImpl(offsets_by_depth, data_columns, arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
-    for (int depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
+    for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
     block.getByPosition(result).column = result_nested_array;
@@ -337,7 +337,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
             want_clear = true;
             ++indices_by_depth[0];
 
-            for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
                 const auto offsets_by_depth_size = offsets_by_depth[depth]->size();
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
@@ -375,7 +375,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
-            for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
                 /// Skipping offsets for empty arrays
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
