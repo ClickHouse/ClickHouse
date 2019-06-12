@@ -112,6 +112,8 @@ public:
 
         value.resize(size, arena);
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+
+	this->data(place).sum = value.back();
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
