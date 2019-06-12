@@ -1,12 +1,55 @@
-
 # Function reference
 
-## count() {#agg_function-count}
+## count {#agg_function-count}
 
-Counts the number of rows. Accepts zero arguments and returns UInt64.
-The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate function exists for this purpose.
+Counts the number of rows.
 
-A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
+```
+count()
+```
+
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax sugar. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the `uniq*` functions is used to perform the operation.
+
+A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It selects some small column from the table and count the number of values in it.
+
+**Returned value**
+
+- Number of rows. Type: [UInt64](../../data_types/int_uint.md).
+
+**Examples**
+
+Example 1:
+
+```sql
+SELECT count() FROM t
+```
+```text
+┌─count()─┐
+│       5 │
+└─────────┘
+```
+
+Example 2:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
+```
+```text
+┌─name──────────────────────────┬─value─────┐
+│ count_distinct_implementation │ uniqExact │
+└───────────────────────────────┴───────────┘
+```
+```sql
+SELECT count(DISTINCT num) FROM t
+```
+```text
+┌─uniqExact(num)─┐
+│              3 │
+└────────────────┘
+```
+
+This example shows that `count(DISTINCT num)` is performed by the function `uniqExact` corresponding to the `count_distinct_implementation` setting value.
+
 
 ## any(x) {#agg_function-any}
 
@@ -361,45 +404,117 @@ Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
-## uniq(x) {#agg_function-uniq}
+## uniq {#agg_function-uniq}
 
-Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
+Calculates the approximate number of different values of the argument.
 
-Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65536.
-This algorithm is also very accurate for data sets with low cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using `uniq` is almost as fast as using other aggregate functions).
+```
+uniq(x[, ...])
+```
 
-The result is determinate (it doesn't depend on the order of query processing).
+**Parameters**
 
-This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
 
-## uniqCombined(HLL_precision)(x)
+**Returned value**
 
-Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
+- The number of the [UInt64](../../data_types/int_uint.md) type.
 
-A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
+**Implementation details**
 
-The parameter "HLL_precision" is the base-2 logarithm of the number of cells in HyperLogLog. You can omit the parameter (omit first parens). The default value is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each). The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network.
+Function:
 
-The result is deterministic (it doesn't depend on the order of query processing).
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values with a size up to 65536.
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
+    This algorithm is very accurate and very efficient on CPU. When query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-## uniqHLL12(x)
+- Provides the determinate result (it doesn't depend on the order of query processing).
 
-Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
+We recommend to use this function in almost all scenarios.
+
+
+## uniqCombined {#agg_function-uniqcombined}
+
+Calculates the approximate number of different values of the argument.
+
+```
+uniqCombined(HLL_precision)(x[, ...])
+```
+
+The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
+
+**Parameters**
+
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+
+`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each).
+
+**Returned value**
+
+- The number of the [UInt64](../../data_types/int_uint.md) type.
+
+**Implementation details**
+
+Function:
+
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses combination of three algorithms: array, hash table and HyperLogLog with an error correction table.
+
+    For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
+
+- Provides the determinate result (it doesn't depend on the order of query processing).
+
+In comparison with the [uniq](#agg_function-uniq) function the `uniqCombined`:
+
+- Consumes in several times smaller memory
+- Calculates with the accuracy in several times higher.
+- Performs slightly lower usually. In some scenarios `uniqCombined` can perform higher than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+
+
+## uniqHLL12 {#agg_function-uniqhll12}
+
+Calculates the approximate number of different values of the argument.
+
+```
+uniqHLL12(x[, ...])
+```
+
+**Parameters**
+
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+
+**Returned value**
+
+- The number of the [UInt64](../../data_types/int_uint.md) type.
+
+**Implementation details**
+
+Function:
+
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
 212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+- Provides the determinate result (it doesn't depend on the order of query processing).
 
-The result is determinate (it doesn't depend on the order of query processing).
+We don't recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
 
-We don't recommend using this function. In most cases, use the `uniq` or `uniqCombined` function.
+## uniqExact(x) {#agg_function-uniqexact}
 
-## uniqExact(x)
+Calculates the exact number of different values of the argument.
 
-Calculates the number of different values of the argument, exactly.
-There is no reason to fear approximations. It's better to use the `uniq` function.
-Use the `uniqExact` function if you definitely need an exact result.
+```
+uniqHLL12(x[, ...])
+```
 
-The `uniqExact` function uses more memory than the `uniq` function, because the size of the state has unbounded growth as the number of different values increases.
+Use the `uniqExact` function if you definitely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
+
+The `uniqExact` function uses more memory than the `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+
+**Parameters**
+
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+
 
 ## groupArray(x), groupArray(max_size)(x)
 
@@ -654,11 +769,11 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
         param2 Float64,
         target Float64
     ) ENGINE = Memory;
-    
+
     CREATE TABLE your_model ENGINE = Memory AS SELECT
     stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
-    
+
     ```
     Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
     Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
@@ -671,7 +786,7 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     evalMLMethod(model, param1, param2) FROM test_data
     ```
     The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
-    
+
     `test_data` is a table like `train_data` but may not contain target value.
 
 **Some notes**
@@ -681,12 +796,12 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     SELECT state1 + state2 FROM your_models
     ```
     where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
-    
+
 2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
     ```sql
     SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values. 
+    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
 
 
 ## logisticRegression
@@ -696,8 +811,8 @@ This function implements stochastic logistic regression. It can be used for bina
 
 #### Parameters
 
-Parameters are exactly the same as in stochasticLinearRegression: 
-`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`. 
+Parameters are exactly the same as in stochasticLinearRegression:
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
 For more information see [parameters](#parameters).
 ```text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -706,9 +821,9 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 1. *Fitting*
 
     See *stochasticLinearRegression.Fitting*
-    
+
     Predicted labels have to be in {-1, 1}.
-    
+
 2. *Predicting*
 
     Using saved state we can predict probability of object having label *1*.
