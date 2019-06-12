@@ -157,6 +157,17 @@ void transpose(const char * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     }
 }
 
+template <typename _T>
+void revTransposeBytes(const UInt64 * mx, UInt32 col, UInt32 meaning_bytes, _T & value)
+{
+    using UnsignedT = std::conditional_t<(sizeof(_T) <= 4), UInt32, UInt64>;
+
+    auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
+
+    for (UInt32 row = 0; row < meaning_bytes; ++row)
+        value |= UnsignedT(mx8[64 * row + col]) << (8 * row);
+}
+
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename _T, typename _MinMaxT = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>>
 void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _MinMaxT max [[maybe_unused]], UInt32 tail = 64)
@@ -176,29 +187,24 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
         memcpy(partial, res, 8 * sizeof(UInt64));
     }
 
-    auto * mx8 = reinterpret_cast<const UInt8 *>(mx);
-
     _T upper_min = 0;
     if (num_bits < 64)
-        upper_min = min >> num_bits << num_bits;
+        upper_min = UInt64(min) >> num_bits << num_bits;
 
-    _T buf[64];
+    _T buf[64] = {};
 
     if constexpr (std::is_signed_v<_T>)
     {
         /// Restore some data as negatives and others as positives
-        if (min < 0 && max >= 0 && num_bits > 0 && num_bits < 64)
+        if (min < 0 && max >= 0 && num_bits < 64)
         {
-            _T sign_bit = 1ull << (num_bits-1);
-            _T upper_max = max >> num_bits << num_bits;
+            _T sign_bit = 1ull << (num_bits - 1);
+            _T upper_max = UInt64(max) >> num_bits << num_bits;
 
             for (UInt32 col = 0; col < tail; ++col)
             {
                 _T & value = buf[col];
-                value = 0;
-
-                for (UInt32 row = 0; row < meaning_bytes; ++row)
-                    value |= _T(mx8[64 * row + col]) << (8 * row);
+                revTransposeBytes(mx, col, meaning_bytes, value);
 
                 if (value & sign_bit)
                     value |= upper_min;
@@ -211,13 +217,12 @@ void revTranspose(const char * src, char * dst, UInt32 num_bits, _MinMaxT min, _
         }
     }
 
-    _T * p_value = buf;
-    for (UInt32 col = 0; col < tail; ++col, ++p_value)
+    for (UInt32 col = 0; col < tail; ++col)
     {
-        *p_value = upper_min;
+        _T & value = buf[col];
+        revTransposeBytes(mx, col, meaning_bytes, value);
 
-        for (UInt32 row = 0; row < meaning_bytes; ++row)
-            *p_value |= _T(mx8[64 * row + col]) << (8 * row);
+        value |= upper_min;
     }
 
     memcpy(dst, buf, tail * sizeof(_T));
