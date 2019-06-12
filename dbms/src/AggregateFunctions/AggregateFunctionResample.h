@@ -8,12 +8,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<
     AggregateFunctionResample<Key>
 >
 {
 private:
+    const size_t MAX_ELEMENTS = 4096;
+
     AggregateFunctionPtr nested_function;
 
     size_t last_col;
@@ -52,6 +59,25 @@ public:
         sod {(nested_function->sizeOfData() + aod - 1) / aod * aod}
     {
         // notice: argument types has been checked before
+        if (step == 0)
+            throw Exception {
+                "The step given in function "
+                    + getName() + " should not be zero",
+                ErrorCodes::BAD_ARGUMENTS
+            };
+
+        if (total > MAX_ELEMENTS)
+            throw Exception {
+                "The range given in function "
+                    + getName() + " contains too many elements",
+                ErrorCodes::BAD_ARGUMENTS
+            };
+
+        if ((step > 0 && end < begin) || (step < 0 && end > begin))
+        {
+            end = begin;
+            total = 0;
+        }
     }
 
     String getName() const override
@@ -108,11 +134,6 @@ public:
         Arena * arena
     ) const override
     {
-        // Key key {
-        //     static_cast<const ColumnVector<Key> *>(
-        //         columns[last_col]
-        //     )->getData()[row_num]
-        // };
         Key key;
 
         if constexpr (static_cast<Key>(-1) < 0)
@@ -120,10 +141,15 @@ public:
         else
             key = columns[last_col]->getUInt(row_num);
 
+        if (step > 0 && (key < begin || key >= end))
+            return;
+
+        if (step < 0 && (key > begin || key <= end))
+            return;
+
         size_t pos = (key - begin) / step;
 
-        if (pos >= 0 && pos < total)
-            nested_function->add(place + pos * sod, columns, row_num, arena);
+        nested_function->add(place + pos * sod, columns, row_num, arena);
     }
 
     void merge(
