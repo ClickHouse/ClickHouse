@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <type_traits>
 
 
 /** Returns log2 of number, rounded down.
@@ -29,4 +30,33 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
     ++n;
 
     return n;
+}
+
+
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(unsigned int)), int>
+getLeadingZeroBits(T x)
+{
+    return x == 0 ? sizeof(x) * 8 : __builtin_clz(x);
+}
+
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(unsigned long long int)), int>
+getLeadingZeroBits(T x)
+{
+    return x == 0 ? sizeof(x) * 8 : __builtin_clzll(x);
+}
+
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(unsigned int)), int>
+getTrailingZeroBits(T x)
+{
+    return x == 0 ? sizeof(x) * 8 : __builtin_ctz(x);
+}
+
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(unsigned long long int)), int>
+getTrailingZeroBits(T x)
+{
+    return x == 0 ? sizeof(x) * 8 : __builtin_ctzll(x);
 }

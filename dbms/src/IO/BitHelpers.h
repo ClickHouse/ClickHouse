@@ -18,7 +18,8 @@ namespace DB
  *  r.readBits(8)  => 0b1010 // 4 leading zero-bits are not shown
  *  r.readBit()    => 0b1
  *  r.readBit()    => 0b0
- *  r.readBits(16) => 0b100010010011111111
+ *  r.readBits(15) => 0b10001001001111111
+ *  r.readBit()    => 0b1
 **/
 
 class BitReader
