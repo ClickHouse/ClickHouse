@@ -1,25 +1,18 @@
 #!/usr/bin/env python
-import imp
 import os
 import sys
 import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 
-uexpect = imp.load_source('uexpect', os.path.join(CURDIR, 'helpers', 'uexpect.py'))
+from client import client, prompt, end_of_block
 
-def client(name=''):
-    client = uexpect.spawn(os.environ.get('CLICKHOUSE_CLIENT'))
-    client.eol('\r')
-    # Note: uncomment this line for debugging
-    #client.logger(sys.stdout, prefix=name)
-    client.timeout(2)
-    return client
+log = None
+# uncomment the line below for debugging
+#log=sys.stdout
 
-prompt = ':\) '
-end_of_block = r'.*\r\n.*\r\n'
-
-with client('client1>') as client1, client('client2>') as client2:
+with client(name='client1>', log=log) as client1, client(name='client2>', log=log) as client2:
     client1.expect(prompt)
     client2.expect(prompt)
 
@@ -34,6 +27,7 @@ with client('client1>') as client1, client('client2>') as client2:
     client1.send('CREATE TEMPORARY LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
     client1.send('WATCH test.lv')
+    client1.expect(r'0.*1' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client2.expect(prompt)
     client1.expect(r'6.*2' + end_of_block)

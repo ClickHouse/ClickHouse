@@ -35,10 +35,13 @@ class ExpectTimeoutError(Exception):
         self.buffer = buffer
 
     def __str__(self):
-        return ('Timeout %.3fs ' % float(self.timeout) +
-            'for %s ' % repr(self.pattern.pattern) +
-            'buffer %s ' % repr(self.buffer[:]) +
-            'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]]))
+        s = 'Timeout %.3fs ' % float(self.timeout)
+        if self.pattern:
+            s += 'for %s ' % repr(self.pattern.pattern)
+        if self.buffer:
+            s += 'buffer %s ' % repr(self.buffer[:])
+            s += 'or \'%s\'' % ','.join(['%x' % ord(c) for c in self.buffer[:]])
+        return s
 
 class IO(object):
     class EOF(object):
@@ -125,13 +128,22 @@ class IO(object):
         if timeout is None:
             timeout = self._timeout
         timeleft = timeout
-        while timeleft >= 0:
+        while True:
             start_time = time.time()
+            if self.buffer is not None:
+                self.match = pattern.search(self.buffer, 0)
+                if self.match is not None:
+                    self.after = self.buffer[self.match.start():self.match.end()]
+                    self.before = self.buffer[:self.match.start()]
+                    self.buffer = self.buffer[self.match.end():]
+                    break
+            if timeleft < 0:
+                break
             try:
                 data = self.read(timeout=timeleft, raise_exception=True)
             except TimeoutError:
                 if self._logger:
-                    self._logger.write(self.buffer + '\n')
+                    self._logger.write((self.buffer or '') + '\n')
                     self._logger.flush()
                 exception = ExpectTimeoutError(pattern, timeout, self.buffer)
                 self.buffer = None
@@ -139,12 +151,6 @@ class IO(object):
             timeleft -= (time.time() - start_time)
             if data:
                 self.buffer = (self.buffer + data) if self.buffer else data
-            self.match = pattern.search(self.buffer, 0)
-            if self.match is not None:
-                self.after = self.buffer[self.match.start():self.match.end()]
-                self.before = self.buffer[:self.match.start()]
-                self.buffer = self.buffer[self.match.end():]
-                break
         if self._logger:
             self._logger.write((self.before or '') + (self.after or ''))
             self._logger.flush()
