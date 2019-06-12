@@ -298,7 +298,7 @@ public:
         return {};
     }
 
-    bool is_dropped{false};
+    std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }

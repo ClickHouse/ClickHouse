@@ -40,14 +40,14 @@ public:
     {
         /// Start storage no users thread
         /// if we are the last active user
-        if (!storage.is_dropped && blocks_ptr.use_count() < 3)
-            storage.startNoUsersThread(temporary_live_view_timeout);
+        if (!storage->is_dropped && blocks_ptr.use_count() < 3)
+            storage->startNoUsersThread(temporary_live_view_timeout);
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
-    LiveViewEventsBlockInputStream(StorageLiveView & storage_, std::shared_ptr<BlocksPtr> blocks_ptr_, std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_, std::shared_ptr<bool> active_ptr_, Poco::Condition & condition_, Poco::FastMutex & mutex_,
+    LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_, std::shared_ptr<BlocksPtr> blocks_ptr_, std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_, std::shared_ptr<bool> active_ptr_,
         int64_t length_, const UInt64 & heartbeat_interval_, const UInt64 & temporary_live_view_timeout_)
-        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), condition(condition_), mutex(mutex_), length(length_ + 1), heartbeat_interval(heartbeat_interval_ * 1000000), temporary_live_view_timeout(temporary_live_view_timeout_)
+        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), length(length_ + 1), heartbeat_interval(heartbeat_interval_ * 1000000), temporary_live_view_timeout(temporary_live_view_timeout_)
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -57,11 +57,11 @@ public:
 
     void cancel(bool kill) override
     {
-        if (isCancelled() || storage.is_dropped)
+        if (isCancelled() || storage->is_dropped)
             return;
         IBlockInputStream::cancel(kill);
-        Poco::FastMutex::ScopedLock lock(mutex);
-        condition.broadcast();
+        Poco::FastMutex::ScopedLock lock(storage->mutex);
+        storage->condition.broadcast();
     }
 
     Block getHeader() const override
@@ -136,7 +136,7 @@ protected:
         /// If blocks were never assigned get blocks
         if (!blocks)
         {
-            Poco::FastMutex::ScopedLock lock(mutex);
+            Poco::FastMutex::ScopedLock lock(storage->mutex);
             if (!active)
                 return { Block(), false };
             blocks = (*blocks_ptr);
@@ -146,7 +146,7 @@ protected:
             end = blocks->end();
         }
 
-        if (isCancelled() || storage.is_dropped)
+        if (isCancelled() || storage->is_dropped)
         {
             return { Block(), true };
         }
@@ -154,7 +154,7 @@ protected:
         if (it == end)
         {
             {
-                Poco::FastMutex::ScopedLock lock(mutex);
+                Poco::FastMutex::ScopedLock lock(storage->mutex);
                 if (!active)
                     return { Block(), false };
                 /// If we are done iterating over our blocks
@@ -182,9 +182,9 @@ protected:
                     while (true)
                     {
                         UInt64 timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                        bool signaled = condition.tryWait(mutex, std::max(static_cast<UInt64>(0), heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
+                        bool signaled = storage->condition.tryWait(storage->mutex, std::max(static_cast<UInt64>(0), heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
 
-                        if (isCancelled() || storage.is_dropped)
+                        if (isCancelled() || storage->is_dropped)
                         {
                             return { Block(), true };
                         }
@@ -220,7 +220,7 @@ protected:
     }
 
 private:
-    StorageLiveView & storage;
+    std::shared_ptr<StorageLiveView> storage;
     std::shared_ptr<BlocksPtr> blocks_ptr;
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     std::weak_ptr<bool> active_ptr;
@@ -230,8 +230,6 @@ private:
     Blocks::iterator it;
     Blocks::iterator end;
     Blocks::iterator begin;
-    Poco::Condition & condition;
-    Poco::FastMutex & mutex;
     /// Length specifies number of updates to send, default -1 (no limit)
     int64_t length;
     bool end_of_blocks{0};
