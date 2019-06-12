@@ -103,6 +103,6 @@ SELECT
 ## 另请参阅
 
 - [dictGetUUID](ext_dict_functions.md)
-- [dictGetUUIDOrDefault](ext_dict_functions#ext_dict_functions_dictGetTOrDefault)
+- [dictGetUUIDOrDefault](ext_dict_functions.md#ext_dict_functions_dictGetTOrDefault)
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/uuid_function/) <!--hide-->
