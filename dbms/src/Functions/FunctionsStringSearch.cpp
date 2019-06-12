@@ -344,6 +344,7 @@ struct MultiSearchImpl
     {
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_offset = 0;
@@ -351,9 +352,11 @@ struct MultiSearchImpl
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                res[j] = searcher.searchOne(haystack, haystack_end);
+                if (iteration == 0 || !res[j])
+                    res[j] = searcher.searchOne(haystack, haystack_end);
                 prev_offset = haystack_offsets[j];
             }
+            ++iteration;
         }
     }
 };
@@ -376,6 +379,7 @@ struct MultiSearchFirstPositionImpl
         };
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_offset = 0;
@@ -383,9 +387,17 @@ struct MultiSearchFirstPositionImpl
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                res[j] = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
+                if (iteration == 0 || res[j] == 0)
+                    res[j] = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
+                else
+                {
+                    UInt64 result = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
+                    if (result != 0)
+                        res[j] = std::min(result, res[j]);
+                }
                 prev_offset = haystack_offsets[j];
             }
+            ++iteration;
         }
     }
 };
@@ -404,6 +416,7 @@ struct MultiSearchFirstIndexImpl
     {
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_offset = 0;
@@ -411,9 +424,12 @@ struct MultiSearchFirstIndexImpl
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
+                /// hasMoreToSearch traverse needles in increasing order
+                if (iteration == 0 || res[j] == 0)
+                    res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
                 prev_offset = haystack_offsets[j];
             }
+            ++iteration;
         }
     }
 };
