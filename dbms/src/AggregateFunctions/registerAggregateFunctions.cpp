@@ -31,6 +31,7 @@ void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
+void registerAggregateFunctionMovingSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -74,6 +75,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionMLMethod(factory);
         registerAggregateFunctionEntropy(factory);
         registerAggregateFunctionSimpleLinearRegression(factory);
+        registerAggregateFunctionMovingSum(factory);
     }
 
     {
