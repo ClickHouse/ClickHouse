@@ -22,11 +22,11 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception {
+            throw Exception(
                 "Incorrect number of arguments for aggregate function with "
                     + getName() + " suffix",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+            );
 
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
@@ -34,11 +34,11 @@ public:
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
-            throw Exception {
+            throw Exception(
                 "Incorrect number of parameters for aggregate function with "
                     + getName() + " suffix",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+            );
 
         return Array(params.begin(), params.end() - 3);
     }
