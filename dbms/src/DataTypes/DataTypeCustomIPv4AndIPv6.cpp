@@ -115,4 +115,4 @@ void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
     });
 }
 
-} // namespace DB
+}

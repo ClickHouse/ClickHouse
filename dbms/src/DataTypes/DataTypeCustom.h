@@ -85,4 +85,4 @@ public:
     String getName() const override { return name; }
 };
 
-} // namespace DB
+}
