@@ -354,6 +354,98 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
+## skewPop
+
+Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+
+```
+skewPop(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+
+**Example of Use**
+
+```sql
+SELECT skewPop(value) FROM series_with_value_column
+```
+
+## skewSamp
+
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+
+It represents an unbiased estimate of the skewness of a random variable, if passed values form it's sample.
+
+```
+skewSamp(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The skewness of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+
+**Example of Use**
+
+```sql
+SELECT skewSamp(value) FROM series_with_value_column
+```
+
+## kurtPop
+
+Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+
+```
+kurtPop(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
+
+**Example of Use**
+
+```sql
+SELECT kurtPop(value) FROM series_with_value_column
+```
+
+## kurtSamp
+
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+
+It represents an unbiased estimate of the kurtosis of a random variable, if passed values form it's sample.
+
+```
+kurtSamp(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The kurtosis of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+
+**Example of Use**
+
+```sql
+SELECT kurtSamp(value) FROM series_with_value_column
+```
+
 ## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
 timeSeriesGroupSum can aggregate different time series that sample timestamp not alignment.
 It will use linear interpolation between two sample timestamp and then sum time-series together.
@@ -665,7 +757,7 @@ All the quantile functions also have corresponding quantiles functions: `quantil
 
 Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
-It represents an unbiased estimate of the variance of a random variable, if the values passed to the function are a sample of this random amount.
+It represents an unbiased estimate of the variance of a random variable, if passed values form it's sample.
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
@@ -746,7 +838,7 @@ Parameters:
 
 Returned values:
 
-Parameters `(a, b)` of the resulting line `x = a*y + b`.
+Parameters `(a, b)` of the resulting line `y = a*x + b`.
 
 **Examples**
 
