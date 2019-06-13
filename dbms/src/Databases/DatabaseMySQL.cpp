@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_MYSQL
+
 #include <Databases/DatabaseMySQL.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
@@ -390,3 +394,5 @@ DatabaseMySQL::~DatabaseMySQL()
 }
 
 }
+
+#endif

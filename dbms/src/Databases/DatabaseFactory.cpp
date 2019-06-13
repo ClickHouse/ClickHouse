@@ -2,10 +2,16 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseMySQL.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
 #include <Common/parseAddress.h>
+#include <Common/config.h>
+
+#if USE_MYSQL
+
+#include <Databases/DatabaseMySQL.h>
+
+#endif
 
 
 namespace DB
@@ -13,8 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_DATABASE_ENGINE;
+extern const int BAD_ARGUMENTS;
+extern const int UNKNOWN_DATABASE_ENGINE;
 }
 
 DatabasePtr DatabaseFactory::get(
@@ -42,6 +48,9 @@ DatabasePtr DatabaseFactory::get(
         return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
         return std::make_shared<DatabaseDictionary>(database_name);
+
+#if USE_MYSQL
+
     else if (engine_name == "MySQL")
     {
         ASTFunction * engine = engine_define->engine;
@@ -61,6 +70,7 @@ DatabasePtr DatabaseFactory::get(
             mysql_user_name, mysql_user_password);
     }
 
+#endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }
