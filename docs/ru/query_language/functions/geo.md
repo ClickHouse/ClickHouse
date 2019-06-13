@@ -114,7 +114,7 @@ geohashEncode(longitude, latitude, [precision])
 
 **Возвращаемые значения**
 
-- Цифробуквенная строка (`String`) с кодированной координатой (используется модифицированная версия кодирующего алфавита base32).
+- Строка с координатой, закодированной модифицированной версией алфавита base32.
 
 **Пример**
 
@@ -153,4 +153,3 @@ SELECT geohashDecode('ezs42') AS res
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/geo/) <!--hide-->
-

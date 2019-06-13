@@ -393,14 +393,16 @@ SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
 ## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
-timeSeriesGroupSum can aggregate different time series that sample timestamp not alignment.
+`timeSeriesGroupSum` can aggregate different time series that sample timestamp not alignment.
 It will use linear interpolation between two sample timestamp and then sum time-series together.
 
-`uid` is the time series unique id, UInt64.
-`timestamp` is Int64 type in order to support millisecond or microsecond.
-`value` is the metric.
+- `uid` is the time series unique id, `UInt64`.
+- `timestamp` is Int64 type in order to support millisecond or microsecond.
+- `value` is the metric.
 
-Before use this function, timestamp should be in ascend order
+The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
+
+Before use this function, `timestamp` should be in ascend order
 
 Example:
 ```
@@ -711,9 +713,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights (simple SGD, Momentum, Nesterov).
-
-This function works as a usual aggregate function in terms of distributed processing of data, which is followed by merges. With regard to `stochasticLinearRegression` this means that different aggregate function states are merged with weights - the more data was processed by a state, the bigger weight it has during a merge with other state.
+This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### Parameters {#agg_functions-stochasticlinearregression-parameters}
 
@@ -732,8 +732,9 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function `evalMLMethod`, which takes a state as an argument as well as features to predict on.
+To predict we use function [evalMLMethod](../functions/machine_learning_methods.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
+<a name="stochasticlinearregression-usage-fitting"></a>
 1. Fitting
 
     Such query may be used.
@@ -782,6 +783,11 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     ```
     Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
 
+**See Also**
+
+- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+- [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
 
 ## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
@@ -800,9 +806,9 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 1. Fitting
 
-    See the `Fitting` section in the [stochasticLinearRegression](#agg_functions-stochasticlinearregression-parameters) description.
+    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
 
-    Predicted labels have to be in {-1, 1}.
+    Predicted labels have to be in [-1, 1].
 
 2. Predicting
 
@@ -826,5 +832,11 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
     Then the result will be labels.
 
     `test_data` is a table like `train_data` but may not contain target value.
+
+**See Also**
+
+- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+- [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

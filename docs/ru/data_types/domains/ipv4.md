@@ -1,6 +1,6 @@
 ## IPv4
 
-`IPv4` — это домен, базирующийся на типе данных `UInt32` предназначенный для хранения адресов IPv4. Он обеспечивает компактное хранение данных с удобным для человека форматом входа-выхода, и явно отображаемым типом данных в структуре таблицы.
+`IPv4` — это домен, базирующийся на типе данных `UInt32` предназначенный для хранения адресов IPv4. Он обеспечивает компактное хранение данных с удобным для человека форматом ввода-вывода, и явно отображаемым типом данных в структуре таблицы.
 
 ### Применение
 
@@ -23,7 +23,7 @@ DESCRIBE TABLE hits;
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv4` поддерживает формат ввода в виде IPv4-строк:
+`IPv4` вставку в виде строк с текстовым представлением IPv4 адреса:
 
 ```sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.yandex', '183.247.232.58')('https://clickhouse.yandex/docs/en/', '116.106.34.242');
@@ -39,7 +39,7 @@ SELECT * FROM hits;
 └────────────────────────────────────┴────────────────┘
 ```
 
-Значения хранятся в компактной двоичной форме:
+Значения хранятся в компактной бинарной форме:
 
 ```sql
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
@@ -55,7 +55,7 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 Если необходимо преобразовать значение типа `IPv4` в строку, то это необходимо делать явно с помощью функции `IPv4NumToString()`:
 
 ```sql
-SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
+SELECT toTypeName(s), IPv4NumToString(from) AS s FROM hits LIMIT 1;
 ```
 
 ```
@@ -67,7 +67,7 @@ SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
 Или приводить к типу данных `UInt32`:
 
 ```sql
-SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
+SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
 ```
 
 ```
@@ -77,4 +77,3 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/domains/ipv4) <!--hide-->
-

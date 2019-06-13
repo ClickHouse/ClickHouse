@@ -136,6 +136,7 @@ nav:
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
+    - 'Функции машинного обучения': 'query_language/functions/machine_learning_methods.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'

@@ -1,6 +1,6 @@
 # Функции машинного обучения
 
-## evalMLMethod (prediction)
+## evalMLMethod (prediction) {#machine_learning_methods-evalmlmethod}
 
 Предсказание с использованием подобранных регрессионных моделей.
 
