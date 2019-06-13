@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_MYSQL
+
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
 
@@ -117,3 +121,5 @@ private:
 };
 
 }
+
+#endif
