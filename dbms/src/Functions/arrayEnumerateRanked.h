@@ -11,6 +11,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
+#include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for Yandex.Metrica.
@@ -138,7 +139,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-        // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
+        // Debug: 
+const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
@@ -373,7 +375,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                 res_values[j] = idx;
             }
 
-            // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
+            // Debug: 
+DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
             for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
