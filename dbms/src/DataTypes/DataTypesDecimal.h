@@ -324,7 +324,8 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
-        ToNativeType min_value, max_value;
+        ToNativeType min_value;
+        ToNativeType max_value;
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
             min_value = __int128(0x8000000000000000ll) << 64; // min __int128
