@@ -23,7 +23,7 @@ static void deserializeFromString(const DataTypeCustomSimpleTextSerialization & 
     domain.deserializeText(column, istr, settings);
 }
 
-} // namespace
+}
 
 namespace DB
 {

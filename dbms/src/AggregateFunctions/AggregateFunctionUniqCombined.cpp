@@ -117,7 +117,7 @@ namespace
         __builtin_unreachable();
     }
 
-} // namespace
+}
 
 void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 {

@@ -187,7 +187,7 @@ inline Encoded base32Decode(const char * encoded_string, size_t encoded_length)
     return result;
 }
 
-} // namespace
+}
 
 namespace DB
 {
