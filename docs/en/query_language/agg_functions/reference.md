@@ -1,20 +1,30 @@
-# Function reference
+# Function Reference
 
 ## count {#agg_function-count}
 
 Counts the number of rows.
 
 ```
-count()
+count(expr)
 ```
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax sugar. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the `uniq*` functions is used to perform the operation.
+**Parameters**
 
-A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It selects some small column from the table and count the number of values in it.
+The function can take zero or one parameter.
+
+- If the function is called without parameters it counts the number of rows. The `count()` syntax is a ClickHouse-specific implementation. The most other DBMS suggest `COUNT(*)` usage.
+- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a value of the [Nullable](../../data_types/nullable.md) data type, then the result of `count` stays not `Nullable`. The function returns 0 if all the expressions returned `NULL`.
 
 **Returned value**
 
 - Number of rows. Type: [UInt64](../../data_types/int_uint.md).
+
+**Details**
+
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. By default the [uniqExact](#agg_function-uniqexact) function.
+
+A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses some small column from the table and count the number of values in it.
+
 
 **Examples**
 
@@ -429,10 +439,15 @@ Function:
 
     This algorithm is very accurate and very efficient on CPU. When query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-- Provides the determinate result (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the order of query processing).
 
 We recommend to use this function in almost all scenarios.
 
+**See Also**
+
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqHLL12](#agg_function-uniqhll12)
+- [uniqExact](#agg_function-uniqexact)
 
 ## uniqCombined {#agg_function-uniqcombined}
 
@@ -463,18 +478,24 @@ Function:
 
     For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
 
-- Provides the determinate result (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the order of query processing).
 
 In comparison with the [uniq](#agg_function-uniq) function the `uniqCombined`:
 
-- Consumes in several times smaller memory
-- Calculates with the accuracy in several times higher.
-- Performs slightly lower usually. In some scenarios `uniqCombined` can perform higher than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+- Consumes several times less memory.
+- Calculates with several times higher accuracy.
+- Performs slightly lower usually. In some scenarios `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqHLL12](#agg_function-uniqhll12)
+- [uniqExact](#agg_function-uniqexact)
 
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
-Calculates the approximate number of different values of the argument.
+Calculates the approximate number of different values of the argument, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algortithm.
 
 ```
 uniqHLL12(x[, ...])
@@ -493,7 +514,7 @@ Function takes the variable number of parameters. Parameters can be of types: `T
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
+- Uses the HyperLogLog algorithm to approximate the number of different values of the argument.
 
     212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
@@ -501,12 +522,19 @@ Function:
 
 We don't recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
 
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqExact](#agg_function-uniqexact)
+
+
 ## uniqExact {#agg_function-uniqexact}
 
 Calculates the exact number of different values of the argument.
 
 ```
-uniqHLL12(x[, ...])
+uniqExact(x[, ...])
 ```
 
 Use the `uniqExact` function if you definitely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
@@ -516,6 +544,12 @@ The `uniqExact` function uses more memory than the `uniq`, because the size of t
 **Parameters**
 
 Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqHLL12](#agg_function-uniqhll12)
 
 
 ## groupArray(x), groupArray(max_size)(x)
