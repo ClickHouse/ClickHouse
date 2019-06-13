@@ -124,4 +124,4 @@ void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
     factory.registerFunction("uniqCombined", createAggregateFunctionUniqCombined);
 }
 
-} // namespace DB
+}
