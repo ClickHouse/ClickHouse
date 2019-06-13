@@ -118,7 +118,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
                 const int sleep_by_ms = 10;
-                int sleeped = 0;
+                int slept_ms = 0;
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
                 while (running_query != user_process_list->second.queries.end())
                 {
@@ -130,8 +130,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
                     lock.unlock();
                     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_by_ms));
-                    sleeped += sleep_by_ms;
-                    if (sleeped > max_wait_ms)
+                    slept_ms += sleep_by_ms;
+                    if (slept_ms > max_wait_ms)
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
                     lock.lock();
