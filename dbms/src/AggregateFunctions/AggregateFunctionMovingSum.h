@@ -69,9 +69,9 @@ public:
     {
         auto & sum = this->data(place).sum;
 
-	sum += static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
+        sum += static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
-	this->data(place).value.push_back(sum, arena);
+        this->data(place).value.push_back(sum, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -79,17 +79,17 @@ public:
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
 
-	size_t cur_size = cur_elems.value.size();
+        size_t cur_size = cur_elems.value.size();
 
-	if (rhs_elems.value.size()) 
+        if (rhs_elems.value.size()) 
             cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
 
         for (size_t i = cur_size; i < cur_elems.value.size(); ++i)
-	{
-	    cur_elems.value[i] += cur_elems.sum;
+        {
+            cur_elems.value[i] += cur_elems.sum;
         }
 
-	cur_elems.sum += rhs_elems.sum;
+        cur_elems.sum += rhs_elems.sum;
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -113,7 +113,7 @@ public:
         value.resize(size, arena);
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
 
-	this->data(place).sum = value.back();
+        this->data(place).sum = value.back();
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -130,23 +130,22 @@ public:
         {
             typename ColVecResult::Container & data_to = static_cast<ColVecResult &>(arr_to.getData()).getData();
 
-	    if (!limit_num_elems)
-	    {
+            if (!limit_num_elems)
+            {
                 data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
-	    }
-	    else
-	    {
-		size_t i = 0;
+            }
+            else
+            {
+                size_t i = 0;
                 for (; i < std::min(static_cast<size_t>(win_size), size); ++i)
-		{
-		    data_to.push_back(value[i]);
-		}
-		for (; i < size; ++i)
-		{
-		    data_to.push_back(value[i] - value[i - win_size]);
-	        }
-	    }
-
+                {
+                    data_to.push_back(value[i]);
+                }
+                for (; i < size; ++i)
+                {
+                    data_to.push_back(value[i] - value[i - win_size]);
+                }
+            }
         }
     }
 
