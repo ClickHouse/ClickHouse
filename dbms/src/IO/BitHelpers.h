@@ -67,4 +67,4 @@ private:
     void doFlush();
 };
 
-} // namespace DB
+}
