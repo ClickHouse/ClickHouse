@@ -339,7 +339,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
         if (converted_value == min_value || converted_value == max_value)
             throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return converted_value;
-    }  
+    }
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
