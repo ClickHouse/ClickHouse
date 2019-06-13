@@ -5,6 +5,7 @@
 #include <mutex>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
+#include <common/logger_useful.h>
 
 #include <boost/lockfree/queue.hpp>
 
@@ -19,7 +20,7 @@ private:
     struct Edge
     {
         UInt64 to = std::numeric_limits<UInt64>::max();
-        UInt64 version = 1;
+        UInt64 version = 0;
         UInt64 prev_version = 0;
     };
 
@@ -40,6 +41,7 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
         size_t num_executed_jobs = 0;
+        UInt64 execution_time_ns = 0;
     };
 
     struct Node
@@ -82,6 +84,8 @@ private:
 
     std::mutex task_mutex;
     std::condition_variable task_condvar;
+
+    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
 public:
     explicit PipelineExecutor(Processors processors);

@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 
 #include <boost/lockfree/queue.hpp>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -132,8 +133,12 @@ void PipelineExecutor::addChildlessProcessorsToQueue()
 void PipelineExecutor::processFinishedExecutionQueue()
 {
     UInt64 finished_job = graph.size();
-    while (finished_execution_queue.pop(finished_job))
+    while (!finished_execution_queue.empty())
     {
+        /// Should be successful as single consumer is used.
+        while (finished_execution_queue.pop(finished_job));
+
+        ++num_waited_tasks;
         ++graph[finished_job].execution_state->num_executed_jobs;
 
         if (graph[finished_job].execution_state->exception)
@@ -197,7 +202,7 @@ void PipelineExecutor::addJob(UInt64 pid)
         if (!graph[pid].execution_state)
             graph[pid].execution_state = std::make_unique<ExecutionState>();
 
-        auto job = [this, pid, processor = graph[pid].processor, &exception = graph[pid].execution_state->exception]()
+        auto job = [this, pid, processor = graph[pid].processor, execution_state = graph[pid].execution_state.get()]()
         {
             SCOPE_EXIT(
                     while (!finished_execution_queue.push(pid));
@@ -206,12 +211,14 @@ void PipelineExecutor::addJob(UInt64 pid)
 
             try
             {
+                Stopwatch watch;
                 executeJob(processor);
+                execution_state->execution_time_ns += watch.elapsed();
             }
             catch (...)
             {
                 /// Note: It's important to save exception before pushing pid to finished_execution_queue
-                exception = std::current_exception();
+                execution_state->exception = std::current_exception();
             }
         };
 
@@ -410,8 +417,10 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this, thread_group]
+            threads.emplace_back([this, thread_group, thread_number = i]
             {
+                ThreadStatus thread_status;
+
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
@@ -420,20 +429,38 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                             CurrentThread::detachQueryIfNotDetached();
                 );
 
+                UInt64 total_time_ns = 0;
+                UInt64 execution_time_ns = 0;
+                UInt64 wait_time_ns = 0;
+
+                Stopwatch total_time_watch;
+
                 ExecutionState * state = nullptr;
 
                 while (!finished)
                 {
                     while (task_queue.pop(state))
+                    {
+                        Stopwatch execution_time_watch;
                         state->job();
+                        execution_time_ns += execution_time_watch.elapsed();
+                    }
 
                     /// Note: we don't wait in thread like in ordinary thread pool.
                     /// Probably, it's better to add waiting on condition variable.
                     /// But not will avoid it to escape extra locking.
 
-                    std::unique_lock lock(task_mutex);
-                    task_condvar.wait(lock);
+                    /// std::unique_lock lock(task_mutex);
+                    /// task_condvar.wait(lock);
                 }
+
+                total_time_ns = total_time_watch.elapsed();
+                wait_time_ns = total_time_ns - execution_time_ns;
+
+                LOG_TRACE(log, "Thread " << thread_number << " finished."
+                               << " Total time: " << (total_time_ns / 1e9) << " sec."
+                               << " Execution time: " << (execution_time_ns / 1e9) << " sec."
+                               << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
             });
         }
     }
@@ -475,7 +502,9 @@ String PipelineExecutor::dumpPipeline() const
     for (auto & node : graph)
     {
         if (node.execution_state)
-            node.processor->setDescription("(" + std::to_string(node.execution_state->num_executed_jobs) + ")");
+            node.processor->setDescription(
+                    "(" + std::to_string(node.execution_state->num_executed_jobs) + ", "
+                    + std::to_string(node.execution_state->execution_time_ns / 1e9) + " sec.)");
     }
 
     std::vector<IProcessor::Status> statuses;
