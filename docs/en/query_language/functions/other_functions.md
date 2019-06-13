@@ -74,7 +74,7 @@ Returns a string containing the type name of the passed argument.
 
 If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
-## blockSize()
+## blockSize() {#function-blocksize}
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
@@ -303,7 +303,7 @@ Returns the timezone of the server.
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock
+## rowNumberInBlock {#function-rownumberinblock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -639,7 +639,7 @@ Returns the capacity information of the disk, in bytes. This information is eval
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
-## runningAccumulate
+## runningAccumulate {#function-runningaccumulate}
 
 Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
