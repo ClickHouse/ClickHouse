@@ -220,10 +220,11 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         ReadBufferFromFile in{file_path};
 
+        Settings insert_settings;
         std::string insert_query;
-        readStringBinary(insert_query, in);
+        readQueryAndSettings(in, insert_settings, insert_query);
 
-        RemoteBlockOutputStream remote{*connection, insert_query};
+        RemoteBlockOutputStream remote{*connection, insert_query, &insert_settings};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -240,20 +241,39 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
+void StorageDistributedDirectoryMonitor::readQueryAndSettings(
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
+{
+    UInt64 magic_number_or_query_size;
+
+    readVarUInt(magic_number_or_query_size, in);
+
+    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
+    {
+        insert_settings.deserialize(in);
+        readVarUInt(magic_number_or_query_size, in);
+    }
+    insert_query.resize(magic_number_or_query_size);
+    in.readStrict(insert_query.data(), magic_number_or_query_size);
+}
+
 struct StorageDistributedDirectoryMonitor::BatchHeader
 {
+    Settings settings;
     String query;
     Block sample_block;
 
-    BatchHeader(String query_, Block sample_block_)
-        : query(std::move(query_))
+    BatchHeader(Settings settings_, String query_, Block sample_block_)
+        : settings(std::move(settings_))
+        , query(std::move(query_))
         , sample_block(std::move(sample_block_))
     {
     }
 
     bool operator==(const BatchHeader & other) const
     {
-        return query == other.query && blocksHaveEqualStructure(sample_block, other.sample_block);
+        return settings == other.settings && query == other.query &&
+               blocksHaveEqualStructure(sample_block, other.sample_block);
     }
 
     struct Hash
@@ -320,6 +340,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         bool batch_broken = false;
         try
         {
+            Settings insert_settings;
             String insert_query;
             std::unique_ptr<RemoteBlockOutputStream> remote;
             bool first = true;
@@ -335,12 +356,12 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                readStringBinary(insert_query, in); /// NOTE: all files must have the same insert_query
+                parent.readQueryAndSettings(in, insert_settings, insert_query);
 
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, insert_query);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, insert_query, &insert_settings);
                     remote->writePrefix();
                 }
 
@@ -436,12 +457,13 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         size_t total_rows = 0;
         size_t total_bytes = 0;
         Block sample_block;
+        Settings insert_settings;
         String insert_query;
         try
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readStringBinary(insert_query, in);
+            readQueryAndSettings(in, insert_settings, insert_query);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -468,7 +490,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 throw;
         }
 
-        BatchHeader batch_header(std::move(insert_query), std::move(sample_block));
+        BatchHeader batch_header(std::move(insert_settings), std::move(insert_query), std::move(sample_block));
         Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);

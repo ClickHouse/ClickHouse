@@ -1,6 +1,15 @@
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
-cmake_policy(SET CMP0023 NEW)
+
+foreach(policy
+    CMP0023
+    CMP0074 # CMake 3.12
+    )
+  if(POLICY ${policy})
+    cmake_policy(SET ${policy} NEW)
+  endif()
+endforeach()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
@@ -59,7 +68,7 @@ if (NOT MAKE_STATIC_LIBRARIES)
 endif ()
 
 if (SPLIT_SHARED_LIBRARIES)
-    set (LINK_MODE SHARED)
+    set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
 endif ()
 
 if (USE_STATIC_LIBRARIES)
@@ -82,6 +91,11 @@ endif ()
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
+endif ()
+
+if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
+    # Warnings in protobuf generating
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
 endif ()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -217,7 +231,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
         set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
         # FIXME: glibc-compatibility may be non-static in some builds!
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} ${ClickHouse_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
@@ -301,6 +315,7 @@ include (cmake/find_rt.cmake)
 include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_re2.cmake)
+include (cmake/find_libgsasl.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
@@ -308,7 +323,6 @@ include (cmake/find_cpuid.cmake) # Freebsd, bundled
 if (NOT USE_CPUID)
     include (cmake/find_cpuinfo.cmake) # Debian
 endif()
-include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
 include (cmake/find_brotli.cmake)
 include (cmake/find_protobuf.cmake)
@@ -318,6 +332,8 @@ include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
 include (cmake/find_lfalloc.cmake)
+include (cmake/find_simdjson.cmake)
+include (cmake/find_rapidjson.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)

@@ -426,6 +426,10 @@ namespace ErrorCodes
     extern const int BROTLI_WRITE_FAILED = 449;
     extern const int BAD_TTL_EXPRESSION = 450;
     extern const int BAD_TTL_FILE = 451;
+    extern const int SETTING_CONSTRAINT_VIOLATION = 452;
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES = 453;
+    extern const int OPENSSL_ERROR = 454;
+    extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY = 455;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

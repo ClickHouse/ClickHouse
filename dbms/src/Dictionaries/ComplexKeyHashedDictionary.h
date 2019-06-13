@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Core/Block.h>
 #include <common/StringRef.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"
@@ -217,15 +218,9 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-
-    template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void
-    getItemsNumber(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
-
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void
     getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
-
 
     template <typename T>
     bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);

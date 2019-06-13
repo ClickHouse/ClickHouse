@@ -6,7 +6,7 @@
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/readFloatText.h>
+#include <IO/readDecimalText.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
@@ -52,10 +52,22 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 }
 
 template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
-    readDecimalText(istr, x, precision, unread_scale);
+    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
+    return done;
+}
+
+template <typename T>
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+{
+    UInt32 unread_scale = scale;
+    if (csv)
+        readCSVDecimalText(istr, x, precision, unread_scale);
+    else
+        readDecimalText(istr, x, precision, unread_scale);
     x *= getScaleMultiplier(unread_scale);
 }
 
@@ -67,6 +79,13 @@ void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, co
     static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
+template <typename T>
+void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    readText(x, istr, true);
+    static_cast<ColumnType &>(column).getData().push_back(x);
+}
 
 template <typename T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
@@ -193,7 +212,7 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (precision_value <= maxDecimalPrecision<Decimal32>())
         return std::make_shared<DataTypeDecimal<Decimal32>>(precision_value, scale_value);

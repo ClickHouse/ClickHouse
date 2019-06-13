@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 
@@ -27,10 +28,99 @@ struct RowRef
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
 struct RowRefList : RowRef
 {
-    RowRefList * next = nullptr;
+    /// Portion of RowRefs, 16 * (MAX_SIZE + 1) bytes sized.
+    struct Batch
+    {
+        static constexpr size_t MAX_SIZE = 7; /// Adequate values are 3, 7, 15, 31.
+
+        size_t size = 0;
+        Batch * next;
+        RowRef row_refs[MAX_SIZE];
+
+        Batch(Batch * parent)
+            : next(parent)
+        {}
+
+        bool full() const { return size == MAX_SIZE; }
+
+        Batch * insert(RowRef && row_ref, Arena & pool)
+        {
+            if (full())
+            {
+                auto batch = pool.alloc<Batch>();
+                *batch = Batch(this);
+                batch->insert(std::move(row_ref), pool);
+                return batch;
+            }
+
+            row_refs[size++] = std::move(row_ref);
+            return this;
+        }
+    };
+
+    class ForwardIterator
+    {
+    public:
+        ForwardIterator(const RowRefList * begin)
+            : root(begin)
+            , first(true)
+            , batch(root->next)
+            , position(0)
+        {}
+
+        const RowRef * operator -> () const
+        {
+            if (first)
+                return root;
+            return &batch->row_refs[position];
+        }
+
+        void operator ++ ()
+        {
+            if (first)
+            {
+                first = false;
+                return;
+            }
+
+            if (batch)
+            {
+                ++position;
+                if (position >= batch->size)
+                {
+                    batch = batch->next;
+                    position = 0;
+                }
+            }
+        }
+
+        bool ok() const { return first || (batch && position < batch->size); }
+
+    private:
+        const RowRefList * root;
+        bool first;
+        Batch * batch;
+        size_t position;
+    };
 
     RowRefList() {}
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
+
+    ForwardIterator begin() const { return ForwardIterator(this); }
+
+    /// insert element after current one
+    void insert(RowRef && row_ref, Arena & pool)
+    {
+        if (!next)
+        {
+            next = pool.alloc<Batch>();
+            *next = Batch(nullptr);
+        }
+        next = next->insert(std::move(row_ref), pool);
+    }
+
+private:
+    Batch * next = nullptr;
 };
 
 /**
@@ -40,11 +130,11 @@ struct RowRefList : RowRef
  * references that can be returned by the lookup methods
  */
 
-template <typename _Entry, typename _Key>
+template <typename TEntry, typename TKey>
 class SortedLookupVector
 {
 public:
-    using Base = std::vector<_Entry>;
+    using Base = std::vector<TEntry>;
 
     // First stage, insertions into the vector
     template <typename U, typename ... TAllocatorParams>
@@ -55,7 +145,7 @@ public:
     }
 
     // Transition into second stage, ensures that the vector is sorted
-    typename Base::const_iterator upper_bound(const _Entry & k)
+    typename Base::const_iterator upper_bound(const TEntry & k)
     {
         sort();
         return std::upper_bound(array.cbegin(), array.cend(), k);
@@ -70,6 +160,12 @@ private:
     Base array;
     mutable std::mutex lock;
 
+    struct RadixSortTraits : RadixSortNumTraits<TKey>
+    {
+        using Element = TEntry;
+        static TKey & extractKey(Element & elem) { return elem.asof_value; }
+    };
+
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
     // The first thread that calls one of the lookup methods sorts the data
@@ -82,14 +178,14 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-                /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
-                if constexpr (std::is_same_v<_Key, UInt32>)
+                if (!array.empty())
                 {
-                    if (!array.empty())
-                        radixSort<_Entry, _Key>(&array[0], array.size());
+                    /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
+                    if constexpr (std::is_same_v<TKey, UInt32>)
+                        RadixSort<RadixSortTraits>::executeLSD(&array[0], array.size());
+                    else
+                        std::sort(array.begin(), array.end());
                 }
-                else
-                    std::sort(array.begin(), array.end());
 
                 sorted.store(true, std::memory_order_release);
             }

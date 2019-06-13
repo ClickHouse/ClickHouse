@@ -1,7 +1,5 @@
+# docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:18.04
-
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -9,7 +7,16 @@ RUN apt-get --allow-unauthenticated update -y \
             bash \
             fakeroot \
             cmake \
+            ccache \
             curl \
+            software-properties-common
+
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
+
+RUN apt-get --allow-unauthenticated update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
             gcc-7 \
             g++-7 \
             gcc-8 \
@@ -31,6 +38,7 @@ RUN apt-get --allow-unauthenticated update -y \
             liblld-8-dev \
             libicu-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
@@ -60,6 +68,5 @@ RUN apt-get --allow-unauthenticated update -y \
             odbcinst \
             tzdata
 
-
-
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

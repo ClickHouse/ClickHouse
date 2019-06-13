@@ -449,7 +449,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingExpression());
+                args->children.push_back(data.getSamplingKeyAST());
                 args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
@@ -466,7 +466,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingExpression());
+                args->children.push_back(data.getSamplingKeyAST());
                 args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();

@@ -9,7 +9,7 @@ endif()
 
 SET(WITH_KERBEROS false)
 # project and source dir
-set(HDFS3_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/libhdfs3)
+set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
 set(HDFS3_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
 
@@ -183,7 +183,7 @@ set(SRCS
     )
 
 # target
-add_library(hdfs3 STATIC ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
+add_library(hdfs3 ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(hdfs3 protoc)

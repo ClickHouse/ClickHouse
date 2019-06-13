@@ -1,6 +1,7 @@
 #include "PerformanceTest.h"
 
 #include <Core/Types.h>
+#include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -71,6 +72,7 @@ bool PerformanceTest::checkPreconditions() const
     Strings preconditions;
     config->keys("preconditions", preconditions);
     size_t table_precondition_index = 0;
+    size_t cpu_precondition_index = 0;
 
     for (const std::string & precondition : preconditions)
     {
@@ -136,6 +138,30 @@ bool PerformanceTest::checkPreconditions() const
                 return false;
             }
         }
+
+        if (precondition == "cpu")
+        {
+            std::string precondition_key = "preconditions.cpu[" + std::to_string(cpu_precondition_index++) + "]";
+            std::string flag_to_check = config->getString(precondition_key);
+
+            #define CHECK_CPU_PRECONDITION(OP) \
+            if (flag_to_check == #OP) \
+            { \
+                if (!Cpu::CpuFlagsCache::have_##OP) \
+                { \
+                    LOG_WARNING(log, "CPU doesn't support " << #OP); \
+                    return false; \
+                } \
+            } else
+
+            CPU_ID_ENUMERATE(CHECK_CPU_PRECONDITION)
+            {
+                LOG_WARNING(log, "CPU doesn't support " << flag_to_check);
+                return false;
+            }
+
+            #undef CHECK_CPU_PRECONDITION
+        }
     }
 
     return true;
@@ -159,17 +185,9 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
 
 void PerformanceTest::prepare() const
 {
-    for (const auto & query : test_info.create_queries)
+    for (const auto & query : test_info.create_and_fill_queries)
     {
-        LOG_INFO(log, "Executing create query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
-        LOG_INFO(log, "Query finished");
-    }
-
-    for (const auto & query : test_info.fill_queries)
-    {
-        LOG_INFO(log, "Executing fill query \"" << query << '\"');
+        LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
         connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
