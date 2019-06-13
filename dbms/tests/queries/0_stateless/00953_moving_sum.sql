@@ -22,7 +22,7 @@ INSERT INTO moving_sum_num
   FROM system.numbers
   LIMIT 5;
 
-SELECT * FROM moving_sum_num FORMAT TabSeparatedWithNames;
+SELECT * FROM moving_sum_num ORDER BY k,dt FORMAT TabSeparatedWithNames;
 
 SELECT k, movingSum(v) FROM (SELECT * FROM moving_sum_num ORDER BY k, dt) GROUP BY k ORDER BY k FORMAT TabSeparatedWithNamesAndTypes;
 SELECT k, movingSum(3)(v) FROM (SELECT * FROM moving_sum_num ORDER BY k, dt) GROUP BY k ORDER BY k FORMAT TabSeparatedWithNamesAndTypes;
