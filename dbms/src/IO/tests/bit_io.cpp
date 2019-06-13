@@ -18,7 +18,7 @@ namespace
 {
 using namespace DB;
 
-// Intentionally asymetric both byte and word-size to detect read and write inconsistencies
+// Intentionally asymmetric both byte and word-size to detect read and write inconsistencies
 // each prime bit is set to 0.
 //                              v-61     v-53   v-47  v-41 v-37   v-31     v-23  v-17   v-11   v-5
 const UInt64 BIT_PATTERN = 0b11101011'11101111'10111010'11101111'10101111'10111010'11101011'10101001;
