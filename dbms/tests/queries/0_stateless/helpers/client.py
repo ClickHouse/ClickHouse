@@ -17,5 +17,5 @@ def client(command=None, name='', log=None):
         client = uexpect.spawn(command)
     client.eol('\r')
     client.logger(log, prefix=name)
-    client.timeout(2)
+    client.timeout(20)
     return client
