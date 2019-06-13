@@ -140,7 +140,6 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             writer.writeBits(curr_xored_info.data_bits, xored_data >> curr_xored_info.trailing_zero_bits);
             prev_xored_info = curr_xored_info;
         }
-        std::cerr << std::endl;
 
         prev_value = curr_value;
     }
@@ -182,29 +181,20 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     // we have to keep track of items to avoid reading more that there is.
     for (UInt32 items_read = 1; items_read < items_count && !reader.eof(); ++items_read)
     {
-        T curr_value{};
-        binary_value_info curr_xored_info;
+        T curr_value = prev_value;
+        binary_value_info curr_xored_info = prev_xored_info;
         T xored_data{};
 
-        if (reader.readBit() == 0)
+        if (reader.readBit() == 1)
         {
-            // 0b0 prefix
-            curr_value = prev_value;
-        }
-        else
-        {
-            if (reader.readBit() == 0)
-            {
-                // 0b10 prefix
-                curr_xored_info = prev_xored_info;
-            }
-            else
+            if (reader.readBit() == 1)
             {
                 // 0b11 prefix
                 curr_xored_info.leading_zero_bits = reader.readBits(LEADING_ZEROES_BIT_LENGTH);
                 curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
             }
+            // else: 0b10 prefix - use prev_xored_info
 
             if (curr_xored_info.leading_zero_bits == 0
                 && curr_xored_info.data_bits == 0
@@ -218,6 +208,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
             xored_data <<= curr_xored_info.trailing_zero_bits;
             curr_value = prev_value ^ xored_data;
         }
+        // else: 0b0 prefix - use prev_value
 
         unalignedStore(dest, curr_value);
         dest += sizeof(curr_value);

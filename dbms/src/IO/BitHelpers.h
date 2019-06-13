@@ -7,10 +7,10 @@
 namespace DB
 {
 
-/** Reads data from underlying ReadBuffer in bit by bit, max 64 bits at once.
+/** Reads data from underlying ReadBuffer bit by bit, max 64 bits at once.
  *
  * reads MSB bits first, imagine that you have a data:
- * 11110000 10101010 00100100 11111111
+ * 11110000 10101010 00100100 11111110
  *
  * Given that r is BitReader created with a ReadBuffer that reads from data above:
  *  r.readBits(3)  => 0b111
@@ -19,8 +19,9 @@ namespace DB
  *  r.readBit()    => 0b1
  *  r.readBit()    => 0b0
  *  r.readBits(15) => 0b10001001001111111
- *  r.readBit()    => 0b1
+ *  r.readBit()    => 0b0
 **/
+
 
 class BitReader
 {
@@ -28,22 +29,74 @@ class BitReader
 
     UInt8 bits_buffer;
     UInt8 bits_count;
+    static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
-    BitReader(ReadBuffer & buf_);
-    ~BitReader();
+    BitReader(ReadBuffer & buf_)
+        : buf(buf_),
+          bits_buffer(0),
+          bits_count(0)
+    {}
 
-    BitReader(BitReader &&) = default;
+    ~BitReader()
+    {}
 
-    // bits is at most 64
-    UInt64 readBits(UInt8 bits);
-    UInt8 readBit();
+    inline UInt64 readBits(UInt8 bits)
+    {
+        UInt64 result = 0;
+        bits = std::min(static_cast<UInt8>(sizeof(result) * 8), bits);
 
-    // true when both bit-buffer and underlying byte-buffer are empty.
-    bool eof() const;
+        while (bits != 0)
+        {
+            if (bits_count == 0)
+            {
+                fillBuffer();
+                if (bits_count == 0)
+                {
+                    // EOF.
+                    break;
+                }
+            }
+
+            const auto to_read = std::min(bits, bits_count);
+            // read MSB bits from bits_bufer
+            const UInt8 v = bits_buffer >> (bits_count - to_read);
+            const UInt8 mask = static_cast<UInt8>(~(~0U << to_read));
+            const UInt8 value = v & mask;
+            result |= value;
+
+            // unset MSB that were read
+            bits_buffer &= ~(mask << (bits_count - to_read));
+            bits_count -= to_read;
+            bits -= to_read;
+
+            result <<= std::min(bits, BIT_BUFFER_SIZE);
+        }
+
+        return result;
+    }
+
+    inline UInt64 peekBits(UInt8 /*bits*/)
+    {
+        return 0;
+    }
+
+    inline UInt8 readBit()
+    {
+        return static_cast<UInt8>(readBits(1));
+    }
+
+    inline bool eof() const
+    {
+        return bits_count == 0 && buf.eof();
+    }
 
 private:
-    void fillBuffer();
+    void fillBuffer()
+    {
+        auto read = buf.read(reinterpret_cast<char *>(&bits_buffer), BIT_BUFFER_SIZE / 8);
+        bits_count = static_cast<UInt8>(read) * 8;
+    }
 };
 
 class BitWriter
@@ -53,19 +106,71 @@ class BitWriter
     UInt8 bits_buffer;
     UInt8 bits_count;
 
+    static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
+
 public:
-    BitWriter(WriteBuffer & buf_);
-    ~BitWriter();
+    BitWriter(WriteBuffer & buf_)
+        : buf(buf_),
+          bits_buffer(0),
+          bits_count(0)
+    {}
 
-    BitWriter(BitWriter &&) = default;
+    ~BitWriter()
+    {
+        flush();
+    }
 
-    // write `size` low bits of the `value`.
-    void writeBits(UInt8 size, UInt64 value);
+    inline void writeBits(UInt8 bits, UInt64 value)
+    {
+        bits = std::min(static_cast<UInt8>(sizeof(value) * 8), bits);
 
-    void flush();
+        while (bits > 0)
+        {
+            auto v = value;
+            auto to_write = bits;
+
+            const UInt8 capacity = BIT_BUFFER_SIZE - bits_count;
+            if (capacity < bits)
+            {
+                // write MSB:
+                v >>= bits - capacity;
+                to_write = capacity;
+            }
+
+
+            const UInt64 mask = (1 << to_write) - 1;
+            v &= mask;
+//            assert(v <= 255);
+
+            bits_buffer <<= to_write;
+            bits_buffer |= v;
+            bits_count += to_write;
+
+            if (bits_count < BIT_BUFFER_SIZE)
+                break;
+
+            doFlush();
+            bits -= to_write;
+        }
+    }
+
+    inline void flush()
+    {
+        if (bits_count != 0)
+        {
+            bits_buffer <<= (BIT_BUFFER_SIZE - bits_count);
+            doFlush();
+        }
+    }
 
 private:
-    void doFlush();
+    void doFlush()
+    {
+        buf.write(reinterpret_cast<const char *>(&bits_buffer), BIT_BUFFER_SIZE / 8);
+
+        bits_count = 0;
+        bits_buffer = 0;
+    }
 };
 
-} // namespace DB
+}
