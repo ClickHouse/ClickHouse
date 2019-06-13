@@ -10,5 +10,5 @@ import httpexpect
 def client(request, name='', log=None):
     client = httpexpect.spawn({'host':'localhost','port':8123}, request)
     client.logger(log, prefix=name)
-    client.timeout(2)
+    client.timeout(20)
     return client
