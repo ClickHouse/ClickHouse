@@ -127,7 +127,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
     return expr_list->children.at(0)->getColumnName();
 }
 
-} // namespace
+}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
