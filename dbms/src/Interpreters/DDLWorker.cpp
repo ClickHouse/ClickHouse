@@ -207,6 +207,11 @@ static bool isSupportedAlterType(int type)
         ASTAlterCommand::DROP_PARTITION,
         ASTAlterCommand::DELETE,
         ASTAlterCommand::UPDATE,
+        ASTAlterCommand::COMMENT_COLUMN,
+        ASTAlterCommand::MODIFY_ORDER_BY,
+        ASTAlterCommand::MODIFY_TTL,
+        ASTAlterCommand::ADD_INDEX,
+        ASTAlterCommand::DROP_INDEX,
     };
 
     return supported_alter_types.count(type) != 0;
