@@ -81,7 +81,7 @@ public:
 
         size_t cur_size = cur_elems.value.size();
 
-        if (rhs_elems.value.size()) 
+        if (rhs_elems.value.size())
             cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
 
         for (size_t i = cur_size; i < cur_elems.value.size(); ++i)
