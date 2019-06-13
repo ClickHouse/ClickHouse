@@ -320,13 +320,26 @@ inline std::enable_if_t<IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDa
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
+    using ToNativeType = typename ToDataType::FieldType::NativeType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
-        if (!std::isfinite(value))
-            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
-        return value * ToDataType::getScaleMultiplier(scale);
-    }
+        ToNativeType min_value, max_value;
+        if constexpr (std::is_same_v<ToNativeType, Int128>)
+        {
+            min_value = __int128(0x8000000000000000ll) << 64; // min __int128
+            max_value = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll; // max __int128
+        }
+        else
+        {
+            min_value = std::numeric_limits<ToNativeType>::min();
+            max_value = std::numeric_limits<ToNativeType>::max();
+        }
+        ToNativeType converted_value = static_cast<ToNativeType>(value * ToDataType::getScaleMultiplier(scale));
+        if (converted_value == min_value || converted_value == max_value)
+            throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return converted_value;
+    }  
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
