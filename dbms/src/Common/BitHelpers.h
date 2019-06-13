@@ -34,29 +34,41 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(unsigned int)), int>
-getLeadingZeroBits(T x)
+inline size_t getLeadingZeroBits(T x)
 {
-    return x == 0 ? sizeof(x) * 8 : __builtin_clz(x);
+    if (!x)
+        return sizeof(x) * 8;
+
+    if constexpr (sizeof(T) <= sizeof(unsigned int))
+    {
+        return __builtin_clz(x);
+    }
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    {
+        return __builtin_clzl(x);
+    }
+    else
+    {
+        return __builtin_clzll(x);
+    }
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(unsigned long long int)), int>
-getLeadingZeroBits(T x)
+inline size_t getTrailingZeroBits(T x)
 {
-    return x == 0 ? sizeof(x) * 8 : __builtin_clzll(x);
-}
+    if (!x)
+        return sizeof(x) * 8;
 
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(unsigned int)), int>
-getTrailingZeroBits(T x)
-{
-    return x == 0 ? sizeof(x) * 8 : __builtin_ctz(x);
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(unsigned long long int)), int>
-getTrailingZeroBits(T x)
-{
-    return x == 0 ? sizeof(x) * 8 : __builtin_ctzll(x);
+    if constexpr (sizeof(T) <= sizeof(unsigned int))
+    {
+        return __builtin_ctz(x);
+    }
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    {
+        return __builtin_ctzl(x);
+    }
+    else
+    {
+        return __builtin_ctzll(x);
+    }
 }
