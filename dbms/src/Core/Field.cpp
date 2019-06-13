@@ -87,61 +87,6 @@ namespace DB
         }
     }
 
-    void writeBinaryWithoutType(const Field & field, WriteBuffer & buf)
-    {
-        UInt8 type = field.getType();
-        switch (type)
-        {
-            case Field::Types::Null: break;
-            case Field::Types::UInt64:
-            {
-                DB::writeBinary(get<UInt64>(field), buf);
-                break;
-            }
-            case Field::Types::UInt128:
-            {
-                DB::writeBinary(get<UInt128>(field), buf);
-                break;
-            }
-            case Field::Types::Int128:
-            {
-                DB::writeBinary(get<Int128>(field), buf);
-                break;
-            }
-            case Field::Types::Int64:
-            {
-                DB::writeVarInt(get<Int64>(field), buf);
-                break;
-            }
-            case Field::Types::Float64:
-            {
-                DB::writeFloatBinary(get<Float64>(field), buf);
-                break;
-            }
-            case Field::Types::String:
-            {
-                DB::writeStringBinary(get<std::string>(field), buf);
-                break;
-            }
-            case Field::Types::Array:
-            {
-                DB::writeBinary(get<Array>(field), buf);
-                break;
-            }
-            case Field::Types::Tuple:
-            {
-                DB::writeBinary(get<Tuple>(field), buf);
-                break;
-            }
-            case Field::Types::AggregateFunctionState:
-            {
-                DB::writeStringBinary(field.get<AggregateFunctionStateData>().name, buf);
-                DB::writeStringBinary(field.get<AggregateFunctionStateData>().data, buf);
-                break;
-            }
-        }
-    }
-
     void writeBinary(const Array & x, WriteBuffer & buf)
     {
         UInt8 type = Field::Types::Null;
@@ -175,25 +120,21 @@ namespace DB
                 }
                 case Field::Types::Float64:
                 {
-                    std::cerr << "FLOAT64\n";
                     DB::writeFloatBinary(get<Float64>(*it), buf);
                     break;
                 }
                 case Field::Types::String:
                 {
-                    std::cerr << "STring\n";
                     DB::writeStringBinary(get<std::string>(*it), buf);
                     break;
                 }
                 case Field::Types::Array:
                 {
-                    std::cerr << "Array\n";
                     DB::writeBinary(get<Array>(*it), buf);
                     break;
                 }
                 case Field::Types::Tuple:
                 {
-                    std::cerr << "Tuple\n";
                     DB::writeBinary(get<Tuple>(*it), buf);
                     break;
                 }
