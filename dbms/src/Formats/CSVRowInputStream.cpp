@@ -104,24 +104,9 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, 
         data_types[i] = column_info.type;
         column_indexes_by_names.emplace(column_info.name, i);
     }
-
-    column_indexes_for_input_fields.reserve(num_columns);
-    read_columns.assign(num_columns, false);
 }
 
-
-void CSVRowInputStream::setupAllColumnsByTableSchema()
-{
-    read_columns.assign(header.columns(), true);
-    column_indexes_for_input_fields.resize(header.columns());
-
-    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
-    {
-        column_indexes_for_input_fields[i] = i;
-    }
-}
-
-
+/// Map an input file column to a table column, based on its name.
 void CSVRowInputStream::addInputColumn(const String & column_name)
 {
     const auto column_it = column_indexes_by_names.find(column_name);
@@ -150,25 +135,6 @@ void CSVRowInputStream::addInputColumn(const String & column_name)
     column_indexes_for_input_fields.emplace_back(column_index);
 }
 
-
-void CSVRowInputStream::fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension & row_read_extension)
-{
-    /// It is safe to memorize this on the first run - the format guarantees this does not change
-    if (unlikely(row_num == 1))
-    {
-        columns_to_fill_with_default_values.clear();
-        for (size_t index = 0; index < read_columns.size(); ++index)
-            if (read_columns[index] == 0)
-                columns_to_fill_with_default_values.push_back(index);
-    }
-
-    for (const auto column_index : columns_to_fill_with_default_values)
-        data_types[column_index]->insertDefaultInto(*columns[column_index]);
-
-    row_read_extension.read_columns = read_columns;
-}
-
-
 void CSVRowInputStream::readPrefix()
 {
     /// In this format, we assume, that if first string field contain BOM as value, it will be written in quotes,
@@ -177,11 +143,16 @@ void CSVRowInputStream::readPrefix()
 
     if (with_names)
     {
+		/// This CSV file has a header row with column names. Depending on the
+		/// settings, use it or skip it. 
         if (format_settings.with_names_use_header)
         {
-            String column_name;
+            /// Look at the file header to see which columns we have there.
+            /// The missing columns are filled with defaults.
+            read_columns.assign(header.columns(), false);
             do
             {
+                String column_name;
                 skipWhitespacesAndTabs(istr);
                 readCSVString(column_name, istr, format_settings.csv);
                 skipWhitespacesAndTabs(istr);
@@ -191,20 +162,38 @@ void CSVRowInputStream::readPrefix()
             while (checkChar(format_settings.csv.delimiter, istr));
 
             skipDelimiter(istr, format_settings.csv.delimiter, true);
+
+            for (size_t column = 0; column < read_columns.size(); column++)
+            {
+                if (!read_columns[column])
+                {
+                    have_always_default_columns = true;
+                    break;
+                }
+            }
+
+            return;
         }
         else
         {
-            setupAllColumnsByTableSchema();
-            skipRow(istr, format_settings.csv, column_indexes_for_input_fields.size());
+            skipRow(istr, format_settings.csv, header.columns());
         }
     }
-    else
+
+    /// The default: map each column of the file to the column of the table with
+    /// the same index.
+    read_columns.assign(header.columns(), true);
+    column_indexes_for_input_fields.resize(header.columns());
+
+    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
     {
-        setupAllColumnsByTableSchema();
+        column_indexes_for_input_fields[i] = i;
     }
 }
 
-
+/** If you change this function, don't forget to change its counterpart
+  * with extended error reporting: parseRowAndPrintDiagnosticInfo().
+  */
 bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 {
     if (istr.eof())
@@ -212,25 +201,65 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 
     updateDiagnosticInfo();
 
-    String tmp;
+    /// Track whether we have to fill any columns in this row with default
+    /// values. If not, we return an empty column mask to the caller, so that
+    /// it doesn't have to check it.
+    bool have_default_columns = have_always_default_columns;
+
+    const auto delimiter = format_settings.csv.delimiter;
     for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
     {
         const auto & column_index = column_indexes_for_input_fields[input_position];
         if (column_index)
         {
-            skipWhitespacesAndTabs(istr);
-            data_types[*column_index]->deserializeAsTextCSV(*columns[*column_index], istr, format_settings);
-            skipWhitespacesAndTabs(istr);
+            const auto & type = data_types[*column_index];
+            if (*istr.position() == delimiter
+                    && format_settings.csv.empty_as_default)
+            {
+                /// Treat empty unquoted column value as default value, if
+                /// specified in the settings.
+                read_columns[*column_index] = false;
+                have_default_columns = true;
+            }
+            else
+            {
+                /// Read the column normally.
+                read_columns[*column_index] = true;
+                skipWhitespacesAndTabs(istr);
+                type->deserializeAsTextCSV(*columns[*column_index], istr,
+                    format_settings);
+                skipWhitespacesAndTabs(istr);
+            }
         }
         else
         {
+            /// We never read this column from the file, just skip it.
+            String tmp;
             readCSVString(tmp, istr, format_settings.csv);
         }
 
-        skipDelimiter(istr, format_settings.csv.delimiter, input_position + 1 == column_indexes_for_input_fields.size());
+        skipDelimiter(istr, delimiter,
+            input_position + 1 == column_indexes_for_input_fields.size());
     }
 
-    fillUnreadColumnsWithDefaults(columns, ext);
+    if (have_default_columns)
+    {
+        for (size_t i = 0; i < read_columns.size(); i++)
+        {
+            if (!read_columns[i])
+            {
+                ///!!!FIXME
+                /// 1. Why are the defaults inserted by every row source,
+                /// and not by the caller, given that it walks this array
+                /// anyway?
+                /// 2. The value is overwritten by
+                /// AddingDefaultsBlockInputStream, so we don't care what it
+                /// is. Should we use IColumn::insertDefault() instead?
+                data_types[i]->insertDefaultInto(*columns[i]);
+            }
+        }
+        ext.read_columns = read_columns;
+    }
 
     return true;
 }
@@ -320,57 +349,64 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
                 << "name: " << header.safeGetByPosition(column_index).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(column_index).name.size(), ' ')
                 << "type: " << current_column_type->getName() << ", " << std::string(max_length_of_data_type_name - current_column_type->getName().size(), ' ');
 
-            BufferBase::Position prev_position = istr.position();
-            BufferBase::Position curr_position = istr.position();
-            std::exception_ptr exception;
-
-            try
+            if (*istr.position() == delimiter
+                    && format_settings.csv.empty_as_default)
             {
-                skipWhitespacesAndTabs(istr);
-                prev_position = istr.position();
-                current_column_type->deserializeAsTextCSV(*columns[column_index], istr, format_settings);
-                curr_position = istr.position();
-                skipWhitespacesAndTabs(istr);
+                current_column_type->insertDefaultInto(*columns[column_index]);
             }
-            catch (...)
+            else
             {
-                exception = std::current_exception();
-            }
+                BufferBase::Position prev_position = istr.position();
+                BufferBase::Position curr_position = istr.position();
+                std::exception_ptr exception;
 
-            if (curr_position < prev_position)
-                throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
-
-            if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
-            {
-                /// An empty string instead of a value.
-                if (curr_position == prev_position)
+                try
                 {
-                    out << "ERROR: text ";
-                    verbosePrintString(prev_position, std::min(prev_position + 10, istr.buffer().end()), out);
-                    out << " is not like " << current_column_type->getName() << "\n";
+                    skipWhitespacesAndTabs(istr);
+                    prev_position = istr.position();
+                    current_column_type->deserializeAsTextCSV(*columns[column_index], istr, format_settings);
+                    curr_position = istr.position();
+                    skipWhitespacesAndTabs(istr);
+                }
+                catch (...)
+                {
+                    exception = std::current_exception();
+                }
+
+                if (curr_position < prev_position)
+                    throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
+
+                if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
+                {
+                    /// An empty string instead of a value.
+                    if (curr_position == prev_position)
+                    {
+                        out << "ERROR: text ";
+                        verbosePrintString(prev_position, std::min(prev_position + 10, istr.buffer().end()), out);
+                        out << " is not like " << current_column_type->getName() << "\n";
+                        return false;
+                    }
+                }
+
+                out << "parsed text: ";
+                verbosePrintString(prev_position, curr_position, out);
+
+                if (exception)
+                {
+                    if (current_column_type->getName() == "DateTime")
+                        out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
+                    else if (current_column_type->getName() == "Date")
+                        out << "ERROR: Date must be in YYYY-MM-DD format.\n";
+                    else
+                        out << "ERROR\n";
                     return false;
                 }
-            }
 
-            out << "parsed text: ";
-            verbosePrintString(prev_position, curr_position, out);
+                out << "\n";
 
-            if (exception)
-            {
-                if (current_column_type->getName() == "DateTime")
-                    out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-                else if (current_column_type->getName() == "Date")
-                    out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-                else
-                    out << "ERROR\n";
-                return false;
-            }
-
-            out << "\n";
-
-            if (current_column_type->haveMaximumSizeOfValue())
-            {
-                if (*curr_position != '\n' && *curr_position != '\r' && *curr_position != delimiter)
+                if (current_column_type->haveMaximumSizeOfValue()
+                        && *curr_position != '\n' && *curr_position != '\r'
+                        && *curr_position != delimiter)
                 {
                     out << "ERROR: garbage after " << current_column_type->getName() << ": ";
                     verbosePrintString(curr_position, std::min(curr_position + 10, istr.buffer().end()), out);
