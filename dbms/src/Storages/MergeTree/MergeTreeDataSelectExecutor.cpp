@@ -944,7 +944,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 size_t last_mark_rows_count = part->index_granularity.getMarkRows(marks_count - 1);
                 /// We sure about that range and can build interval precisely
-                if (last_mark_rows_count == 1)
+                if (last_mark_rows_count == 0)
                 {
                     for (size_t i = 0; i < used_key_size; ++i)
                     {
@@ -1025,9 +1025,16 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t granules_dropped = 0;
 
+    std::cerr << "Marks count in part:" << part->getMarksCount() << std::endl;
+    std::cerr << "Expected marks in index:" <<(part->getMarksCount() - 1 + index->granularity - 1) / index->granularity << std::endl;
+    std::cerr << "Ranges size:" << ranges.size() << std::endl;
+    for (auto & range : ranges)
+    {
+        std::cerr << "[" << range.begin << "," << range.end << "]\n";
+    }
     MergeTreeIndexReader reader(
             index, part,
-            ((part->getMarksCount() + index->granularity - 1) / index->granularity),
+            ((part->getMarksCount() - 1 + index->granularity - 1) / index->granularity),
             ranges);
 
     MarkRanges res;
@@ -1036,8 +1043,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
-    for (const auto & range : ranges)
+    for (size_t i = 0; i < ranges.size(); ++i)
     {
+        auto range = ranges[i];
+        if (i == ranges.size() - 1)
+            range.end -= 1; /// FIXME(alesap)
+
         MarkRange index_range(
                 range.begin / index->granularity,
                 (range.end + index->granularity - 1) / index->granularity);

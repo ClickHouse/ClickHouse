@@ -40,6 +40,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     init();
     for (const auto & it : columns_list)
     {
+        //std::cerr << "Constructor1 COLUMN NAME:" << it.name << std::endl;
         const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
     }
@@ -75,6 +76,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     for (const auto & it : columns_list)
     {
+        //std::cerr << "Constructor2 COLUMN NAME:" << it.name << std::endl;
         const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
     }
@@ -110,7 +112,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
 
-    bool trailing_mark_written = false;
     /// Finish columns serialization.
     {
         auto & settings = storage.global_context.getSettingsRef();
@@ -118,48 +119,58 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
         WrittenOffsetColumns offset_columns;
+        //bool need_to_write_last_mark = index_offset != 0 && rows_count > 1;
         auto it = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++it)
         {
-            serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-
-            if (index_offset != 0 && rows_count > 1)
-            {
-                std::cerr << "Writing trailing mark for column:" << it->name << " SETTINGS SIZE:" << serialize_settings.path.size() << std::endl;
-                writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
-                trailing_mark_written = true;
-            }
             if (!serialization_states.empty())
             {
-                std::cerr << "SERIALIZING SUFFIX FOR COLUMN:" << it->name <<    std::endl;
+                //std::cerr << "SERIALIZING SUFFIX FOR COLUMN:" << it->name <<    std::endl;
+                serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
-            it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-                {
-                    bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                    if (is_offsets)
-                    {
-                        String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
-                        offset_columns.insert(stream_name);
-                    }
-                }, serialize_settings.path);
 
+            //std::cerr << "Writing trailing mark for column:" << it->name << " SETTINGS SIZE:" << serialize_settings.path.size() << std::endl;
+            writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
+            /// Memoize information about offsets
+            it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+            {
+                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+                if (is_offsets)
+                {
+                    String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
+                    offset_columns.insert(stream_name);
+                }
+            }, serialize_settings.path);
         }
     }
 
-    if (trailing_mark_written)
-    {
-        std::cerr << "Adding trailing mark, marks size:" << index_granularity.getMarksCount() << std::endl;
-        index_granularity.appendMark(0); /// last mark
-    }
+    index_granularity.appendMark(0); /// last mark
 
     /// Finish skip index serialization
     for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
+        const auto index = storage.skip_indices[i];
         if (!skip_indices_aggregators[i]->empty())
+        {
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+        }
+        /// It may happen that final mark will correspond to index last mark
+        //if (index_granularity.getMarksCount() % index->granularity == 0)
+        //{
+        //    std::cerr << "HERE WE HAVE TO WRITE ANOTHER INDEX MARK\n";
+        //    if (stream.compressed.offset() >= min_compress_block_size)
+        //        stream.compressed.next();
+
+        //    writeIntBinary(stream.plain_hashing.count(), stream.marks);
+        //    writeIntBinary(stream.compressed.offset(), stream.marks);
+        //    /// Actually this numbers is redundant, but we have to store them
+        //    /// to be compatible with normal .mrk2 file format
+        //    if (storage.index_granularity_info.is_adaptive)
+        //        writeIntBinary(1UL, stream.marks);
+        //}
     }
 
 
@@ -172,26 +183,23 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
-    if (index_stream)
+    if (storage.hasPrimaryKey())
     {
         /// Otherwise we already written last mark
-        if (index_offset != 0 && rows_count > 1)
+        //std::cerr << "Index columns" << index_columns.size() << std::endl;
+        //std::cerr << "Last index row:" << last_index_row.size() << std::endl;
+        //std::cerr << "Stream count before:" << index_stream->count() << std::endl;
+        for (size_t j = 0; j < index_columns.size(); ++j)
         {
-            std::cerr << "Index columns" << index_columns.size() << std::endl;
-            std::cerr << "Last index row:" << last_index_row.size() << std::endl;
-            std::cerr << "Stream count before:" << index_stream->count() << std::endl;
-            for (size_t j = 0; j < index_columns.size(); ++j)
-            {
-                auto & column = *last_index_row[j].column;
-                index_columns[j]->insertFrom(column, 0); /// it has only one element
-                last_index_row[j].type->serializeBinary(column, 0, *index_stream);
-            }
+            auto & column = *last_index_row[j].column;
+            index_columns[j]->insertFrom(column, 0); /// it has only one element
+            last_index_row[j].type->serializeBinary(column, 0, *index_stream);
         }
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
-        std::cerr << "Index size:" << checksums.files["primary.idx"].file_size  << std::endl;
+        //std::cerr << "Index size:" << checksums.files["primary.idx"].file_size  << std::endl;
         index_stream = nullptr;
         last_index_row.clear();
     }
@@ -416,10 +424,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
+            std::cerr << "WRITING INDEX:" << rows << " i:" << i << std::endl;
             size_t current_mark = 0;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
+                std::cerr << "INDEX PREV_POS:" << prev_pos << std::endl;
                 if (prev_pos == 0 && index_offset != 0)
                 {
                     limit = index_offset;
@@ -427,6 +437,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 else
                 {
                     limit = index_granularity.getMarkRows(current_mark);
+                    std::cerr << "Marking." << " Limit:" << limit << " current mark:" << current_mark << std::endl;
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -446,14 +457,17 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
                 size_t pos = prev_pos;
                 skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
+                std::cerr << "POS:" << pos << std::endl;
 
                 if (pos == prev_pos + limit)
                 {
+                    std::cerr << "Dropping counter\n";
                     ++skip_index_filling[i];
 
                     /// write index if it is filled
                     if (skip_index_filling[i] == index->granularity)
                     {
+                        std::cerr << "WRITING to disk\n";
                         skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                         skip_index_filling[i] = 0;
                     }

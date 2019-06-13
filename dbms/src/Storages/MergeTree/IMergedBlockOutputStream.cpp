@@ -50,9 +50,13 @@ void IMergedBlockOutputStream::addStreams(
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
         if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+        {
+            //std::cerr << "For name:" << name  << " type:" << type.getName() << " EXITING HERE"<< std::endl;
             return;
+        }
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        //std::cerr << "For name:" << name  << " type:" << type.getName() << " ADDING STREAM:" << stream_name << std::endl;
 
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
@@ -152,26 +156,28 @@ void IMergedBlockOutputStream::writeSingleMark(
      type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-         std::cerr << "Writing single mark for name:" << name << " is offsets:" << is_offsets << std::endl;
+         //std::cerr << "Writing single mark for name:" << name << " is offsets:" << is_offsets << std::endl;
          if (is_offsets && skip_offsets)
              return;
 
          String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
-         std::cerr << "Stream name:" << stream_name << " found in offset column:" << offset_columns.count(stream_name) << std::endl;
          /// Don't write offsets more than one time for Nested type.
          if (is_offsets && offset_columns.count(stream_name))
-         {
-             std::cerr << "Do not write offsets\n";
              return;
-         }
 
+         //std::cerr << "Getting stream from column streams '" << stream_name << "' :" << column_streams.count(stream_name) << std::endl;
          ColumnStream & stream = *column_streams[stream_name];
 
+         //std::cerr << "Comparing offsets\n";
          /// There could already be enough data to compress into the new block.
          if (stream.compressed.offset() >= min_compress_block_size)
+         {
+             //std::cerr << "Offsets compared\n";
              stream.compressed.next();
+         }
 
+         //std::cerr << "Writing mark\n";
          writeIntBinary(stream.plain_hashing.count(), stream.marks);
          writeIntBinary(stream.compressed.offset(), stream.marks);
          if (storage.index_granularity_info.is_adaptive)

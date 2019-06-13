@@ -69,14 +69,27 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
+    WrittenOffsetColumns offset_columns;
     for (size_t i = 0, size = header.columns(); i < size; ++i)
     {
         auto & column = header.getByPosition(i);
         serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+
+        writeSingleMark(column.name, *column.type, offset_columns, skip_offsets, 0, serialize_settings.path);
+
+        /// Memoize information about offsets
+        column.type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+        {
+            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+            if (is_offsets)
+            {
+                String stream_name = IDataType::getFileNameForStream(column.name, substream_path);
+                offset_columns.insert(stream_name);
+            }
+        }, serialize_settings.path);
     }
 
-    std::cerr << "Total MARKS COUNT:" << index_granularity.getMarksCount() << " Current Mark:" << current_mark << std::endl;
     MergeTreeData::DataPart::Checksums checksums;
 
     for (auto & column_stream : column_streams)
