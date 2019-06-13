@@ -87,7 +87,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     {
         std::unique_lock lock(mutex);
 
-        auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
+        const auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
 
@@ -117,31 +117,25 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
-
+                const int sleep_by_ms = 10;
+                int sleeped = 0;
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                if (running_query != user_process_list->second.queries.end())
+                while (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
-                    const int sleep_by = 10;
-                    int sleeped = 0;
-                    do
-                    {
-                        /// Ask queries to cancel. They will check this flag.
-                        running_query->second->is_killed.store(true, std::memory_order_relaxed);
-
-                        lock.unlock();
-                        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_by));
-                        sleeped += sleep_by;
-                        if (sleeped > max_wait_ms)
-                            throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
-                                ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
-                        lock.lock();
-                        running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                    }
-                    while (running_query != user_process_list->second.queries.end());
+                    /// Ask queries to cancel. They will check this flag.
+                    running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                    lock.unlock();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_by_ms));
+                    sleeped += sleep_by_ms;
+                    if (sleeped > max_wait_ms)
+                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
+                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                    lock.lock();
+                    running_query = user_process_list->second.queries.find(client_info.current_query_id);
                 }
             }
         }
