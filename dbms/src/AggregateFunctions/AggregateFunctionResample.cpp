@@ -15,7 +15,8 @@ class AggregateFunctionCombinatorResample final : public
     IAggregateFunctionCombinator
 {
 public:
-    String getName() const override {
+    String getName() const override
+    {
         return "Resample";
     }
 
