@@ -136,10 +136,13 @@ void PipelineExecutor::processFinishedExecutionQueue()
     while (!finished_execution_queue.empty())
     {
         /// Should be successful as single consumer is used.
-        while (finished_execution_queue.pop(finished_job));
+        while (!finished_execution_queue.pop(finished_job));
 
-        ++num_waited_tasks;
-        ++graph[finished_job].execution_state->num_executed_jobs;
+        auto & state = graph[finished_job].execution_state;
+
+        /// ++num_waited_tasks;
+        ++state->num_executed_jobs;
+        state->need_update_stream = true;
 
         if (graph[finished_job].execution_state->exception)
             std::rethrow_exception(graph[finished_job].execution_state->exception);
@@ -160,26 +163,6 @@ void PipelineExecutor::processFinishedExecutionQueueSafe()
     processFinishedExecutionQueue();
 }
 
-bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
-{
-    auto & node = graph[edge.to];
-
-    /// Don't add processor if nothing was read from port.
-    if (node.status != ExecStatus::New && edge.version == edge.prev_version)
-        return false;
-
-    edge.prev_version = edge.version;
-
-    if (node.status == ExecStatus::Idle || node.status == ExecStatus::New)
-    {
-        prepare_queue.push(edge.to);
-        node.status = ExecStatus::Preparing;
-        return true;
-    }
-
-    return false;
-}
-
 static void executeJob(IProcessor * processor)
 {
     try
@@ -193,6 +176,25 @@ static void executeJob(IProcessor * processor)
                                  + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
         throw;
     }
+}
+
+bool PipelineExecutor::tryAssignJob(ExecutionState * state)
+{
+    auto current_stream = state->current_stream;
+    for (auto & executor_context : executor_contexts)
+    {
+        if (executor_context->current_stream == current_stream)
+        {
+            ExecutionState * expected = nullptr;
+            if (executor_context->next_task_to_execute.compare_exchange_strong(expected, state))
+            {
+                ++num_tasks_to_wait;
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void PipelineExecutor::addJob(UInt64 pid)
@@ -223,12 +225,22 @@ void PipelineExecutor::addJob(UInt64 pid)
         };
 
         graph[pid].execution_state->job = std::move(job);
+        auto * state = graph[pid].execution_state.get();
 
-        while (!task_queue.push(graph[pid].execution_state.get()))
-            sleep(0);
+        bool is_stream_updated = false;
+        if (state->need_update_stream)
+        {
+            is_stream_updated = true;
+            state->current_stream = next_stream;
+            ++next_stream;
+        }
 
-        task_condvar.notify_one();
-        ++num_tasks_to_wait;
+        /// Try assign job to executor right now.
+        if (is_stream_updated || !tryAssignJob(state))
+            execution_states_queue.emplace_back(state);
+
+        /// while (!task_queue.push(graph[pid].execution_state.get()))
+        ///    sleep(0);
     }
     else
     {
@@ -277,6 +289,33 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     }
 }
 
+bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool update_stream_number, UInt64 stream_number)
+{
+    auto & node = graph[edge.to];
+
+    /// Don't add processor if nothing was read from port.
+    if (node.status != ExecStatus::New && edge.version == edge.prev_version)
+        return false;
+
+    edge.prev_version = edge.version;
+
+    if (node.status == ExecStatus::Idle || node.status == ExecStatus::New)
+    {
+        prepare_queue.push(edge.to);
+        node.status = ExecStatus::Preparing;
+
+        if (update_stream_number)
+        {
+            node.execution_state->current_stream = stream_number;
+            node.execution_state->need_update_stream = false;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
@@ -285,11 +324,13 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 
     auto add_neighbours_to_prepare_queue = [&, this]
     {
+        auto stream_number = node.execution_state->current_stream;
+
         for (auto & edge : node.directEdges)
-            addProcessorToPrepareQueueIfUpdated(edge);
+            addProcessorToPrepareQueueIfUpdated(edge, true, stream_number);
 
         for (auto & edge : node.backEdges)
-            addProcessorToPrepareQueueIfUpdated(edge);
+            addProcessorToPrepareQueueIfUpdated(edge, false, stream_number);
     };
 
     switch (status)
@@ -343,6 +384,23 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
     }
 }
 
+void PipelineExecutor::assignJobs()
+{
+    for (auto * state : execution_states_queue)
+    {
+        if (!tryAssignJob(state))
+        {
+            while (!task_queue.push(state))
+                sleep(0);
+
+            task_condvar.notify_one();
+            ++num_tasks_to_wait;
+        }
+    }
+
+    execution_states_queue.clear();
+}
+
 void PipelineExecutor::processPrepareQueue()
 {
     while (!prepare_queue.empty())
@@ -352,6 +410,8 @@ void PipelineExecutor::processPrepareQueue()
 
         prepareProcessor(proc, false);
     }
+
+    assignJobs();
 }
 
 void PipelineExecutor::processAsyncQueue()
@@ -360,6 +420,8 @@ void PipelineExecutor::processAsyncQueue()
     for (UInt64 node = 0; node < num_processors; ++node)
         if (graph[node].status == ExecStatus::Async)
             prepareProcessor(node, true);
+
+    assignJobs();
 }
 
 void PipelineExecutor::execute(size_t num_threads)
@@ -412,12 +474,19 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         /// For single thread execution will execute jobs in main thread.
 
         threads.reserve(num_threads);
+        executor_contexts.reserve(num_threads);
 
         auto thread_group = CurrentThread::getGroup();
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this, thread_group, thread_number = i]
+            executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+            auto * executor_context = executor_contexts.back().get();
+
+            executor_context->executor_number = i;
+            executor_context->next_task_to_execute = nullptr;
+
+            threads.emplace_back([this, thread_group, executor_context]
             {
                 ThreadStatus thread_status;
 
@@ -439,8 +508,21 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
                 while (!finished)
                 {
-                    while (task_queue.pop(state))
+                    /// First, try get task from context.
+                    state = nullptr;
+                    while (!executor_context->next_task_to_execute.compare_exchange_strong(state, nullptr));
+
+                    /// If context is empty, try get task from queue.
+                    if (!state)
                     {
+                        if (!task_queue.pop(state))
+                            state = nullptr;
+                    }
+
+                    if (state)
+                    {
+                        executor_context->current_stream = state->current_stream;
+
                         Stopwatch execution_time_watch;
                         state->job();
                         execution_time_ns += execution_time_watch.elapsed();
@@ -457,7 +539,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 total_time_ns = total_time_watch.elapsed();
                 wait_time_ns = total_time_ns - execution_time_ns;
 
-                LOG_TRACE(log, "Thread " << thread_number << " finished."
+                LOG_TRACE(log, "Thread " << executor_context->executor_number << " finished."
                                << " Total time: " << (total_time_ns / 1e9) << " sec."
                                << " Execution time: " << (execution_time_ns / 1e9) << " sec."
                                << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
