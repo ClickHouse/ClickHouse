@@ -666,13 +666,13 @@ Path to the file that contains:
 
 ## zookeeper {#server-settings_zookeeper}
 
-Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter section contains the following parameters:
+This section contains the following parameters:
 
-- `node` — ZooKeeper endpoint. You can set a few endpoints.
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
     For example:
 
@@ -683,12 +683,11 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute is not used in ClickHouse. The only reason for this attribute is to allow some other programs to use the same configuraton.
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout_ms` — Maximum timeout for client session in milliseconds (default: 30000).
-- `operation_timeout_ms` — Maximum timeout for operation in milliseconds (default: 10000).
-- `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
-- `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 

@@ -136,7 +136,7 @@ nav:
     - 'arrayJoin': 'query_language/functions/array_join.md'
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
-    - 'Machine learning': 'query_language/functions/machine_learning_methods.md'
+    - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -187,6 +187,7 @@ nav:
     - 'Restrictions on Query Complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings Profiles': 'operations/settings/settings_profiles.md'
+    - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
     - 'User Settings': 'operations/settings/settings_users.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'

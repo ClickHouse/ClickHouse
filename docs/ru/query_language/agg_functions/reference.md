@@ -1,4 +1,3 @@
-
 # Справочник функций
 
 ## count() {#agg_function-count}
@@ -260,6 +259,69 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
+## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+
+`timeSeriesGroupSum` агрегирует временные ряды в которых не совпадают моменты.
+Функция использует линейную интерполяцию между двумя значениями времени, а затем суммирует значения для одного и того же момента (как измеренные так и интерполированные) по всем рядам.
+
+- `uid` уникальный идентификатор временного ряда, `UInt64`.
+- `timestamp` имеет тип `Int64` чтобы можно было учитывать милли и микросекунды.
+- `value` представляет собой значение метрики.
+
+Функция возвращает массив кортежей с парами `(timestamp, aggregated_value)`.
+
+Временные ряды должны быть отсортированы по возрастанию `timestamp`.
+
+Пример:
+
+```
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+
+```
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+
+И результат будет:
+
+```
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+
+Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
+Также ряды должны быть отсотированы по возрастанию timestamp.
+
+Для пример из описания timeSeriesGroupRateSum результат будет следующим:
+
+```
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
 ## avg(x) {#agg_function-avg}
 
 Вычисляет среднее.
@@ -484,26 +546,27 @@ FROM ontime
 
 ## simpleLinearRegression
 
-Performs simple (unidimensional) linear regression.
+Выполняет простую (одномерную) линейную регрессию.
 
 ```
 simpleLinearRegression(x, y)
 ```
 
-Parameters:
+Параметры:
 
-- `x` — Column with values of dependent variable.
-- `y` — Column with explanatory variable.
+- `x` — Столбец со значениями зависимой переменной.
+- `y` — столбец со значениями наблюдаемой переменной.
 
-Returned values:
+Возвращаемые значения:
 
-Parameters `(a, b)` of the resulting line `x = a*y + b`.
+Параметры `(a, b)` результирующей прямой `x = a*y + b`.
 
-**Examples**
+**Примеры**
 
 ```sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
 ```
+
 ```text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
 │ (1,0)                                                             │
@@ -513,42 +576,40 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
 ```sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ```
+
 ```text
 ┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
 │ (1,3)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## linearRegression {#agg_functions-linearregression}
+## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
+Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient,
-mini-batch size and has few methods for updating weights (simple SGD, Momentum, Nesterov).
+### Параметры {#agg_functions-stochasticlinearregression-parameters}
 
-This function works as a usual aggregate function in terms of distributed processing of data, which is followed by merges. With regard to `linearRegression` this means that different aggregate function states are merged with weights - the more data was processed by a state, the bigger weight it has during a merge with other state.
-
-#### Parameters
-
-There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
+Есть 4 настраиваемых параметра. Они передаются в функцию последовательно, однако не обязательно указывать все, используются значения по умолчанию, однако хорошая модель требует некоторой настройки параметров.
 
 ```text
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
-2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
-3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
-4. `method for updating weights`, there are 3 of them: `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods. Default is `'SGD'`.
+1. Скорость обучения — коэффициент длины шага, при выполнении градиентного спуска. Слишком большая скорость обучения может привести к бесконечным весам модели. По умолчанию `0.00001`.
+2. Коэффициент регуляризации l2. Помогает предотвратить подгонку. По умолчанию `0.1`.
+3. Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
+4. Метод обновления весов, можно выбрать один из следующих: `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и остальные методы стохастического градиента. По умолчанию `SGD`.
 
+### Использование {#agg_functions-stochasticlinearregression-usage}
 
-**Usage of linearRegression**
+`stochasticLinearRegression` используется на двух этапах: постоение модели и предсказание новых данных. Чтобы постоить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
+Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
-`stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function `evalMLMethod`, which takes a state as an argument as well as features to predict on.
+<a name="stochasticlinearregression-usage-fitting"></a>
+1. Построение модели
 
-1. *Fitting*
+    Пример запроса:
 
-    Such query may be used.
     ```sql
     CREATE TABLE IF NOT EXISTS train_data
     (
@@ -560,74 +621,94 @@ To predict we use function `evalMLMethod`, which takes a state as an argument as
     CREATE TABLE your_model ENGINE = Memory AS SELECT
     stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
     AS state FROM train_data;
-
     ```
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-2. *Predicting*
+    Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
+Обратите внимание, что столбец с целевым значением (которое мы хотели бы научиться предсказывать) вставляется в качестве первого аргумента.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+2. Прогнозирование
+
+    После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
+
     ```sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
-    `test_data` is a table like `train_data` but may not contain target value.
+    Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
 
-**Some notes**
+    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
-1. To merge two models user may create such query:
+### Примечания {#agg_functions-stochasticlinearregression-notes}
+
+1. Объединить две модели можно следующим запросом:
+
     ```sql
     SELECT state1 + state2 FROM your_models
     ```
-    where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
 
-2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
+    где таблица `your_models` содержит обе модели. Запрос вернёт новый объект `AggregateFunctionState`.
+
+2. Пользователь может получать веса созданной модели для своих целей без сохранения модели, если не использовать комбинатор  `-State`.
+
     ```sql
     SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
     ```
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
+
+    Подобный запрос строит модель и возвращает её веса, отвечающие параметрам моделей и смещение. Таким образом, в приведенном выше примере запрос вернет столбец с тремя значениями.
+
+**Смотрите также**
+
+- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+- [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
-## logisticRegression {#agg_functions-logisticregression}
+## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
+Функция реализует стохастическую логистическую регрессию. Её можно использовать для задачи бинарной классификации, функция поддерживает те же пользовательские параметры, что и stochasticLinearRegression и работает таким же образом.
 
-This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
+### Параметры {#agg_functions-stochasticlogisticregression-parameters}
 
-#### Parameters
-
-Parameters are exactly the same as in stochasticLinearRegression:
+Параметры те же, что и в stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-For more information see [parameters](#parameters).
+Смотрите раздел [parameters](#agg_functions-stochasticlinearregression-parameters).
+
 ```text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. *Fitting*
+1. Построение модели
 
-    See *stochasticLinearRegression.Fitting*
+    Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) .
 
-    Predicted labels have to be in {-1, 1}.
+    Прогнозируемые метки должны быть в диапазоне [-1, 1].
 
-2. *Predicting*
+2. Прогнозирование
 
-    Using saved state we can predict probability of object having label *1*.
+    Используя сохраненное состояние, можно предсказать вероятность наличия у объекта метки `1`.
+
     ```sql
     WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) FROM test_data
     ```
-    The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
 
-    We can also set a bound of probability, which assigns elements to different labels.
+    Запрос возвращает столбец вероятностей. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+
+    Мы также можем установить границу вероятности, которая присваивает элементам различные метки.
+
     ```sql
     SELECT ans < 1.1 AND ans > 0.5 FROM
     (WITH (SELECT state FROM your_model) AS model SELECT
     evalMLMethod(model, param1, param2) AS ans FROM test_data)
     ```
-    Then the result will be labels.
 
-    `test_data` is a table like `train_data` but may not contain target value.
+    Тогда результатом будут метки.
+
+    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+
+**Смотрите также**
+
+- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+- [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->

@@ -46,7 +46,7 @@ String qualifiedName(ASTIdentifier * identifier, const String & prefix)
     return identifier->getAliasOrColumnName();
 }
 
-} // namespace
+}
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
