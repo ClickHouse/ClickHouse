@@ -10,7 +10,7 @@
 
 В функции высшего порядка может быть передана лямбда-функция, принимающая несколько аргументов. В этом случае, в функцию высшего порядка передаётся несколько массивов одинаковых длин, которым эти аргументы будут соответствовать.
 
-Для некоторых функций, например [arrayCount](#higher_order_functions-array-count) или [arraySum](#higher_order_functions-array-count), первый аргумент (лямбда-функция) может отсутствовать. В этом случае, подразумевается тождественное отображение.
+Для некоторых функций, например [arrayCount](#higher_order_functions-array-count) или [arraySum](#higher_order_functions-array-sum), первый аргумент (лямбда-функция) может отсутствовать. В этом случае, подразумевается тождественное отображение.
 
 Для функций, перечисленных ниже, лямбда-функцию должна быть указана всегда:
 
@@ -19,7 +19,7 @@
 - [arrayFirst](#higher_order_functions-array-first)
 - [arrayFirstIndex](#higher_order_functions-array-first-index)
 
-### arrayMap(func, arr1, ...) {#higher_order_functions-array-count}
+### arrayMap(func, arr1, ...) {#higher_order_functions-array-map}
 
 Вернуть массив, полученный на основе результатов применения функции `func` к каждому элементу массива `arr`.
 
@@ -78,7 +78,7 @@ SELECT
 
 Обратите внимание, что у функции `arrayFilter` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayCount(\[func,\] arr1, ...)
+### arrayCount(\[func,\] arr1, ...) {#higher_order_functions-array-count}
 Вернуть количество элементов массива `arr`, для которых функция func возвращает не 0. Если func не указана - вернуть количество ненулевых элементов массива.
 
 ### arrayExists(\[func,\] arr1, ...)
@@ -87,7 +87,7 @@ SELECT
 ### arrayAll(\[func,\] arr1, ...)
 Вернуть 1, если для всех элементов массива `arr`, функция `func` возвращает не 0. Иначе вернуть 0.
 
-### arraySum(\[func,\] arr1, ...)
+### arraySum(\[func,\] arr1, ...) {#higher_order_functions-array-sum}
 Вернуть сумму значений функции `func`. Если функция не указана - просто вернуть сумму элементов массива.
 
 ### arrayFirst(func, arr1, ...) {#higher_order_functions-array-first}
