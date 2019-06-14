@@ -119,19 +119,17 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
         WrittenOffsetColumns offset_columns;
-        //bool need_to_write_last_mark = index_offset != 0 && rows_count > 1;
         auto it = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++it)
         {
             if (!serialization_states.empty())
             {
-                //std::cerr << "SERIALIZING SUFFIX FOR COLUMN:" << it->name <<    std::endl;
                 serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
 
-            //std::cerr << "Writing trailing mark for column:" << it->name << " SETTINGS SIZE:" << serialize_settings.path.size() << std::endl;
+            std::cerr << "Writing trailing mark for column:" << it->name << std::endl;
             writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
             /// Memoize information about offsets
             it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -146,13 +144,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         }
     }
 
+    std::cerr << "Apending last mark\n";
     index_granularity.appendMark(0); /// last mark
+    std::cerr << "Total marks size:" << index_granularity.getMarksCount() << std::endl;
 
     /// Finish skip index serialization
     for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
-        const auto index = storage.skip_indices[i];
         if (!skip_indices_aggregators[i]->empty())
         {
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);

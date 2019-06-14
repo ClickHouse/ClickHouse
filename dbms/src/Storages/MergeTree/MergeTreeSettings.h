@@ -78,7 +78,8 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingUInt64, finished_mutations_to_keep, 100, "How many records about mutations that are done to keep. If zero, then keep all of them.") \
     M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, "Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled).") \
     M(SettingUInt64, index_granularity_bytes, 0, "Approximate amount of bytes in single granule (0 - disabled).") \
-    M(SettingInt64, merge_with_ttl_timeout, 3600 * 24, "Minimal time in seconds, when merge with TTL can be repeated.")
+    M(SettingInt64, merge_with_ttl_timeout, 3600 * 24, "Minimal time in seconds, when merge with TTL can be repeated.") \
+    M(SettingBool, write_final_mark, 1, "Write final mark to after end of column")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_MERGE_TREE_SETTINGS)
 

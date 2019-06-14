@@ -11,7 +11,7 @@ CREATE TABLE mt_with_pk (
   n Nested (Age UInt8, Name String),
   w Int16 DEFAULT 10
 ) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(d) ORDER BY (x, z) SETTINGS index_granularity_bytes=10000;
+PARTITION BY toYYYYMM(d) ORDER BY (x, z) SETTINGS index_granularity_bytes=10000, write_final_mark=1;
 
 SELECT '===test insert===';
 
@@ -45,7 +45,7 @@ SELECT '===test mutation===';
 ALTER TABLE mt_with_pk UPDATE w = 0 WHERE 1;
 ALTER TABLE mt_with_pk UPDATE y = ['q', 'q', 'q'] WHERE 1;
 
-SELECT sleep(3) format Null;
+SELECT sleep(1) FORMAT Null;
 
 SELECT sum(w) FROM mt_with_pk;
 SELECT distinct(y) FROM mt_with_pk;
@@ -64,4 +64,44 @@ SELECT COUNT(*) FROM mt_with_pk WHERE z + w > 5000;
 
 SELECT sum(marks) FROM system.parts WHERE table = 'mt_with_pk' AND active=1;
 
---DROP TABLE IF EXISTS mt_with_pk;
+SELECT '===test alter attach===';
+
+DROP TABLE IF EXISTS alter_attach;
+
+CREATE TABLE alter_attach (x UInt64, p UInt8) ENGINE = MergeTree ORDER BY tuple() PARTITION BY p  SETTINGS index_granularity_bytes=10000, write_final_mark=1;
+
+INSERT INTO alter_attach VALUES (1, 1), (2, 1), (3, 1);
+
+ALTER TABLE alter_attach DETACH PARTITION 1;
+
+ALTER TABLE alter_attach ADD COLUMN s String;
+INSERT INTO alter_attach VALUES (4, 2, 'Hello'), (5, 2, 'World');
+
+ALTER TABLE alter_attach ATTACH PARTITION 1;
+SELECT * FROM alter_attach ORDER BY x;
+
+ALTER TABLE alter_attach DETACH PARTITION 2;
+ALTER TABLE alter_attach DROP COLUMN s;
+INSERT INTO alter_attach VALUES (6, 3), (7, 3);
+
+ALTER TABLE alter_attach ATTACH PARTITION 2;
+SELECT * FROM alter_attach ORDER BY x;
+
+DROP TABLE IF EXISTS alter_attach;
+DROP TABLE IF EXISTS mt_with_pk;
+
+SELECT '===test alter update===';
+DROP TABLE IF EXISTS alter_update_00806;
+
+CREATE TABLE alter_update_00806 (d Date, e Enum8('foo'=1, 'bar'=2)) Engine = MergeTree PARTITION BY d ORDER BY (d) SETTINGS index_granularity_bytes=10000, write_final_mark=1;
+
+INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-01', 'foo');
+INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-02', 'bar');
+
+ALTER TABLE alter_update_00806 UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d='2018-01-02';
+
+SELECT sleep(1) FORMAT Null;
+
+SELECT e FROM alter_update_00806 ORDER BY d;
+
+DROP TABLE IF EXISTS alter_update_00806;
