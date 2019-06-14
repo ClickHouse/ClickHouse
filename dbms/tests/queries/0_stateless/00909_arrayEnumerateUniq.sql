@@ -180,3 +180,44 @@ SELECT arrayEnumerateDenseRanked(1.1, [10,20,10,30]); -- { serverError 170 }
 SELECT arrayEnumerateDenseRanked([10,20,10,30], 0.4); -- { serverError 170 }
 SELECT arrayEnumerateDenseRanked([10,20,10,30], 1.8); -- { serverError 170 }
 SELECT arrayEnumerateUniqRanked(1, [], 1000000000); -- { serverError 36 }
+
+
+-- skipping empty arrays
+SELECT arrayEnumerateUniqRanked(2, [[3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [], [], [3], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [], [], [], [3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [], [3], [3]]);
+
+
+select '-- no order';
+SELECT * FROM (SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ) ) ORDER BY a ASC;
+select '-- order no arr';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order two arr';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order non empt';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[6], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3, 4], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1, 2, 3, 4], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1, 2, 3, 4], [], [], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[1, 2, 3, 4], [], [], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2,[[1], [1]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1], [1]]);
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [4]] AS a UNION ALL SELECT [[4]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 1, 4]] AS a UNION ALL SELECT [[], [], [3, 4, 5, 4]] AS a ) ORDER BY a ASC );
+select '-- ';
