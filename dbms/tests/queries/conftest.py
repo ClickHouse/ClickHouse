@@ -37,10 +37,8 @@ def sql_query(request):
 
 
 @pytest.fixture
-def standalone_server(bin_prefix):
-    tmp_dir = tempfile.mkdtemp(prefix='clickhouse.test..')
-
-    server = ServerThread(bin_prefix, tmp_dir)
+def standalone_server(bin_prefix, tmp_path):
+    server = ServerThread(bin_prefix, str(tmp_path))
     server.start()
     wait_result = server.wait()
 
