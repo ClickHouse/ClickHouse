@@ -40,8 +40,12 @@ private:
     {
         std::exception_ptr exception;
         std::function<void()> job;
+
         size_t num_executed_jobs = 0;
         UInt64 execution_time_ns = 0;
+
+        UInt64 current_stream = 0;
+        bool need_update_stream = true;
     };
 
     struct Node
@@ -87,6 +91,18 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
+    struct ExecutorContext
+    {
+        size_t executor_number;
+        std::atomic<ExecutionState *> next_task_to_execute;
+        std::atomic<UInt64> current_stream;
+    };
+
+    std::vector<ExecutorContext> executor_contexts;
+    UInt64 next_stream = 0;
+
+    std::vector<ExecutionState *> execution_states_queue;
+
 public:
     explicit PipelineExecutor(Processors processors);
     void execute(size_t num_threads);
@@ -110,12 +126,13 @@ private:
     void addChildlessProcessorsToQueue();
     void processFinishedExecutionQueue();
     void processFinishedExecutionQueueSafe();
-    bool addProcessorToPrepareQueueIfUpdated(Edge & edge);
+    bool addProcessorToPrepareQueueIfUpdated(Edge & edge, bool update_stream_number, UInt64 stream_number);
     void processPrepareQueue();
     void processAsyncQueue();
 
     void addJob(UInt64 pid);
     void addAsyncJob(UInt64 pid);
+    bool tryAssignJob(ExecutionState * state);
 
     void prepareProcessor(size_t pid, bool async);
 
