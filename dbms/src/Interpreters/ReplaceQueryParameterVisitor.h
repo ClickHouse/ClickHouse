@@ -21,7 +21,7 @@ public:
 private:
     const NameToNameMap parameters_substitution;
     String getParamValue(const String & name);
-    void visitQP(ASTPtr & ast);
+    void visitQueryParameters(ASTPtr & ast);
 };
 
 }
