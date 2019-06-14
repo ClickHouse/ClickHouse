@@ -234,8 +234,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             throw Exception(
                 getName() + ": Passed array number " + std::to_string(array_num) + " depth ("
-                    + std::to_string(arrays_depths.depths[array_num]) + ") is more than the actual array depth (" + std::to_string(col_depth)
-                    + ").",
+                    + std::to_string(arrays_depths.depths[array_num]) + ") is more than the actual array depth ("
+                    + std::to_string(col_depth) + ").",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
 
@@ -255,7 +255,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     executeMethodImpl(offsets_by_depth, data_columns, arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
-    for (int depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
+    for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
     block.getByPosition(result).column = result_nested_array;
@@ -321,6 +321,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     std::vector<size_t> indices_by_depth(arrays_depths.max_array_depth);
     std::vector<size_t> current_offset_n_by_depth(arrays_depths.max_array_depth);
+    std::vector<size_t> last_offset_by_depth(arrays_depths.max_array_depth, 0); // For skipping empty arrays
 
     UInt32 rank = 0;
 
@@ -329,6 +330,24 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     for (size_t off : offsets)
     {
         bool want_clear = false;
+
+        /// Skipping offsets if no data in this array
+        if (prev_off == off)
+        {
+            want_clear = true;
+            ++indices_by_depth[0];
+
+            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
+            {
+                const auto offsets_by_depth_size = offsets_by_depth[depth]->size();
+                while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                {
+                    if (current_offset_n_by_depth[depth] + 1 >= offsets_by_depth_size)
+                        break; // only one empty array: SELECT arrayEnumerateUniqRanked([]);
+                    ++current_offset_n_by_depth[depth];
+                }
+            }
+        }
 
         /// For each element at the depth we want to look.
         for (size_t j = prev_off; j < off; ++j)
@@ -356,14 +375,21 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
-            for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
+                /// Skipping offsets for empty arrays
+                while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                {
+                    ++current_offset_n_by_depth[depth];
+                }
+
                 ++indices_by_depth[depth];
 
                 if (indices_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
                     if (static_cast<int>(arrays_depths.clear_depth) == depth + 1)
                         want_clear = true;
+                    last_offset_by_depth[depth] = (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]];
                     ++current_offset_n_by_depth[depth];
                 }
                 else
