@@ -62,10 +62,6 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
-    /// Writes trailing mark at the end of stream
-    /// If it was written returns true, otherwise false
-    bool writeTrailingMark();
-
 private:
     NamesAndTypesList columns_list;
     SerializationStates serialization_states;

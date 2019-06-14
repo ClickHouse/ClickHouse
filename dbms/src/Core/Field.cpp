@@ -93,19 +93,17 @@ namespace DB
         size_t size = x.size();
         if (size)
             type = x.front().getType();
-
         DB::writeBinary(type, buf);
         DB::writeBinary(size, buf);
 
         for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
         {
-
             switch (type)
             {
                 case Field::Types::Null: break;
                 case Field::Types::UInt64:
                 {
-                    DB::writeBinary(get<UInt64>(*it), buf);
+                    DB::writeVarUInt(get<UInt64>(*it), buf);
                     break;
                 }
                 case Field::Types::UInt128:

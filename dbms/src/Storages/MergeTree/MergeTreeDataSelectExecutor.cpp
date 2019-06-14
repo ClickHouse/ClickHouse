@@ -910,10 +910,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (marks_count == 0)
         return res;
 
+    bool has_last_mark = part->storage.settings.write_final_mark;
+
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
-        if (part->storage.settings.write_final_mark)
+        if (has_last_mark)
             res.push_back(MarkRange(0, marks_count - 1));
         else
             res.push_back(MarkRange(0, marks_count));
@@ -943,34 +945,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             ranges_stack.pop_back();
 
             bool may_be_true;
-            if (range.end == marks_count)
+            if (range.end == marks_count && !has_last_mark)
             {
-                size_t last_mark_rows_count = part->index_granularity.getMarkRows(marks_count - 1);
-                /// We sure about that range and can build interval precisely
-                if (last_mark_rows_count == 0)
-                {
-                    range.end -= 1; /// Remove empty last mark. It's useful only for primary key condition.
-                    for (size_t i = 0; i < used_key_size; ++i)
-                    {
-                        index[i]->get(range.begin, index_left[i]);
-                        index[i]->get(range.end, index_right[i]);
-                    }
+                for (size_t i = 0; i < used_key_size; ++i)
+                    index[i]->get(range.begin, index_left[i]);
 
-                    may_be_true = key_condition.mayBeTrueInRange(
-                        used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
-                }
-                else
-                {
-                    for (size_t i = 0; i < used_key_size; ++i)
-                    {
-                        index[i]->get(range.begin, index_left[i]);
-                    }
-                    may_be_true = key_condition.mayBeTrueAfter(
-                        used_key_size, index_left.data(), data.primary_key_data_types);
-                }
+                may_be_true = key_condition.mayBeTrueAfter(
+                    used_key_size, index_left.data(), data.primary_key_data_types);
             }
             else
             {
+                if (has_last_mark && range.end == marks_count)
+                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
                     index[i]->get(range.begin, index_left[i]);
@@ -1043,10 +1030,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
-    for (size_t i = 0; i < ranges.size(); ++i)
+    for (const auto & range : ranges)
     {
-        auto range = ranges[i];
-
         MarkRange index_range(
                 range.begin / index->granularity,
                 (range.end + index->granularity - 1) / index->granularity);
