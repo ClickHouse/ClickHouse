@@ -80,7 +80,7 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
     const double min_filtration_ratio = 0.00001;
 
     auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
-        index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
+        &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
         if (!current_task.size_predictor)
