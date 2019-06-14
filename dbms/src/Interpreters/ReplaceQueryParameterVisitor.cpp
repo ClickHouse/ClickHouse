@@ -18,13 +18,13 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     for (auto & child : ast->children)
     {
         if (child->as<ASTQueryParameter>())
-            visitQP(child);
+            visitvisitQueryParameter(child);
         else
             visit(child);
     }
 }
 
-String ReplaceQueryParameterVisitor::getParamValue(const String & name)
+const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
 {
     auto search = parameters_substitution.find(name);
     if (search != parameters_substitution.end())
@@ -33,14 +33,16 @@ String ReplaceQueryParameterVisitor::getParamValue(const String & name)
         throw Exception("Expected name '" + name + "' in argument --param_{name}", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
+void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 {
-    auto ast_param = ast->as<ASTQueryParameter>();
-    const String value = getParamValue(ast_param->name);
-    String type = ast_param->type;
+    const auto & ast_param = ast->as<ASTQueryParameter &>();
+    const String & value = getParamValue(ast_param.name);
+    const String & type = ast_param.type;
 
     /// Replacing all occurrences of types Date and DateTime with String.
     /// String comparison is used in "WHERE" conditions with this types.
+    
+    /// TODO: WTF, totally incorrect
 
     boost::replace_all(type, "DateTime", "String");
     boost::replace_all(type, "Date", "String");
