@@ -664,22 +664,17 @@ TCP порт для защищённого обмена данными с кли
 <users_config>users.xml</users_config>
 ```
 
+## zookeeper {#server-settings_zookeeper}
 
-## zookeeper
+Содержит параметры, позволяющие ClickHouse взаимодействовать с кластером [ZooKeeper](http://zookeeper.apache.org/).
 
-Конфигурация серверов ZooKeeper.
+ClickHouse использует ZooKeeper для хранения метаданных о репликах при использовании реплицированных таблиц. Если реплицированные таблицы не используются, этот раздел параметров может отсутствовать.
 
-Содержит параметры для взаимодействия ClickHouse с кластером [ZooKeeper](http://zookeeper.apache.org/).
+Раздел содержит следующие параметры:
 
-ClickHouse использует ZooKeeper для хранения метаданных о репликах при использовании реплицированных таблиц.
+- `node` — адрес ноды (сервера) ZooKeeper. Можно сконфигурировать несколько нод.
 
-Параметр можно не указывать, если реплицированные таблицы не используются.
-
-Содержит следующие параметры:
-
-- `node` — нода ZooKeeper. Может содержать несколько узлов.
-
-    Пример:
+    Например:
 
     ```xml
     <node index="1">
@@ -688,14 +683,13 @@ ClickHouse использует ZooKeeper для хранения метадан
     </node>
     ```
 
-    Аттрибут `index` не используется в ClickHouse. Он присутствует в примере в связи с тем, что на серверах могут быть установлены другие программы, которые могут считывать тот же конфигурационный файл.
+    Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
 
-- `session_timeout_ms` — максимальный таймаут для сессии в миллисекундах (default: 30000).
-- `operation_timeout_ms` — максимальный таймаут для операции в миллисекундах (default: 10000).
-- `root` — корневая znode, которая используется сервером ClickHouse для всех остальных znode. Опционально.
-- `identity` — пара `usename:password` для авторизации в кластере ZooKeeper. Опционально.
+- `session_timeout` — максимальный таймаут клиентской сессии в миллисекундах.
+- `root` — [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes), который используется как корневой для всех znode, которые использует сервер ClickHouse. Необязательный.
+- `identity` — пользователь и пароль, которые может потребовать ZooKeeper для доступа к запрошенным znode. Необязательный.
 
-**Пример**
+**Пример конфигурации**
 
 ```xml
 <zookeeper>
@@ -708,7 +702,6 @@ ClickHouse использует ZooKeeper для хранения метадан
         <port>2181</port>
     </node>
     <session_timeout_ms>30000</session_timeout_ms>
-    <operation_timeout_ms>10000</operation_timeout_ms>
     <!-- Optional. Chroot suffix. Should exist. -->
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
@@ -716,9 +709,9 @@ ClickHouse использует ZooKeeper для хранения метадан
 </zookeeper>
 ```
 
-**См. также:**
+**Смотрите также**
 
-- [Репликация](../../operations/table_engines/replication.md).
+- [Репликация](../../operations/table_engines/replication.md)
 - [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}

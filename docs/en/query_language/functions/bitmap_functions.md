@@ -332,5 +332,31 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 └─────┘
 ```
 
+## bitmapContains
+
+Returns 1 if bitmap contains the given element, 0 otherwise.
+For empty bitmaps returns 0.
+
+```
+bitmapContains(bitmap,element)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+- `element` – UInt32 integer.
+
+**Example**
+
+``` sql
+select bitmapContains(bitmapBuild([1,5,7,9]),CAST(9, 'UInt32')) AS res;
+```
+
+```
+┌─res─┐
+│  1  │
+└─────┘
+```
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/bitmap_functions/) <!--hide-->
