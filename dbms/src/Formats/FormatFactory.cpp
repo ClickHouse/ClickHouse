@@ -55,7 +55,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
 
     return input_getter(
-        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : [] {}, format_settings);
+        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
 }
 
 

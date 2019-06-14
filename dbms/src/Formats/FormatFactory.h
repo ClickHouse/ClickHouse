@@ -25,6 +25,8 @@ class WriteBuffer;
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
 public:
+    /// This callback allows to perform some additional actions after reading a single row.
+    /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
     using ReadCallback = std::function<void()>;
 
 private:
