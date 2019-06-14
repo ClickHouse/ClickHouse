@@ -60,18 +60,18 @@ public:
     {
         // notice: argument types has been checked before
         if (step == 0)
-            throw Exception {
+            throw Exception(
                 "The step given in function "
                     + getName() + " should not be zero",
                 ErrorCodes::BAD_ARGUMENTS
-            };
+            );
 
         if (total > MAX_ELEMENTS)
-            throw Exception {
+            throw Exception(
                 "The range given in function "
                     + getName() + " contains too many elements",
                 ErrorCodes::BAD_ARGUMENTS
-            };
+            );
 
         if ((step > 0 && end < begin) || (step < 0 && end > begin))
         {
