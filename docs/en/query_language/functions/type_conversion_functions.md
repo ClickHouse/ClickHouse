@@ -21,9 +21,9 @@ Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The
 
 Converts an input string to the value of [Nullable(Decimal(P,S))](../../data_types/decimal.md) data type. This family of functions include:
 
-- `toDecimal32OrNull( expr, S)` — Results with `Nullable(Decimal32(S))` data type.
-- `toDecimal64OrNull( expr, S)` — Results with `Nullable(Decimal64(S))` data type.
-- `toDecimal128OrNull( expr, S)` — Results with `Nullable(Decimal128(S))` data type.
+- `toDecimal32OrNull(expr, S)` — Results with `Nullable(Decimal32(S))` data type.
+- `toDecimal64OrNull(expr, S)` — Results with `Nullable(Decimal64(S))` data type.
+- `toDecimal128OrNull(expr, S)` — Results with `Nullable(Decimal128(S))` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get the `NULL` value instead of exception, when input value parsing error.
 
