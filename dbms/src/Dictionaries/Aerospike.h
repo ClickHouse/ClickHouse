@@ -88,7 +88,11 @@ public:
     std::string lastErrorMessage() const
     {
         std::stringstream ss;
-        ss << "Aerospike error(" << error.code << "): " << error.message <<" at [" << error.file << ":" << error.line << "]";
+        ss << "Aerospike error(" << error.code << ")";
+        if (error.message)
+            ss << " " << error.message;
+        if (error.file && error.line)
+            ss <<" at [" << error.file << ":" << error.line << "]";
         return ss.str();
     }
 

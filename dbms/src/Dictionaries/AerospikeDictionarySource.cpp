@@ -106,7 +106,7 @@ BlockInputStreamPtr AerospikeDictionarySource::loadAll()
 
     Aerospike::Scan scan(namespace_name.c_str(), set_name.c_str());
 
-    if (scan.scanForeach(*client, scanner_callback, &s_keys))
+    if (!scan.scanForeach(*client, scanner_callback, &s_keys))
         throw Exception{client->lastErrorMessage(), ErrorCodes::EXTERNAL_DICTIONARY_ERROR};
 
     return std::make_shared<AerospikeBlockInputStream>(
