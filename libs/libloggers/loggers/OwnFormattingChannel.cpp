@@ -1,10 +1,9 @@
-#include <daemon/OwnFormattingChannel.h>
-#include <daemon/OwnPatternFormatter.h>
+#include "OwnFormattingChannel.h"
+#include "OwnPatternFormatter.h"
 
 
 namespace DB
 {
-
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())

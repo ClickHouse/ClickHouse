@@ -54,7 +54,7 @@ Setting fields:
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
+Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
 Example of settings:
 

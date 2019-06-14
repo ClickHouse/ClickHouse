@@ -98,7 +98,7 @@ nav:
     - 'Buffer': 'operations/table_engines/buffer.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
-    
+
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
@@ -136,6 +136,7 @@ nav:
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
+    - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -185,6 +186,7 @@ nav:
     - 'Разрешения на выполнение запросов': 'operations/settings/permissions_for_queries.md'
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
+    - 'Ограничения на изменение настроек': 'operations/settings/constraints_on_settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
   - 'Утилиты':
     - 'Введение': 'operations/utils/index.md'

@@ -40,6 +40,7 @@
                 <value>PrettyCompact</value>
                 <value>PrettyCompactMonoBlock</value>
                 <value>PrettyNoEscapes</value>
+                <value>PrettySpace</value>
                 <value>RowBinary</value>
                 <value>Native</value>
                 <value>XML</value>

@@ -15,7 +15,7 @@
 #endif
 
 #if USE_TCMALLOC
-#include <gperftools/malloc_extension.h> // Y_IGNORE
+#include <gperftools/malloc_extension.h>
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
