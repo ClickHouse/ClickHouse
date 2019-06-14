@@ -8,7 +8,7 @@ if (USE_DEBUG_HELPERS)
 endif ()
 
 add_subdirectory (libcommon)
-add_subdirectory(libloggers)
+add_subdirectory (libloggers)
 add_subdirectory (libdaemon)
 
 if (USE_INTERNAL_MEMCPY)
