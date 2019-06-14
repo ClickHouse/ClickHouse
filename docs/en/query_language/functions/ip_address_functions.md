@@ -147,35 +147,35 @@ SELECT
 └─────────────────────────────────────┴─────────────────────┘
 ```
 
-## IPv4CIDRtoIPv4Range(ipv4, cidr),
+## IPv4CIDRToRange(ipv4, cidr),
 
 Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Return a tuple with two IPv4 containing the lower range and the higher range of the subnet.
 
 
 ```sql
-SELECT IPv4CIDRtoIPv4Range(toIPv4('192.168.5.2'), 16)
+SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 ```
 
 ```
-┌─IPv4CIDRtoIPv4Range(toIPv4('192.168.5.2'), 16)─┐
-│ ('192.168.0.0','192.168.255.255')              │
-└────────────────────────────────────────────────┘
+┌─IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)─┐
+│ ('192.168.0.0','192.168.255.255')          │
+└────────────────────────────────────────────┘
 ```
 
 
-## IPv6CIDRtoIPv6Range(ipv6, cidr),
+## IPv6CIDRToRange(ipv6, cidr),
 
 Accepts an IPv6 and an UInt8 value containing the CIDR. Return a tuple with two IPv6 containing the lower range and the higher range of the subnet.
 
 
 ```sql
-SELECT IPv6CIDRtoIPv6Range(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
+SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 ```
 
 ```
-┌─IPv6CIDRtoIPv6Range(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32)─┐
-│ ('2001:db8::','2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')                    │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32)─┐
+│ ('2001:db8::','2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')                │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toIPv4(string)
