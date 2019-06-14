@@ -319,10 +319,17 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         {
             /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
+            cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc)
             LOG_WARNING(log,
                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+        else
+        {
+            /// Successfully removed blocks have to be removed from cache
+            cached_block_stats.erase(first_outdated_block->node);
+        }
+        first_outdated_block++;
     }
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
@@ -340,7 +347,9 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     if (zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-    /// Clear already deleted blocks from the cache, cached_block_ctime should be subset of blocks
+    /// Seems like this code is obsolete, because we delete blocks from cache
+    /// when they are deleted from zookeeper. But we don't know about all (maybe future) places in code
+    /// where they can be removed, so just to be sure that cache would not leak we check it here.
     {
         NameSet blocks_set(blocks.begin(), blocks.end());
         for (auto it = cached_block_stats.begin(); it != cached_block_stats.end();)

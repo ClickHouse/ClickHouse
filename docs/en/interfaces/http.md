@@ -133,17 +133,17 @@ You can use the internal ClickHouse compression format when transmitting data. T
 If you specified `compress=1` in the URL, the server compresses the data it sends you.
 If you specified `decompress=1` in the URL, the server decompresses the same data that you pass in the `POST` method.
 
-You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a `POST` request compressed, append the request header `Content-Encoding: compression_method`. In order for ClickHouse to compress the response, you must append `Accept-Encoding: compression_method`. ClickHouse supports `gzip`, `br`, `deflate` [https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens]. To enable HTTP compression, you must use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting for all the compression methods.
+You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`. In order for ClickHouse to compress the response, you must append `Accept-Encoding: compression_method`. ClickHouse supports `gzip`, `br`, and `deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). To enable HTTP compression, you must use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the data compression level in the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting for all the compression methods.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
-Examples of sending the data with compression:
+Examples of sending data with compression:
 
 ```bash
-#Sending the data to the server:
+#Sending data to the server:
 curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
 
-#Sending the data to the client:
+#Sending data to the client:
 echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 

@@ -135,6 +135,7 @@ nav:
     - 'arrayJoin函数': 'query_language/functions/array_join.md'
     - 'GEO函数': 'query_language/functions/geo.md'
     - 'Nullable处理函数': 'query_language/functions/functions_for_nulls.md'
+    - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
     - '其他函数': 'query_language/functions/other_functions.md'
   - 'Aggregate functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -185,6 +186,7 @@ nav:
     - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
+    - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
