@@ -1876,13 +1876,12 @@ NameToNameMap Context::getParameterSubstitution() const
 {
     if (hasQueryParameters())
         return parameters_substitution;
-    throw Exception("Query without parameters", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Logical error: there are no parameters to substitute", ErrorCodes::LOGICAL_ERROR);
 }
 
 
 void Context::setParameterSubstitution(const String & name, const String & value)
 {
-    auto lock = getLock();
     if (!parameters_substitution.insert({name, value}).second)
         throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
