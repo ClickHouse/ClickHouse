@@ -1205,8 +1205,6 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (pos->type != TokenType::OpeningCurlyBrace)
         return false;
 
-    String name;
-    String type;
     ++pos;
 
     if (pos->type != TokenType::BareWord)
@@ -1215,7 +1213,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
     }
 
-    name = String(pos->begin, pos->end);
+    String name(pos->begin, pos->end);
     ++pos;
 
     if (pos->type != TokenType::Colon)
@@ -1241,7 +1239,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         ++pos;
     }
 
-    type = String(old_pos->begin, pos->begin);
+    String type(old_pos->begin, pos->begin);
 
     if (pos->type != TokenType::ClosingCurlyBrace)
     {
