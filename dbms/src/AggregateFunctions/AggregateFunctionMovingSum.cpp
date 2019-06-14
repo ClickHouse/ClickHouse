@@ -46,7 +46,7 @@ static AggregateFunctionPtr createAggregateFunctionMovingSum(const std::string &
 
     if (parameters.empty())
     {
-	    // cumulative sum without parameter
+        // cumulative sum without parameter
     }
     else if (parameters.size() == 1)
     {
