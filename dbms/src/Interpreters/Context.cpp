@@ -1866,6 +1866,27 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 }
 
 
+bool Context::hasQueryParameters() const
+{
+    return !parameters_substitution.empty();
+}
+
+
+NameToNameMap Context::getParameterSubstitution() const
+{
+    if (hasQueryParameters())
+        return parameters_substitution;
+    throw Exception("Logical error: there are no parameters to substitute", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+void Context::setParameterSubstitution(const String & name, const String & value)
+{
+    if (!parameters_substitution.insert({name, value}).second)
+        throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
 #if USE_EMBEDDED_COMPILER
 
 std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const

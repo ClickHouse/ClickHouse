@@ -244,6 +244,8 @@ public:
       */
     virtual void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
+    virtual void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+
     /** Text serialization intended for using in JSON format.
       */
     virtual void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
@@ -283,6 +285,8 @@ protected:
       * Without escaping or quoting.
       */
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+
+    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.

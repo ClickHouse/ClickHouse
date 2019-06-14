@@ -81,6 +81,11 @@ public:
         deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
     }
 
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+    }
+
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
