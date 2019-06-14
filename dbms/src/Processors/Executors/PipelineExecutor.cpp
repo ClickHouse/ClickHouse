@@ -187,7 +187,10 @@ bool PipelineExecutor::tryAssignJob(ExecutionState * state)
         {
             ExecutionState * expected = nullptr;
             if (executor_context->next_task_to_execute.compare_exchange_strong(expected, state))
+            {
+                ++num_tasks_to_wait;
                 return true;
+            }
         }
     }
 
@@ -238,9 +241,6 @@ void PipelineExecutor::addJob(UInt64 pid)
 
         /// while (!task_queue.push(graph[pid].execution_state.get()))
         ///    sleep(0);
-
-        task_condvar.notify_one();
-        ++num_tasks_to_wait;
     }
     else
     {
@@ -384,6 +384,23 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
     }
 }
 
+void PipelineExecutor::assignJobs()
+{
+    for (auto * state : execution_states_queue)
+    {
+        if (!tryAssignJob(state))
+        {
+            while (!task_queue.push(state))
+                sleep(0);
+
+            task_condvar.notify_one();
+            ++num_tasks_to_wait;
+        }
+    }
+
+    execution_states_queue.clear();
+}
+
 void PipelineExecutor::processPrepareQueue()
 {
     while (!prepare_queue.empty())
@@ -394,16 +411,7 @@ void PipelineExecutor::processPrepareQueue()
         prepareProcessor(proc, false);
     }
 
-    for (auto * state : execution_states_queue)
-    {
-        if (!tryAssignJob(state))
-        {
-            while (!task_queue.push(state))
-                sleep(0);
-        }
-    }
-
-    execution_states_queue.clear();
+    assignJobs();
 }
 
 void PipelineExecutor::processAsyncQueue()
@@ -419,10 +427,13 @@ void PipelineExecutor::processAsyncQueue()
         {
             while (!task_queue.push(state))
                 sleep(0);
+
+            task_condvar.notify_one();
+            ++num_tasks_to_wait;
         }
     }
 
-    execution_states_queue.clear();
+    assignJobs();
 }
 
 void PipelineExecutor::execute(size_t num_threads)

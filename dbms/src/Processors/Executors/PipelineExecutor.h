@@ -133,6 +133,7 @@ private:
     void addJob(UInt64 pid);
     void addAsyncJob(UInt64 pid);
     bool tryAssignJob(ExecutionState * state);
+    void assignJobs();
 
     void prepareProcessor(size_t pid, bool async);
 
