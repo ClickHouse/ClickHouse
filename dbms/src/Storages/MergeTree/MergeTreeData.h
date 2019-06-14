@@ -288,6 +288,7 @@ public:
     /// Meta information about index granularity
     struct IndexGranularityInfo
     {
+    public:
         /// Marks file extension '.mrk' or '.mrk2'
         String marks_file_extension;
 
@@ -303,12 +304,14 @@ public:
         /// Approximate bytes size of one granule
         size_t index_granularity_bytes;
 
-        IndexGranularityInfo(const MergeTreeSettings & settings);
+        IndexGranularityInfo(const MergeTreeSettings & settings, const std::string & full_path);
 
         String getMarksFilePath(const String & column_path) const
         {
             return column_path + marks_file_extension;
         }
+    private:
+        std::optional<std::string> getMrkExtensionFromFS(const std::string & full_path) const;
     };
 
 

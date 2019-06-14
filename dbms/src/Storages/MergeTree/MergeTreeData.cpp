@@ -106,7 +106,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
-    index_granularity_info(settings_),
+    index_granularity_info(settings_, full_path_),
     merging_params(merging_params_),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
@@ -202,12 +202,37 @@ MergeTreeData::MergeTreeData(
 }
 
 
-MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings)
+
+std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionFromFS(const std::string & full_path) const
+{
+    if (Poco::File(full_path).exists()) {
+        Poco::DirectoryIterator end;
+        for (Poco::DirectoryIterator table_it(full_path); table_it != end; ++table_it)
+        {
+            if (startsWith(table_it.name(), "tmp"))
+                continue;
+
+            if (table_it.path().isDirectory())
+            {
+                for (Poco::DirectoryIterator part_it(table_it.path()); part_it != end; ++part_it)
+                {
+                    const auto & ext = part_it.path().getExtension();
+                    if (ext == "mrk" || ext == "mrk2")
+                        return ext;
+                }
+            }
+        }
+    }
+    return {};
+}
+
+MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings, const std::string & full_path)
     : fixed_index_granularity(settings.index_granularity)
     , index_granularity_bytes(settings.index_granularity_bytes)
 {
+    auto mrk_ext = getMrkExtensionFromFS(full_path);
     /// Granularity is fixed
-    if (index_granularity_bytes == 0)
+    if (index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk"))
     {
         is_adaptive = false;
         mark_size_in_bytes = sizeof(UInt64) * 2;
