@@ -140,7 +140,7 @@ void PipelineExecutor::processFinishedExecutionQueue()
 
         auto & state = graph[finished_job].execution_state;
 
-        ++num_waited_tasks;
+        /// ++num_waited_tasks;
         ++state->num_executed_jobs;
         state->need_update_stream = true;
 
@@ -568,7 +568,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             {
                 /// Try wait anything.
                 event_counter.wait();
-                /// ++num_waited_tasks;
+                ++num_waited_tasks;
             }
             else
             {
