@@ -68,7 +68,7 @@ For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more inf
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 
-### String
+### String {#syntax-string-literal}
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the [String](../data_types/string.md) type.
 
