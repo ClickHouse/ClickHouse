@@ -1622,10 +1622,7 @@ public:
 
                 /// Parameter arg after underline.
                 if (startsWith(arg, "--param_"))
-                {
-                    parameter_arguments.emplace_back(Arguments{""});
-                    parameter_arguments.back().emplace_back(arg);
-                }
+                    parameter_arguments.emplace_back(Arguments{arg});
                 else
                     common_arguments.emplace_back(arg);
             }
@@ -1706,7 +1703,7 @@ public:
         /// Parse commandline options related to prepared statements.
         po::options_description parameter_description("Query parameters options");
         parameter_description.add_options()
-                ("param_", po::value<std::string>(), "name and value of substitution, with syntax --param_name=value")
+            ("param_", po::value<std::string>(), "name and value of substitution, with syntax --param_name=value")
         ;
 
         for (size_t i = 0; i < parameter_arguments.size(); ++i)
