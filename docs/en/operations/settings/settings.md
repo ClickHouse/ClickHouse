@@ -11,7 +11,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Only if the FROM section uses a distributed table containing more than one shard.
-- If the subquery concerns a distributed table containing more than one shard,
+- If the subquery concerns a distributed table containing more than one shard.
 - Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
 Possible values:
@@ -688,5 +688,17 @@ Possible values:
 
 Default value: 1.
 
+## count_distinct_implementation {#settings-count_distinct_implementation}
+
+Specifies which of the `uniq*` functions should be used for performing the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+
+Possible values:
+
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+
+Default value: `uniqExact`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
