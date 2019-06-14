@@ -11,7 +11,7 @@
 #include "Loggers.h"
 
 
-OwnPatternFormatter::OwnPatternFormatter(const /*BaseDaemon*/ Loggers * daemon_, OwnPatternFormatter::Options options_)
+OwnPatternFormatter::OwnPatternFormatter(const Loggers * daemon_, OwnPatternFormatter::Options options_)
     : Poco::PatternFormatter(""), daemon(daemon_), options(options_)
 {
 }
@@ -24,6 +24,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     const Poco::Message & msg = msg_ext.base;
 
     /// For syslog: tag must be before message and first whitespace.
+    /// This code is only used in Yandex.Metrika and unneeded in ClickHouse.
     if ((options & ADD_LAYER_TAG) && daemon)
     {
         auto layer = daemon->getLayer();
