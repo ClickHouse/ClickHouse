@@ -1,19 +1,20 @@
-#include <daemon/OwnPatternFormatter.h>
-
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/InternalTextLogsQueue.h>
+#include "OwnPatternFormatter.h"
 
 #include <functional>
 #include <optional>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <sys/time.h>
+#include <Common/CurrentThread.h>
 #include <common/getThreadNumber.h>
-#include <daemon/BaseDaemon.h>
+#include "Loggers.h"
 
 
-OwnPatternFormatter::OwnPatternFormatter(const BaseDaemon * daemon_, OwnPatternFormatter::Options options_)
-    : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+OwnPatternFormatter::OwnPatternFormatter(const /*BaseDaemon*/ Loggers * daemon_, OwnPatternFormatter::Options options_)
+    : Poco::PatternFormatter(""), daemon(daemon_), options(options_)
+{
+}
 
 
 void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
