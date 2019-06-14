@@ -11,7 +11,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
-#include <Core/iostream_debug_helpers.h>
+// for better debug: #include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for Yandex.Metrica.
@@ -139,9 +139,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & in
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-        // Debug: 
-DUMP(j, indices[j], key_columns[j]->size());
-const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
+        // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
@@ -322,8 +320,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
     Map indices;
 
-DUMP(arrays_depths.clear_depth, arrays_depths.depths, arrays_depths.max_array_depth);
-
     std::vector<size_t> indices_by_depth(arrays_depths.max_array_depth);
     std::vector<size_t> current_offset_n_by_depth(arrays_depths.max_array_depth);
     std::vector<size_t> last_offset_by_depth(arrays_depths.max_array_depth, 0); // For skipping empty arrays
@@ -332,15 +328,8 @@ DUMP(arrays_depths.clear_depth, arrays_depths.depths, arrays_depths.max_array_de
 
     std::vector<size_t> columns_indices(columns.size());
 
-DUMP(columns);
-DUMP(offsets);
-DUMP(offsets_by_depth);
-DUMP(indices_by_depth);
-
-    //size_t want_add_to_indices_by_depth_0 = 0;
     for (size_t off : offsets)
     {
-DUMP(off);
         bool want_clear = false;
 
         /// Skipping offsets if no data in this array
@@ -349,37 +338,25 @@ DUMP(off);
             want_clear = true;
             if (arrays_depths.max_array_depth > 1)
                 ++indices_by_depth[0];
-            //want_add_to_indices_by_depth_0 = 1;
 
             for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
                 const auto offsets_by_depth_size = offsets_by_depth[depth]->size();
-DUMP("testskip", depth, current_offset_n_by_depth[depth], last_offset_by_depth[depth], "==", (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]], offsets_by_depth_size);
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
                     if (current_offset_n_by_depth[depth] + 1 >= offsets_by_depth_size)
                         break; // only one empty array: SELECT arrayEnumerateUniqRanked([]);
                     ++current_offset_n_by_depth[depth];
-DUMP("Cup", current_offset_n_by_depth);
                 }
             }
-DUMP("SKIP empty", prev_off, off);
-DUMP(indices_by_depth);
-DUMP(current_offset_n_by_depth);
-        }/* else {
-            indices_by_depth[0] += want_add_to_indices_by_depth_0;
-            want_add_to_indices_by_depth_0 = 0;
-DUMP(want_add_to_indices_by_depth_0, indices_by_depth);
-        }*/
+        }
 
         /// For each element at the depth we want to look.
         for (size_t j = prev_off; j < off; ++j)
         {
-DUMP(j, prev_off, off);
             for (size_t col_n = 0; col_n < columns.size(); ++col_n)
                 columns_indices[col_n] = indices_by_depth[arrays_depths.depths[col_n] - 1];
 
-DUMP(columns_indices);
             auto hash = hash128depths(columns_indices, columns);
 
             if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
@@ -398,30 +375,24 @@ DUMP(columns_indices);
                 res_values[j] = idx;
             }
 
-            // Debug: 
-DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
+            // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
             for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
                 /// Skipping offsets for empty arrays
-DUMP("test?", last_offset_by_depth[depth], "==",  (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]], current_offset_n_by_depth[depth]);
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
                     ++current_offset_n_by_depth[depth];
-DUMP("skip", depth, current_offset_n_by_depth[depth]);
                 }
 
                 ++indices_by_depth[depth];
-DUMP("inc", depth,indices_by_depth[depth],"==" ,(*offsets_by_depth[depth])[current_offset_n_by_depth[depth]], current_offset_n_by_depth[depth]);
 
                 if (indices_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
-
                     if (static_cast<int>(arrays_depths.clear_depth) == depth + 1)
                         want_clear = true;
                     last_offset_by_depth[depth] = (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]];
                     ++current_offset_n_by_depth[depth];
-DUMP(last_offset_by_depth, current_offset_n_by_depth, want_clear);
                 }
                 else
                 {
