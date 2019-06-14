@@ -34,6 +34,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
+#include <common/argsToConfig.h>
 
 
 namespace DB
@@ -497,6 +498,11 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+
+    std::vector<std::string> arguments;
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+        arguments.emplace_back(argv[arg_num]);
+    argsToConfig(arguments, config(), 100);
 }
 
 void LocalServer::applyCmdOptions()
