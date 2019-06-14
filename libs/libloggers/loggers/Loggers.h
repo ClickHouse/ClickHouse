@@ -13,15 +13,14 @@ class AbstractConfiguration;
 class Loggers
 {
 public:
-    /// Строит необходимые логгеры
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
 
-    /// Закрыть файлы с логами. При следующей записи, будут созданы новые файлы.
+    /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
     std::optional<size_t> getLayer() const
     {
-        return layer; /// layer выставляется в классе-наследнике BaseDaemonApplication.
+        return layer; /// layer setted in inheritor class BaseDaemonApplication.
     }
 
 protected:
