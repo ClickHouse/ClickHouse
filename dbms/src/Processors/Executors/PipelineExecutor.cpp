@@ -421,18 +421,6 @@ void PipelineExecutor::processAsyncQueue()
         if (graph[node].status == ExecStatus::Async)
             prepareProcessor(node, true);
 
-    for (auto * state : execution_states_queue)
-    {
-        if (!tryAssignJob(state))
-        {
-            while (!task_queue.push(state))
-                sleep(0);
-
-            task_condvar.notify_one();
-            ++num_tasks_to_wait;
-        }
-    }
-
     assignJobs();
 }
 
