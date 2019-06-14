@@ -15,8 +15,14 @@ bitmapBuild(array)
 **Пример**
 
 ```sql
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res
+SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 ```
+```text
+┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
+│     │ AggregateFunction(groupBitmap, UInt8)    │
+└─────┴──────────────────────────────────────────────┘
+```
+
 
 ## bitmapToArray
 
@@ -44,16 +50,20 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapHasAny
 
-Аналогично функции `hasAny(array, array)` возвращает 1 если два битмапа содержат одинаковые элементы, 0 в противном случае.
-Для пустых битмапов возвращает 0.
+Проверяет, имеют ли два битмапа хотя бы один общий элемент.
 
 ```
-bitmapHasAny(bitmap,bitmap)
+bitmapHasAny(bitmap1, bitmap2)
 ```
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap*` – массив любого типа с набором элементов.
+
+**Возвращаемые значения**
+
+- `1`, если `bitmap1` и `bitmap2` имеют хотя бы один одинаковый элемент.
+- `0`, в противном случае.
 
 **Пример**
 
