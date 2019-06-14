@@ -136,7 +136,7 @@ void PipelineExecutor::processFinishedExecutionQueue()
     while (!finished_execution_queue.empty())
     {
         /// Should be successful as single consumer is used.
-        while (finished_execution_queue.pop(finished_job));
+        while (!finished_execution_queue.pop(finished_job));
 
         auto & state = graph[finished_job].execution_state;
 
