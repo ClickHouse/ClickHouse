@@ -7,8 +7,7 @@ namespace DB
 
 void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    String name_type = name + ':' + type;
-    settings.ostr << name_type;
+    settings.ostr << backQuoteIfNeed(name) + ':' + type;
 }
 
 void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const
