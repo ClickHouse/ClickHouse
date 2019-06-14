@@ -2,27 +2,21 @@
 
 #if USE_AEROSPIKE
 
-#    include <sstream>
-#    include <string>
-#    include <vector>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <ext/range.h>
 
-#    include <aerospike/aerospike.h>
-#    include <aerospike/aerospike_batch.h>
-#    include <aerospike/aerospike_scan.h>
-#    include <aerospike/as_batch.h>
-#    include <aerospike/as_record.h>
-#    include <aerospike/as_scan.h>
-#    include <aerospike/as_val.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
 
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/FieldVisitors.h>
-#    include <ext/range.h>
-#    include "AerospikeBlockInputStream.h"
-#    include "DictionaryStructure.h"
+#include "Aerospike.h"
+#include "AerospikeBlockInputStream.h"
+#include "DictionaryStructure.h"
 
 
 namespace DB
@@ -30,25 +24,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int EXTERNAL_DICTIONARY_ERROR;
 }
-
-AerospikeBlockInputStream::AerospikeBlockInputStream(
-    const aerospike & client,
-    std::vector<std::unique_ptr<as_key>> && keys,
-    const Block & sample_block,
-    const size_t max_block_size,
-    const std::string & namespace_name,
-    const std::string & set_name)
-    : client(client)
-    , keys(std::move(keys))
-    , max_block_size{max_block_size}
-    , namespace_name{namespace_name}
-    , set_name{set_name}
-{
-    description.init(sample_block);
-}
-
-AerospikeBlockInputStream::~AerospikeBlockInputStream() = default;
 
 namespace
 {
@@ -228,22 +205,24 @@ namespace
     };
 }
 
-void InitializeBatchKey(as_key * new_key, const char * namespace_name, const char * set_name, const std::unique_ptr<as_key> & base_key)
+
+AerospikeBlockInputStream::AerospikeBlockInputStream(
+    Aerospike & client,
+    std::vector<AerospikeKey> && keys,
+    const Block & sample_block,
+    const size_t max_block_size,
+    const std::string & namespace_name,
+    const std::string & set_name)
+    : client(client)
+    , keys(std::move(keys))
+    , max_block_size{max_block_size}
+    , namespace_name{namespace_name}
+    , set_name{set_name}
 {
-    switch (as_val_type(&base_key->value))
-    {
-        case AS_INTEGER:
-            as_key_init_int64(new_key, namespace_name, set_name, base_key->value.integer.value);
-            break;
-        case AS_STRING:
-            as_key_init_str(new_key, namespace_name, set_name, base_key->value.string.value);
-            break;
-        default:
-            const as_bytes & bytes = base_key->value.bytes;
-            as_key_init_raw(new_key, namespace_name, set_name, bytes.value, bytes.size);
-            break;
-    }
+    description.init(sample_block);
 }
+
+AerospikeBlockInputStream::~AerospikeBlockInputStream() = default;
 
 Block AerospikeBlockInputStream::readImpl()
 {
@@ -255,51 +234,40 @@ Block AerospikeBlockInputStream::readImpl()
     for (const auto i : ext::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
-    size_t current_block_size = std::min(max_block_size, keys.size());
-    as_batch batch;
-    as_batch_inita(&batch, current_block_size);
-
-    RecordsHandler recordsHandler(&columns, description);
-    for (UInt32 i = 0; i < current_block_size; ++i)
+    const auto batch_read_callback = [](const as_batch_read * results, uint32_t result_size, void * udata)
     {
-        InitializeBatchKey(as_batch_keyat(&batch, i), namespace_name.c_str(), set_name.c_str(), keys[cursor + i]);
-    }
+        RecordsHandler * records_handler = static_cast<RecordsHandler *>(udata);
 
-    const auto batchReadCallback = [](const as_batch_read * results, uint32_t resultSize, void * records_handler_)
-    {
-        RecordsHandler * records_handler = static_cast<RecordsHandler *>(records_handler_);
-
-        for (uint32_t i = 0; i < resultSize; i++)
+        for (uint32_t i = 0; i < result_size; i++)
         {
-            if (results[i].result == AEROSPIKE_OK)
+            if (results[i].result != AEROSPIKE_OK)
             {
-                records_handler->HandleRecordBins(results[i].record);
-                fprintf(stderr, "  AEROSPIKE_OK");
+                /// The transaction succeeded but the record doesn't exist.
+                if (results[i].result == AEROSPIKE_ERR_RECORD_NOT_FOUND)
+                    throw Exception{"Aerospike: record not found", ErrorCodes::EXTERNAL_DICTIONARY_ERROR};
+
+                throw Exception{"Aerospike: read transaction fails", ErrorCodes::EXTERNAL_DICTIONARY_ERROR};
             }
-            else if (results[i].result == AEROSPIKE_ERR_RECORD_NOT_FOUND)
-            {
-                // The transaction succeeded but the record doesn't exist.
-                fprintf(stderr, "  AEROSPIKE_ERR_RECORD_NOT_FOUND");
-            }
-            else
-            {
-                // The transaction didn't succeed.
-                fprintf(stderr, "  error %d", results[i].result);
-            }
+
+            records_handler->HandleRecordBins(results[i].record);
         }
         return true;
     };
 
+    size_t current_block_size = std::min(max_block_size, keys.size());
+    as_batch batch;
+    as_batch_inita(&batch, current_block_size);
 
-    as_error err;
-    if (aerospike_batch_get(&client, &err, nullptr, &batch, batchReadCallback, static_cast<void *>(&recordsHandler)) != AEROSPIKE_OK)
-    {
-        fprintf(stderr, "aerospike_batch_get() returned %d - %s", err.code, err.message);
-        exit(-1);
-    }
-    recordsHandler.HandleKeys(keys);
+    RecordsHandler records_handler(&columns, description);
+    for (UInt32 i = 0; i < current_block_size; ++i)
+        InitializeBatchKey(as_batch_keyat(&batch, i), namespace_name.c_str(), set_name.c_str(), keys[cursor + i]);
 
-    size_t num_rows = recordsHandler.getNumRows();
+    if (!client.batchGet(&batch, batch_read_callback, &records_handler))
+        throw Exception{client.lastErrorMessage(), ErrorCodes::EXTERNAL_DICTIONARY_ERROR};
+
+    records_handler.HandleKeys(keys);
+
+    size_t num_rows = records_handler.getNumRows();
     cursor += num_rows;
 
     assert(cursor <= keys.size());

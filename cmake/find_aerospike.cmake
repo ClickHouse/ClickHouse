@@ -1,5 +1,6 @@
 if (NOT DEFINED ENABLE_AEROSPIKE OR ENABLE_AEROSPIKE)
     if(OS_FREEBSD AND SANITIZE STREQUAL "address")
+    else ()
         if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/aerospike/src/main/aerospike/_bin.c")
             message (WARNING "submodule contrib/aerospike is missing. to fix try run: \n git submodule update --init --recursive")
         else()

@@ -2,14 +2,19 @@
 
 #include <Common/config.h>
 #include <Core/Block.h>
+
 #if USE_AEROSPIKE
 
-#    include "DictionaryStructure.h"
-#    include "IDictionarySource.h"
-#    include <aerospike/aerospike.h>
+#include <aerospike/aerospike.h>
+
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 namespace DB
 {
+
+class Aerospike;
+
 /// Allows loading dictionaries from Aerospike collection
 class AerospikeDictionarySource final : public IDictionarySource
 {
@@ -57,6 +62,7 @@ public:
     DictionarySourcePtr clone() const override { return std::make_unique<AerospikeDictionarySource>(*this); }
 
     std::string toString() const override;
+
 private:
     const DictionaryStructure dict_struct;
     const std::string host;
@@ -64,8 +70,7 @@ private:
     const std::string namespace_name;
     const std::string set_name;
     Block sample_block;
-    aerospike client; // may be use ptr here
-    // may be save global error variable
+    std::shared_ptr<Aerospike> client;
 };
 
 }
