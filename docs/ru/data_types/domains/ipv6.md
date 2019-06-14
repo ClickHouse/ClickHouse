@@ -23,7 +23,7 @@ DESCRIBE TABLE hits;
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv6` вставку в виде строк с текстовым представлением IPv6 адреса:
+`IPv6` поддерживает вставку в виде строк с текстовым представлением IPv6 адреса:
 
 ```sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.yandex', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.yandex/docs/en/', '2a02:e980:1e::1');

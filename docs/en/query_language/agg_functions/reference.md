@@ -402,7 +402,7 @@ It will use linear interpolation between two sample timestamp and then sum time-
 
 The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
 
-Before use this function, `timestamp` should be in ascend order
+Before using this function make sure `timestamp` is in ascending order.
 
 Example:
 ```
@@ -732,7 +732,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ### Usage {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function [evalMLMethod](../functions/machine_learning_methods.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 1. Fitting
@@ -786,7 +786,7 @@ To predict we use function [evalMLMethod](../functions/machine_learning_methods.
 **See Also**
 
 - [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
-- [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+- [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
 ## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}

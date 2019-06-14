@@ -23,7 +23,7 @@ DESCRIBE TABLE hits;
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv4` вставку в виде строк с текстовым представлением IPv4 адреса:
+`IPv4` поддерживает вставку в виде строк с текстовым представлением IPv4 адреса:
 
 ```sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.yandex', '183.247.232.58')('https://clickhouse.yandex/docs/en/', '116.106.34.242');
