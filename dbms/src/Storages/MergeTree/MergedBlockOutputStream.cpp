@@ -40,7 +40,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     init();
     for (const auto & it : columns_list)
     {
-        //std::cerr << "Constructor1 COLUMN NAME:" << it.name << std::endl;
         const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
     }
@@ -76,7 +75,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     for (const auto & it : columns_list)
     {
-        //std::cerr << "Constructor2 COLUMN NAME:" << it.name << std::endl;
         const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
     }
@@ -393,12 +391,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
-            std::cerr << "WRITING INDEX:" << rows << " i:" << i << std::endl;
             size_t current_mark = 0;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
-                std::cerr << "INDEX PREV_POS:" << prev_pos << std::endl;
                 if (prev_pos == 0 && index_offset != 0)
                 {
                     limit = index_offset;
@@ -406,7 +402,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 else
                 {
                     limit = index_granularity.getMarkRows(current_mark);
-                    std::cerr << "Marking." << " Limit:" << limit << " current mark:" << current_mark << std::endl;
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -426,17 +421,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
                 size_t pos = prev_pos;
                 skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
-                std::cerr << "POS:" << pos << std::endl;
 
                 if (pos == prev_pos + limit)
                 {
-                    std::cerr << "Dropping counter\n";
                     ++skip_index_filling[i];
 
                     /// write index if it is filled
                     if (skip_index_filling[i] == index->granularity)
                     {
-                        std::cerr << "WRITING to disk\n";
                         skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                         skip_index_filling[i] = 0;
                     }

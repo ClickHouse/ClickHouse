@@ -637,7 +637,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     if (storage_settings.write_final_mark && !storage_settings.index_granularity_bytes)
-        throw Exception("You must specify `index_granularity_bytes` > 0 to set `write_final_mark`=1", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("You must set the `index_granularity_bytes` > 0 to set `write_final_mark`=1", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
         return StorageReplicatedMergeTree::create(
