@@ -88,11 +88,7 @@ public:
                     + ", should be 1 or 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        /// For DateTime, if time zone is specified, attach it to type.
-        if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-        else
-            return std::make_shared<ToDataType>();
+        return std::make_shared<ToDataType>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

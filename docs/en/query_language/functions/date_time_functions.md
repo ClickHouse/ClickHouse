@@ -169,15 +169,9 @@ Converts a date or date with time to a UInt16 number containing the ISO Year num
 
 Converts a date or date with time to a UInt8 number containing the ISO Week number.
 
-## toCustomYear
-
-Converts a date or date with time to a UInt16 number containing the Custom Year number.
-```
-toCustomYear(DateTime, [, CustomDate][, Timezone])
-```
-
 ## week(date[,mode])
 This function returns the week number for date or datetime. The two-argument form of week() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+`toISOWeek() `is a compatibility function that is equivalent to `week(date,3)`.
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range |  Week 1 is the first week … |
@@ -202,12 +196,11 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn't matter how many days in the new year the week contained, even if it contained only one day.
 
 ```
-week(DateTime1, [, mode][, Timezone])
-
+week(date, [, mode][, Timezone])
 ```
 **Parameters**
 
-- `DateTime1` – Date or DateTime.
+- `date` – Date or DateTime.
 - `mode` – Optional parameter, Range of values is [0,9], default is 0.
 - `Timezone` –  Optional parameter, it behaves like any other conversion function.
 
@@ -227,6 +220,8 @@ SELECT toDate('2016-12-27') AS date, week(date) AS week0, week(date,1) AS week1,
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
 The mode argument works exactly like the mode argument to week(). For the single-argument syntax, a mode value of 0 is used. 
+
+`toISOYear() `is a compatibility function that is equivalent to `intDiv(yearWeek(date,3),100)`.
 
 **Example**
 
