@@ -59,7 +59,6 @@ void argsToConfig(const Poco::Util::Application::ArgVec & argv, Poco::Util::Laye
         map_config->setString(key, value);
         key = "";
     }
-    /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
 
     Poco::Util::MapConfiguration::Keys keys;
     map_config->keys(keys);
