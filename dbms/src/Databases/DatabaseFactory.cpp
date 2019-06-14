@@ -4,6 +4,7 @@
 #include <Databases/DatabaseDictionary.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Common/parseAddress.h>
 #include <Common/config.h>
 
@@ -31,16 +32,13 @@ DatabasePtr DatabaseFactory::get(
 {
     String engine_name = engine_define->engine->name;
 
-    if (engine_name != "MySQL")
-    {
-        if (engine_define->engine->arguments || engine_define->engine->parameters || engine_define->partition_by ||
-            engine_define->primary_key || engine_define->order_by || engine_define->sample_by || engine_define->settings)
-        {
-            std::stringstream ostr;
-            formatAST(*engine_define, ostr, false, false);
-            throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-        }
-    }
+    if (engine_name != "MySQL" && engine_define->engine->arguments)
+        throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
+
+    if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
+        engine_define->sample_by || engine_define->settings)
+        throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
+                        ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
@@ -53,11 +51,11 @@ DatabasePtr DatabaseFactory::get(
 
     else if (engine_name == "MySQL")
     {
-        ASTFunction * engine = engine_define->engine;
+        const ASTFunction * engine = engine_define->engine;
         const auto & arguments = engine->arguments->children;
 
         if (arguments.size() != 4)
-            throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password",
+            throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
                             ErrorCodes::BAD_ARGUMENTS);
 
         const auto & mysql_host_name = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();

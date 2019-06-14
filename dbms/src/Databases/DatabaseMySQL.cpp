@@ -17,7 +17,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/dataTypeTransform.h>
+#include <Common/convertMySQLDataType.h>
 
 
 namespace DB
@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 
-String toQueryStringWithQuote(const std::vector<String> &quote_list)
+String toQueryStringWithQuote(const std::vector<String> & quote_list)
 {
     WriteBufferFromOwnString quote_list_query;
     quote_list_query << "(";
@@ -56,7 +56,7 @@ DatabaseMySQL::DatabaseMySQL(
 {
 }
 
-bool DatabaseMySQL::empty(const Context &)
+bool DatabaseMySQL::empty(const Context &) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -78,12 +78,12 @@ DatabaseIteratorPtr DatabaseMySQL::getIterator(const Context &)
     return std::make_unique<DatabaseSnapshotIterator>(tables);
 }
 
-bool DatabaseMySQL::isTableExist(const Context & context, const String & name)
+bool DatabaseMySQL::isTableExist(const Context & context, const String & name) const
 {
     return bool(tryGetTable(context, name));
 }
 
-StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_table_name)
+StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -95,7 +95,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_tabl
     return StoragePtr{};
 }
 
-ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & table_name)
+ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -133,7 +133,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context &) const
     return create_query;
 }
 
-void DatabaseMySQL::fetchTablesIntoLocalCache()
+void DatabaseMySQL::fetchTablesIntoLocalCache() const
 {
     const auto & tables_with_modification_time = fetchTablesWithModificationTime();
 
@@ -141,7 +141,7 @@ void DatabaseMySQL::fetchTablesIntoLocalCache()
     fetchLatestTablesStructureIntoCache(tables_with_modification_time);
 }
 
-void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time)
+void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
@@ -155,7 +155,7 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
     }
 }
 
-void DatabaseMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time)
+void DatabaseMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> &tables_modification_time) const
 {
     std::vector<String> wait_update_tables_name;
     for (const auto & table_modification_time : tables_modification_time)
@@ -195,7 +195,7 @@ static ASTPtr getTableColumnsCreateQuery(const NamesAndTypesList & names_and_typ
     {
         const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = table_column_name_and_type.name;
-        column_declaration->type = getDataTypeAST(table_column_name_and_type.type);
+        column_declaration->type = dataTypeConvertToQuery(table_column_name_and_type.type);
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -227,7 +227,7 @@ static ASTPtr getTableStorageCreateQuery(
 }
 
 DatabaseMySQL::MySQLStorageInfo DatabaseMySQL::createStorageInfo(
-    const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time)
+    const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time) const
 {
     const auto & mysql_table = StorageMySQL::create(
         table_name, std::move(mysql_pool), mysql_database_name, table_name,
@@ -249,7 +249,7 @@ DatabaseMySQL::MySQLStorageInfo DatabaseMySQL::createStorageInfo(
     return storage_info;
 }
 
-std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime()
+std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime() const
 {
     Block tables_status_sample_block
     {
@@ -280,7 +280,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime()
     return tables_with_modification_time;
 }
 
-std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name)
+std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name) const
 {
     std::map<String, NamesAndTypesList> tables_and_columns;
 
@@ -318,11 +318,12 @@ std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const 
         {
             String table_name = (*block.getByPosition(0).column)[i].safeGet<String>();
             tables_and_columns[table_name].emplace_back((*block.getByPosition(1).column)[i].safeGet<String>(),
-                getDataType(
-                    (*block.getByPosition(2).column)[i].safeGet<String>(),
-                    (*block.getByPosition(3).column)[i].safeGet<UInt64>() && external_table_functions_use_nulls,
-                    (*block.getByPosition(4).column)[i].safeGet<UInt64>(),
-                    (*block.getByPosition(5).column)[i].safeGet<UInt64>()));
+                                                        convertMySQLDataType(
+                                                            (*block.getByPosition(2).column)[i].safeGet<String>(),
+                                                            (*block.getByPosition(3).column)[i].safeGet<UInt64>() &&
+                                                            external_table_functions_use_nulls,
+                                                            (*block.getByPosition(4).column)[i].safeGet<UInt64>(),
+                                                            (*block.getByPosition(5).column)[i].safeGet<UInt64>()));
         }
     }
     return tables_and_columns;
@@ -349,9 +350,7 @@ void DatabaseMySQL::cleanOutdatedTables()
 
     std::unique_lock lock{mutex};
 
-    const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
-
-    while (!quit_requested())
+    while (!quit.load(std::memory_order_relaxed))
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
@@ -367,7 +366,7 @@ void DatabaseMySQL::cleanOutdatedTables()
             }
         }
 
-        cond.wait_for(lock, cleaner_sleep_time, quit_requested);
+        cond.wait_for(lock, cleaner_sleep_time);
     }
 }
 

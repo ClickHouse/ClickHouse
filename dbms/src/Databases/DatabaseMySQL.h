@@ -26,17 +26,17 @@ public:
 
     String getDatabaseName() const override { return database_name; }
 
-    bool empty(const Context & context) override;
+    bool empty(const Context & context) const override;
 
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
-    bool isTableExist(const Context & context, const String & name) override;
+    bool isTableExist(const Context & context, const String & name) const override;
 
-    StoragePtr tryGetTable(const Context & context, const String & name) override;
+    StoragePtr tryGetTable(const Context & context, const String & name) const override;
 
-    ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) override;
+    ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const override;
 
     time_t getTableMetadataModificationTime(const Context & context, const String & name) override;
 
@@ -93,29 +93,29 @@ private:
     const String mysql_user_name;
     const String mysql_user_password;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 
-    mysqlxx::Pool mysql_pool;
-    std::vector<StoragePtr> outdated_tables;
-    std::map<String, MySQLStorageInfo> local_tables_cache;
+    mutable mysqlxx::Pool mysql_pool;
+    mutable std::vector<StoragePtr> outdated_tables;
+    mutable std::map<String, MySQLStorageInfo> local_tables_cache;
 
 
     void cleanOutdatedTables();
 
-    void fetchTablesIntoLocalCache();
+    void fetchTablesIntoLocalCache() const;
 
-    std::map<String, UInt64> fetchTablesWithModificationTime();
+    std::map<String, UInt64> fetchTablesWithModificationTime() const;
 
     DatabaseMySQL::MySQLStorageInfo createStorageInfo(
-        const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time);
+        const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time) const;
 
-    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name);
+    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name) const;
 
-    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time);
+    void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
 
-    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time);
+    void fetchLatestTablesStructureIntoCache(const std::map<String, UInt64> & tables_modification_time) const;
 
     ThreadFromGlobalPool thread{&DatabaseMySQL::cleanOutdatedTables, this};
 };
