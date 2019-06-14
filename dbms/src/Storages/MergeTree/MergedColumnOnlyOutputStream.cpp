@@ -76,18 +76,22 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
-        writeSingleMark(column.name, *column.type, offset_columns, skip_offsets, 0, serialize_settings.path);
 
-        /// Memoize information about offsets
-        column.type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+        if (storage.settings.write_final_mark)
         {
-            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-            if (is_offsets)
+            writeSingleMark(column.name, *column.type, offset_columns, skip_offsets, 0, serialize_settings.path);
+
+            /// Memoize information about offsets
+            column.type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
             {
-                String stream_name = IDataType::getFileNameForStream(column.name, substream_path);
-                offset_columns.insert(stream_name);
-            }
-        }, serialize_settings.path);
+                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+                if (is_offsets)
+                {
+                    String stream_name = IDataType::getFileNameForStream(column.name, substream_path);
+                    offset_columns.insert(stream_name);
+                }
+            }, serialize_settings.path);
+        }
     }
 
     MergeTreeData::DataPart::Checksums checksums;

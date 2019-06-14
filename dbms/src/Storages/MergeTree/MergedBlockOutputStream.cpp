@@ -128,48 +128,32 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
-
-            std::cerr << "Writing trailing mark for column:" << it->name << std::endl;
-            writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
-            /// Memoize information about offsets
-            it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+            if (storage.settings.write_final_mark)
             {
-                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                if (is_offsets)
+                writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
+                /// Memoize information about offsets
+                it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
                 {
-                    String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
-                    offset_columns.insert(stream_name);
-                }
-            }, serialize_settings.path);
+                    bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+                    if (is_offsets)
+                    {
+                        String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
+                        offset_columns.insert(stream_name);
+                    }
+                }, serialize_settings.path);
+            }
         }
     }
 
-    std::cerr << "Apending last mark\n";
-    index_granularity.appendMark(0); /// last mark
-    std::cerr << "Total marks size:" << index_granularity.getMarksCount() << std::endl;
+    if (storage.settings.write_final_mark)
+        index_granularity.appendMark(0); /// last mark
 
     /// Finish skip index serialization
     for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
-        {
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-        }
-        /// It may happen that final mark will correspond to index last mark
-        //if (index_granularity.getMarksCount() % index->granularity == 0)
-        //{
-        //    std::cerr << "HERE WE HAVE TO WRITE ANOTHER INDEX MARK\n";
-        //    if (stream.compressed.offset() >= min_compress_block_size)
-        //        stream.compressed.next();
-
-        //    writeIntBinary(stream.plain_hashing.count(), stream.marks);
-        //    writeIntBinary(stream.compressed.offset(), stream.marks);
-        //    /// Actually this numbers is redundant, but we have to store them
-        //    /// to be compatible with normal .mrk2 file format
-        //    if (storage.index_granularity_info.is_adaptive)
-        //        writeIntBinary(1UL, stream.marks);
-        //}
     }
 
 
@@ -182,25 +166,23 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
-    if (storage.hasPrimaryKey())
+    if (index_stream)
     {
-        /// Otherwise we already written last mark
-        //std::cerr << "Index columns" << index_columns.size() << std::endl;
-        //std::cerr << "Last index row:" << last_index_row.size() << std::endl;
-        //std::cerr << "Stream count before:" << index_stream->count() << std::endl;
-        for (size_t j = 0; j < index_columns.size(); ++j)
+        if (storage.settings.write_final_mark)
         {
-            auto & column = *last_index_row[j].column;
-            index_columns[j]->insertFrom(column, 0); /// it has only one element
-            last_index_row[j].type->serializeBinary(column, 0, *index_stream);
+            for (size_t j = 0; j < index_columns.size(); ++j)
+            {
+                auto & column = *last_index_row[j].column;
+                index_columns[j]->insertFrom(column, 0); /// it has only one element
+                last_index_row[j].type->serializeBinary(column, 0, *index_stream);
+            }
+            last_index_row.clear();
         }
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
-        //std::cerr << "Index size:" << checksums.files["primary.idx"].file_size  << std::endl;
         index_stream = nullptr;
-        last_index_row.clear();
     }
 
     for (auto & stream : skip_indices_streams)

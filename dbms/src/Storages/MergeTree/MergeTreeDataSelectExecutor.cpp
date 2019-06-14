@@ -949,7 +949,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 /// We sure about that range and can build interval precisely
                 if (last_mark_rows_count == 0)
                 {
-                    range.end -= 1; /// Remove empty last mark. It's useful only for primary key.
+                    range.end -= 1; /// Remove empty last mark. It's useful only for primary key condition.
                     for (size_t i = 0; i < used_key_size; ++i)
                     {
                         index[i]->get(range.begin, index_left[i]);
@@ -1031,10 +1031,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t final_mark = part->storage.settings.write_final_mark ? 1 : 0;
     size_t index_marks_count = (part->getMarksCount() - final_mark + index->granularity - 1) / index->granularity;
-    std::cerr << "IndexMarksCount:" << index_marks_count << std::endl;
-    std::cerr << "Ranges last:" << ranges.back().end << std::endl;
-    std::cerr << "Total marks:" << part->index_granularity.getMarksCount() << std::endl;
-    std::cerr << "Granularity of last:" << part->index_granularity.getMarkRows(ranges.back().end) << std::endl;
 
     MergeTreeIndexReader reader(
             index, part,
