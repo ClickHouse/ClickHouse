@@ -513,6 +513,8 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                     }
 
                     main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty(); });
+
+                    num_waiting_threads.fetch_sub(1);
                 }
             }
 
