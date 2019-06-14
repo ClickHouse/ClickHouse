@@ -19,7 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/typeid_cast.h>
-#include <Common/dataTypeTransform.h>
+#include <Common/convertMySQLDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -107,7 +107,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         for (size_t i = 0; i < rows; ++i)
             columns.emplace_back(
                 (*block.getByPosition(0).column)[i].safeGet<String>(),
-                getDataType(
+                convertMySQLDataType(
                     (*block.getByPosition(1).column)[i].safeGet<String>(),
                     (*block.getByPosition(2).column)[i].safeGet<UInt64>() && context.getSettings().external_table_functions_use_nulls,
                     (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
@@ -116,7 +116,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     }
 
     if (columns.empty())
-        throw Exception("MySQL table " + database_name + "." + table_name + " doesn't exist..", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table `" + database_name + "`.`" + table_name + "` doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
         table_name,

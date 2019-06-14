@@ -66,19 +66,19 @@ public:
     /// Check the existence of the table.
     virtual bool isTableExist(
         const Context & context,
-        const String & name) = 0;
+        const String & name) const = 0;
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(
         const Context & context,
-        const String & name) = 0;
+        const String & name) const = 0;
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;
 
     /// Is the database empty.
-    virtual bool empty(const Context & context) = 0;
+    virtual bool empty(const Context & context) const = 0;
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -122,9 +122,9 @@ public:
         const String & name) = 0;
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    virtual ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) = 0;
+    virtual ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const = 0;
 
-    virtual ASTPtr getCreateTableQuery(const Context & context, const String & name)
+    virtual ASTPtr getCreateTableQuery(const Context & context, const String & name) const
     {
         return tryGetCreateTableQuery(context, name);
     }

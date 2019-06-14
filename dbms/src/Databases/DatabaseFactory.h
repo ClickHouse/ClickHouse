@@ -2,11 +2,11 @@
 
 #include <Common/ThreadPool.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/ASTCreateQuery.h>
-
 
 namespace DB
 {
+
+class ASTStorage;
 
 class DatabaseFactory
 {
