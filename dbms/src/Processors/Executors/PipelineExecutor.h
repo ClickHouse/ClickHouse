@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <stack>
 #include <Processors/IProcessor.h>
 #include <mutex>
 #include <Common/ThreadPool.h>
@@ -65,12 +66,12 @@ private:
 
     Nodes graph;
 
-    using Queue = std::queue<UInt64>;
+    using Stack = std::stack<UInt64>;
     using TaskQueue = boost::lockfree::queue<ExecutionState *>;
     using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
-    Queue prepare_queue;
+    Stack prepare_stack;
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     TaskQueue task_queue;
     /// Queue with tasks which have finished execution.
@@ -103,6 +104,12 @@ private:
 
     std::vector<ExecutionState *> execution_states_queue;
 
+    std::mutex main_executor_mutex;
+    std::condition_variable main_executor_condvar;
+
+    std::atomic<size_t> num_waiting_threads;
+    std::condition_variable finish_condvar;
+
 public:
     explicit PipelineExecutor(Processors processors);
     void execute(size_t num_threads);
@@ -111,7 +118,7 @@ public:
 
     const Processors & getProcessors() const { return processors; }
 
-    void cancel() { cancelled = true; }
+    void cancel() { finished = true; }
 
 private:
     /// Graph related methods.
@@ -138,6 +145,7 @@ private:
     void prepareProcessor(size_t pid, bool async);
 
     void executeImpl(size_t num_threads);
+    void executeSingleThread(size_t num_threads);
 
     String dumpPipeline() const;
 };
