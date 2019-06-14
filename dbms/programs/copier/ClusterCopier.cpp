@@ -16,7 +16,6 @@
 #include <pcg_random.hpp>
 #include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <daemon/OwnPatternFormatter.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
