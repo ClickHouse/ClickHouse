@@ -504,6 +504,9 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                         }
                     }
 
+                    if (found_processor_to_execute)
+                        break;
+
                     if (num_waiting_threads.fetch_add(1) + 1 == num_threads)
                     {
                         finished = true;
@@ -568,7 +571,11 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                     prepareProcessor(current_processor, false);
 
                     if (graph[current_processor].status == ExecStatus::Executing)
+                    {
                         found_processor_to_execute = true;
+                        processor_to_execute = current_processor;
+                        state = graph[processor_to_execute].execution_state.get();
+                    }
                 }
             }
 
