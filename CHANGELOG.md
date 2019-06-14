@@ -26,20 +26,21 @@ Kutenin](https://github.com/danlark1))
 * Data loss on heavy load via KafkaEngine (#4736)
 [#5080](https://github.com/yandex/ClickHouse/pull/5080)
 ([Ivan](https://github.com/abyss7))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Performance Improvements
 * Use radix sort for sorting by single numeric column in `ORDER BY` without
   `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106),
 [#4439](https://github.com/yandex/ClickHouse/pull/4439)
 ([Evgenii Pravda](https://github.com/kvinty),
-[alexey-milovidov](https://github.com/alexey-milovidov)
+[alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Documentation
 * Translate documentation for some table engines to Chinese.
   [#5107](https://github.com/yandex/ClickHouse/pull/5107),
 [#5094](https://github.com/yandex/ClickHouse/pull/5094),
-[#5087](https://github.com/yandex/ClickHouse/pull/5087),
-([张风啸](https://github.com/AlexZFX),
+[#5087](https://github.com/yandex/ClickHouse/pull/5087)
+([张风啸](https://github.com/AlexZFX)),
 [#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
 lee](https://github.com/neverlee))
  
@@ -47,7 +48,7 @@ lee](https://github.com/neverlee))
 * Print UTF-8 characters properly in `clickhouse-test`.
   [#5084](https://github.com/yandex/ClickHouse/pull/5084)
 ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Adde command line parameter for clickhouse-client to always load suggestion
+* Add command line parameter for clickhouse-client to always load suggestion
   data. [#5102](https://github.com/yandex/ClickHouse/pull/5102)
 ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Resolve some of PVS-Studio warnings.
@@ -90,6 +91,7 @@ lee](https://github.com/neverlee))
 * Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
 * Partially fix distributed_product_mode = local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix potentially wrong result for `SELECT DISTINCT` with `JOIN` [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Build/Testing/Packaging Improvements
 * Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))

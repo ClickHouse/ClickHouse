@@ -49,4 +49,4 @@ private:
     bool put_delimiter = false;
 };
 
-} // namespace DB
+}

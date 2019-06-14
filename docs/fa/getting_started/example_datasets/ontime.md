@@ -207,7 +207,7 @@ Q5. درصد تاخیر ها براساس carrier در سال 2007
 </div>
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -237,7 +237,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
 <div dir="rtl" markdown="1">
@@ -247,7 +247,7 @@ Q6. مانند query قبلی اما برای طیف وسیعی از سال ها
 </div>
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -277,7 +277,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
 <div dir="rtl" markdown="1">
@@ -292,7 +292,7 @@ FROM
 (
     select
         Year,
-        count(*)*1000 as c1
+        count(*)*100 as c1
     from ontime
     WHERE DepDelay>10
     GROUP BY Year
