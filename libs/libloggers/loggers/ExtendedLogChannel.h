@@ -21,10 +21,10 @@ public:
     // Do not copy for efficiency reasons
     const Poco::Message & base;
 
-    int32_t time_seconds = 0;
-    int32_t time_microseconds = 0;
+    uint32_t time_seconds = 0;
+    uint32_t time_microseconds = 0;
 
-    int32_t thread_number = 0;
+    uint32_t thread_number = 0;
     std::string query_id;
 };
 
