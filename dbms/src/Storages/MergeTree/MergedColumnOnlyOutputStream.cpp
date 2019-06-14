@@ -78,20 +78,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 
 
         if (storage.settings.write_final_mark)
-        {
-            writeSingleMark(column.name, *column.type, offset_columns, skip_offsets, 0, serialize_settings.path);
-
-            /// Memoize information about offsets
-            column.type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-            {
-                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                if (is_offsets)
-                {
-                    String stream_name = IDataType::getFileNameForStream(column.name, substream_path);
-                    offset_columns.insert(stream_name);
-                }
-            }, serialize_settings.path);
-        }
+            writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
     }
 
     MergeTreeData::DataPart::Checksums checksums;

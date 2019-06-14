@@ -29,3 +29,8 @@
 ===test alter update===
 foo
 foo
+===test no pk===
+0
+2
+0
+2

@@ -129,19 +129,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
             }
 
             if (storage.settings.write_final_mark)
-            {
-                writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
-                /// Memoize information about offsets
-                it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-                {
-                    bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                    if (is_offsets)
-                    {
-                        String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
-                        offset_columns.insert(stream_name);
-                    }
-                }, serialize_settings.path);
-            }
+                writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
         }
     }
 

@@ -109,6 +109,16 @@ protected:
     /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
 
+    /// Write final mark to the end of column
+    void writeFinalMark(
+        const std::string & column_name,
+        const DataTypePtr column_type,
+        WrittenOffsetColumns & offset_columns,
+        bool skip_offsets,
+        DB::IDataType::SubstreamPath & path);
+
+protected:
+
     MergeTreeData & storage;
 
     ColumnStreams column_streams;
