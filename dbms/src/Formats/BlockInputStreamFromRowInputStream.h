@@ -47,7 +47,10 @@ private:
     Block sample;
     UInt64 max_block_size;
     UInt64 rows_portion_size;
-    FormatFactory::ReadCallback read_callback;
+
+    /// Callback used to setup virtual columns after reading each row.
+    FormatFactory::ReadCallback read_virtual_columns_callback;
+
     BlockMissingValues block_missing_values;
 
     UInt64 allow_errors_num;
