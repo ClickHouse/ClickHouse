@@ -1224,19 +1224,12 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ++pos;
 
-    if (pos->type != TokenType::BareWord)
+    auto old_pos = pos;
+    ParserIdentifierWithOptionalParameters type_parser;
+    if (!type_parser.ignore(pos, expected))
     {
         expected.add(pos, "substitution type");
         return false;
-    }
-
-    auto old_pos = pos;
-
-    while ((pos->type == TokenType::OpeningRoundBracket || pos->type == TokenType::ClosingRoundBracket
-        || pos->type == TokenType::Comma || pos->type == TokenType::BareWord)
-        && pos->type != TokenType::ClosingCurlyBrace)
-    {
-        ++pos;
     }
 
     String type(old_pos->begin, pos->begin);
