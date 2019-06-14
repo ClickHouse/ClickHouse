@@ -208,17 +208,17 @@ void PipelineExecutor::addJob(UInt64 pid)
                     /// event_counter.notify()
             // );
 
-            // try
+            try
             {
                 Stopwatch watch;
                 executeJob(processor);
                 execution_state->execution_time_ns += watch.elapsed();
             }
-//            catch (...)
-//            {
-//                /// Note: It's important to save exception before pushing pid to finished_execution_queue
-//                execution_state->exception = std::current_exception();
-//            }
+            catch (...)
+            {
+                /// Note: It's important to save exception before pushing pid to finished_execution_queue
+                execution_state->exception = std::current_exception();
+            }
         };
 
         graph[pid].execution_state->job = std::move(job);
@@ -536,6 +536,9 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                 execution_time_ns += execution_time_watch.elapsed();
             }
 
+            if (state->exception)
+                finished = true;
+
             if (finished)
                 break;
 
@@ -621,11 +624,19 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         });
     }
 
-    std::mutex finish_mutex;
-    std::unique_lock lock(finish_mutex);
-    finish_condvar.wait(lock, [&]() -> bool { return finished; });
+    {
+        std::mutex finish_mutex;
+        std::unique_lock lock(finish_mutex);
+        finish_condvar.wait(lock, [&]() -> bool { return finished; });
+    }
 
+    {
+        std::lock_guard lock(main_executor_mutex);
 
+        for (auto & node : graph)
+            if (node.execution_state->exception)
+                std::rethrow_exception(node.execution_state->exception);
+    }
 //    while (!cancelled)
 //    {
 //        processFinishedExecutionQueueSafe();
