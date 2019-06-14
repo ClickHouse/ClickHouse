@@ -7,7 +7,7 @@
 
 namespace DB
 {
-/* url(source, format, structure) - creates a temporary storage from url
+/* s3(source, format, structure) - creates a temporary storage for a file in S3
  */
 class TableFunctionS3 : public ITableFunctionFileLike
 {
