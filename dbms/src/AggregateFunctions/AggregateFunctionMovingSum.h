@@ -16,7 +16,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE 0xFFFFFF
+#define AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB
@@ -105,7 +105,7 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+        if (unlikely(size > AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
@@ -157,6 +157,6 @@ public:
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
-#undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE
+#undef AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE
 
 }
