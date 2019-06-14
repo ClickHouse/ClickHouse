@@ -655,7 +655,7 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     }
 }
 
-} // namespace
+}
 
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
