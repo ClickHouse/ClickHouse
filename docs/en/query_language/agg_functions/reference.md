@@ -2,22 +2,26 @@
 
 ## count {#agg_function-count}
 
-Counts the number of rows.
+Counts the number of rows or not-NULL values.
 
-```
-count(expr)
-```
+ClickHouse supports the following syntaxes for `count`:
+- `count(expr)` or `COUNT(DISTINCT expr)`.
+- `count()` or `COUNT(*)`. The `count()` syntax is a ClickHouse-specific implementation.
 
 **Parameters**
 
-The function can take zero or one parameter.
+The function can take:
 
-- If the function is called without parameters it counts the number of rows. The `count()` syntax is a ClickHouse-specific implementation. The most other DBMS suggest `COUNT(*)` usage.
-- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a value of the [Nullable](../../data_types/nullable.md) data type, then the result of `count` stays not `Nullable`. The function returns 0 if all the expressions returned `NULL`.
+- Zero parameters.
+- One [expression](../syntax.md#syntax-expressions).
+
 
 **Returned value**
 
-- Number of rows. Type: [UInt64](../../data_types/int_uint.md).
+- If the function is called without parameters it counts the number of rows.
+- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a value of the [Nullable](../../data_types/nullable.md) data type, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+
+In both cases the type of the returned value is [UInt64](../../data_types/int_uint.md).
 
 **Details**
 
@@ -516,7 +520,7 @@ uniq(x[, ...])
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
 
 **Returned value**
 
@@ -553,7 +557,7 @@ The `uniqCombined` function is a good choice for calculating the number of diffe
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
 
 `HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each).
 
@@ -595,7 +599,7 @@ uniqHLL12(x[, ...])
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
 
 **Returned value**
 
@@ -635,7 +639,7 @@ The `uniqExact` function uses more memory than the `uniq`, because the size of t
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Date`, `DateTime`, `String`, numeric types.
+Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
 
 **See Also**
 
