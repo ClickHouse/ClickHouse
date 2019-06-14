@@ -53,7 +53,10 @@ struct ReplicatedMergeTreeTableMetadata
         bool ttl_table_changed = false;
         String new_ttl_table;
 
-        bool empty() const { return !sorting_key_changed && !skip_indices_changed && !constraints_changed; }
+        bool empty() const
+        {
+            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
+        }
     };
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;

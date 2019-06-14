@@ -187,7 +187,7 @@ inline Encoded base32Decode(const char * encoded_string, size_t encoded_length)
     return result;
 }
 
-} // namespace
+}
 
 namespace DB
 {
@@ -227,6 +227,6 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     *latitude = decodeCoordinate(lat_encoded, -90, 90, singleCoordBitsPrecision(precision, LATITUDE));
 }
 
-} // namespace GeoUtils
+}
 
-} // namespace DB
+}

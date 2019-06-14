@@ -6,7 +6,7 @@ Returns a string with the name of the host that this function was performed on. 
 
 ## basename
 
-Extracts trailing part of a string after the last slash or backslash. This function if often used to extract the filename from the path.
+Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
 ```
 basename( expr )
@@ -14,17 +14,17 @@ basename( expr )
 
 **Parameters**
 
-- `expr` — Expression, resulting in the [String](../../data_types/string.md)-type value. All the backslashes must be escaped in the resulting value.
+- `expr` — Expression resulting in a [String](../../data_types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
 **Returned Value**
 
-A String-type value that contains:
+A string that contains:
 
-- Trailing part of a string after the last slash or backslash in it.
+- The trailing part of a string after the last slash or backslash.
 
-    If the input string contains a path, ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+    If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
-- Original string if there are no slashes or backslashes in it.
+- The original string if there are no slashes or backslashes.
 
 **Example**
 
@@ -74,7 +74,7 @@ Returns a string containing the type name of the passed argument.
 
 If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
-## blockSize()
+## blockSize() {#function-blocksize}
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
@@ -199,7 +199,7 @@ Types:
 
 `T` and `U` can be numeric, string, or Date or DateTime types.
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
-For example, the first argument can have the Int64 type, while the second has the Array(Uint16) type.
+For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the existing element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'default'. If there are multiple matching elements in 'array_from', it returns one of the matches.
 
@@ -303,7 +303,7 @@ Returns the timezone of the server.
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock
+## rowNumberInBlock {#function-rownumberinblock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -639,7 +639,7 @@ Returns the capacity information of the disk, in bytes. This information is eval
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
-## runningAccumulate
+## runningAccumulate {#function-runningaccumulate}
 
 Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.

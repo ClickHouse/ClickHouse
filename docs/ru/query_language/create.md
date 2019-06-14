@@ -3,7 +3,7 @@
 Создание базы данных db\_name.
 
 ```sql
-CREATE DATABASE [IF NOT EXISTS] db_name
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
 `База данных` - это просто директория для таблиц.

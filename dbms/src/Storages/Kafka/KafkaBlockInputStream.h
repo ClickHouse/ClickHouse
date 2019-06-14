@@ -30,4 +30,4 @@ private:
     bool broken = true, claimed = false;
 };
 
-} // namespace DB
+}
