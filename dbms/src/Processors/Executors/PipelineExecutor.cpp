@@ -183,10 +183,10 @@ bool PipelineExecutor::tryAssignJob(ExecutionState * state)
     auto current_stream = state->current_stream;
     for (auto & executor_context : executor_contexts)
     {
-        if (executor_context.current_stream == current_stream)
+        if (executor_context->current_stream == current_stream)
         {
             ExecutionState * expected = nullptr;
-            if (executor_context.next_task_to_execute.compare_exchange_strong(expected, state))
+            if (executor_context->next_task_to_execute.compare_exchange_strong(expected, state))
                 return true;
         }
     }
@@ -481,8 +481,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            executor_contexts.emplace_back();
-            auto * executor_context = &executor_contexts.back();
+            executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+            auto * executor_context = executor_contexts.back().get();
 
             executor_context->executor_number = i;
             executor_context->next_task_to_execute = nullptr;

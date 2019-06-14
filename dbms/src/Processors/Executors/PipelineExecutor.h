@@ -98,7 +98,7 @@ private:
         std::atomic<UInt64> current_stream;
     };
 
-    std::vector<ExecutorContext> executor_contexts;
+    std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
     UInt64 next_stream = 0;
 
     std::vector<ExecutionState *> execution_states_queue;
