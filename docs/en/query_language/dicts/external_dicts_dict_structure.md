@@ -24,11 +24,11 @@ Overall structure:
 
 Columns are described in the structure:
 
-- `<id>` - [key column](external_dicts_dict_structure.md).
-- `<attribute>` - [data column](external_dicts_dict_structure.md). There can be a large number of columns.
+- `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
+- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a large number of columns.
 
 
-## Key
+## Key {#ext_dict_structure-key}
 
 ClickHouse supports the following types of keys:
 
@@ -84,7 +84,7 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 
-## Attributes
+## Attributes {#ext_dict_structure-attributes}
 
 Configuration example:
 
