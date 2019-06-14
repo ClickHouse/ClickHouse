@@ -31,7 +31,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.send('INSERT INTO test.mt VALUES (4),(5),(6)')
     client1.expect(r'21.*3' + end_of_block)
     # send Ctrl-C
-    os.kill(client1.process.pid,signal.SIGINT)
+    os.kill(client1.process.pid, signal.SIGINT)
     client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)

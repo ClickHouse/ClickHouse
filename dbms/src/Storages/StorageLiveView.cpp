@@ -159,12 +159,25 @@ Block StorageLiveView::getHeader() const
 {
     if (!sample_block)
     {
-        auto storage = global_context.getTable(select_database_name, select_table_name);
-        sample_block = InterpreterSelectQuery(inner_query, global_context, storage).getSampleBlock();
-        sample_block.insert({DataTypeUInt64().createColumnConst(
-            sample_block.rows(), 0)->convertToFullColumnIfConst(),
-            std::make_shared<DataTypeUInt64>(),
-            "_version"});
+        if (!(*blocks_ptr) || (*blocks_ptr)->empty())
+        {
+            auto storage = global_context.getTable(select_database_name, select_table_name);
+            sample_block = InterpreterSelectQuery(inner_query, global_context, storage, SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
+            sample_block.insert({DataTypeUInt64().createColumnConst(
+                sample_block.rows(), 0)->convertToFullColumnIfConst(),
+                std::make_shared<DataTypeUInt64>(),
+                "_version"});
+            /// convert all columns to full columns
+            /// in case some of them are constant
+            for (size_t i = 0; i < sample_block.columns(); ++i)
+            {
+                sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
+            }
+        }
+        else
+        {
+            sample_block = (*blocks_ptr)->front().cloneEmpty();
+        }
     }
 
     return sample_block;
