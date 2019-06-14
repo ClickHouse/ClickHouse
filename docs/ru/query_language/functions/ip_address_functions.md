@@ -115,7 +115,7 @@ HEX может быть в любом регистре.
 
 ## IPv4ToIPv6(x)
 
-Принимает число типа UInt32. Интерпретирует его, как IPv4-адрес в big endian. Возвращает значение FixedString (16), содержащее адрес IPv6 в двоичном формате. Примеры:
+Принимает число типа `UInt32`. Интерпретирует его, как IPv4-адрес в [big endian](https://en.wikipedia.org/wiki/Endianness). Возвращает значение `FixedString(16)`, содержащее адрес IPv6 в двоичном формате. Примеры:
 
 ```sql
 SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
@@ -148,7 +148,7 @@ SELECT
 
 ## IPv4CIDRtoIPv4Range(ipv4, cidr),
 
-Принимает на вход IPv4 и значение `UInt8`, содержащее CIDR. Возвращает кортеж с двумя IPv4, содержащими нижний и более высокий диапазон подсети.
+Принимает на вход IPv4 и значение `UInt8`, содержащее [CIDR](https://ru.wikipedia.org/wiki/Бесклассовая_адресация). Возвращает кортеж с двумя IPv4, содержащими нижний и более высокий диапазон подсети.
 
 ```sql
 SELECT IPv4CIDRtoIPv4Range(toIPv4('192.168.5.2'), 16)
@@ -239,4 +239,3 @@ SELECT
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->
-

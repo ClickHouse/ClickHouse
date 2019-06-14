@@ -178,7 +178,7 @@ binary     decimal
 01101000 = 104
 ```
 
-##groupBitmap
+## groupBitmap
 
 Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../functions/bitmap_functions.md).
 
@@ -370,9 +370,9 @@ GROUP BY timeslot
 
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
 
-Составляет массив из различных значений аргумента. Расход оперативки такой же, как у функции `uniqExact`.
+Составляет массив из различных значений аргумента. Расход оперативной памяти такой же, как у функции `uniqExact`.
 
-Функция `groupUniqArray(max_size)(x)` ограничивает размер результирующего массива до `max_size` элементов. Например, `groupUniqArray (1) (x)` равнозначно `[any (x)]`.
+Функция `groupUniqArray(max_size)(x)` ограничивает размер результирующего массива до `max_size` элементов. Например, `groupUniqArray(1)(x)` равнозначно `[any(x)]`.
 
 ## quantile(level)(x)
 
