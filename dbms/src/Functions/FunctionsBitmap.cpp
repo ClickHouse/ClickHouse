@@ -23,5 +23,6 @@ void registerFunctionsBitmap(FunctionFactory & factory)
 
     factory.registerFunction<FunctionBitmapHasAll>();
     factory.registerFunction<FunctionBitmapHasAny>();
+    factory.registerFunction<FunctionBitmapContains>();
 }
 }
