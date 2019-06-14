@@ -1711,9 +1711,8 @@ public:
 
         for (size_t i = 0; i < parameter_arguments.size(); ++i)
         {
-            po::parsed_options parsed_parameter = po::command_line_parser(
-                    parameter_arguments[i].size(), parameter_arguments[i].data()).options(parameter_description).extra_parser(
-                    parseParameter).run();
+            po::parsed_options parsed_parameter = po::command_line_parser(parameter_arguments[i])
+                .options(parameter_description).extra_parser(parseParameter).run();
             po::variables_map parameter_options;
             po::store(parsed_parameter, parameter_options);
 
