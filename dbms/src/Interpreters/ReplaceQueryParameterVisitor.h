@@ -20,8 +20,8 @@ public:
 
 private:
     const NameToNameMap parameters_substitution;
-    String getParamValue(const String & name);
-    void visitQueryParameters(ASTPtr & ast);
+    const String & getParamValue(const String & name);
+    void visitQueryParameter(ASTPtr & ast);
 };
 
 }
