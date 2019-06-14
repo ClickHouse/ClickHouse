@@ -12,7 +12,7 @@ end_of_block = r'.*\r\n.*\r\n'
 
 def client(command=None, name='', log=None):
     if command is None:
-        client = uexpect.spawn(os.environ.get('CLICKHOUSE_CLIENT'))
+        client = uexpect.spawn(os.environ.get('CLICKHOUSE_BINARY', 'clickhouse') + '-client')
     else:
         client = uexpect.spawn(command)
     client.eol('\r')
