@@ -568,7 +568,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             {
                 /// Try wait anything.
                 event_counter.wait();
-                ++num_waited_tasks;
+                /// ++num_waited_tasks;
             }
             else
             {
