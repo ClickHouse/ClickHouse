@@ -59,6 +59,7 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
@@ -201,6 +202,9 @@ private:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
+
+    /// Dictionary with query parameters for prepared statements.
+    NameToNameMap parameters_substitution;
 
     ConnectionParameters connection_parameters;
 
@@ -794,7 +798,6 @@ private:
         /// Some parts of a query (result output and formatting) are executed client-side.
         /// Thus we need to parse the query.
         parsed_query = parsed_query_;
-
         if (!parsed_query)
         {
             const char * begin = query.data();
@@ -803,6 +806,16 @@ private:
 
         if (!parsed_query)
             return true;
+
+        if (!parameters_substitution.empty())
+        {
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            ReplaceQueryParameterVisitor visitor(parameters_substitution);
+            visitor.visit(parsed_query);
+
+            /// Get new query after substitutions.
+            query = serializeAST(*parsed_query);
+        }
 
         processed_rows = 0;
         progress.reset();
@@ -1538,6 +1551,14 @@ private:
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
+    static std::pair<String, String> parseParameter(const String & s)
+    {
+        size_t pos = s.find('_') + 1;
+        /// String begins with "--param_", so check is no needed
+        /// Cut two first dash "--" and divide arg from name and value
+        return {s.substr(2, pos - 2), s.substr(pos)};
+    }
+
 public:
     void init(int argc, char ** argv)
     {
@@ -1547,13 +1568,15 @@ public:
         /** We allow different groups of arguments:
           * - common arguments;
           * - arguments for any number of external tables each in form "--external args...",
-          *   where possible args are file, name, format, structure, types.
+          *   where possible args are file, name, format, structure, types;
+          * - param arguments for prepared statements.
           * Split these groups before processing.
           */
         using Arguments = std::vector<std::string>;
 
         Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
+        std::vector<Arguments> parameter_arguments;
 
         bool in_external_group = false;
         for (int arg_num = 1; arg_num < argc; ++arg_num)
@@ -1596,7 +1619,15 @@ public:
             else
             {
                 in_external_group = false;
-                common_arguments.emplace_back(arg);
+
+                /// Parameter arg after underline.
+                if (startsWith(arg, "--param_"))
+                {
+                    parameter_arguments.emplace_back(Arguments{""});
+                    parameter_arguments.back().emplace_back(arg);
+                }
+                else
+                    common_arguments.emplace_back(arg);
             }
         }
 
@@ -1671,6 +1702,34 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
+
+        /// Parse commandline options related to prepared statements.
+        po::options_description parameter_description("Query parameters options");
+        parameter_description.add_options()
+                ("param_", po::value<std::string>(), "name and value of substitution, with syntax --param_name=value")
+        ;
+
+        for (size_t i = 0; i < parameter_arguments.size(); ++i)
+        {
+            po::parsed_options parsed_parameter = po::command_line_parser(
+                    parameter_arguments[i].size(), parameter_arguments[i].data()).options(parameter_description).extra_parser(
+                    parseParameter).run();
+            po::variables_map parameter_options;
+            po::store(parsed_parameter, parameter_options);
+
+            /// Save name and values of substitution in dictionary.
+            String parameter = parameter_options["param_"].as<std::string>();
+            size_t pos = parameter.find('=');
+            if (pos != String::npos && pos + 1 != parameter.size())
+            {
+                const String name = parameter.substr(0, pos);
+                if (!parameters_substitution.insert({name, parameter.substr(pos + 1)}).second)
+                    throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
+            }
+            else
+                throw Exception("Expected parameter field as --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
+        }
+
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
@@ -1694,6 +1753,7 @@ public:
             || (options.count("host") && options["host"].as<std::string>() == "elp"))    /// If user writes -help instead of --help.
         {
             std::cout << main_description << "\n";
+            std::cout << parameter_description << "\n";
             std::cout << external_description << "\n";
             exit(0);
         }

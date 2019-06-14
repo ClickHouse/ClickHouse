@@ -26,6 +26,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -169,6 +170,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
+        if (context.hasQueryParameters())    /// Avoid change from TCPHandler.
+        {
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            ReplaceQueryParameterVisitor visitor(context.getParameterSubstitution());
+            visitor.visit(ast);
+        }
+
         auto * insert_query = ast->as<ASTInsertQuery>();
 
         if (insert_query && insert_query->settings_ast)
@@ -200,6 +208,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+        if (context.hasQueryParameters())    /// Avoid change from TCPHandler.
+            /// Get new query after substitutions.
+            query = serializeAST(*ast);
+
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
         /// Check the limits.

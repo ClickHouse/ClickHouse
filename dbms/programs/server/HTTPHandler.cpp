@@ -501,6 +501,12 @@ void HTTPHandler::processQuery(
         else if (param_could_be_skipped(key))
         {
         }
+        else if (startsWith(key, "param_"))
+        {
+            /// Save name and values of substitution in dictionary.
+            const String parameter_name = key.substr(strlen("param_"));
+            context.setParameterSubstitution(parameter_name, value);
+        }
         else
         {
             /// All other query parameters are treated as settings.
