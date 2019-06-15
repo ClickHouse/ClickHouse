@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-EXCEPTION_TEXT="Code: 36. DB::Exception: Expected correct value in parameter with name 'injection'"
+EXCEPTION_TEXT="Code: 36."
 EXCEPTION_SUCCESS_TEXT="OK"
 EXCEPTION_FAIL_TEXT="FAIL"
 
