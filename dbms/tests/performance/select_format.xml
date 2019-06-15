@@ -29,10 +29,7 @@
             <values>
                 <value>TabSeparated</value>
                 <value>TabSeparatedRaw</value>
-                <value>TabSeparatedWithNames</value>
-                <value>TabSeparatedWithNamesAndTypes</value>
                 <value>CSV</value>
-                <value>CSVWithNames</value>
                 <value>Values</value>
                 <value>Vertical</value>
                 <value>JSON</value>
@@ -47,6 +44,8 @@
                 <value>RowBinary</value>
                 <value>Native</value>
                 <value>XML</value>
+                <value>ODBCDriver2</value>
+                <value>MySQLWire</value>
             </values>
         </substitution>
     </substitutions>
