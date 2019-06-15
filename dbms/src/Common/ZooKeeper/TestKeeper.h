@@ -19,6 +19,17 @@ struct TestKeeperRequest;
 using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 
 
+/** Looks like ZooKeeper but stores all data in memory of server process.
+  * All data is not shared between different servers and is lost after server restart.
+  *
+  * The only purpose is to more simple testing for interaction with ZooKeeper within a single server.
+  * This still makes sense, because multiple replicas of a single table can be created on a single server,
+  *  and it is used to test replication logic.
+  *
+  * Does not support ACLs. Does not support NULL node values.
+  *
+  * NOTE: You can add various failure modes for better testing.
+  */
 class TestKeeper : public IKeeper
 {
 public:
