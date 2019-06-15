@@ -87,7 +87,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         ConfigProcessor::LoadedConfig loaded_config;
         try
         {
-            LOG_DEBUG(log, "Loading config `" << path << "'");
+            LOG_DEBUG(log, "Loading config '" << path << "'");
 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
@@ -102,7 +102,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
 
-            tryLogCurrentException(log, "ZooKeeper error when loading config from `" + path + "'");
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + path + "'");
             return;
         }
         catch (...)
@@ -110,7 +110,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
 
-            tryLogCurrentException(log, "Error loading config from `" + path + "'");
+            tryLogCurrentException(log, "Error loading config from '" + path + "'");
             return;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -134,7 +134,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         {
             if (throw_on_error)
                 throw;
-            tryLogCurrentException(log, "Error updating configuration from `" + path + "' config.");
+            tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
         }
     }
 }

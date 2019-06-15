@@ -116,7 +116,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     }
 
     if (columns.empty())
-        throw Exception("MySQL table `" + database_name + "`.`" + table_name + "` doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
         table_name,
