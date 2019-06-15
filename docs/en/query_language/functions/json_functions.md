@@ -76,6 +76,8 @@ select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 * Positive integer = access the n-th member/key from the beginning.
 * Negative integer = access the n-th member/key from the end.
 
+Minimum index of the element is 1. Thus the element 0 doesn't exist.
+
 You may use integers to access both JSON arrays and JSON objects.
 
 So, for example:

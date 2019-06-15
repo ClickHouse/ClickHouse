@@ -79,7 +79,7 @@ URL的层级与URLHierarchy中的层级相同。 此函数被用于Yandex.Metric
 
 计算字符串的HiveHash。
 接受一个String类型的参数。返回Int32。
-与[JavaHash](＃hash_functions-javahash)相同，但不会返回负数。
+与[JavaHash](#hash_functions-javahash)相同，但不会返回负数。
 
 ## metroHash64
 
