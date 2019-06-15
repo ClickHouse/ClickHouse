@@ -1868,22 +1868,20 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 
 bool Context::hasQueryParameters() const
 {
-    return !parameters_substitution.empty();
+    return !query_parameters.empty();
 }
 
 
-NameToNameMap Context::getParameterSubstitution() const
+const NameToNameMap & Context::getQueryParameters() const
 {
-    if (hasQueryParameters())
-        return parameters_substitution;
-    throw Exception("Logical error: there are no parameters to substitute", ErrorCodes::LOGICAL_ERROR);
+    return query_parameters;
 }
 
 
-void Context::setParameterSubstitution(const String & name, const String & value)
+void Context::setQueryParameter(const String & name, const String & value)
 {
-    if (!parameters_substitution.insert({name, value}).second)
-        throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
+    if (!query_parameters.emplace(name, value).second)
+        throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

@@ -170,12 +170,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        if (context.hasQueryParameters())    /// Avoid change from TCPHandler.
-        {
-            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-            ReplaceQueryParameterVisitor visitor(context.getParameterSubstitution());
-            visitor.visit(ast);
-        }
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
+        visitor.visit(ast);
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -208,8 +205,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        if (context.hasQueryParameters())    /// Avoid change from TCPHandler.
-            /// Get new query after substitutions.
+        /// Get new query after substitutions.
+        if (context.hasQueryParameters())
             query = serializeAST(*ast);
 
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);

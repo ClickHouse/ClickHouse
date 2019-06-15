@@ -204,7 +204,7 @@ private:
     std::list<ExternalTable> external_tables;
 
     /// Dictionary with query parameters for prepared statements.
-    NameToNameMap parameters_substitution;
+    NameToNameMap query_parameters;
 
     ConnectionParameters connection_parameters;
 
@@ -807,15 +807,12 @@ private:
         if (!parsed_query)
             return true;
 
-        if (!parameters_substitution.empty())
-        {
-            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-            ReplaceQueryParameterVisitor visitor(parameters_substitution);
-            visitor.visit(parsed_query);
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
 
-            /// Get new query after substitutions.
-            query = serializeAST(*parsed_query);
-        }
+        /// Get new query after substitutions.
+        query = serializeAST(*parsed_query);
 
         processed_rows = 0;
         progress.reset();
@@ -1719,7 +1716,7 @@ public:
             if (pos != String::npos && pos + 1 != parameter.size())
             {
                 const String name = parameter.substr(0, pos);
-                if (!parameters_substitution.insert({name, parameter.substr(pos + 1)}).second)
+                if (!query_parameters.insert({name, parameter.substr(pos + 1)}).second)
                     throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
             }
             else

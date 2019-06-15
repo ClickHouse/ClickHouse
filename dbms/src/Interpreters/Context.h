@@ -145,7 +145,7 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-    NameToNameMap parameters_substitution;   /// Dictionary with query parameters for prepared statements.
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
@@ -472,8 +472,8 @@ public:
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
-    NameToNameMap getParameterSubstitution() const;
-    void setParameterSubstitution(const String & name, const String & value);
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;

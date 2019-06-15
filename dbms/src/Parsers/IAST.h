@@ -201,6 +201,7 @@ public:
     static const char * hilite_function;
     static const char * hilite_operator;
     static const char * hilite_alias;
+    static const char * hilite_substitution;
     static const char * hilite_none;
 
 private:
