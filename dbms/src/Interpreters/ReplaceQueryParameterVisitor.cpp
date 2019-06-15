@@ -28,11 +28,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
 {
-    auto search = parameters_substitution.find(name);
-    if (search != parameters_substitution.end())
+    auto search = query_parameters.find(name);
+    if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception("Expected name '" + name + "' in argument --param_{name}", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)

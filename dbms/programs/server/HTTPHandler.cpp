@@ -505,7 +505,7 @@ void HTTPHandler::processQuery(
         {
             /// Save name and values of substitution in dictionary.
             const String parameter_name = key.substr(strlen("param_"));
-            context.setParameterSubstitution(parameter_name, value);
+            context.setQueryParameter(parameter_name, value);
         }
         else
         {
