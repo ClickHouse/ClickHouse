@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/typeid_cast.h>
+#include <Common/convertMySQLDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -32,56 +33,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-}
-
-
-DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length)
-{
-    DataTypePtr res;
-    if (mysql_data_type == "tinyint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt8>();
-        else
-            res = std::make_shared<DataTypeInt8>();
-    }
-    else if (mysql_data_type == "smallint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt16>();
-        else
-            res = std::make_shared<DataTypeInt16>();
-    }
-    else if (mysql_data_type == "int" || mysql_data_type == "mediumint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt32>();
-        else
-            res = std::make_shared<DataTypeInt32>();
-    }
-    else if (mysql_data_type == "bigint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt64>();
-        else
-            res = std::make_shared<DataTypeInt64>();
-    }
-    else if (mysql_data_type == "float")
-        res = std::make_shared<DataTypeFloat32>();
-    else if (mysql_data_type == "double")
-        res = std::make_shared<DataTypeFloat64>();
-    else if (mysql_data_type == "date")
-        res = std::make_shared<DataTypeDate>();
-    else if (mysql_data_type == "datetime" || mysql_data_type == "timestamp")
-        res = std::make_shared<DataTypeDateTime>();
-    else if (mysql_data_type == "binary")
-        res = std::make_shared<DataTypeFixedString>(length);
-    else
-        /// Also String is fallback for all unknown types.
-        res = std::make_shared<DataTypeString>();
-    if (is_nullable)
-        res = std::make_shared<DataTypeNullable>(res);
-    return res;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -147,22 +99,24 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " AND TABLE_NAME = " << quote << table_name
         << " ORDER BY ORDINAL_POSITION";
 
-    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
-
     NamesAndTypesList columns;
+    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; ++i)
             columns.emplace_back(
                 (*block.getByPosition(0).column)[i].safeGet<String>(),
-                getDataType(
+                convertMySQLDataType(
                     (*block.getByPosition(1).column)[i].safeGet<String>(),
                     (*block.getByPosition(2).column)[i].safeGet<UInt64>() && context.getSettings().external_table_functions_use_nulls,
                     (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
                     (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
 
     }
+
+    if (columns.empty())
+        throw Exception("MySQL table `" + database_name + "`.`" + table_name + "` doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
         table_name,
