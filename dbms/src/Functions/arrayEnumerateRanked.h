@@ -11,6 +11,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
+// for better debug: #include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for Yandex.Metrica.
@@ -335,7 +336,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         if (prev_off == off)
         {
             want_clear = true;
-            ++indices_by_depth[0];
+            if (arrays_depths.max_array_depth > 1)
+                ++indices_by_depth[0];
 
             for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
             {
