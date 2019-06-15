@@ -455,7 +455,6 @@ private:
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
-    const IDataTypeCustomTextSerialization * getCustomTextSerialization() const { return custom_text_serialization.get(); }
 };
 
 
