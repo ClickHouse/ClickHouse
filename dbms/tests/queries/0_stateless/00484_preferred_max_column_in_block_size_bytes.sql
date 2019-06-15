@@ -32,3 +32,4 @@ insert into tab_00484 select today(), number, 'abc' from system.numbers limit 81
 set preferred_block_size_bytes = 0;
 select count(*) from tab_00484 prewhere s != 'abc' format Null;
 select count(*) from tab_00484 prewhere s = 'abc' format Null;
+drop table tab_00484;
