@@ -475,9 +475,9 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    bool isExternalData = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
 
-    if (isExternalData)
+    if (has_external_data)
     {
         /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
         reserved_param_suffixes.reserve(3);
@@ -522,7 +522,7 @@ void HTTPHandler::processQuery(
     std::string full_query;
 
     /// Support for "external data for query processing".
-    if (isExternalData)
+    if (has_external_data)
     {
         ExternalTablesHandler handler(context, params);
         params.load(request, istr, handler);
