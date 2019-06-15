@@ -37,7 +37,7 @@ Memory consumption is also restricted by the parameters `max_memory_usage_for_us
 
 The maximum amount of RAM to use for running a user's queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -45,7 +45,7 @@ See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 The maximum amount of RAM to use for running all queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -270,9 +270,8 @@ Default value: 100.
 
 **Details**
 
-When inserting data ClickHouse calculates the number of partitions in the inserted block, and if the number of partitions is more than `max_partitions_per_insert_block` then ClickHouse throws an exception with the following text:
+When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse throws an exception with the following text:
 
-
-"Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
+> "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

@@ -6,6 +6,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -69,14 +70,24 @@ namespace detail
 
             LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
-            auto & stream_out = session->sendRequest(request);
+            try
+            {
+                auto & stream_out = session->sendRequest(request);
 
-            if (out_stream_callback)
-                out_stream_callback(stream_out);
+                if (out_stream_callback)
+                    out_stream_callback(stream_out);
 
-            istr = receiveResponse(*session, request, response);
+                istr = receiveResponse(*session, request, response);
 
-            impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+            }
+            catch (const Poco::Exception & e)
+            {
+                /// We use session data storage as storage for exception text
+                /// Depend on it we can deduce to reconnect session or reresolve session host
+                session->attachSessionData(e.message());
+                throw;
+            }
         }
 
 
