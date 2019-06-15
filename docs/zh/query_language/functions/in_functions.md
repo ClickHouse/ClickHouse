@@ -2,7 +2,7 @@
 
 ## in, notIn, globalIn, globalNotIn
 
-请参阅[IN 运算符](../select.md＃select-in-operators)部分。
+请参阅[IN 运算符](../select.md#select-in-operators)部分。
 
 ## tuple(x, y, ...), operator (x, y, ...)
 

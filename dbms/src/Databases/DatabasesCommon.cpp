@@ -107,10 +107,16 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     return it->second;
 }
 
-DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
+DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
-    return std::make_unique<DatabaseSnapshotIterator>(tables);
+    if (!filter_by_table_name)
+        return std::make_unique<DatabaseSnapshotIterator>(tables);
+    Tables filtered_tables;
+    for (const auto & [table_name, storage] : tables)
+        if (filter_by_table_name(table_name))
+            filtered_tables.emplace(table_name, storage);
+    return std::make_unique<DatabaseSnapshotIterator>(std::move(filtered_tables));
 }
 
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
