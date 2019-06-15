@@ -20,5 +20,14 @@ $CLICKHOUSE_CLIENT --max_threads=1 --param_id=2 --param_phrase='test' \
 
 $CLICKHOUSE_CLIENT -q "SELECT {s:String}" 2>&1 | grep -P '^Code: 36\.'
 
-
 $CLICKHOUSE_CLIENT -q "DROP TABLE ps";
+
+
+$CLICKHOUSE_CLIENT --param_test abc --query 'SELECT {test:String}'
+$CLICKHOUSE_CLIENT --param_test=abc --query 'SELECT {test:String}'
+
+$CLICKHOUSE_CLIENT --param_test 'Hello, world' --query 'SELECT {test:String}'
+$CLICKHOUSE_CLIENT --param_test='Hello, world' --query 'SELECT {test:String}'
+
+$CLICKHOUSE_CLIENT --param_test '' --query 'SELECT length({test:String})'
+$CLICKHOUSE_CLIENT --param_test='' --query 'SELECT length({test:String})'

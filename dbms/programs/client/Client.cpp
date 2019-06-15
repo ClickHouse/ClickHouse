@@ -1548,14 +1548,6 @@ private:
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
-    static std::pair<String, String> parseParameter(const String & s)
-    {
-        size_t pos = s.find('_') + 1;
-        /// String begins with "--param_", so check is no needed
-        /// Cut two first dash "--" and divide arg from name and value
-        return {s.substr(2, pos - 2), s.substr(pos)};
-    }
-
 public:
     void init(int argc, char ** argv)
     {
@@ -1573,7 +1565,6 @@ public:
 
         Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
-        std::vector<Arguments> parameter_arguments;
 
         bool in_external_group = false;
         for (int arg_num = 1; arg_num < argc; ++arg_num)
@@ -1619,7 +1610,26 @@ public:
 
                 /// Parameter arg after underline.
                 if (startsWith(arg, "--param_"))
-                    parameter_arguments.emplace_back(Arguments{arg});
+                {
+                    const char * param_continuation = arg + strlen("--param_");
+                    const char * equal_pos = strchr(param_continuation, '=');
+
+                    if (equal_pos == param_continuation)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    if (equal_pos)
+                    {
+                        /// param_name=value
+                        query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
+                    }
+                    else
+                    {
+                        /// param_name value
+                        ++arg_num;
+                        arg = argv[arg_num];
+                        query_parameters.emplace(String(param_continuation), String(arg));
+                    }
+                }
                 else
                     common_arguments.emplace_back(arg);
             }
@@ -1697,32 +1707,6 @@ public:
             ("types", po::value<std::string>(), "types")
         ;
 
-        /// Parse commandline options related to prepared statements.
-        po::options_description parameter_description("Query parameters options");
-        parameter_description.add_options()
-            ("param_", po::value<std::string>(), "name and value of substitution, with syntax --param_name=value")
-        ;
-
-        for (size_t i = 0; i < parameter_arguments.size(); ++i)
-        {
-            po::parsed_options parsed_parameter = po::command_line_parser(parameter_arguments[i])
-                .options(parameter_description).extra_parser(parseParameter).run();
-            po::variables_map parameter_options;
-            po::store(parsed_parameter, parameter_options);
-
-            /// Save name and values of substitution in dictionary.
-            String parameter = parameter_options["param_"].as<std::string>();
-            size_t pos = parameter.find('=');
-            if (pos != String::npos && pos + 1 != parameter.size())
-            {
-                const String name = parameter.substr(0, pos);
-                if (!query_parameters.insert({name, parameter.substr(pos + 1)}).second)
-                    throw Exception("Duplicate name " + name + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
-            }
-            else
-                throw Exception("Expected parameter field as --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
-        }
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
@@ -1746,8 +1730,8 @@ public:
             || (options.count("host") && options["host"].as<std::string>() == "elp"))    /// If user writes -help instead of --help.
         {
             std::cout << main_description << "\n";
-            std::cout << parameter_description << "\n";
             std::cout << external_description << "\n";
+            std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
             exit(0);
         }
 
