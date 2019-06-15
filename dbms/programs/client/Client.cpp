@@ -807,13 +807,6 @@ private:
         if (!parsed_query)
             return true;
 
-        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
-        visitor.visit(parsed_query);
-
-        /// Get new query after substitutions.
-        query = serializeAST(*parsed_query);
-
         processed_rows = 0;
         progress.reset();
         show_progress_bar = false;
@@ -909,6 +902,13 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
+
+        /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
+        query = serializeAST(*parsed_query);
+
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
