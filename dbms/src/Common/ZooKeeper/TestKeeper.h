@@ -11,60 +11,22 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
+
 namespace Coordination
 {
-String parentPath(const String& path);
-
-std::vector<String> children(const String& path);
-
-using WatchCallbacks = std::vector<WatchCallback>;
-using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
-extern Watches watches;
-extern Watches list_watches;
-extern std::mutex watches_mutex;
 
 struct TestKeeperRequest;
+using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 
-using clock = std::chrono::steady_clock;
-
-struct RequestInfo
-{
-    std::shared_ptr<TestKeeperRequest> request;
-    ResponseCallback callback;
-    WatchCallback watch;
-    clock::time_point time;
-};
-
-struct TestNode
-{
-    String data;
-    ACLs acls;
-    bool is_ephemeral;
-    bool is_sequental;
-    Stat stat;
-    int seq_num;
-};
-
-extern std::map<std::string, TestNode> architecture;;
-extern long int global_zxid;
-
-struct TestKeeperRequest;
 
 class TestKeeper : public IKeeper
 {
 public:
-    TestKeeper(
-            const String & root_path,
-            Poco::Timespan operation_timeout);
-
-    using OpNum = int32_t;
-
+    TestKeeper(const String & root_path, Poco::Timespan operation_timeout);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
-
-    int64_t getSessionID() const override { return session_id; }
+    int64_t getSessionID() const override { return 0; }
 
 
     void create(
@@ -110,29 +72,54 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
-//        void printArchitecture() override;
+
+    struct Node
+    {
+        String data;
+        ACLs acls;
+        bool is_ephemeral = false;
+        bool is_sequental = false;
+        Stat stat{};
+        int32_t seq_num = 0;
+    };
+
+    using Container = std::map<std::string, Node>;
+
+    using WatchCallbacks = std::vector<WatchCallback>;
+    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
 private:
+    using clock = std::chrono::steady_clock;
+
+    struct RequestInfo
+    {
+        TestKeeperRequestPtr request;
+        ResponseCallback callback;
+        WatchCallback watch;
+        clock::time_point time;
+    };
+
+    Container container;
+
     String root_path;
     ACLs default_acls;
 
     Poco::Timespan operation_timeout;
 
     std::mutex push_request_mutex;
-
     std::atomic<bool> expired{false};
 
-    int64_t session_id = 0;
+    int64_t zxid = 0;
 
+    Watches watches;
+    Watches list_watches;   /// Watches for 'list' request (watches on children).
 
-
-    void createWatchCallBack(const String& path);
+    void createWatchCallBack(const String & path);
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
-
     RequestsQueue requests_queue{1};
 
-    void pushRequest(RequestInfo &&request);
+    void pushRequest(RequestInfo && request);
 
     void finalize();
 
@@ -141,22 +128,5 @@ private:
     void processingThread();
 };
 
-struct TestKeeperResponse;
-using TestKeeperResponsePtr = std::shared_ptr<TestKeeperResponse>;
-
-struct TestKeeperRequest : virtual Request
-{
-    long int zxid;
-
-    TestKeeperRequest() = default;
-    TestKeeperRequest(const TestKeeperRequest &) = default;
-    virtual ~TestKeeperRequest() = default;
-
-    virtual TestKeeper::OpNum getOpNum() const = 0;
-
-    virtual TestKeeperResponsePtr createResponse() const = 0;
-
-    virtual TestKeeperResponsePtr makeResponse() const = 0;
-};
-
 }
+

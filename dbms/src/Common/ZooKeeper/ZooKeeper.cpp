@@ -46,7 +46,7 @@ static void check(int32_t code, const std::string & path)
 }
 
 
-void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
+void ZooKeeper::init(const std::string & implementation, const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Logger::get("ZooKeeper");
@@ -55,9 +55,8 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     session_timeout_ms = session_timeout_ms_;
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
-    implementation = implementation_;
 
-    if (implementation.find("zookeeper") != std::string::npos)
+    if (implementation == "zookeeper")
     {
         if (hosts.empty())
             throw KeeperException("No addresses passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
@@ -93,7 +92,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
 
         LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
     }
-    else if (implementation.find("testkeeper") != std::string::npos)
+    else if (implementation == "testkeeper")
     {
         impl = std::make_unique<Coordination::TestKeeper>(
                 chroot,
@@ -101,7 +100,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     }
     else
     {
-        throw DB::Exception("Unknown implementation of coordination service: " + chroot_, DB::ErrorCodes::NOT_IMPLEMENTED);
+        throw DB::Exception("Unknown implementation of coordination service: " + implementation, DB::ErrorCodes::NOT_IMPLEMENTED);
     }
 
     if (!chroot.empty() && !exists("/"))
@@ -109,7 +108,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms,
-                     int32_t operation_timeout_ms, const std::string & chroot, const std::string implementation)
+                     int32_t operation_timeout_ms, const std::string & chroot, const std::string & implementation)
 {
     init(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
@@ -125,7 +124,7 @@ struct ZooKeeperArgs
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
         operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT;
-        implementation = DEFAULT_ZOOKEEPER_IMPLEMENTATION;
+        implementation = "zookeeper";
         for (const auto & key : keys)
         {
             if (startsWith(key, "node"))

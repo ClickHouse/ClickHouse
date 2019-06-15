@@ -30,7 +30,6 @@ namespace zkutil
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
-const std::string DEFAULT_ZOOKEEPER_IMPLEMENTATION = "zookeeper";
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -57,7 +56,7 @@ public:
               int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT,
               int32_t operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT,
               const std::string & chroot = "",
-              const std::string implementation = DEFAULT_ZOOKEEPER_IMPLEMENTATION);
+              const std::string & implementation = "zookeeper");
 
     /** Config of the form:
         <zookeeper>
@@ -259,7 +258,6 @@ private:
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
     std::string chroot;
-    std::string implementation;
 
     std::mutex mutex;
 
