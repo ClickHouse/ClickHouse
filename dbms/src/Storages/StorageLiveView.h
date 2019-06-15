@@ -202,7 +202,7 @@ public:
             }
 
             /// Need make new mergeable block structure match the other mergeable blocks
-            if (!mergeable_blocks->front()->empty() && !new_mergeable_blocks->empty())
+            if (!mergeable_blocks->front()->empty())
             {
                 auto sample_block = mergeable_blocks->front()->front();
                 auto sample_new_block = new_mergeable_blocks->front();
@@ -236,6 +236,9 @@ public:
         {
             blocks->push_back(this_block);
         }
+
+        if (blocks->empty())
+            return;
 
         auto sample_block = blocks->front().cloneEmpty();
         BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
