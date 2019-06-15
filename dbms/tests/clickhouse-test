@@ -53,6 +53,7 @@ def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
+    # Normalize randomized database names in stdout, stderr files.
     os.system("sed -i 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
     os.system("sed -i 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
 
