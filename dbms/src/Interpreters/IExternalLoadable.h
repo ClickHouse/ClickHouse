@@ -17,7 +17,7 @@ namespace DB
 {
 
 /// Min and max lifetimes for a loadable object or it's entry
-struct ExternalLoadableLifetime final
+struct ExternalLoadableLifetime
 {
     UInt64 min_sec;
     UInt64 max_sec;
@@ -40,7 +40,7 @@ public:
     /// If lifetime exceeded and isModified(), ExternalLoader replace current object with the result of clone().
     virtual bool isModified() const = 0;
     /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
-    virtual std::unique_ptr<IExternalLoadable> clone() const = 0;
+    virtual std::shared_ptr<const IExternalLoadable> clone() const = 0;
 
     virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 

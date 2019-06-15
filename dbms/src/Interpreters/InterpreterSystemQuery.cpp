@@ -156,7 +156,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            system_context.getExternalDictionaries().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
