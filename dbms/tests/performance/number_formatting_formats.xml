@@ -1,8 +1,8 @@
 <test>
-    <name>test_select_format</name>
+    <name>number_formatting_formats</name>
     <type>loop</type>
 
-    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File({format})</create_query>
 
     <stop_conditions>
         <all_of>
@@ -18,10 +18,6 @@
     <main_metric>
         <min_time/>
     </main_metric>
-
-    <settings>
-        <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>
-    </settings>
 
     <substitutions>
         <substitution>
@@ -39,11 +35,6 @@
                 <value>JSONCompact</value>
                 <value>JSONEachRow</value>
                 <value>TSKV</value>
-                <value>Pretty</value>
-                <value>PrettyCompact</value>
-                <value>PrettyCompactMonoBlock</value>
-                <value>PrettyNoEscapes</value>
-                <value>PrettySpace</value>
                 <value>RowBinary</value>
                 <value>Native</value>
                 <value>XML</value>
@@ -55,7 +46,7 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</query>
+    <query>INSERT INTO table_{format} SELECT number FROM numbers(100000000)</query>
 
     <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 
