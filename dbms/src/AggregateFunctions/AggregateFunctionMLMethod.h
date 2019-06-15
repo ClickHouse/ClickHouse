@@ -3,6 +3,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -36,12 +37,13 @@ public:
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
-        size_t row_num)
-        = 0;
+        size_t row_num) = 0;
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
         Block & block,
+        size_t offset,
+        size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
@@ -67,6 +69,8 @@ public:
     void predict(
         ColumnVector<Float64>::Container & container,
         Block & block,
+        size_t offset,
+        size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
@@ -92,6 +96,8 @@ public:
     void predict(
         ColumnVector<Float64>::Container & container,
         Block & block,
+        size_t offset,
+        size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
@@ -194,9 +200,8 @@ private:
 };
 
 
-/**
-* LinearModelData is a class which manages current state of learning
-*/
+/** LinearModelData is a class which manages current state of learning
+  */
 class LinearModelData
 {
 public:
@@ -218,8 +223,13 @@ public:
 
     void read(ReadBuffer & buf);
 
-    void
-    predict(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const;
+    void predict(
+        ColumnVector<Float64>::Container & container,
+        Block & block,
+        size_t offset,
+        size_t limit,
+        const ColumnNumbers & arguments,
+        const Context & context) const;
 
     void returnWeights(IColumn & to) const;
 private:
@@ -228,18 +238,17 @@ private:
 
     Float64 learning_rate;
     Float64 l2_reg_coef;
-    UInt32 batch_capacity;
+    UInt64 batch_capacity;
 
-    UInt32 iter_num = 0;
+    UInt64 iter_num = 0;
     std::vector<Float64> gradient_batch;
-    UInt32 batch_size;
+    UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
 
-    /**
-     * The function is called when we want to flush current batch and update our weights
-     */
+    /** The function is called when we want to flush current batch and update our weights
+      */
     void update_state();
 };
 
@@ -256,7 +265,7 @@ public:
 
     explicit AggregateFunctionMLMethod(
         UInt32 param_num,
-        std::shared_ptr<IGradientComputer> gradient_computer,
+        std::unique_ptr<IGradientComputer> gradient_computer,
         std::string weights_updater_name,
         Float64 learning_rate,
         Float64 l2_reg_coef,
@@ -288,19 +297,15 @@ public:
     void create(AggregateDataPtr place) const override
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
-        if (weights_updater_name == "\'SGD\'")
-        {
+        if (weights_updater_name == "SGD")
             new_weights_updater = std::make_shared<StochasticGradientDescent>();
-        } else if (weights_updater_name == "\'Momentum\'")
-        {
+        else if (weights_updater_name == "Momentum")
             new_weights_updater = std::make_shared<Momentum>();
-        } else if (weights_updater_name == "\'Nesterov\'")
-        {
+        else if (weights_updater_name == "Nesterov")
             new_weights_updater = std::make_shared<Nesterov>();
-        } else
-        {
+        else
             throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
-        }
+
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
 
@@ -316,7 +321,13 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
-        ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments, const Context & context) const override
+        ConstAggregateDataPtr place,
+        IColumn & to,
+        Block & block,
+        size_t offset,
+        size_t limit,
+        const ColumnNumbers & arguments,
+        const Context & context) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception(
@@ -325,17 +336,12 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
-        ColumnVector<Float64> * column;
-        try
-        {
-            column = &dynamic_cast<ColumnVector<Float64> &>(to);
-        } catch (const std::bad_cast &)
-        {
+        auto * column = typeid_cast<ColumnFloat64 *>(&to);
+        if (!column)
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::BAD_CAST);
-        }
 
-        this->data(place).predict(column->getData(), block, arguments, context);
+        this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.

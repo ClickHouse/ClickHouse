@@ -2,8 +2,8 @@
 #if USE_PROTOBUF
 
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufSchemas.h> // Y_IGNORE
-#include <google/protobuf/compiler/importer.h> // Y_IGNORE
+#include <Formats/ProtobufSchemas.h>
+#include <google/protobuf/compiler/importer.h>
 #include <Common/Exception.h>
 
 

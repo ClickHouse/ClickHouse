@@ -1,3 +1,68 @@
+## ClickHouse release 19.7.3.9, 2019-05-30
+
+### Новые возможности
+* Добавлена возможность ограничить значения конфигурационных параметров,
+  которые может задать пользователь. Эти ограничения устанавливаются в профиле
+настроек пользователя. [#4931](https://github.com/yandex/ClickHouse/pull/4931)
+([Vitaly Baranov](https://github.com/vitlibar))
+* Добавлен вариант функции `groupUniqArray` с дополнительным параметром
+  `max_size`, который ограничивает размер результирующего массива, аналогично
+функции `groupArray(max_size)(x)`.
+[#5026](https://github.com/yandex/ClickHouse/pull/5026) ([Guillaume
+Tassery](https://github.com/YiuRULE))
+* Для входных файлов формата TSVWithNames и CSVWithNames появилась возможность
+  определить порядок колонок в файле исходя из его заголовка. Это поведение
+управляется конфигурационным параметром `input_format_with_names_use_header`.
+[#5081](https://github.com/yandex/ClickHouse/pull/5081)
+([Alexander](https://github.com/Akazz))
+
+### Исправления ошибок
+* Падение в процессе слияния при использовании uncompressed_cache и JOIN
+  (#5197). [#5133](https://github.com/yandex/ClickHouse/pull/5133) ([Danila
+Kutenin](https://github.com/danlark1))
+* Segmentation fault на запросе к системным таблицам (#5066).
+  [#5127](https://github.com/yandex/ClickHouse/pull/5127)
+([Ivan](https://github.com/abyss7))
+* Потеря загружаемых данных при больших потоках загрузки через KafkaEngine
+  (#4736). [#5080](https://github.com/yandex/ClickHouse/pull/5080)
+([Ivan](https://github.com/abyss7))
+* Исправлен очень редкий data race condition который мог произойти при выполнении запроса с UNION ALL включающего минимум два SELECT из таблиц system.columns, system.tables, system.parts, system.parts_tables или таблиц семейства Merge и одновременно выполняющихся запросов ALTER столбцов соответствующих таблиц. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Улучшения производительности
+* Используется поразрядная сортировка числовых колонок для `ORDER BY` без
+  `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106),
+[#4439](https://github.com/yandex/ClickHouse/pull/4439) ([Evgenii
+Pravda](https://github.com/kvinty),
+[alexey-milovidov](https://github.com/alexey-milovidov)
+
+### Документация
+* Документация для некоторых табличных движков переведена на китайский.
+  [#5107](https://github.com/yandex/ClickHouse/pull/5107),
+[#5094](https://github.com/yandex/ClickHouse/pull/5094),
+[#5087](https://github.com/yandex/ClickHouse/pull/5087)
+([张风啸](https://github.com/AlexZFX),
+[#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
+lee](https://github.com/neverlee))
+
+### Улучшения сборки, тестирования и пакетирования
+* Правильно отображаются символы в кодировке UTF-8 в `clickhouse-test`.
+  [#5084](https://github.com/yandex/ClickHouse/pull/5084)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Добавлен параметр командной строки для `clickhouse-client`, позволяющий
+  всегда загружать данные подсказок.
+[#5102](https://github.com/yandex/ClickHouse/pull/5102)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлены некоторые предупреждения PVS-Studio.
+  [#5082](https://github.com/yandex/ClickHouse/pull/5082)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Обновлена библиотека LZ4.
+  [#5040](https://github.com/yandex/ClickHouse/pull/5040) ([Danila
+Kutenin](https://github.com/danlark1))
+* В зависимости сборки добавлен gperf для поддержки готовящегося PR #5030.
+  [#5110](https://github.com/yandex/ClickHouse/pull/5110)
+([proller](https://github.com/proller))
+
+
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
 ### Новые возможности
@@ -6,7 +71,7 @@
 * Добавлена функция `isValidUTF8` для проверки, содержит ли строка валидные данные в кодировке UTF-8. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
 * Добавлены новое правило балансировки (`load_balancing`) `first_or_random` по которому запросы посылаются на первый заданый хост и если он недоступен - на случайные хосты шарда. Полезно для топологий с кросс-репликацией. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
-### Эксперемннтальные возможности
+### Экспериментальные возможности
 * Добавлена настройка `index_granularity_bytes` (адаптивная гранулярность индекса) для таблиц семейства MergeTree* . [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
 
 ### Улучшения
@@ -29,6 +94,7 @@
 * Исправлено зависание на старте сервера если внешний словарь зависит от другого словаря через использование таблицы из БД с движком `Dictionary`. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
 * При использовании `distributed_product_mode = 'local'` корректно работает использование столбцов локальных таблиц в where/having/order by/... через табличные алиасы. Выкидывает исключение если таблица не имеет алиас. Доступ к столбцам без алиасов пока не возможен. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
 * Исправлен потенциально некорректный результат для `SELECT DISTINCT` с `JOIN` [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
+* Исправлен очень редкий data race condition который мог произойти при выполнении запроса с UNION ALL включающего минимум два SELECT из таблиц system.columns, system.tables, system.parts, system.parts_tables или таблиц семейства Merge и одновременно выполняющихся запросов ALTER столбцов соответствующих таблиц. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Улучшения сборки/тестирования/пакетирования
 * Исправлена неработоспособность тестов, если `clickhouse-server` запущен на удалённом хосте [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))

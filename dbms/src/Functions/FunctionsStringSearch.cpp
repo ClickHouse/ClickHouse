@@ -307,7 +307,26 @@ struct MultiSearchAllPositionsImpl
         {
             return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
         };
-        Impl::createMultiSearcherInBigHaystack(needles).searchAllPositions(haystack_data, haystack_offsets, res_callback, res);
+
+        auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
+
+        const size_t haystack_string_size = haystack_offsets.size();
+        const size_t needles_size = needles.size();
+
+        /// Something can be uninitialized after the search itself
+        std::fill(res.begin(), res.end(), 0);
+
+        while (searcher.hasMoreToSearch())
+        {
+            size_t prev_offset = 0;
+            for (size_t j = 0, from = 0; j < haystack_string_size; ++j, from += needles_size)
+            {
+                const auto * haystack = &haystack_data[prev_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                searcher.searchOneAll(haystack, haystack_end, res.data() + from, res_callback);
+                prev_offset = haystack_offsets[j];
+            }
+        }
     }
 };
 
@@ -323,7 +342,22 @@ struct MultiSearchImpl
         const std::vector<StringRef> & needles,
         PaddedPODArray<UInt8> & res)
     {
-        Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets, res);
+        auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
+        const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
+        while (searcher.hasMoreToSearch())
+        {
+            size_t prev_offset = 0;
+            for (size_t j = 0; j < haystack_string_size; ++j)
+            {
+                const auto * haystack = &haystack_data[prev_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                if (iteration == 0 || !res[j])
+                    res[j] = searcher.searchOne(haystack, haystack_end);
+                prev_offset = haystack_offsets[j];
+            }
+            ++iteration;
+        }
     }
 };
 
@@ -343,7 +377,28 @@ struct MultiSearchFirstPositionImpl
         {
             return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
         };
-        Impl::createMultiSearcherInBigHaystack(needles).searchFirstPosition(haystack_data, haystack_offsets, res_callback, res);
+        auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
+        const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
+        while (searcher.hasMoreToSearch())
+        {
+            size_t prev_offset = 0;
+            for (size_t j = 0; j < haystack_string_size; ++j)
+            {
+                const auto * haystack = &haystack_data[prev_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                if (iteration == 0 || res[j] == 0)
+                    res[j] = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
+                else
+                {
+                    UInt64 result = searcher.searchOneFirstPosition(haystack, haystack_end, res_callback);
+                    if (result != 0)
+                        res[j] = std::min(result, res[j]);
+                }
+                prev_offset = haystack_offsets[j];
+            }
+            ++iteration;
+        }
     }
 };
 
@@ -359,7 +414,23 @@ struct MultiSearchFirstIndexImpl
         const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets, res);
+        auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
+        const size_t haystack_string_size = haystack_offsets.size();
+        size_t iteration = 0;
+        while (searcher.hasMoreToSearch())
+        {
+            size_t prev_offset = 0;
+            for (size_t j = 0; j < haystack_string_size; ++j)
+            {
+                const auto * haystack = &haystack_data[prev_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                /// hasMoreToSearch traverse needles in increasing order
+                if (iteration == 0 || res[j] == 0)
+                    res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
+                prev_offset = haystack_offsets[j];
+            }
+            ++iteration;
+        }
     }
 };
 

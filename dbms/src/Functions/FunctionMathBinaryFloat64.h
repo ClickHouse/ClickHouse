@@ -22,8 +22,8 @@
         #pragma clang diagnostic ignored "-Wshift-negative-value"
     #endif
 
-    #include <vectorf128.h> // Y_IGNORE
-    #include <vectormath_exp.h> // Y_IGNORE
+    #include <vectorf128.h>
+    #include <vectormath_exp.h>
 
     #ifdef __clang__
         #pragma clang diagnostic pop
