@@ -217,7 +217,7 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void DataTypeAggregateFunction::deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception("AggregateFunction data type cannot be read from text", ErrorCodes::NOT_IMPLEMENTED);
 }
