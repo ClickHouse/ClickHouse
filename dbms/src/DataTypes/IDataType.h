@@ -222,42 +222,42 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
+    /** Serialize to a protobuf. */
+    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
+    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
+
     /** Text serialization with escaping but without quoting.
       */
-    virtual void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    virtual void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    virtual void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    virtual void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for the CSV format.
       */
-    virtual void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
-    virtual void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    virtual void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
       */
-    virtual void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for putting into the XML format.
       */
-    virtual void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-
-    /** Serialize to a protobuf. */
-    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
-    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
+    void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
 protected:
     virtual String doGetName() const;
