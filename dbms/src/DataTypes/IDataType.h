@@ -248,6 +248,8 @@ public:
       */
     void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
+    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
+      */
     void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
