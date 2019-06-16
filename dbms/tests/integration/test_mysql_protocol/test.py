@@ -79,6 +79,7 @@ def test_mysql_client(mysql_client, server_address):
         -e "INSERT INTO table1 VALUES (0), (1), (5);"
         -e "INSERT INTO table1 VALUES (0), (1), (5);"
         -e "SELECT * FROM table1 ORDER BY a;"
+        -e "DROP DATABASE x;"
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stdout == 'a\n0\n0\n1\n1\n5\n5\n'
@@ -108,9 +109,10 @@ def test_python_client(server_address):
 
     assert exc_info.value.args == (81, "Database system2 doesn't exist")
 
-    client.select_db('x')
     cursor = client.cursor(pymysql.cursors.DictCursor)
-    cursor.execute("TRUNCATE TABLE table1")
+    cursor.execute('CREATE DATABASE x')
+    client.select_db('x')
+    cursor.execute("CREATE TABLE table1 (a UInt32) ENGINE = Memory")
     cursor.execute("INSERT INTO table1 VALUES (1), (3)")
     cursor.execute("INSERT INTO table1 VALUES (1), (4)")
     cursor.execute("SELECT * FROM table1 ORDER BY a")
