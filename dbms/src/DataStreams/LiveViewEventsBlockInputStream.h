@@ -66,7 +66,7 @@ public:
 
     Block getHeader() const override
     {
-        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version"), ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "hash")};
+        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version")};
     }
 
     void refresh()
@@ -106,12 +106,7 @@ public:
             ColumnWithTypeAndName(
                 DataTypeUInt64().createColumnConst(1, blocks_metadata->version)->convertToFullColumnIfConst(),
                 std::make_shared<DataTypeUInt64>(),
-                "version"),
-            ColumnWithTypeAndName(
-                DataTypeString().createColumnConst(1, blocks_metadata->hash)->convertToFullColumnIfConst(),
-                std::make_shared<DataTypeString>(),
-                "hash"),
-
+                "version")
         };
         return res;
     }
