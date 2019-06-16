@@ -8,9 +8,39 @@ They are located in the 'system' database.
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Contain metrics used for profiling and monitoring.
-They usually reflect the number of events currently in the system, or the total resources consumed by the system.
-Example: The number of SELECT queries currently running; the amount of memory in use.`system.asynchronous_metrics`and`system.metrics` differ in their sets of metrics and how they are calculated.
+Contains metrics which are calculated periodically in background. For example, the amount of RAM in use.
+
+Columns:
+
+- `metric` ([String](../data_types/string.md)) — Metric's name.
+- `value` ([Float64](../data_types/float.md)) — Metric's value.
+
+**Example**
+
+```sql
+SELECT * FROM system.asynchronous_metrics LIMIT 10
+```
+
+```text
+┌─metric──────────────────────────────────┬──────value─┐
+│ jemalloc.background_thread.run_interval │          0 │
+│ jemalloc.background_thread.num_runs     │          0 │
+│ jemalloc.background_thread.num_threads  │          0 │
+│ jemalloc.retained                       │  422551552 │
+│ jemalloc.mapped                         │ 1682989056 │
+│ jemalloc.resident                       │ 1656446976 │
+│ jemalloc.metadata_thp                   │          0 │
+│ jemalloc.metadata                       │   10226856 │
+│ UncompressedCacheCells                  │          0 │
+│ MarkCacheFiles                          │          0 │
+└─────────────────────────────────────────┴────────────┘
+```
+
+**See Also**
+
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [system.events](#system_tables-events) — Contains a number of happened events.
 
 ## system.clusters
 
@@ -89,9 +119,35 @@ Note that the amount of memory used by the dictionary is not proportional to the
 
 ## system.events {#system_tables-events}
 
-Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
-Example: The number of processed SELECT queries.
-Columns: 'event String' – the event name, and 'value UInt64' – the quantity.
+Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries are processed from the moment of ClickHouse server start.
+
+Columns:
+
+- `event` ([String](../data_types/string.md)) — Event name.
+- `value` ([UInt64](../data_types/int_uint.md)) — Count of events occurred.
+- `description` ([String](../data_types/string.md)) — Description of an event.
+
+**Example**
+
+```sql
+SELECT * FROM system.events LIMIT 5
+```
+
+```text
+┌─event─────────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                                 │    12 │ Number of queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries. │
+│ SelectQuery                           │     8 │ Same as Query, but only for SELECT queries.                                                                                                                                                                                                                │
+│ FileOpen                              │    73 │ Number of files opened.                                                                                                                                                                                                                                    │
+│ ReadBufferFromFileDescriptorRead      │   155 │ Number of reads (read/pread) from a file descriptor. Does not include sockets.                                                                                                                                                                             │
+│ ReadBufferFromFileDescriptorReadBytes │  9931 │ Number of bytes read from file descriptors. If the file is compressed, this will show compressed data size.                                                                                                                                                │
+└───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.functions
 
@@ -133,13 +189,47 @@ Columns:
 - `result_part_name String` — The name of the part that will be formed as the result of merging.
 - `is_mutation UInt8` - 1 if this process is a part mutation.
 - `total_size_bytes_compressed UInt64` — The total size of the compressed data in the merged chunks.
-- `total_size_marks UInt64` — The total number of marks in the merged partss.
+- `total_size_marks UInt64` — The total number of marks in the merged parts.
 - `bytes_read_uncompressed UInt64` — Number of bytes read, uncompressed.
 - `rows_read UInt64` — Number of rows read.
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
 - `rows_written UInt64` — Number of lines rows written.
 
 ## system.metrics {#system_tables-metrics}
+
+Contains metrics which can be calculated instantly, or have an current value. For example, a number of simultaneously processed queries, the current value for replica delay. This table is always up to date.
+
+Columns:
+
+- `metric` ([String](../data_types/string.md)) — Metric's name.
+- `value` ([Int64](../data_types/int_uint.md)) — Metric's value.
+- `description` ([String](../data_types/string.md)) — Description of the metric.
+
+**Example**
+
+```sql
+SELECT * FROM system.metrics LIMIT 10
+```
+
+```text
+┌─metric─────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                      │     1 │ Number of executing queries                                                                                                                                                                      │
+│ Merge                      │     0 │ Number of executing background merges                                                                                                                                                            │
+│ PartMutation               │     0 │ Number of mutations (ALTER DELETE/UPDATE)                                                                                                                                                        │
+│ ReplicatedFetch            │     0 │ Number of data parts fetching from replica                                                                                                                                                       │
+│ ReplicatedSend             │     0 │ Number of data parts sending to replicas                                                                                                                                                         │
+│ ReplicatedChecks           │     0 │ Number of data parts checking for consistency                                                                                                                                                    │
+│ BackgroundPoolTask         │     0 │ Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches or replication queue bookkeeping)                                                                                 │
+│ BackgroundSchedulePoolTask │     0 │ Number of active tasks in BackgroundSchedulePool. This pool is used for periodic tasks of ReplicatedMergeTree like cleaning old data parts, altering data parts, replica re-initialization, etc. │
+│ DiskSpaceReservedForMerge  │     0 │ Disk space reserved for currently running background merges. It is slightly more than total size of currently merging parts.                                                                     │
+│ DistributedSend            │     0 │ Number of connections sending data, that was INSERTed to Distributed tables, to remote servers. Both synchronous and asynchronous mode.                                                          │
+└────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+**See Also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](#system_tables-events) — Contains a umber of happened events.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers
 
