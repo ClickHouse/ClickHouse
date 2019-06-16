@@ -2,8 +2,8 @@
     <default_profile>default</default_profile>
     <logger>
         <level>trace</level>
-        <log>/home/excitoon/clickhouse-server.log</log>
-        <errorlog>/home/excitoon/clickhouse-server.err.log</errorlog>
+        <log>~/clickhouse-server.log</log>
+        <errorlog>~/clickhouse-server.err.log</errorlog>
         <size>1000M</size>
         <count>10</count>
     </logger>
