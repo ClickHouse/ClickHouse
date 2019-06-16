@@ -41,10 +41,10 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
-#include <Common/ZooKeeper/ZooKeeper.h>
-
 #include <Compression/CompressionFactory.h>
+
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/addTypeConversionToAST.h>
 
 
 namespace DB
@@ -278,19 +278,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         /// add column to postprocessing if there is a default_expression specified
         if (col_decl.default_expression)
         {
-            /** for columns with explicitly-specified type create two expressions:
-             *    1. default_expression aliased as column name with _tmp suffix
-             *    2. conversion of expression (1) to explicitly-specified type alias as column name */
+            /** For columns with explicitly-specified type create two expressions:
+              * 1. default_expression aliased as column name with _tmp suffix
+              * 2. conversion of expression (1) to explicitly-specified type alias as column name
+              */
             if (col_decl.type)
             {
                 const auto & final_column_name = col_decl.name;
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto data_type_ptr = column_names_and_types.back().type.get();
 
-                default_expr_list->children.emplace_back(setAlias(
-                    makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                        std::make_shared<ASTLiteral>(data_type_ptr->getName())), final_column_name));
-                default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+
+                default_expr_list->children.emplace_back(
+                    setAlias(addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
+                        final_column_name));
+
+                default_expr_list->children.emplace_back(
+                    setAlias(
+                        col_decl.default_expression->clone(),
+                        tmp_column_name));
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
@@ -329,7 +335,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
                 column.type = name_type_it->type;
 
                 if (!column.type->equals(*deduced_type))
-                    default_expr = makeASTFunction("CAST", default_expr, std::make_shared<ASTLiteral>(column.type->getName()));
+                    default_expr = addTypeConversionToAST(std::move(default_expr), column.type->getName());
             }
             else
                 column.type = defaults_sample_block.getByName(column.name).type;

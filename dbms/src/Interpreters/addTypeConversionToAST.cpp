@@ -11,23 +11,16 @@ namespace DB
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
-    auto func = std::make_shared<ASTFunction>();
-    ASTPtr res = func;
+    auto func = makeASTFunction("CAST", ast, std::make_shared<ASTLiteral>(type_name));
 
-    if (ASTWithAlias * ast_with_alias = ast->as<ASTWithAlias>())
+    if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
         func->alias = ast_with_alias->alias;
         func->prefer_alias_to_column_name = ast_with_alias->prefer_alias_to_column_name;
         ast_with_alias->alias.clear();
     }
 
-    func->name = "CAST";
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    func->arguments = exp_list;
-    func->children.push_back(func->arguments);
-    exp_list->children.emplace_back(std::move(ast));
-    exp_list->children.emplace_back(std::make_shared<ASTLiteral>(type_name));
-    return res;
+    return func;
 }
 
 }
