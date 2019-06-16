@@ -204,8 +204,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
-        visitor.visit(ast);
+        if (context.hasQueryParameters())
+        {
+            ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
+            visitor.visit(ast);
+        }
 
         /// Get new query after substitutions.
         if (context.hasQueryParameters())
