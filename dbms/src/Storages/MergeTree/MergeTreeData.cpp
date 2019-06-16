@@ -1112,6 +1112,10 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
+    /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
+    for (DataPartPtr & part : getAllDataPartsVector())
+        part->remove();
+
     Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
