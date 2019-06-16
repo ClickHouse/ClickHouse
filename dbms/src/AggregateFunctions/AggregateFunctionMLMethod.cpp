@@ -49,8 +49,8 @@ namespace
         auto l2_reg_coef = Float64(0.1);
         UInt32 batch_size = 15;
 
-        std::string weights_updater_name = "\'SGD\'";
-        std::shared_ptr<IGradientComputer> gradient_computer;
+        std::string weights_updater_name = "SGD";
+        std::unique_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
         {
@@ -66,20 +66,19 @@ namespace
         }
         if (parameters.size() > 3)
         {
-            weights_updater_name = applyVisitor(FieldVisitorToString(), parameters[3]);
-            if (weights_updater_name != "\'SGD\'" && weights_updater_name != "\'Momentum\'" && weights_updater_name != "\'Nesterov\'")
-            {
-                throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
+            weights_updater_name = parameters[3].safeGet<String>();
+            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov")
+                throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (std::is_same<Method, FuncLinearRegression>::value)
         {
-            gradient_computer = std::make_shared<LinearRegression>();
+            gradient_computer = std::make_unique<LinearRegression>();
         }
         else if (std::is_same<Method, FuncLogisticRegression>::value)
         {
-            gradient_computer = std::make_shared<LogisticRegression>();
+            gradient_computer = std::make_unique<LogisticRegression>();
         }
         else
         {
@@ -88,7 +87,7 @@ namespace
 
         return std::make_shared<Method>(
             argument_types.size() - 1,
-            gradient_computer,
+            std::move(gradient_computer),
             weights_updater_name,
             learning_rate,
             l2_reg_coef,

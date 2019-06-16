@@ -183,7 +183,7 @@ def generate_dictionaries(path, structure):
     file_names = []
 
     # Add ready dictionaries.
-    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*.xml")))
+    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*")))
 
     # Generate dictionaries.
     for (name, key_idx, has_parent), (source, layout) in zip(structure, sources_and_layouts):

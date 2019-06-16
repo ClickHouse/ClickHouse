@@ -83,7 +83,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -101,7 +101,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
