@@ -8,11 +8,11 @@ import threading
 import unittest
 
 
-# 1) Run Go FakeS3 server.
-# go run cmd/gofakes3/main.go -backend memory -host :9990
-# 2) Create a bucket.
-# curl -X PUT http://localhost:9990/abc/
+# Run Go FakeS3 server.
+# go run cmd/gofakes3/main.go -backend memory -host :9990 -initialbucket abc
 
+config = os.path.join(os.path.dirname(sys.argv[0]), 'config.xml')
+test_csv = os.path.join(os.path.dirname(sys.argv[0]), 'test.csv')
 format = 'column1 UInt32, column2 UInt32, column3 UInt32'
 values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
 other_values = '(1, 1, 1), (1, 1, 1), (11, 11, 11)'
@@ -30,7 +30,7 @@ prepare_put_queries = [
 ]
 
 queries = [
-    "select *, column1*column2*column3 from file('{}', 'CSV', '{}')".format(os.path.expanduser('~/test.csv'), format),
+    "select *, column1*column2*column3 from file('{}', 'CSV', '{}')".format(test_csv, format),
     "select *, column1*column2*column3 from url('https://storage.yandexcloud.net/milovidov/test.csv', 'CSV', '{}')".format(format),
     "select *, column1*column2*column3 from s3('http://storage.yandexcloud.net/milovidov/test.csv', 'CSV', '{}')".format(format),
     "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(localhost, fakes3_port, bucket, format),
@@ -166,7 +166,7 @@ for query in prepare_put_queries:
     result = subprocess.run([
         os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
         '-c',
-        os.path.expanduser('~/config.xml'),
+        config,
         '-q',
         query
     ], stdout=subprocess.PIPE, universal_newlines=True)
@@ -177,7 +177,7 @@ for query in queries:
     result = subprocess.run([
         os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
         '-c',
-        os.path.expanduser('~/config.xml'),
+        config,
         '-q',
         query
     ], stdout=subprocess.PIPE, universal_newlines=True)
@@ -193,7 +193,7 @@ for query in put_queries:
     result = subprocess.run([
         os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
         '-c',
-        os.path.expanduser('~/config.xml'),
+        config,
         '-q',
         query
     ], stdout=subprocess.PIPE, universal_newlines=True)
@@ -207,7 +207,7 @@ for query in check_queries:
     result = subprocess.run([
         os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
         '-c',
-        os.path.expanduser('~/config.xml'),
+        config,
         '-q',
         query
     ], stdout=subprocess.PIPE, universal_newlines=True)
