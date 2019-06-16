@@ -132,6 +132,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
 MarkRanges MergeTreeReadPool::getRestMarks(const MergeTreeDataPart & part, const MarkRange & from) const
 {
     MarkRanges all_part_ranges;
+
+    /// Inefficient in presence of large number of data parts.
     for (const auto & part_ranges : parts_ranges)
     {
         if (part_ranges.data_part.get() == &part)
