@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
+    extern const int CANNOT_UNLINK;
 }
 
 
@@ -216,7 +217,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
     for (const auto & column : storage_columns)
     {
-        if (!hasColumnFiles(column.name))
+        if (!hasColumnFiles(column.name, *column.type))
             continue;
 
         const auto size = getColumnSize(column.name, *column.type).data_compressed;
@@ -395,7 +396,27 @@ void MergeTreeDataPart::remove() const
         return;
     }
 
-    to_dir.remove(true);
+    try
+    {
+        /// Remove each file in directory, then remove directory itself.
+
+        for (const auto & [file, _] : checksums.files)
+        {
+            if (0 != unlink((to + "/" + file).c_str()))
+                throwFromErrno("Cannot unlink file", ErrorCodes::CANNOT_UNLINK);
+        }
+
+        if (0 != unlink((to + "/checksums.txt").c_str()))
+            throwFromErrno("Cannot unlink file", ErrorCodes::CANNOT_UNLINK);
+
+        if (0 != rmdir(to.c_str()))
+            throwFromErrno("Cannot rmdir file", ErrorCodes::CANNOT_UNLINK);
+    }
+    catch (...)
+    {
+        LOG_ERROR(storage.log, "Cannot quickly remove directory " << to_dir << " by removing files; fallback to recursive removal.");
+        to_dir.remove(true);
+    }
 }
 
 
@@ -858,16 +879,22 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
     }
 }
 
-bool MergeTreeDataPart::hasColumnFiles(const String & column) const
+bool MergeTreeDataPart::hasColumnFiles(const String & column_name, const IDataType & type) const
 {
-    /// NOTE: For multi-streams columns we check that just first file exist.
-    /// That's Ok under assumption that files exist either for all or for no streams.
+    bool res = true;
 
-    String prefix = getFullPath();
+    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        String file_name = IDataType::getFileNameForStream(column_name, substream_path);
 
-    String escaped_column = escapeForFileName(column);
-    return Poco::File(prefix + escaped_column + ".bin").exists()
-        && Poco::File(prefix + escaped_column + storage.index_granularity_info.marks_file_extension).exists();
+        auto bin_checksum = checksums.files.find(file_name + ".bin");
+        auto mrk_checksum = checksums.files.find(file_name + storage.index_granularity_info.marks_file_extension);
+
+        if (bin_checksum == checksums.files.end() || mrk_checksum == checksums.files.end())
+            res = false;
+    }, {});
+
+    return res;
 }
 
 
