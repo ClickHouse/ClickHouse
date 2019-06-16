@@ -327,20 +327,22 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
         if (!std::isfinite(value))
             throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = value * ToDataType::getScaleMultiplier(scale);
+        ToNativeType min_value;
+        ToNativeType max_value;
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
-            static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-            static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
-            if (out < min_int128 || out > max_int128)
-                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+            min_value = __int128(0x8000000000000000ll) << 64; // min __int128
+            max_value = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll; // max __int128
         }
         else
         {
-            if (out < std::numeric_limits<ToNativeType>::min() || out > std::numeric_limits<ToNativeType>::max())
-                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+            min_value = std::numeric_limits<ToNativeType>::min();
+            max_value = std::numeric_limits<ToNativeType>::max();
         }
-        return out;
+        ToNativeType converted_value = static_cast<ToNativeType>(value * ToDataType::getScaleMultiplier(scale));
+        if (converted_value == min_value || converted_value == max_value)
+            throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+        return converted_value;
     }
     else
     {
