@@ -407,10 +407,11 @@ void MergeTreeDataPart::remove() const
                 throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
         }
 
+        for (const auto & file : {"checksums.txt", "columns.txt"})
         {
-            String path_to_remove = to + "/checksums.txt";
+            String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrno("Cannot unlink file", ErrorCodes::CANNOT_UNLINK);
+                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
         }
 
         if (0 != rmdir(to.c_str()))
