@@ -95,7 +95,7 @@ struct SimdJSONParser
         {
             do
                 ++size;
-            while (it2.next() && it2.next());
+            while (it2.next() && it2.next()); //-V501
         }
         return size;
     }
@@ -116,13 +116,13 @@ struct SimdJSONParser
         if (!it.down())
             return false;
         while (index--)
-            if (!it.next() || !it.next())
+            if (!it.next() || !it.next()) //-V501
                 return false;
         return it.next();
     }
 
     static bool objectMemberByName(Iterator & it, const StringRef & name) { return it.move_to_key(name.data); }
-    static bool nextObjectMember(Iterator & it) { return it.next() && it.next(); }
+    static bool nextObjectMember(Iterator & it) { return it.next() && it.next(); } //-V501
 
     static bool nextObjectMember(Iterator & it, StringRef & next_key)
     {

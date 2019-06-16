@@ -167,9 +167,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
     struct ShuffledPool
     {
-        NestedPool * pool;
-        const PoolState * state;
-        size_t index;
+        NestedPool * pool{};
+        const PoolState * state{};
+        size_t index = 0;
         size_t error_count = 0;
     };
 
