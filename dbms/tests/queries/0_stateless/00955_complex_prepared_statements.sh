@@ -3,9 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-EXCEPTION_TEXT="Code: 456."
-EXCEPTION_SUCCESS_TEXT="OK"
-EXCEPTION_FAIL_TEXT="FAIL"
+EXCEPTION_TEXT="Code: 457."
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ps";
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ps (
@@ -37,7 +35,6 @@ $CLICKHOUSE_CLIENT --max_threads=1 --param_nd="2015-02-15" \
 # Must throw an exception to avoid SQL injection
 $CLICKHOUSE_CLIENT --max_threads=1 --param_injection="[1] OR 1" \
     -q "SELECT * FROM ps WHERE a = {injection:Array(UInt32)}" 2>&1 \
-    | grep -q "$EXCEPTION_TEXT" && echo "$EXCEPTION_SUCCESS_TEXT" \
-    || echo "$EXCEPTION_FAIL_TEXT";
+    | grep -o "$EXCEPTION_TEXT"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ps";
