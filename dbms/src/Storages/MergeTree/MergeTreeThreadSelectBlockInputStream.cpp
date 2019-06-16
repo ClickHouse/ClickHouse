@@ -74,7 +74,7 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
 
     if (!reader)
     {
-        auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
+        auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
 
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
@@ -95,7 +95,7 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
         /// in other case we can reuse readers, anyway they will be "seeked" to required mark
         if (path != last_readed_part_path)
         {
-            auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
+            auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
             reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
