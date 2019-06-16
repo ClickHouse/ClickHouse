@@ -110,9 +110,9 @@ Tag | Description | Required
 `name`| Column name. | Yes
 `type`| Column type.<br/>Sets the method for interpreting data in the source. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the source table, but it can be uploaded as `String`. | Yes
 `null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. | Yes
-`expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it for creating an alias for the remote column. | No
+`expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it for creating an alias for the remote column.<br/><br/>Default value: no expression. | No
 `hierarchical` | Hierarchical support. Mirrored to the parent identifier.<br/><br/>Default value: `false`. | No
-`injective` | Flag that shows whether the `id -> attribute` image is injective.<br/>If ` true`, then you can optimize the ` GROUP BY` clause.<br/><br/>Default value: `false`. | No
-`is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`. | No
+`injective` | Flag that shows whether the `id -> attribute` image is injective.<br/>If `true`, then you can optimize the `GROUP BY` clause.<br/><br/>Default value: `false`. | No
+`is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`. | No
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
