@@ -197,7 +197,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, 
     for (const auto & key : config_keys)
     {
         if (key.find('.') != String::npos)
-            throw Exception("Cluster names with dots are not supported: `" + key + "`", ErrorCodes::SYNTAX_ERROR);
+            throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
         impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
     }

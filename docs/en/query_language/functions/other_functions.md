@@ -6,7 +6,7 @@ Returns a string with the name of the host that this function was performed on. 
 
 ## basename
 
-Extracts trailing part of a string after the last slash or backslash. This function if often used to extract the filename from the path.
+Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
 ```
 basename( expr )
@@ -14,17 +14,17 @@ basename( expr )
 
 **Parameters**
 
-- `expr` — Expression, resulting in the [String](../../data_types/string.md)-type value. All the backslashes must be escaped in the resulting value.
+- `expr` — Expression resulting in a [String](../../data_types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
 **Returned Value**
 
-A String-type value that contains:
+A string that contains:
 
-- Trailing part of a string after the last slash or backslash in it.
+- The trailing part of a string after the last slash or backslash.
 
-    If the input string contains a path, ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+    If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
-- Original string if there are no slashes or backslashes in it.
+- The original string if there are no slashes or backslashes.
 
 **Example**
 

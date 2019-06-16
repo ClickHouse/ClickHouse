@@ -1061,8 +1061,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
-        throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
-                        + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
