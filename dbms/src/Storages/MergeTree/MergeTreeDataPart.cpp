@@ -398,7 +398,7 @@ void MergeTreeDataPart::remove() const
 
     try
     {
-        /// Remove each file in directory, then remove directory itself.
+        /// Remove each expected file in directory, then remove directory itself.
 
         for (const auto & [file, _] : checksums.files)
         {
@@ -419,8 +419,11 @@ void MergeTreeDataPart::remove() const
     }
     catch (...)
     {
+        /// Recursive directory removal does many excessive "stat" syscalls under the hood.
+
         LOG_ERROR(storage.log, "Cannot quickly remove directory " << to << " by removing files; fallback to recursive removal. Reason: "
             << getCurrentExceptionMessage(false));
+
         to_dir.remove(true);
     }
 }
