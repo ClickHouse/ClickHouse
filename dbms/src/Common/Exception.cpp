@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 std::string errnoToString(int code, int e)
