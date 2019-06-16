@@ -1,6 +1,6 @@
 # odbc {#table_functions-odbc}
 
-Возвращает таблицу, подключенную по [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+Возвращает таблицу, подключенную через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ```
 odbc(connection_settings, external_database, external_table)
@@ -96,4 +96,3 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 - [Движок таблиц ODBC](../../operations/table_engines/odbc.md).
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/jdbc/) <!--hide-->
-

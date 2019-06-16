@@ -35,7 +35,7 @@ The table structure can differ from the source table structure:
 
 **Retrieving data from the local MySQL installation via ODBC**
 
-This example is for Ubuntu Linux 18.04 and MySQL server 5.7.
+This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
 
 Ensure that unixODBC and MySQL Connector are installed.
 
@@ -117,4 +117,4 @@ SELECT * FROM odbc_t
 - [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [ODBC table function](../../query_language/table_functions/odbc.md)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/odbc/) <!--hide-->

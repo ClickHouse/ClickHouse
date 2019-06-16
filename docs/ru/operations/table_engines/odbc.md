@@ -2,7 +2,7 @@
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из  `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
+Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
 
 Движок поддерживает тип данных [Nullable](../../data_types/nullable.md).
 
@@ -119,4 +119,4 @@ SELECT * FROM odbc_t
 - [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
 - [Табличная функция odbc](../../query_language/table_functions/odbc.md)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/jdbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/odbc/) <!--hide-->

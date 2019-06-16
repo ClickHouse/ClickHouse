@@ -20,7 +20,7 @@ The fields with the `NULL` values from the external table are converted into the
 
 **Getting data from the local MySQL installation via ODBC**
 
-This example is for Ubuntu Linux 18.04 and MySQL server 5.7.
+This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
 
 Ensure that unixODBC and MySQL Connector are installed.
 
