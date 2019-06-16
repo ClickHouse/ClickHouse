@@ -258,6 +258,25 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 **Default value**: `ALL`
 
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes behavior of join operations with `ANY` strictness.
+
+!!! note "Attention"
+    This setting applies only for the [Join](../table_engines/join.md) table engine.
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+Default value: 0.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
@@ -673,6 +692,49 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
+
+## max_network_bytes {#settings-max_network_bytes}
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Data volume control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth {#settings-max_network_bandwidth}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Bandwidth control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
 
 ## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
 
