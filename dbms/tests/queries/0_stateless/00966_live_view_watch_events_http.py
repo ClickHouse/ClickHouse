@@ -26,10 +26,10 @@ with client(name='client1>', log=log) as client1:
 
 
     with http_client({'method':'GET', 'url': '/?query=WATCH%20test.lv%20EVENTS'}, name='client2>', log=log) as client2:
-        client2.expect('.*1\tc9d39b11cce79112219a73aaa319b475\n')
+        client2.expect('.*1\n')
         client1.send('INSERT INTO test.mt VALUES (1),(2),(3)')
         client1.expect(prompt)
-        client2.expect('.*2\t.*\n')
+        client2.expect('.*2\n')
 
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)

@@ -28,7 +28,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     client1.send('WATCH test.lv EVENTS')
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
-    client1.expect('2.*4cd0592103888d4682de9a32a23602e3' + end_of_block)
+    client1.expect('2.*' + end_of_block)
     client1.expect('Progress: 2.00 rows.*\)')
     # wait for heartbeat
     client1.expect('Progress: 2.00 rows.*\)')

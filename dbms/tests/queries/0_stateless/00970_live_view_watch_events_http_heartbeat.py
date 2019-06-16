@@ -26,16 +26,16 @@ with client(name='client1>', log=log) as client1:
 
 
     with http_client({'method':'GET', 'url': '/?live_view_heartbeat_interval=1&query=WATCH%20test.lv%20EVENTS%20FORMAT%20JSONEachRowWithProgress'}, name='client2>', log=log) as client2:
-        client2.expect('{"progress":{"read_rows":"1","read_bytes":"49","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}\n', escape=True)
-        client2.expect('{"row":{"version":"1","hash":"c9d39b11cce79112219a73aaa319b475"}}', escape=True)
-        client2.expect('{"progress":{"read_rows":"1","read_bytes":"49","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}', escape=True)
+        client2.expect('{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}\n', escape=True)
+        client2.expect('{"row":{"version":"1"}', escape=True)
+        client2.expect('{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}', escape=True)
         # heartbeat is provided by progress message
-        client2.expect('{"progress":{"read_rows":"1","read_bytes":"49","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}', escape=True)
+        client2.expect('{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}', escape=True)
 
         client1.send('INSERT INTO test.mt VALUES (1),(2),(3)')
         client1.expect(prompt)
 
-        client2.expect('{"row":{"version":"2","hash":"4cd0592103888d4682de9a32a23602e3"}}\n', escape=True)
+        client2.expect('{"row":{"version":"2"}}\n', escape=True)
 
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
