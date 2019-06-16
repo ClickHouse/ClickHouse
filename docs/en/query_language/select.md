@@ -860,7 +860,7 @@ DISTINCT is not supported if SELECT has at least one array column.
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 
-The sample table:
+Example table:
 
 ```text
 ┌─a─┬─b─┐
@@ -871,7 +871,7 @@ The sample table:
 └───┴───┘
 ```
 
-When selecting data by the `SELECT DISTINCT a FROM t1 ORDER BY b ASC` query, we get the following result:
+When selecting data with the `SELECT DISTINCT a FROM t1 ORDER BY b ASC` query, we get the following result:
 
 ```text
 ┌─a─┐
@@ -881,7 +881,7 @@ When selecting data by the `SELECT DISTINCT a FROM t1 ORDER BY b ASC` query, we 
 └───┘
 ```
 
-If we change the direction of ordering `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, we get the following result:
+If we change the sorting direction `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, we get the following result:
 
 ```text
 ┌─a─┐
@@ -893,7 +893,7 @@ If we change the direction of ordering `SELECT DISTINCT a FROM t1 ORDER BY b DES
 
 Row `2, 4` was cut before sorting.
 
-Take into account this implementation specificity when programming queries.
+Take this implementation specificity into account when programming queries.
 
 ### LIMIT Clause
 
