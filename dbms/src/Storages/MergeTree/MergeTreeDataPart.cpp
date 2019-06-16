@@ -402,15 +402,19 @@ void MergeTreeDataPart::remove() const
 
         for (const auto & [file, _] : checksums.files)
         {
-            if (0 != unlink((to + "/" + file).c_str()))
+            String path_to_remove = to + "/" + file;
+            if (0 != unlink(path_to_remove.c_str()))
+                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
+        }
+
+        {
+            String path_to_remove = to + "/checksums.txt";
+            if (0 != unlink(path_to_remove.c_str()))
                 throwFromErrno("Cannot unlink file", ErrorCodes::CANNOT_UNLINK);
         }
 
-        if (0 != unlink((to + "/checksums.txt").c_str()))
-            throwFromErrno("Cannot unlink file", ErrorCodes::CANNOT_UNLINK);
-
         if (0 != rmdir(to.c_str()))
-            throwFromErrno("Cannot rmdir file", ErrorCodes::CANNOT_UNLINK);
+            throwFromErrno("Cannot rmdir file " + to, ErrorCodes::CANNOT_UNLINK);
     }
     catch (...)
     {
