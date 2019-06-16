@@ -81,6 +81,7 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 
 void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.current_select = this;
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (database_and_table_name)
