@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS ipv4_range;
 CREATE TABLE ipv4_range(ip IPv4, cidr UInt8) ENGINE = Memory;
 
@@ -22,4 +20,3 @@ SELEcT IPv4CIDRToRange(toIPv4('255.255.255.255'), 8);
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 32);
 SELECT IPv4CIDRToRange(toIPv4('0.0.0.0'), 8);
 SELECT IPv4CIDRToRange(toIPv4('255.0.0.0'), 4);
-

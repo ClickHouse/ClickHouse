@@ -19,3 +19,5 @@ SELECT a, sum(s), count() from rollup GROUP BY ROLLUP(a) ORDER BY a;
 SELECT a, sum(s), count() from rollup GROUP BY a WITH ROLLUP ORDER BY a;
 
 SELECT a, sum(s), count() from rollup GROUP BY a WITH ROLLUP WITH TOTALS ORDER BY a;
+
+DROP TABLE rollup;
