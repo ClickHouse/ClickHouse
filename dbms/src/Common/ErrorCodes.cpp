@@ -431,6 +431,7 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR = 454;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY = 455;
     extern const int UNKNOWN_QUERY_PARAMETER = 456;
+    extern const int BAD_QUERY_PARAMETER = 457;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

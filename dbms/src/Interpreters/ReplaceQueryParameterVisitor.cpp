@@ -15,6 +15,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_QUERY_PARAMETER;
+    extern const int BAD_QUERY_PARAMETER;
+}
+
+
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
     for (auto & child : ast->children)
@@ -32,7 +39,7 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -49,7 +56,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
-        throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'", ErrorCodes::BAD_QUERY_PARAMETER);
 
     ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
 }
