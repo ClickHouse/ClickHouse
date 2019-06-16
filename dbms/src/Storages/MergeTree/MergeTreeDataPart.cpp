@@ -418,7 +418,8 @@ void MergeTreeDataPart::remove() const
     }
     catch (...)
     {
-        LOG_ERROR(storage.log, "Cannot quickly remove directory " << to << " by removing files; fallback to recursive removal.");
+        LOG_ERROR(storage.log, "Cannot quickly remove directory " << to << " by removing files; fallback to recursive removal. Reason: "
+            << getCurrentExceptionMessage(false));
         to_dir.remove(true);
     }
 }
