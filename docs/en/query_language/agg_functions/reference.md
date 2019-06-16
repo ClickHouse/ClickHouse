@@ -237,7 +237,7 @@ binary     decimal
 ```
 
 
-##groupBitmap
+## groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
 
@@ -677,7 +677,7 @@ Optional parameters:
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
-For example, `groupUniqArray (1) (x)` is equivalent to `[any (x)]`.
+For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
 ## quantile(level)(x)
 
