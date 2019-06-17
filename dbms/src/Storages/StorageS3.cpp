@@ -133,7 +133,6 @@ BlockInputStreams StorageS3::read(const Names & column_names,
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context));
 
-
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
         return {block_input};
@@ -148,8 +147,26 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & 
         uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
-void registerStorageS3(StorageFactory & /*factory*/)
+void registerStorageS3(StorageFactory & factory)
 {
-    // TODO. See #1394?
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+            throw Exception(
+                "Storage S3 requires exactly 2 arguments: url and name of used format.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        Poco::URI uri(url);
+
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+        return StorageS3::create(uri, args.table_name, format_name, args.columns, args.context);
+    });
 }
 }

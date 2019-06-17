@@ -11,19 +11,31 @@ namespace DB
 WriteBufferFromS3::WriteBufferFromS3(
     const Poco::URI & uri_, const ConnectionTimeouts & timeouts_, 
     const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_)
-    : WriteBufferFromOStream(buffer_size_)
+    : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , uri {uri_}
     , timeouts {timeouts_}
     , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
+    , temporary_buffer {buffer_string}
 {
-    ostr = &temporary_stream;
     if (!credentials.getUsername().empty())
         credentials.authenticate(auth_request);
 }
 
+
+void WriteBufferFromS3::nextImpl()
+{
+    if (!offset())
+        return;
+
+    temporary_buffer.write(working_buffer.begin(), offset());
+}
+
+
 void WriteBufferFromS3::finalize()
 {
-    const std::string & data = temporary_stream.str();
+    temporary_buffer.finish();
+
+    const String & data = buffer_string;
 
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
@@ -51,11 +63,11 @@ void WriteBufferFromS3::finalize()
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << uri.toString());
 
-        ostr = &session->sendRequest(*request);
-//        if (session->peekResponse(response))
+        std::ostream & ostr = session->sendRequest(*request);
+//        if (session->peekResponse(response)) // FIXME, shall not go next if not received 100-continue
         {
             // Received 100-continue.
-            *ostr << data;
+            ostr << data;
         }
 
         istr = &session->receiveResponse(response);
@@ -70,6 +82,19 @@ void WriteBufferFromS3::finalize()
         uri = location_iterator->second;
     }
     assertResponseIsOk(*request, response, istr);
+}
+
+
+WriteBufferFromS3::~WriteBufferFromS3()
+{
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }
