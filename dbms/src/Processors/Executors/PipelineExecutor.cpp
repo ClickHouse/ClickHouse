@@ -548,10 +548,22 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (num_waiting_threads.fetch_add(1) + 1 == num_threads)
                     {
-                        finished = true;
-                        main_executor_condvar.notify_all();
-                        finish_condvar.notify_one();
-                        break;
+                        bool all_finished = prepare_stack.empty();
+
+                        for (auto & sources : preparing_source_processors)
+                        {
+                            if (!sources.empty())
+                                all_finished = false;
+                        }
+
+                        if (all_finished)
+                        {
+
+                            finished = true;
+                            main_executor_condvar.notify_all();
+                            finish_condvar.notify_one();
+                            break;
+                        }
                     }
 
                     main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty() || !preparing_source_processors[thread_num].empty(); });
