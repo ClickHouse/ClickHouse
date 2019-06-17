@@ -161,7 +161,7 @@ void WriteBufferFromS3::writePart(const String & data)
         request->setHost(part_uri.getHost()); // use original, not resolved host name in header
 
         if (auth_request.hasCredentials())
-	{
+        {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
         }
@@ -232,7 +232,7 @@ void WriteBufferFromS3::complete()
         request->setHost(complete_uri.getHost()); // use original, not resolved host name in header
 
         if (auth_request.hasCredentials())
-	{
+        {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
         }
