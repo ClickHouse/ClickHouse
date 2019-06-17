@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -32,7 +33,10 @@ private:
     ConnectionTimeouts timeouts;
     Poco::Net::HTTPRequest auth_request;
     String buffer_string;
-    DB::WriteBufferFromString temporary_buffer;
+    std::unique_ptr<WriteBufferFromString> temporary_buffer;
+    size_t part_number;
+    size_t last_part_size;
+    std::vector<String> part_tags;
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
@@ -46,6 +50,11 @@ public:
     void finalize();
 
     ~WriteBufferFromS3();
+
+private:
+    void initiate();
+    void writePart(const String & data);
+    void complete();
 };
 
 }

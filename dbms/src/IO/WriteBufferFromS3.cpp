@@ -4,6 +4,7 @@
 
 
 #define DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT 2
+#define DEFAULT_S3_MINIMUM_PART_SIZE 100'000'000
 
 namespace DB
 {
@@ -15,10 +16,14 @@ WriteBufferFromS3::WriteBufferFromS3(
     , uri {uri_}
     , timeouts {timeouts_}
     , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
-    , temporary_buffer {buffer_string}
+    , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
+    , part_number {0}
+    , last_part_size {0}
 {
     if (!credentials.getUsername().empty())
         credentials.authenticate(auth_request);
+
+    initiate();
 }
 
 
@@ -27,16 +32,55 @@ void WriteBufferFromS3::nextImpl()
     if (!offset())
         return;
 
-    temporary_buffer.write(working_buffer.begin(), offset());
+    temporary_buffer->write(working_buffer.begin(), offset());
+
+    last_part_size += offset();
+
+    if (last_part_size > DEFAULT_S3_MINIMUM_PART_SIZE)
+    {
+        temporary_buffer->finish();
+        writePart(buffer_string);
+        last_part_size = 0;
+	temporary_buffer = std::make_unique<WriteBufferFromString>(buffer_string);
+    }
 }
 
 
 void WriteBufferFromS3::finalize()
 {
-    temporary_buffer.finish();
+    temporary_buffer->finish();
+    if (!buffer_string.empty())
+    {
+        writePart(buffer_string);
+    }
 
-    const String & data = buffer_string;
+    complete();
+}
 
+
+WriteBufferFromS3::~WriteBufferFromS3()
+{
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void WriteBufferFromS3::initiate()
+{
+    // FIXME POST ?uploads
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
+}
+
+void WriteBufferFromS3::writePart(const String & data)
+{
+    // FIXME PUT ?partNumber=PartNumber&uploadId=UploadId
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
@@ -44,7 +88,7 @@ void WriteBufferFromS3::finalize()
     std::istream * istr; /// owned by session
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
-        session = makeHTTPSession(uri, timeouts);
+        session = makeHTTPSession(uri, timeouts); // FIXME apply part number to URI
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(uri.getHost()); // use original, not resolved host name in header
 
@@ -85,16 +129,10 @@ void WriteBufferFromS3::finalize()
 }
 
 
-WriteBufferFromS3::~WriteBufferFromS3()
+void WriteBufferFromS3::complete()
 {
-    try
-    {
-        next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    // FIXME POST ?uploads
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
 }
 
 }
