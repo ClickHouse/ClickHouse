@@ -204,7 +204,8 @@ MergeTreeData::MergeTreeData(
 
 std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part) const
 {
-    if (Poco::File(path_to_part).exists()) {
+    if (Poco::File(path_to_part).exists())
+    {
         Poco::DirectoryIterator end;
         for (Poco::DirectoryIterator table_it(path_to_part); table_it != end; ++table_it)
         {
