@@ -110,8 +110,7 @@ private:
     std::atomic<size_t> num_waiting_threads;
     std::condition_variable finish_condvar;
 
-    std::unordered_set<UInt64> source_processors;
-    std::unordered_set<UInt64> preparing_source_processors;
+    std::vector<std::vector<UInt64>> preparing_source_processors;
     std::vector<std::vector<UInt64>> sources_per_thread;
 
 public:

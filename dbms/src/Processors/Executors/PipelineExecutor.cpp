@@ -316,7 +316,18 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool upd
 void PipelineExecutor::addToPrepereQueue(size_t pid)
 {
     if (graph[pid].backEdges.empty())
-        preparing_source_processors.insert(pid);
+    {
+        for (size_t th = 0; th < sources_per_thread.size(); ++th)
+        {
+            for (auto & node : sources_per_thread[th])
+            {
+                if (node == pid)
+                {
+                    preparing_source_processors[th].push_back(pid);
+                }
+            }
+        }
+    }
     else
         prepare_stack.push(pid);
 }
@@ -495,22 +506,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     if (finished)
                         break;
 
-                    for (auto & proc : sources_per_thread[thread_num])
+                    while (!preparing_source_processors[thread_num].empty())
                     {
-                        if (preparing_source_processors.count(proc))
+                        auto proc = preparing_source_processors[thread_num].back();
+                        preparing_source_processors[thread_num].pop_back();
+
+                        prepareProcessor(proc, false);
+
+                        if (graph[proc].status == ExecStatus::Executing)
                         {
-                            preparing_source_processors.erase(proc);
+                            found_processor_to_execute = true;
+                            processor_to_execute = proc;
+                            state = graph[processor_to_execute].execution_state.get();
 
-                            prepareProcessor(proc, false);
-
-                            if (graph[proc].status == ExecStatus::Executing)
-                            {
-                                found_processor_to_execute = true;
-                                processor_to_execute = proc;
-                                state = graph[processor_to_execute].execution_state.get();
-
-                                break;
-                            }
+                            break;
                         }
                     }
 
@@ -545,7 +554,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         break;
                     }
 
-                    main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty() || !preparing_source_processors.empty(); });
+                    main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty() || !preparing_source_processors[thread_num].empty(); });
 
                     num_waiting_threads.fetch_sub(1);
                 }
@@ -644,11 +653,11 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     size_t next_thread = 0;
     sources_per_thread.resize(num_threads);
+    preparing_source_processors.resize(num_threads);
     for (UInt64 node = 0; node < graph.size(); ++node)
     {
         if (graph[node].backEdges.empty())
         {
-            source_processors.insert(node);
             sources_per_thread[next_thread].push_back(node);
             ++next_thread;
             next_thread = next_thread % num_threads;
