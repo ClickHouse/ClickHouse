@@ -714,7 +714,7 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) is a columnar storage format available to any project in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
 ### Data Types Matching
 
@@ -758,7 +758,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop ecosystem, you can use `HDFS` and `URL` table engines.
+To exchange data with the Hadoop, you can use `HDFS` and `URL` table engines.
 
 ## Format Schema {#formatschema}
 
