@@ -113,30 +113,40 @@ struct CRC32Impl
     static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
+        //throw Exception("LOG " + std::to_string(size) + " offset is " + std::to_string(offsets[0]), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = crc32(data, data.size() - 1);
+        {
+            res[i] = crc32(data, prev_offset, offsets[i] - prev_offset - 1);
+            prev_offset = offsets[i];
+        }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
     {
-        res = n;
+        res = crc32(data, 0, n);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
     {
-    }
+        size_t size = data.size() / n;
 
-    static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
-    {
-        size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
-            res[i] = i == 0 ? (offsets[i]) : (offsets[i] - offsets[i - 1]);
+        {
+            res[i] = crc32(data, i * n, n);
+        }
+    }
+
+    static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt64> & /*res*/)
+    {
+        throw Exception("Cannot apply function crc32 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 private:
 
 static uint32_t
-crc32(const ColumnString::Chars_t & buf, size_t size)
+crc32(const ColumnString::Chars_t & buf, size_t offset, size_t size)
 {
 
 static const unsigned int crc32table[256] = {
@@ -206,7 +216,7 @@ static const unsigned int crc32table[256] = {
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 };
 
-	const char *p = reinterpret_cast<const char *>(&buf[0]);
+	const char *p = reinterpret_cast<const char *>(&buf[0]) + offset;
 	uint32_t crc = ~0U;
 
 	while (size--) {
