@@ -50,7 +50,7 @@ public:
     /// Receives response from the server after sending all data.
     void finalize();
 
-    ~WriteBufferFromS3();
+    ~WriteBufferFromS3() override;
 
 private:
     void initiate();

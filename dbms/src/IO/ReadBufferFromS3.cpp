@@ -49,7 +49,7 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
         session = makeHTTPSession(uri, timeouts);
     }
 
-    assertResponseIsOk(*request, response, istr);
+    assertResponseIsOk(*request, response, *istr);
     impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
 }
 

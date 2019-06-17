@@ -92,7 +92,7 @@ void WriteBufferFromS3::initiate()
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
-    std::istream * istr; /// owned by session
+    std::istream * istr = nullptr; /// owned by session
     Poco::URI initiate_uri = uri;
     initiate_uri.setRawQuery("uploads"); // FIXME find how to leave user params as is
 
@@ -124,7 +124,7 @@ void WriteBufferFromS3::initiate()
 
         initiate_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, istr);
+    assertResponseIsOk(*request, response, *istr);
 
     Poco::XML::InputSource src(*istr);
     Poco::XML::DOMParser parser;
@@ -148,7 +148,7 @@ void WriteBufferFromS3::writePart(const String & data)
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
-    std::istream * istr; /// owned by session
+    std::istream * istr = nullptr; /// owned by session
     Poco::URI part_uri = uri;
     part_uri.addQueryParameter("partNumber", std::to_string(part_number));
     part_uri.addQueryParameter("uploadId", upload_id);
@@ -188,7 +188,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
         part_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, istr);
+    assertResponseIsOk(*request, response, *istr);
 
     auto etag_iterator = response.find("ETag");
     if (etag_iterator == response.end())
@@ -205,7 +205,7 @@ void WriteBufferFromS3::complete()
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
-    std::istream * istr; /// owned by session
+    std::istream * istr = nullptr; /// owned by session
     Poco::URI complete_uri = uri;
     complete_uri.addQueryParameter("uploadId", upload_id);
 
@@ -257,7 +257,7 @@ void WriteBufferFromS3::complete()
 
         complete_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, istr);
+    assertResponseIsOk(*request, response, *istr);
 }
 
 }
