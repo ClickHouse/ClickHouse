@@ -1112,6 +1112,10 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
+    /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
+    for (DataPartPtr part : data_parts_by_info) /// a copy intended
+        part->remove();
+
     Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -1323,7 +1327,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name))
+            if (!part || part->hasColumnFiles(column.name, *column.type))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -1345,7 +1349,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             const String new_type_name = new_type->getName();
             const auto * old_type = column.type.get();
 
-            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name)))
+            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name, *column.type)))
             {
                 if (isMetadataOnlyConversion(old_type, new_type))
                 {
