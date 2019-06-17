@@ -22,13 +22,29 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 
 void ReadBufferFromKafkaConsumer::commit()
 {
-    if (messages.empty() || current == messages.begin())
-        return;
+    if (current != messages.end())
+    {
+        /// Since we can poll more messages than we already processed,
+        /// commit only processed messages.
+        consumer->async_commit(*current);
+    }
+    else
+    {
+        /// Commit everything we polled so far because either:
+        /// - read all polled messages (current == messages.end()),
+        /// - read nothing at all (messages.empty()),
+        /// - stalled.
+        consumer->async_commit();
+    }
 
-    auto & previous = *std::prev(current);
-
-    LOG_TRACE(log, "Committing message with offset " << previous.get_offset());
-    consumer->async_commit(previous);
+    const auto & offsets = consumer->get_offsets_committed(consumer->get_assignment());
+    for (const auto & topic_part : offsets)
+    {
+        LOG_TRACE(
+            log,
+            "Committed offset " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
+                                << ", partition: " << topic_part.get_partition() << ")");
+    }
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
@@ -57,7 +73,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     consumer->unsubscribe();
 }
 
-/// Do commit messages implicitly after we processed the previous batch.
+/// Try to commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
@@ -76,7 +92,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
         LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
     }
 
-    if (messages.empty() || current == messages.end())
+    if (messages.empty())
     {
         stalled = true;
         return false;
