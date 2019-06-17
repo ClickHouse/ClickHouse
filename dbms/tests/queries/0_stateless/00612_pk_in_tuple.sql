@@ -42,3 +42,5 @@ drop  table if exists tab_00612;
 CREATE TABLE tab_00612 (key1 Int32, id1  Int64, c1 Int64) ENGINE = MergeTree  PARTITION BY id1 ORDER BY (key1) ;
 insert into tab_00612 values ( -1, 1, 0 );
 SELECT count(*) FROM  tab_00612 PREWHERE id1 IN (1);
+
+drop table tab_00612;
