@@ -449,23 +449,25 @@ See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) descriptio
 
 #### Multiple JOIN
 
-Performing queries, ClickHouse rewrites multiple joins into the sequence of two-table joins. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
+Performing queries, ClickHouse rewrites multi-table joins into the sequence of two-table joins. For example, if there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
 
-If a query contains `WHERE` clause, ClickHouse tries to push down filters from this clause into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+If a query contains the `WHERE` clause, ClickHouse tries to pushdown filters from this clause through the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
 
-We recommend the `JOIN ON` or `JOIN USING` syntax for creating a query. For example:
+We recommend the `JOIN ON` or `JOIN USING` syntax for creating queries. For example:
 
 ```
 SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
 ```
 
-Also, you can use comma separated list of tables for join. Works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting.
+You can use comma-separated lists of tables in the `FROM` clause. This works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting. For example:
 
-    For example, `SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a`
+```
+SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
+```
 
 Don't mix these syntaxes.
 
-ClickHouse doesn't support the syntax with commas directly, so we don't recommend to use it. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER` `JOIN` clauses and then proceeds the query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats comma as an `INNER JOIN` clause and converts it to `CROSS JOIN` when the algorithm cannot guaranty that `INNER JOIN` returns required data.
+ClickHouse doesn't directly support syntax with commas, so we don't recommend using them. The algorithm tries to rewrite the query in terms of `CROSS JOIN` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts `INNER JOIN` to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
 
 #### ANY or ALL Strictness
 
@@ -558,14 +560,15 @@ If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows wh
 
 #### Syntax Limitations
 
-For multiple `JOIN` clauses in the single `SELECT` query:
+For multiple `JOIN` clauses in a single `SELECT` query:
 
 - Taking all the columns via `*` is available only if tables are joined, not subqueries.
 - The `PREWHERE` clause is not available.
 
-For `ON`, `WHERE` and `GROUP BY` clauses:
+For `ON`, `WHERE`, and `GROUP BY` clauses:
 
-- Arbitrary expressions cannot be used in `ON`, `WHERE` and `GROUP BY` clauses, but you can define an expression in `SELECT` clause and then use it via alias in these clauses.
+- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
+
 
 ### WHERE Clause
 

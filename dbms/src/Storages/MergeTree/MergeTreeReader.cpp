@@ -44,9 +44,6 @@ MergeTreeReader::MergeTreeReader(const String & path,
 {
     try
     {
-        if (!Poco::File(path).exists())
-            throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
-
         for (const NameAndTypePair & column : columns)
             addStreams(column.name, *column.type, profile_callback, clock_type);
     }
@@ -163,7 +160,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
         if (streams.count(stream_name))
             return;
 
-        bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
+        bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
