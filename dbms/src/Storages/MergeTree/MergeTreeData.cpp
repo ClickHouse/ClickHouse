@@ -202,12 +202,12 @@ MergeTreeData::MergeTreeData(
 
 
 
-std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part) const
+std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_table) const
 {
-    if (Poco::File(path_to_part).exists())
+    if (Poco::File(path_to_table).exists())
     {
         Poco::DirectoryIterator end;
-        for (Poco::DirectoryIterator table_it(path_to_part); table_it != end; ++table_it)
+        for (Poco::DirectoryIterator table_it(path_to_table); table_it != end; ++table_it)
         {
             if (startsWith(table_it.name(), "tmp"))
                 continue;
@@ -227,14 +227,14 @@ std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionF
 }
 
 void MergeTreeData::IndexGranularityInfo::init(
-    const MergeTreeSettings & settings,
-    const MergeTreeDataFormatVersion & format_version,
-    const std::string & full_path)
+    const MergeTreeSettings & storage_settings,
+    const MergeTreeDataFormatVersion & format,
+    const std::string & path_to_table)
 {
-    fixed_index_granularity = settings.index_granularity;
-    auto mrk_ext = getMrkExtensionFromFS(full_path);
+    fixed_index_granularity = storage_settings.index_granularity;
+    auto mrk_ext = getMrkExtensionFromFS(path_to_table);
     /// Granularity is fixed
-    if (index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk") || format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (storage_settings.index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk") || format < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         is_adaptive = false;
         mark_size_in_bytes = sizeof(UInt64) * 2;
@@ -246,7 +246,7 @@ void MergeTreeData::IndexGranularityInfo::init(
         is_adaptive = true;
         mark_size_in_bytes = sizeof(UInt64) * 3;
         marks_file_extension = ".mrk2";
-        index_granularity_bytes = settings.index_granularity_bytes;
+        index_granularity_bytes = storage_settings.index_granularity_bytes;
     }
 }
 
