@@ -122,6 +122,7 @@ nav:
     - 'Функции по работе с массивами': 'query_language/functions/array_functions.md'
     - 'Функции разбиения и слияния строк и массивов': 'query_language/functions/splitting_merging_functions.md'
     - 'Битовые функции': 'query_language/functions/bit_functions.md'
+    - 'Функции для битмапов': 'query_language/functions/bitmap_functions.md'
     - 'Функции хэширования': 'query_language/functions/hash_functions.md'
     - 'Функции генерации псевдослучайных чисел': 'query_language/functions/random_functions.md'
     - 'Функции для работы с UUID': 'query_language/functions/uuid_functions.md'
@@ -136,6 +137,7 @@ nav:
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
+    - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -185,6 +187,7 @@ nav:
     - 'Разрешения на выполнение запросов': 'operations/settings/permissions_for_queries.md'
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
+    - 'Ограничения на изменение настроек': 'operations/settings/constraints_on_settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
   - 'Утилиты':
     - 'Введение': 'operations/utils/index.md'

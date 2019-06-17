@@ -1,21 +1,17 @@
-#include <daemon/OwnSplitChannel.h>
+#include "OwnSplitChannel.h"
 
+#include <iostream>
+#include <Core/Block.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <sys/time.h>
+#include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Core/Block.h>
-
-#include <Poco/Message.h>
 #include <common/getThreadNumber.h>
-
-#include <sys/time.h>
-#include <iostream>
 
 
 namespace DB
 {
-
-
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
