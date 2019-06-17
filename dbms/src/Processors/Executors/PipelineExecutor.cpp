@@ -15,9 +15,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXPIRED;
-    extern const int QUERY_WAS_CANCELLED;
+extern const int TOO_MANY_ROWS_OR_BYTES;
+extern const int QUOTA_EXPIRED;
+extern const int QUERY_WAS_CANCELLED;
 }
 
 static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
@@ -29,7 +29,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 }
 
 PipelineExecutor::PipelineExecutor(Processors processors)
-    : processors(std::move(processors)), cancelled(false), finished(false), num_waiting_threads(0)
+        : processors(std::move(processors)), cancelled(false), finished(false), num_waiting_threads(0)
 {
     buildGraph();
 }
@@ -124,7 +124,7 @@ void PipelineExecutor::addChildlessProcessorsToQueue()
     {
         if (graph[proc].directEdges.empty())
         {
-            prepare_stack.push(proc);
+            addToPrepereQueue(proc);
             graph[proc].status = ExecStatus::Preparing;
         }
     }
@@ -148,7 +148,7 @@ void PipelineExecutor::processFinishedExecutionQueue()
             std::rethrow_exception(graph[finished_job].execution_state->exception);
 
         graph[finished_job].status = ExecStatus::Preparing;
-        prepare_stack.push(finished_job);
+        addToPrepereQueue(finished_job);
     }
 }
 
@@ -204,8 +204,8 @@ void PipelineExecutor::addJob(UInt64 pid)
         auto job = [processor = graph[pid].processor, execution_state = graph[pid].execution_state.get()]()
         {
             // SCOPE_EXIT(
-                    /// while (!finished_execution_queue.push(pid));
-                    /// event_counter.notify()
+            /// while (!finished_execution_queue.push(pid));
+            /// event_counter.notify()
             // );
 
             try
@@ -263,7 +263,7 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     {
         if (processors_map.count(processor.get()))
             throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
-                    ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::LOGICAL_ERROR);
 
         processors_map[processor.get()] = graph.size();
         graph.emplace_back();
@@ -280,7 +280,7 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
             if (graph[node].status == ExecStatus::Idle || graph[node].status == ExecStatus::New)
             {
                 graph[node].status = ExecStatus::Preparing;
-                prepare_stack.push(node);
+                addToPrepereQueue(node);
             }
         }
     }
@@ -298,7 +298,7 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool upd
 
     if (node.status == ExecStatus::Idle || node.status == ExecStatus::New)
     {
-        prepare_stack.push(edge.to);
+        addToPrepereQueue(edge.to);
         node.status = ExecStatus::Preparing;
 
         if (update_stream_number)
@@ -311,6 +311,14 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool upd
     }
 
     return false;
+}
+
+void PipelineExecutor::addToPrepereQueue(size_t pid)
+{
+    if (graph[pid].backEdges.empty())
+        preparing_source_processors.insert(pid);
+    else
+        prepare_stack.push(pid);
 }
 
 void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
@@ -372,7 +380,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
         {
             expandPipeline(pid);
             /// Add node to queue again.
-            prepare_stack.push(pid);
+            addToPrepereQueue(pid);
 
             /// node ref is not valid now.
             graph[pid].status = ExecStatus::Preparing;
@@ -459,7 +467,7 @@ void PipelineExecutor::execute(size_t num_threads)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void PipelineExecutor::executeSingleThread(size_t num_threads)
+void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
     UInt64 total_time_ns = 0;
     UInt64 execution_time_ns = 0;
@@ -485,6 +493,26 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                 while (!found_processor_to_execute)
                 {
                     if (finished)
+                        break;
+
+                    for (auto & proc : sources_per_thread[thread_num])
+                    {
+                        if (preparing_source_processors.count(proc))
+                        {
+                            preparing_source_processors.erase(proc);
+
+                            if (graph[proc].status == ExecStatus::Executing)
+                            {
+                                found_processor_to_execute = true;
+                                processor_to_execute = proc;
+                                state = graph[processor_to_execute].execution_state.get();
+
+                                break;
+                            }
+                        }
+                    }
+
+                    if (found_processor_to_execute)
                         break;
 
                     while (!prepare_stack.empty())
@@ -612,6 +640,19 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    size_t next_thread = 0;
+    sources_per_thread.resize(num_threads);
+    for (UInt64 node = 0; node < graph.size(); ++node)
+    {
+        if (graph[node].backEdges.empty())
+        {
+            source_processors.insert(node);
+            sources_per_thread[next_thread].push_back(node);
+            ++next_thread;
+            next_thread = next_thread % num_threads;
+        }
+    }
+
     /// No need to make task_queue longer than num_threads.
     /// Therefore, finished_execution_queue can't be longer than num_threads too.
     task_queue.reserve_unsafe(num_threads);

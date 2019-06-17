@@ -110,6 +110,10 @@ private:
     std::atomic<size_t> num_waiting_threads;
     std::condition_variable finish_condvar;
 
+    std::unordered_set<UInt64> source_processors;
+    std::unordered_set<UInt64> preparing_source_processors;
+    std::vector<std::vector<UInt64>> sources_per_thread;
+
 public:
     explicit PipelineExecutor(Processors processors);
     void execute(size_t num_threads);
@@ -143,9 +147,10 @@ private:
     void assignJobs();
 
     void prepareProcessor(size_t pid, bool async);
+    void addToPrepereQueue(size_t pid);
 
     void executeImpl(size_t num_threads);
-    void executeSingleThread(size_t num_threads);
+    void executeSingleThread(size_t thread_num, size_t num_threads);
 
     String dumpPipeline() const;
 };
