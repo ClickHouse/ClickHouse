@@ -173,7 +173,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source < source_end)
     {
         prev_delta = unalignedLoad<DeltaType>(source);
-        prev_value = static_cast<DeltaType>(prev_value) + prev_delta;
+        prev_value = static_cast<T>(prev_value + prev_delta);
         unalignedStore(dest, prev_value);
 
         source += sizeof(prev_delta);
@@ -229,7 +229,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
     return data_bytes_size;
 }
 
-} // namespace
+}
 
 
 CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)

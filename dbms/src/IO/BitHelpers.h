@@ -3,6 +3,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Core/Types.h>
+#include <Common/BitHelpers.h>
 
 namespace DB
 {
@@ -22,12 +23,11 @@ namespace DB
  *  r.readBit()    => 0b0
 **/
 
-
 class BitReader
 {
     ReadBuffer & buf;
 
-    UInt8 bits_buffer;
+    UInt64 bits_buffer;
     UInt8 bits_count;
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
@@ -59,13 +59,13 @@ public:
             }
 
             const auto to_read = std::min(bits, bits_count);
-            // read MSB bits from bits_bufer
-            const UInt8 v = bits_buffer >> (bits_count - to_read);
-            const UInt8 mask = static_cast<UInt8>(~(~0U << to_read));
-            const UInt8 value = v & mask;
+
+            const UInt64 v = bits_buffer >> (bits_count - to_read);
+            const UInt64 mask = maskLowBits<UInt64>(to_read);
+            const UInt64 value = v & mask;
             result |= value;
 
-            // unset MSB that were read
+            // unset bits that were read
             bits_buffer &= ~(mask << (bits_count - to_read));
             bits_count -= to_read;
             bits -= to_read;
@@ -95,6 +95,9 @@ private:
     void fillBuffer()
     {
         auto read = buf.read(reinterpret_cast<char *>(&bits_buffer), BIT_BUFFER_SIZE / 8);
+        bits_buffer = be64toh(bits_buffer);
+        bits_buffer >>= BIT_BUFFER_SIZE - read * 8;
+
         bits_count = static_cast<UInt8>(read) * 8;
     }
 };
@@ -103,7 +106,7 @@ class BitWriter
 {
     WriteBuffer & buf;
 
-    UInt8 bits_buffer;
+    UInt64 bits_buffer;
     UInt8 bits_count;
 
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
@@ -132,13 +135,11 @@ public:
             const UInt8 capacity = BIT_BUFFER_SIZE - bits_count;
             if (capacity < bits)
             {
-                // write MSB:
                 v >>= bits - capacity;
                 to_write = capacity;
             }
 
-
-            const UInt64 mask = (1 << to_write) - 1;
+            const UInt64 mask = maskLowBits<UInt64>(to_write);
             v &= mask;
 //            assert(v <= 255);
 
@@ -166,7 +167,8 @@ public:
 private:
     void doFlush()
     {
-        buf.write(reinterpret_cast<const char *>(&bits_buffer), BIT_BUFFER_SIZE / 8);
+        bits_buffer = htobe64(bits_buffer);
+        buf.write(reinterpret_cast<const char *>(&bits_buffer), (bits_count + 7) / 8);
 
         bits_count = 0;
         bits_buffer = 0;

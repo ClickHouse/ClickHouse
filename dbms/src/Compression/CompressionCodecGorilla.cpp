@@ -230,7 +230,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
     return delta_bytes_size;
 }
 
-} // namespace
+}
 
 
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
