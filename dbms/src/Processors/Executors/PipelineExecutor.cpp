@@ -617,6 +617,16 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 while (!found_processor_to_execute && prepare_stack.size() > queue_size)
                 {
+                    auto proc = prepare_stack.top();
+
+                    bool child = false;
+                    for (auto & node : graph[processor_to_execute].directEdges)
+                        if (node.to == proc)
+                            child = true;
+
+                    if (!child)
+                        break;
+
                     neighbours.push(prepare_stack.top());
                     prepare_stack.pop();
                 }
