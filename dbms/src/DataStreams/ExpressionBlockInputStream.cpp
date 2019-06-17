@@ -31,9 +31,8 @@ Block ExpressionBlockInputStream::getHeader() const
 Block ExpressionBlockInputStream::readImpl()
 {
     Block res = children.back()->read();
-    if (!res)
-        return res;
-    expression->execute(res);
+    if (res)
+        expression->execute(res);
     return res;
 }
 
