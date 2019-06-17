@@ -543,7 +543,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         break;
                     }
 
-                    main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty(); });
+                    main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty() || !preparing_source_processors.empty(); });
 
                     num_waiting_threads.fetch_sub(1);
                 }
