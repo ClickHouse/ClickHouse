@@ -62,7 +62,7 @@ namespace
             conf.set(key_name, config.getString(key_path));
         }
     }
-} // namespace
+}
 
 StorageKafka::StorageKafka(
     const std::string & table_name_,

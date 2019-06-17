@@ -30,9 +30,9 @@ This example demonstrates creating a table with the UUID type column and inserti
 └──────────────────────────────────────┘
 ```
 
-## toUUID (x)	
+## toUUID (x)
 
-Converts String type value to UUID type. 
+Converts String type value to UUID type.
 
 ```sql
 toUUID(String)
@@ -67,8 +67,8 @@ FixedString(16)
 **Usage examples**
 
 ``` sql
-:) SELECT 
-    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid, 
+:) SELECT
+    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
     UUIDStringToNum(uuid) AS bytes
 
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
@@ -91,8 +91,8 @@ String.
 **Usage example**
 
 ``` sql
-SELECT 
-    'a/<@];!~p{jTj={)' AS bytes, 
+SELECT
+    'a/<@];!~p{jTj={)' AS bytes,
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
 
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
@@ -102,7 +102,6 @@ SELECT
 
 ## See also
 
-- [dictGetUUID](ext_dict_functions.md)
-- [dictGetUUIDOrDefault](ext_dict_functions#ext_dict_functions_dictGetTOrDefault)
+- [dictGetUUID](ext_dict_functions.md#ext_dict_functions-other)
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/uuid_function/) <!--hide-->
