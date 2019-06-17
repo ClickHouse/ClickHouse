@@ -44,6 +44,7 @@ private:
 
         size_t num_executed_jobs = 0;
         UInt64 execution_time_ns = 0;
+        UInt64 preparation_time_ns = 0;
 
         UInt64 current_stream = 0;
         bool need_update_stream = true;
