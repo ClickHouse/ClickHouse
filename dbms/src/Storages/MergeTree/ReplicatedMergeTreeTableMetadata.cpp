@@ -45,9 +45,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
+    ttl_table = formattedAST(data.ttl_table_ast);
     skip_indices = data.getIndices().toString();
     index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
-    ttl_table = formattedAST(data.ttl_table_ast);
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -107,6 +107,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
 
+    if (checkString("ttl: ", in))
+        in >> ttl_table >> "\n";
+
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
@@ -115,8 +118,6 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     else
         index_granularity_bytes = 0;
 
-    if (checkString("ttl: ", in))
-        in >> ttl_table >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)

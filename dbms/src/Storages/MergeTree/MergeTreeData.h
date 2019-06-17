@@ -304,7 +304,7 @@ public:
         /// Approximate bytes size of one granule
         size_t index_granularity_bytes;
 
-        IndexGranularityInfo(const MergeTreeSettings & settings, const std::string & full_path);
+        void init(const MergeTreeSettings & settings, const MergeTreeDataFormatVersion & format_version, const std::string & full_path);
 
         String getMarksFilePath(const String & column_path) const
         {
