@@ -106,7 +106,6 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
-    index_granularity_info(settings_, full_path_),
     merging_params(merging_params_),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
@@ -198,7 +197,7 @@ MergeTreeData::MergeTreeData(
                 "MergeTree data format version on disk doesn't support custom partitioning",
                 ErrorCodes::METADATA_MISMATCH);
     }
-
+    index_granularity_info.init(settings, format_version, full_path);
 }
 
 
@@ -226,23 +225,27 @@ std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionF
     return {};
 }
 
-MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings, const std::string & full_path)
-    : fixed_index_granularity(settings.index_granularity)
-    , index_granularity_bytes(settings.index_granularity_bytes)
+void MergeTreeData::IndexGranularityInfo::init(
+    const MergeTreeSettings & settings,
+    const MergeTreeDataFormatVersion & format_version,
+    const std::string & full_path)
 {
+    fixed_index_granularity = settings.index_granularity;
     auto mrk_ext = getMrkExtensionFromFS(full_path);
     /// Granularity is fixed
-    if (index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk"))
+    if (index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk") || format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         is_adaptive = false;
         mark_size_in_bytes = sizeof(UInt64) * 2;
         marks_file_extension = ".mrk";
+        index_granularity_bytes = 0;
     }
     else
     {
         is_adaptive = true;
         mark_size_in_bytes = sizeof(UInt64) * 3;
         marks_file_extension = ".mrk2";
+        index_granularity_bytes = settings.index_granularity_bytes;
     }
 }
 
