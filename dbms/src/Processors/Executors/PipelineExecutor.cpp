@@ -315,7 +315,7 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool upd
 
 void PipelineExecutor::addToPrepereQueue(size_t pid)
 {
-    if (graph[pid].backEdges.empty())
+    if (source_processors.count(pid))
     {
         for (size_t th = 0; th < sources_per_thread.size(); ++th)
         {
@@ -670,6 +670,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     {
         if (graph[node].backEdges.empty())
         {
+            source_processors.insert(node);
             sources_per_thread[next_thread].push_back(node);
             ++next_thread;
             next_thread = next_thread % num_threads;
