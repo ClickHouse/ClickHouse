@@ -36,6 +36,7 @@ private:
     std::unique_ptr<WriteBufferFromString> temporary_buffer;
     size_t part_number;
     size_t last_part_size;
+    String upload_id;
     std::vector<String> part_tags;
 
 public:
