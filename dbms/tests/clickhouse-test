@@ -54,8 +54,8 @@ def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr
         sleep(0.01)
 
     # Normalize randomized database names in stdout, stderr files.
-    os.system("sed -i 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
-    os.system("sed -i 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
+    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
+    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
@@ -416,7 +416,12 @@ def find_binary(name):
             return True
 
     # maybe it wasn't in PATH
-    return os.access(os.path.join('/usr/bin', name), os.X_OK)
+    if os.access(os.path.join('/usr/local/bin', name), os.X_OK):
+        return True
+    if os.access(os.path.join('/usr/bin', name), os.X_OK):
+        return True
+    return False
+
 
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
