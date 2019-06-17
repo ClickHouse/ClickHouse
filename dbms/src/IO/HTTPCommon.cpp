@@ -221,7 +221,8 @@ std::istream * receiveResponse(
     return &istr;
 }
 
-void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr) {
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr)
+{
     auto status = response.getStatus();
 
     if (status != Poco::Net::HTTPResponse::HTTP_OK)

@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 
 WriteBufferFromS3::WriteBufferFromS3(
-    const Poco::URI & uri_, const ConnectionTimeouts & timeouts_, 
+    const Poco::URI & uri_, const ConnectionTimeouts & timeouts_,
     const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , uri {uri_}
@@ -102,7 +102,8 @@ void WriteBufferFromS3::initiate()
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
 
-        if (auth_request.hasCredentials()) {
+        if (auth_request.hasCredentials())
+        {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
         }
@@ -140,7 +141,7 @@ void WriteBufferFromS3::initiate()
         throw Exception("Incorrect XML in response, empty upload id", ErrorCodes::INCORRECT_DATA);
     }
 }
- 
+
 
 void WriteBufferFromS3::writePart(const String & data)
 {
@@ -159,7 +160,8 @@ void WriteBufferFromS3::writePart(const String & data)
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(part_uri.getHost()); // use original, not resolved host name in header
 
-        if (auth_request.hasCredentials()) {
+        if (auth_request.hasCredentials())
+	{
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
         }
@@ -212,7 +214,8 @@ void WriteBufferFromS3::complete()
     String data;
     WriteBufferFromString buffer(data);
     writeString("<CompleteMultipartUpload>", buffer); // FIXME move to Poco::XML maybe??
-    for (size_t i = 0; i < part_tags.size(); ++i) {
+    for (size_t i = 0; i < part_tags.size(); ++i)
+    {
         writeString("<Part><PartNumber>", buffer);
         writeIntText(i + 1, buffer);
         writeString("</PartNumber><ETag>", buffer);
@@ -228,7 +231,8 @@ void WriteBufferFromS3::complete()
         request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(complete_uri.getHost()); // use original, not resolved host name in header
 
-        if (auth_request.hasCredentials()) {
+        if (auth_request.hasCredentials())
+	{
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
             credentials.authenticate(*request);
         }
