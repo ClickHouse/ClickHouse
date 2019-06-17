@@ -24,10 +24,11 @@ namespace ErrorCodes
 /** String functions
   *
   * length, empty, notEmpty,
-  * concat, substring, lower, upper, reverse
+  * concat, substring, lower, upper, reverse, crc32
   * lengthUTF8, substringUTF8, lowerUTF8, upperUTF8, reverseUTF8
   *
   * s                -> UInt8:    empty, notEmpty
+  * s                -> UInt32:   crc32
   * s                -> UInt64:   length, lengthUTF8
   * s                -> s:        lower, upper, lowerUTF8, upperUTF8, reverse, reverseUTF8
   * s, s             -> s:        concat

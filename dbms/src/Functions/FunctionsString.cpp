@@ -107,7 +107,7 @@ struct CRC32Impl
 {
     static constexpr auto is_fixed_to_constant = true;
 
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt32> & res)
     {
         size_t size = offsets.size();
         //throw Exception("LOG " + std::to_string(size) + " offset is " + std::to_string(offsets[0]), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -120,12 +120,12 @@ struct CRC32Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt32 & res)
     {
         res = crc32(data, 0, n);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt32> & res)
     {
         size_t size = data.size() / n;
 
@@ -135,7 +135,7 @@ struct CRC32Impl
         }
     }
 
-    static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt64> & /*res*/)
+    static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt32> & /*res*/)
     {
         throw Exception("Cannot apply function crc32 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -1606,7 +1606,7 @@ struct NameConcatAssumeInjective
 
 using FunctionEmpty = FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8>;
 using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8>;
-using FunctionCRC32 = FunctionStringOrArrayToT<CRC32Impl, NameCRC32, UInt64>;
+using FunctionCRC32 = FunctionStringOrArrayToT<CRC32Impl, NameCRC32, UInt32>;
 using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64>;
 using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUTF8, UInt64>;
 using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>;
