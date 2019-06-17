@@ -501,6 +501,8 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         {
                             preparing_source_processors.erase(proc);
 
+                            prepareProcessor(proc, false);
+
                             if (graph[proc].status == ExecStatus::Executing)
                             {
                                 found_processor_to_execute = true;
