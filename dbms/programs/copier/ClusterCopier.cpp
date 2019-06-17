@@ -54,6 +54,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -798,13 +799,13 @@ public:
     }
 
 
-    void discoverShardPartitions(const TaskShardPtr & task_shard)
+    void discoverShardPartitions(const ConnectionTimeouts & timeouts, const TaskShardPtr & task_shard)
     {
         TaskTable & task_table = task_shard->task_table;
 
         LOG_INFO(log, "Discover partitions of shard " << task_shard->getDescription());
 
-        auto get_partitions = [&] () { return getShardPartitions(*task_shard); };
+        auto get_partitions = [&] () { return getShardPartitions(timeouts, *task_shard); };
         auto existing_partitions_names = retry(get_partitions, 60);
         Strings filtered_partitions_names;
         Strings missing_partitions;
@@ -880,14 +881,14 @@ public:
     }
 
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
-    void discoverTablePartitions(TaskTable & task_table, UInt64 num_threads = 0)
+    void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0)
     {
         /// Fetch partitions list from a shard
         {
             ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
             for (const TaskShardPtr & task_shard : task_table.all_shards)
-                thread_pool.schedule([this, task_shard]() { discoverShardPartitions(task_shard); });
+                thread_pool.schedule([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
 
             LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
             thread_pool.wait();
@@ -955,7 +956,7 @@ public:
         task_descprtion_current_version = version_to_update;
     }
 
-    void process()
+    void process(const ConnectionTimeouts & timeouts)
     {
         for (TaskTable & task_table : task_cluster->table_tasks)
         {
@@ -969,7 +970,7 @@ public:
             if (!task_table.has_enabled_partitions)
             {
                 /// If there are no specified enabled_partitions, we must discover them manually
-                discoverTablePartitions(task_table);
+                discoverTablePartitions(timeouts, task_table);
 
                 /// After partitions of each shard are initialized, initialize cluster partitions
                 for (const TaskShardPtr & task_shard : task_table.all_shards)
@@ -1009,7 +1010,7 @@ public:
             bool table_is_done = false;
             for (UInt64 num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
             {
-                if (tryProcessTable(task_table))
+                if (tryProcessTable(timeouts, task_table))
                 {
                     table_is_done = true;
                     break;
@@ -1053,8 +1054,10 @@ protected:
         return getWorkersPath() + "/" + host_id;
     }
 
-    zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(const zkutil::ZooKeeperPtr & zookeeper,
-                                                                       const String & description, bool unprioritized)
+    zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const String & description,
+        bool unprioritized)
     {
         std::chrono::milliseconds current_sleep_time = default_sleep_time;
         static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
@@ -1329,7 +1332,7 @@ protected:
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
 
-    bool tryProcessTable(TaskTable & task_table)
+    bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table)
     {
         /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
         bool previous_shard_is_instantly_finished = false;
@@ -1360,7 +1363,7 @@ protected:
                     /// If not, did we check existence of that partition previously?
                     if (shard->checked_partitions.count(partition_name) == 0)
                     {
-                        auto check_shard_has_partition = [&] () { return checkShardHasPartition(*shard, partition_name); };
+                        auto check_shard_has_partition = [&] () { return checkShardHasPartition(timeouts, *shard, partition_name); };
                         bool has_partition = retry(check_shard_has_partition);
 
                         shard->checked_partitions.emplace(partition_name);
@@ -1397,7 +1400,7 @@ protected:
                 bool was_error = false;
                 for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
-                    task_status = tryProcessPartitionTask(partition, is_unprioritized_task);
+                    task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
 
                     /// Exit if success
                     if (task_status == PartitionTaskStatus::Finished)
@@ -1483,13 +1486,13 @@ protected:
         Error,
     };
 
-    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool is_unprioritized_task)
+    PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
     {
         PartitionTaskStatus res;
 
         try
         {
-            res = processPartitionTaskImpl(task_partition, is_unprioritized_task);
+            res = processPartitionTaskImpl(timeouts, task_partition, is_unprioritized_task);
         }
         catch (...)
         {
@@ -1510,7 +1513,7 @@ protected:
         return res;
     }
 
-    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool is_unprioritized_task)
+    PartitionTaskStatus processPartitionTaskImpl(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
@@ -1611,7 +1614,7 @@ protected:
         zookeeper->createAncestors(current_task_status_path);
 
         /// We need to update table definitions for each partition, it could be changed after ALTER
-        createShardInternalTables(task_shard);
+        createShardInternalTables(timeouts, task_shard);
 
         /// Check that destination partition is empty if we are first worker
         /// NOTE: this check is incorrect if pull and push tables have different partition key!
@@ -1828,23 +1831,25 @@ protected:
         return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
     }
 
-    ASTPtr getCreateTableForPullShard(TaskShard & task_shard)
+    ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
     {
         /// Fetch and parse (possibly) new definition
-        auto connection_entry = task_shard.info.pool->get(&task_cluster->settings_pull);
-        String create_query_pull_str = getRemoteCreateTable(task_shard.task_table.table_pull, *connection_entry,
-                                                            &task_cluster->settings_pull);
+        auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
+        String create_query_pull_str = getRemoteCreateTable(
+            task_shard.task_table.table_pull,
+            *connection_entry,
+            &task_cluster->settings_pull);
 
         ParserCreateQuery parser_create_query;
         return parseQuery(parser_create_query, create_query_pull_str, 0);
     }
 
-    void createShardInternalTables(TaskShard & task_shard, bool create_split = true)
+    void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true)
     {
         TaskTable & task_table = task_shard.task_table;
 
         /// We need to update table definitions for each part, it could be changed after ALTER
-        task_shard.current_pull_table_create_query = getCreateTableForPullShard(task_shard);
+        task_shard.current_pull_table_create_query = getCreateTableForPullShard(timeouts, task_shard);
 
         /// Create local Distributed tables:
         ///  a table fetching data from current shard and a table inserting data to the whole destination cluster
@@ -1872,9 +1877,9 @@ protected:
     }
 
 
-    std::set<String> getShardPartitions(TaskShard & task_shard)
+    std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
     {
-        createShardInternalTables(task_shard, false);
+        createShardInternalTables(timeouts, task_shard, false);
 
         TaskTable & task_table = task_shard.task_table;
 
@@ -1914,9 +1919,9 @@ protected:
         return res;
     }
 
-    bool checkShardHasPartition(TaskShard & task_shard, const String & partition_quoted_name)
+    bool checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name)
     {
-        createShardInternalTables(task_shard, false);
+        createShardInternalTables(timeouts, task_shard, false);
 
         TaskTable & task_table = task_shard.task_table;
 
@@ -1998,7 +2003,8 @@ protected:
                 Settings current_settings = settings ? *settings : task_cluster->settings_common;
                 current_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
 
-                auto connections = shard.pool->getMany(&current_settings, pool_mode);
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+                auto connections = shard.pool->getMany(timeouts, &current_settings, pool_mode);
 
                 for (auto & connection : connections)
                 {
@@ -2187,7 +2193,7 @@ void ClusterCopierApp::mainImpl()
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
 
     copier->init();
-    copier->process();
+    copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
 }
 
 
