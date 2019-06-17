@@ -141,6 +141,7 @@ public:
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
+    void setMergeableBlocks(BlocksPtrs blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
     /// Read new data blocks that store query result
@@ -193,12 +194,13 @@ public:
             {
                 mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
                 BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
-                InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names{});
+                InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
                 auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
                     interpreter.execute().in);
                 while (Block this_block = view_mergeable_stream->read())
                     base_mergeable_blocks->push_back(this_block);
                 mergeable_blocks->push_back(base_mergeable_blocks);
+                live_view.setMergeableBlocks(mergeable_blocks);
             }
 
             /// Need make new mergeable block structure match the other mergeable blocks
