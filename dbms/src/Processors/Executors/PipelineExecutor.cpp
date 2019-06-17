@@ -213,6 +213,8 @@ void PipelineExecutor::addJob(UInt64 pid)
                 Stopwatch watch;
                 executeJob(processor);
                 execution_state->execution_time_ns += watch.elapsed();
+
+                ++execution_state->num_executed_jobs;
             }
             catch (...)
             {
@@ -316,8 +318,14 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge, bool upd
 void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
-    auto status = node.processor->prepare();
-    node.last_processor_status = status;
+
+    {
+        Stopwatch watch;
+        auto status = node.processor->prepare();
+        node.execution_state->preparation_time_ns += watch.elapsed();
+
+        node.last_processor_status = status;
+    }
 
     auto add_neighbours_to_prepare_queue = [&, this]
     {
@@ -330,7 +338,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
             addProcessorToPrepareQueueIfUpdated(edge, true, stream_number);
     };
 
-    switch (status)
+    switch (node.last_processor_status)
     {
         case IProcessor::Status::NeedData:
         {
@@ -477,8 +485,6 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
         {
-            Stopwatch processing_time_watch;
-
             {
                 std::unique_lock lock(main_executor_mutex);
 
@@ -486,6 +492,8 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                 {
                     if (finished)
                         break;
+
+                    Stopwatch processing_time_watch;
 
                     while (!prepare_stack.empty())
                     {
@@ -505,27 +513,31 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                     }
 
                     if (found_processor_to_execute)
+                    {
+                        processing_time_ns += processing_time_watch.elapsed();
                         break;
+                    }
 
                     if (num_waiting_threads.fetch_add(1) + 1 == num_threads)
                     {
                         finished = true;
                         main_executor_condvar.notify_all();
                         finish_condvar.notify_one();
+                        processing_time_ns += processing_time_watch.elapsed();
                         break;
                     }
+
+                    processing_time_ns += processing_time_watch.elapsed();
 
                     main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty(); });
 
                     num_waiting_threads.fetch_sub(1);
                 }
             }
-
-            processing_time_ns += processing_time_watch.elapsed();
         }
 
         if (finished)
-            return;
+            break;
 
         /// In case if somebody is sleeping and prepare_queue is not empty.
         main_executor_condvar.notify_one();
@@ -562,11 +574,19 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                 if (graph[processor_to_execute].status == ExecStatus::Executing)
                     found_processor_to_execute = true;
 
-                /// Process all neighbours. Children will be on the top of stack, then parents.
+                std::queue<UInt64> neighbours;
+
                 while (!found_processor_to_execute && prepare_stack.size() > queue_size)
                 {
-                    auto current_processor = prepare_stack.top();
+                    neighbours.push(prepare_stack.top());
                     prepare_stack.pop();
+                }
+
+                /// Process all neighbours. Children will be on the top of stack, then parents.
+                while (!found_processor_to_execute && !neighbours.empty())
+                {
+                    auto current_processor = neighbours.front();
+                    neighbours.pop();
 
                     prepareProcessor(current_processor, false);
 
@@ -576,6 +596,12 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                         processor_to_execute = current_processor;
                         state = graph[processor_to_execute].execution_state.get();
                     }
+                }
+
+                while (!neighbours.empty())
+                {
+                    prepare_stack.push(neighbours.front());
+                    neighbours.pop();
                 }
             }
 
@@ -684,8 +710,9 @@ String PipelineExecutor::dumpPipeline() const
     {
         if (node.execution_state)
             node.processor->setDescription(
-                    "(" + std::to_string(node.execution_state->num_executed_jobs) + ", "
-                    + std::to_string(node.execution_state->execution_time_ns / 1e9) + " sec.)");
+                    "(" + std::to_string(node.execution_state->num_executed_jobs) + " jobs, execution time: "
+                    + std::to_string(node.execution_state->execution_time_ns / 1e9) + " sec., preparation time: "
+                    + std::to_string(node.execution_state->preparation_time_ns / 1e9) + " sec.)");
     }
 
     std::vector<IProcessor::Status> statuses;
