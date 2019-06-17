@@ -4,12 +4,12 @@ import http.server
 import os
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import unittest
+import urllib
 
-
-# Run Go FakeS3 server.
-# go run cmd/gofakes3/main.go -backend memory -host :9990 -initialbucket abc
 
 config = os.path.join(os.path.dirname(sys.argv[0]), 'config.xml')
 test_csv = os.path.join(os.path.dirname(sys.argv[0]), 'test.csv')
@@ -25,6 +25,7 @@ fakes3_port = 9990
 localhost = '127.0.0.1'
 bucket = 'abc'
 
+
 prepare_put_queries = [
     "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(localhost, fakes3_port, bucket, format, values),
 ]
@@ -39,16 +40,21 @@ queries = [
     "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(redirecting_host, redirecting_to_https_port, format),
 ]
 
-put_queries = [
-    "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}"
-        .format(redirecting_host, preserving_data_port, format, values),
-    "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}"
-        .format(redirecting_host, redirecting_preserving_data_port, format, other_values),
-]
+put_query = "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}".format(redirecting_host, preserving_data_port, format, values)
+
+redirect_put_query = "insert into table function s3('http://{}:{}/', 'CSV', '{}') values {}".format(redirecting_host, redirecting_preserving_data_port, format, other_values)
 
 check_queries = [
     "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(localhost, fakes3_port, bucket, format),
 ]
+
+
+def run_query(query):
+    result = subprocess.run([os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'), '-c', config, '-q', query]
+        , stdout=subprocess.PIPE
+        , universal_newlines=True)
+    result.check_returncode()
+    return result.stdout
 
 
 class RedirectingToHTTPHTTPServer(http.server.BaseHTTPRequestHandler):
@@ -57,13 +63,13 @@ class RedirectingToHTTPHTTPServer(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/xml')
         self.send_header('Location', 'http://storage.yandexcloud.net/milovidov/test.csv')
         self.end_headers()
-        self.wfile.write(bytes(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
-  <Endpoint>johnsmith.s3-gztb4pa9sq.amazonaws.com</Endpoint>
-</Error>''', "utf-8"))
+  <Endpoint>storage.yandexcloud.net</Endpoint>
+</Error>'''.encode())
 
 
 class RedirectingToHTTPSHTTPServer(http.server.BaseHTTPRequestHandler):
@@ -72,16 +78,17 @@ class RedirectingToHTTPSHTTPServer(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/xml')
         self.send_header('Location', 'https://storage.yandexcloud.net/milovidov/test.csv')
         self.end_headers()
-        self.wfile.write(bytes(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
-  <Endpoint>johnsmith.s3-gztb4pa9sq.amazonaws.com</Endpoint>
-</Error>''', "utf-8"))
+  <Endpoint>storage.yandexcloud.net</Endpoint>
+</Error>'''.encode())
 
 
 received_data = []
+received_data_completed = False
 
 
 class PreservingDataServer(http.server.BaseHTTPRequestHandler):
@@ -91,11 +98,34 @@ class PreservingDataServer(http.server.BaseHTTPRequestHandler):
         print('Received Expect-100', file=sys.stderr)
         return True
 
+    def do_POST(self):
+        self.send_response(200)
+        query = urllib.parse.urlparse(self.path).query
+        print('POST', query)
+        if query == 'uploads':
+            data = r'''<?xml version="1.0" encoding="UTF-8"?>
+<hi><UploadId>TEST</UploadId></hi>'''.encode()
+            self.send_header('Content-length', str(len(data)))
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(data)
+        else:
+            data = self.rfile.read(int(self.headers.get('Content-Length')))
+            assert query == 'uploadId=TEST'
+            assert data == b'<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>hello-etag</ETag></Part></CompleteMultipartUpload>'
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            global received_data_completed
+            received_data_completed = True
+ 
     def do_PUT(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
+        self.send_header('ETag', 'hello-etag')
         self.end_headers()
+        query = urllib.parse.urlparse(self.path).query
         print('Content-Length =', self.headers.get('Content-Length'), file=sys.stderr)
+        print('PUT', query)
         assert self.headers.get('Content-Length')
         assert self.headers['Expect'] == '100-continue'
         received_data.append(self.rfile.read())
@@ -107,29 +137,27 @@ class RedirectingPreservingDataServer(http.server.BaseHTTPRequestHandler):
 
     def handle_expect_100(self):
         print('Received Expect-100', file=sys.stderr)
+        query = urllib.parse.urlparse(self.path).query
+        if query:
+            query = '?{}'.format(query)
         self.send_response(307)
         self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'http://{}:{}/{}/test.csv'.format(localhost, fakes3_port, bucket))
+        self.send_header('Location', 'http://{host}:{port}/{bucket}/test.csv{query}'.format(host=localhost, port=fakes3_port, bucket=bucket, query=query))
         self.end_headers()
-        self.wfile.write(bytes(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
-  <Endpoint>johnsmith.s3-gztb4pa9sq.amazonaws.com</Endpoint>
-</Error>''', "utf-8"))
+  <Endpoint>{host}:{port}</Endpoint>
+</Error>'''.encode().format(host=localhost, port=fakes3_port))
         return False
+
+    def do_POST(self):
+        assert False
 
     def do_PUT(self):
         assert False
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        print('Content-Length =', self.headers.get('Content-Length'), file=sys.stderr)
-        assert self.headers.get('Content-Length')
-        assert self.headers['Expect'] == '100-continue'
-        received_data.append(self.rfile.read())
-        self.wfile.flush()
 
 
 servers = []
@@ -146,13 +174,47 @@ def redirecting_to_http_thread():
 def preserving_thread():
     server = http.server.HTTPServer((redirecting_host, preserving_data_port), PreservingDataServer)
     servers.append(server)
-    server.handle_request()
+    while True:
+        server.handle_request()
 
 def redirecting_preserving_thread():
     server = http.server.HTTPServer((redirecting_host, redirecting_preserving_data_port), RedirectingPreservingDataServer)
     servers.append(server)
-    server.handle_request()
+    while True:
+        server.handle_request()
 
+
+def run_gofakes3():
+    l = threading.Lock()
+    l.acquire()
+
+    def gofakes3_thread():
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(['git', 'clone', 'https://github.com/johannesboyne/gofakes3'], cwd=d).check_returncode()
+            repo = os.path.join(d, 'gofakes3')
+            subprocess.run(['git', 'checkout', 'd419e1bd286f47170a4f87851a81f5c30107551a'], cwd=repo).check_returncode()
+            tool = os.path.join(repo, 'cmd', 'gofakes3', 'main.go')
+            subprocess.run(['go', 'build', tool], cwd=d).check_returncode()
+            l.release()
+            subprocess.run(['./main', '-backend', 'memory', '-host', ':{}'.format(fakes3_port), '-initialbucket', bucket], cwd=d).check_returncode()
+
+    thread = threading.Thread(target=gofakes3_thread)
+    thread.start()
+    l.acquire()
+    time.sleep(0.5)
+    l.release()
+    return thread
+
+
+def stop_subprocesses():
+    pid = os.getpid()
+    result = subprocess.run(['pgrep', '-P', str(pid)], stdout=subprocess.PIPE)
+    result.check_returncode()
+    for child_pid in result.stdout.splitlines():
+        subprocess.run(['kill', child_pid]).check_returncode()
+
+
+run_gofakes3()
 
 jobs = []
 jobs.append(threading.Thread(target=redirecting_to_http_thread))
@@ -163,60 +225,38 @@ jobs.append(threading.Thread(target=redirecting_preserving_thread))
 
 for query in prepare_put_queries:
     print(query)
-    result = subprocess.run([
-        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
-        '-c',
-        config,
-        '-q',
-        query
-    ], stdout=subprocess.PIPE, universal_newlines=True)
-    result.check_returncode()
+    run_query(query)
 
 for query in queries:
     print(query)
-    result = subprocess.run([
-        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
-        '-c',
-        config,
-        '-q',
-        query
-    ], stdout=subprocess.PIPE, universal_newlines=True)
-    result.check_returncode()
-    unittest.TestCase().assertEqual(list(map(str.split, result.stdout.splitlines())), [
+    stdout = run_query(query)
+    unittest.TestCase().assertEqual(list(map(str.split, stdout.splitlines())), [
         ['1', '2', '3', '6'],
         ['3', '2', '1', '6'],
         ['78', '43', '45', '150930'],
     ])
 
-for query in put_queries:
-    print(query)
-    result = subprocess.run([
-        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
-        '-c',
-        config,
-        '-q',
-        query
-    ], stdout=subprocess.PIPE, universal_newlines=True)
-    result.check_returncode()
-    unittest.TestCase().assertEqual(received_data[-1].decode(), '1,2,3\n3,2,1\n78,43,45\n')
-    # In chunked encoding:
-    # unittest.TestCase().assertEqual(received_data[-1].decode(), '15\r\n1,2,3\n2,3,1\n78,43,45\n\r\n0\r\n\r\n')
+query = put_query
+print(query)
+received_data_completed = False
+run_query(query)
+unittest.TestCase().assertEqual(received_data[-1].decode(), '1,2,3\n3,2,1\n78,43,45\n')
+unittest.TestCase().assertTrue(received_data_completed)
+
+query = redirect_put_query
+print(query)
+run_query(query)
 
 for query in check_queries:
     print(query)
-    result = subprocess.run([
-        os.path.expanduser('~/ClickHouse-bin/dbms/programs/clickhouse-local'),
-        '-c',
-        config,
-        '-q',
-        query
-    ], stdout=subprocess.PIPE, universal_newlines=True)
-    result.check_returncode()
-    unittest.TestCase().assertEqual(list(map(str.split, result.stdout.splitlines())), [
+    stdout = run_query(query)
+    unittest.TestCase().assertEqual(list(map(str.split, stdout.splitlines())), [
         ['1', '1', '1', '1'],
         ['1', '1', '1', '1'],
         ['11', '11', '11', '1331'],
     ])
+
+stop_subprocesses()
 
 [ server.socket.close() for server in servers ]
 [ job.join() for job in jobs ]
