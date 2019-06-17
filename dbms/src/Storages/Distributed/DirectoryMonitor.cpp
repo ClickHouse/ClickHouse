@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
@@ -58,12 +59,14 @@ namespace
 }
 
 
-StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool)
+StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
+    StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker)
     : storage(storage), pool{pool}, path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
     , log{&Logger::get(getLoggerName())}
+    , monitor_blocker(monitor_blocker)
 {
     const Settings & settings = storage.global_context.getSettingsRef();
     should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
@@ -85,6 +88,14 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     }
 }
 
+void StorageDistributedDirectoryMonitor::flushAllData()
+{
+    if (!quit)
+    {
+        std::unique_lock lock{mutex};
+        processFiles();
+    }
+}
 
 void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 {
@@ -114,18 +125,25 @@ void StorageDistributedDirectoryMonitor::run()
     {
         auto do_sleep = true;
 
-        try
+        if (!monitor_blocker.isCancelled())
         {
-            do_sleep = !findFiles();
+            try
+            {
+                do_sleep = !processFiles();
+            }
+            catch (...)
+            {
+                do_sleep = true;
+                ++error_count;
+                sleep_time = std::min(
+                    std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
+                    std::chrono::milliseconds{max_sleep_time});
+                tryLogCurrentException(getLoggerName().data());
+            }
         }
-        catch (...)
+        else
         {
-            do_sleep = true;
-            ++error_count;
-            sleep_time = std::min(
-                std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
-                std::chrono::milliseconds{max_sleep_time});
-            tryLogCurrentException(getLoggerName().data());
+            LOG_DEBUG(log, "Skipping send data over distributed table.");
         }
 
         if (do_sleep)
@@ -174,7 +192,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-bool StorageDistributedDirectoryMonitor::findFiles()
+bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
 
