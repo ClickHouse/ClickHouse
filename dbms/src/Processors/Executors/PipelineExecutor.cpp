@@ -672,7 +672,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         executor_context->executor_number = i;
         executor_context->next_task_to_execute = nullptr;
 
-        threads.emplace_back([this, thread_group, num_threads]
+        threads.emplace_back([this, thread_num = i, thread_group, num_threads]
         {
             ThreadStatus thread_status;
 
@@ -684,7 +684,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                         CurrentThread::detachQueryIfNotDetached();
             );
 
-            executeSingleThread(num_threads);
+            executeSingleThread(thread_num, num_threads);
         });
     }
 
