@@ -562,11 +562,19 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                 if (graph[processor_to_execute].status == ExecStatus::Executing)
                     found_processor_to_execute = true;
 
-                /// Process all neighbours. Children will be on the top of stack, then parents.
+                std::queue<UInt64> neighbours;
+
                 while (!found_processor_to_execute && prepare_stack.size() > queue_size)
                 {
-                    auto current_processor = prepare_stack.top();
+                    neighbours.push(prepare_stack.top());
                     prepare_stack.pop();
+                }
+
+                /// Process all neighbours. Children will be on the top of stack, then parents.
+                while (!found_processor_to_execute && !neighbours.empty())
+                {
+                    auto current_processor = neighbours.front();
+                    neighbours.pop();
 
                     prepareProcessor(current_processor, false);
 
@@ -576,6 +584,12 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                         processor_to_execute = current_processor;
                         state = graph[processor_to_execute].execution_state.get();
                     }
+                }
+
+                while (!neighbours.empty())
+                {
+                    prepare_stack.push(neighbours.front());
+                    neighbours.pop();
                 }
             }
 
