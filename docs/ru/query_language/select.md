@@ -202,7 +202,7 @@ VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 
 В примере ниже используется `ARRAY JOIN`:
 
-``` sql
+```sql
 SELECT s, arr
 FROM arrays_test
 ARRAY JOIN arr;
@@ -219,7 +219,7 @@ ARRAY JOIN arr;
 
 Следующий пример использует `LEFT ARRAY JOIN`:
 
-``` sql
+```sql
 SELECT s, arr
 FROM arrays_test
 LEFT ARRAY JOIN arr;
@@ -431,7 +431,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 Соединяет данные в привычном для [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) смысле.
 
 !!! info "Примечание"
-    Не связана с функциональностью с [ARRAY JOIN](#select-array-join-clause).
+    Не связана с функциональностью [ARRAY JOIN](#select-array-join-clause).
 
 ```sql
 SELECT <expr_list>
@@ -555,6 +555,17 @@ LIMIT 10
 При слиянии таблиц могут появляться пустые ячейки. То, каким образом ClickHouse заполняет эти ячейки, определяется настройкой [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls).
 
 Если ключами `JOIN` выступают поля типа [Nullable](../data_types/nullable.md), то строки, где хотя бы один из ключей имеет значение [NULL](syntax.md#null-literal), не соединяются.
+
+#### Ограничения синтаксиса
+
+Для множественных секций `JOIN` в одном запросе `SELECT`:
+
+- Получение всех столбцов через `*` возможно только при объединении таблиц, но не подзапросов.
+- Секция `PREWHERE` недоступна.
+
+Для секций `ON`, `WHERE` и `GROUP BY`:
+
+- Нельзя использовать произвольные выражения в секциях `ON`, `WHERE`, и `GROUP BY`, однако можно определить выражение в секции `SELECT` и затем использовать его через алиас в других секциях.
 
 ### Секция WHERE {#select-where}
 

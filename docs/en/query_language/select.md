@@ -560,14 +560,15 @@ If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows wh
 
 #### Syntax Limitations
 
-For multiple `JOIN` clauses in the single `SELECT` query:
+For multiple `JOIN` clauses in a single `SELECT` query:
 
 - Taking all the columns via `*` is available only if tables are joined, not subqueries.
 - The `PREWHERE` clause is not available.
 
-For `ON`, `WHERE` and `GROUP BY` clauses:
+For `ON`, `WHERE`, and `GROUP BY` clauses:
 
-- Arbitrary expressions cannot be used in `ON`, `WHERE` and `GROUP BY` clauses, but you can define an expression in `SELECT` clause and then use it via alias in these clauses.
+- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
+
 
 ### WHERE Clause
 
