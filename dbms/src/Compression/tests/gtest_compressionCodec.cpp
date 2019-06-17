@@ -5,13 +5,18 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 
-#include <gtest/gtest.h>
-
 #include <cmath>
 #include <initializer_list>
 #include <iomanip>
 #include <memory>
 #include <vector>
+
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wundef"
+#endif
+#include <gtest/gtest.h>
 
 namespace
 {

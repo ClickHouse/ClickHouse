@@ -72,3 +72,12 @@ inline size_t getTrailingZeroBits(T x)
         return __builtin_ctzll(x);
     }
 }
+
+/** Returns a mask that has '1' for `bits` LSB set:
+ * maskLowBits<UInt8>(3) => 00000111
+ */
+template <typename T>
+inline T maskLowBits(unsigned char bits)
+{
+    return static_cast<T>(static_cast<T>(1) << bits) - 1;
+}
