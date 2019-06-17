@@ -35,6 +35,7 @@ struct SelectQueryOptions
         , only_analyze(false)
         , modify_inplace(false)
         , remove_duplicates(false)
+        , ignore_limits(false)
     {}
 
     SelectQueryOptions copy() const { return *this; }
