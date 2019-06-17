@@ -105,7 +105,7 @@ struct ContextShared
     mutable std::recursive_mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
-    mutable std::recursive_mutex external_dictionaries_mutex;
+    mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
@@ -702,9 +702,8 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-    auto lock = getLock();
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
@@ -715,9 +714,14 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
+    addDependencyUnsafe(from, where);
+}
+
+void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
@@ -726,6 +730,12 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     auto table = tryGetTable(from.first, from.second);
     if (table != nullptr)
         table->updateDependencies();
+}
+
+void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
+    auto lock = getLock();
+    removeDependencyUnsafe(from, where);
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
@@ -882,27 +892,34 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 
 StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
 {
-    auto lock = getLock();
+    String db;
+    DatabasePtr database;
 
-    if (database_name.empty())
     {
-        StoragePtr res = tryGetExternalTable(table_name);
-        if (res)
-            return res;
+        auto lock = getLock();
+
+        if (database_name.empty())
+        {
+            StoragePtr res = tryGetExternalTable(table_name);
+            if (res)
+                return res;
+        }
+
+        db = resolveDatabase(database_name, current_database);
+        checkDatabaseAccessRightsImpl(db);
+
+        Databases::const_iterator it = shared->databases.find(db);
+        if (shared->databases.end() == it)
+        {
+            if (exception)
+                *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            return {};
+        }
+
+        database = it->second;
     }
 
-    String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
-    Databases::const_iterator it = shared->databases.find(db);
-    if (shared->databases.end() == it)
-    {
-        if (exception)
-            *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-        return {};
-    }
-
-    auto table = it->second->tryGetTable(*this, table_name);
+    auto table = database->tryGetTable(*this, table_name);
     if (!table)
     {
         if (exception)
@@ -1243,23 +1260,48 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 
 const ExternalDictionaries & Context::getExternalDictionaries() const
 {
-    return getExternalDictionariesImpl(false);
+    {
+        std::lock_guard lock(shared->external_dictionaries_mutex);
+        if (shared->external_dictionaries)
+            return *shared->external_dictionaries;
+    }
+
+    const auto & config = getConfigRef();
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+    if (!shared->external_dictionaries)
+    {
+        if (!this->global_context)
+            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+
+        auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
+        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
+    }
+    return *shared->external_dictionaries;
 }
 
 ExternalDictionaries & Context::getExternalDictionaries()
 {
-    return getExternalDictionariesImpl(false);
+    return const_cast<ExternalDictionaries &>(const_cast<const Context *>(this)->getExternalDictionaries());
 }
 
 
 const ExternalModels & Context::getExternalModels() const
 {
-    return getExternalModelsImpl(false);
+    std::lock_guard lock(shared->external_models_mutex);
+    if (!shared->external_models)
+    {
+        if (!this->global_context)
+            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+
+        auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
+        shared->external_models.emplace(std::move(config_repository), *this->global_context);
+    }
+    return *shared->external_models;
 }
 
 ExternalModels & Context::getExternalModels()
 {
-    return getExternalModelsImpl(false);
+    return const_cast<ExternalModels &>(const_cast<const Context *>(this)->getExternalModels());
 }
 
 
@@ -1281,58 +1323,9 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
-ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
-{
-    {
-        std::lock_guard lock(shared->external_dictionaries_mutex);
-        if (shared->external_dictionaries)
-            return *shared->external_dictionaries;
-    }
-
-    const auto & config = getConfigRef();
-    std::lock_guard lock(shared->external_dictionaries_mutex);
-    if (!shared->external_dictionaries)
-    {
-        if (!this->global_context)
-            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-
-        auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
-        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
-        shared->external_dictionaries->init(throw_on_error);
-    }
-    return *shared->external_dictionaries;
-}
-
-ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
-{
-    std::lock_guard lock(shared->external_models_mutex);
-    if (!shared->external_models)
-    {
-        if (!this->global_context)
-            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-
-        auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
-        shared->external_models.emplace(std::move(config_repository), *this->global_context);
-        shared->external_models->init(throw_on_error);
-    }
-    return *shared->external_models;
-}
-
 void Context::tryCreateEmbeddedDictionaries() const
 {
     static_cast<void>(getEmbeddedDictionariesImpl(true));
-}
-
-
-void Context::tryCreateExternalDictionaries() const
-{
-    static_cast<void>(getExternalDictionariesImpl(true));
-}
-
-
-void Context::tryCreateExternalModels() const
-{
-    static_cast<void>(getExternalModelsImpl(true));
 }
 
 
@@ -1514,7 +1507,7 @@ UInt16 Context::getTCPPort() const
     auto lock = getLock();
 
     auto & config = getConfigRef();
-    return config.getInt("tcp_port");
+    return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const

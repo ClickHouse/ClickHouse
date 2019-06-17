@@ -38,6 +38,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
@@ -65,6 +67,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
+    extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 }
 
 
@@ -107,9 +110,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTStorage & storage = *create.storage;
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
-            || storage.order_by || storage.sample_by || storage.settings ||
-            (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
+        if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -126,7 +127,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
     Poco::File(metadata_path).createDirectory();
 
-    DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context);
+    DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
 
     /// Will write file with database metadata, if needed.
     String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
@@ -522,6 +523,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+
+    /// Check low cardinality types in creating table if it was not allowed in setting
+    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
+    {
+        for (const auto & name_and_type_pair : columns.getAllPhysical())
+        {
+            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
+            {
+                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
+                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+            }
+        }
+    }
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);

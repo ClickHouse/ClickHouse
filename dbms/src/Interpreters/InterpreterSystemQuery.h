@@ -2,16 +2,16 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
 
 class Context;
 class ASTSystemQuery;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
 
 class InterpreterSystemQuery : public IInterpreter
 {
@@ -31,6 +31,7 @@ private:
 
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
+    void flushDistributed(ASTSystemQuery & query);
 };
 
 

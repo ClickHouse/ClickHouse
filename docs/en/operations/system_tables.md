@@ -8,9 +8,39 @@ They are located in the 'system' database.
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Contain metrics used for profiling and monitoring.
-They usually reflect the number of events currently in the system, or the total resources consumed by the system.
-Example: The number of SELECT queries currently running; the amount of memory in use.`system.asynchronous_metrics`and`system.metrics` differ in their sets of metrics and how they are calculated.
+Contains metrics which are calculated periodically in background. For example, the amount of RAM in use.
+
+Columns:
+
+- `metric` ([String](../data_types/string.md)) — Metric's name.
+- `value` ([Float64](../data_types/float.md)) — Metric's value.
+
+**Example**
+
+```sql
+SELECT * FROM system.asynchronous_metrics LIMIT 10
+```
+
+```text
+┌─metric──────────────────────────────────┬──────value─┐
+│ jemalloc.background_thread.run_interval │          0 │
+│ jemalloc.background_thread.num_runs     │          0 │
+│ jemalloc.background_thread.num_threads  │          0 │
+│ jemalloc.retained                       │  422551552 │
+│ jemalloc.mapped                         │ 1682989056 │
+│ jemalloc.resident                       │ 1656446976 │
+│ jemalloc.metadata_thp                   │          0 │
+│ jemalloc.metadata                       │   10226856 │
+│ UncompressedCacheCells                  │          0 │
+│ MarkCacheFiles                          │          0 │
+└─────────────────────────────────────────┴────────────┘
+```
+
+**See Also**
+
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [system.events](#system_tables-events) — Contains a number of happened events.
 
 ## system.clusters
 
@@ -57,6 +87,14 @@ This table contains a single String column called 'name' – the name of a datab
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
+## system.detached_parts
+
+Contains information about detached parts of
+[MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies
+why the part was detached. For user-detached parts, the reason is empty. Such
+parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition)
+command. For the description of other columns, see [system.parts](#system_tables-parts).
+
 ## system.dictionaries
 
 Contains information about external dictionaries.
@@ -81,9 +119,35 @@ Note that the amount of memory used by the dictionary is not proportional to the
 
 ## system.events {#system_tables-events}
 
-Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
-Example: The number of processed SELECT queries.
-Columns: 'event String' – the event name, and 'value UInt64' – the quantity.
+Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries are processed from the moment of ClickHouse server start.
+
+Columns:
+
+- `event` ([String](../data_types/string.md)) — Event name.
+- `value` ([UInt64](../data_types/int_uint.md)) — Count of events occurred.
+- `description` ([String](../data_types/string.md)) — Description of an event.
+
+**Example**
+
+```sql
+SELECT * FROM system.events LIMIT 5
+```
+
+```text
+┌─event─────────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                                 │    12 │ Number of queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries. │
+│ SelectQuery                           │     8 │ Same as Query, but only for SELECT queries.                                                                                                                                                                                                                │
+│ FileOpen                              │    73 │ Number of files opened.                                                                                                                                                                                                                                    │
+│ ReadBufferFromFileDescriptorRead      │   155 │ Number of reads (read/pread) from a file descriptor. Does not include sockets.                                                                                                                                                                             │
+│ ReadBufferFromFileDescriptorReadBytes │  9931 │ Number of bytes read from file descriptors. If the file is compressed, this will show compressed data size.                                                                                                                                                │
+└───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.functions
 
@@ -125,13 +189,47 @@ Columns:
 - `result_part_name String` — The name of the part that will be formed as the result of merging.
 - `is_mutation UInt8` - 1 if this process is a part mutation.
 - `total_size_bytes_compressed UInt64` — The total size of the compressed data in the merged chunks.
-- `total_size_marks UInt64` — The total number of marks in the merged partss.
+- `total_size_marks UInt64` — The total number of marks in the merged parts.
 - `bytes_read_uncompressed UInt64` — Number of bytes read, uncompressed.
 - `rows_read UInt64` — Number of rows read.
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
 - `rows_written UInt64` — Number of lines rows written.
 
 ## system.metrics {#system_tables-metrics}
+
+Contains metrics which can be calculated instantly, or have an current value. For example, a number of simultaneously processed queries, the current value for replica delay. This table is always up to date.
+
+Columns:
+
+- `metric` ([String](../data_types/string.md)) — Metric's name.
+- `value` ([Int64](../data_types/int_uint.md)) — Metric's value.
+- `description` ([String](../data_types/string.md)) — Description of the metric.
+
+**Example**
+
+```sql
+SELECT * FROM system.metrics LIMIT 10
+```
+
+```text
+┌─metric─────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                      │     1 │ Number of executing queries                                                                                                                                                                      │
+│ Merge                      │     0 │ Number of executing background merges                                                                                                                                                            │
+│ PartMutation               │     0 │ Number of mutations (ALTER DELETE/UPDATE)                                                                                                                                                        │
+│ ReplicatedFetch            │     0 │ Number of data parts fetching from replica                                                                                                                                                       │
+│ ReplicatedSend             │     0 │ Number of data parts sending to replicas                                                                                                                                                         │
+│ ReplicatedChecks           │     0 │ Number of data parts checking for consistency                                                                                                                                                    │
+│ BackgroundPoolTask         │     0 │ Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches or replication queue bookkeeping)                                                                                 │
+│ BackgroundSchedulePoolTask │     0 │ Number of active tasks in BackgroundSchedulePool. This pool is used for periodic tasks of ReplicatedMergeTree like cleaning old data parts, altering data parts, replica re-initialization, etc. │
+│ DiskSpaceReservedForMerge  │     0 │ Disk space reserved for currently running background merges. It is slightly more than total size of currently merging parts.                                                                     │
+│ DistributedSend            │     0 │ Number of connections sending data, that was INSERTed to Distributed tables, to remote servers. Both synchronous and asynchronous mode.                                                          │
+└────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+**See Also**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](#system_tables-events) — Contains a umber of happened events.
+- [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers
 
@@ -202,6 +300,8 @@ Formats:
 
 - engine (String) – Name of the table engine without parameters.
 
+- is_frozen (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+
 ## system.part_log {#system_tables-part-log}
 
 The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
@@ -260,15 +360,15 @@ Contains information about queries execution. For each query, you can see proces
 
 !!! note
     The table doesn't contain input data for `INSERT` queries.
-    
+
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, a logging interval or name of a table the queries will be logged in.
 
 To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
- 
+
 1. Initial queries, that were run directly by the client.
-2. Child queries that were initiated by other queries (for distributed query execution). For such a kind of queries, information about the parent queries is shown in the `initial_*` columns. 
+2. Child queries that were initiated by other queries (for distributed query execution). For such a kind of queries, information about the parent queries is shown in the `initial_*` columns.
 
 Columns:
 
@@ -276,22 +376,22 @@ Columns:
     - 1 — Successful start of query execution.
     - 2 — Successful end of query execution.
     - 3 — Exception before the start of query execution.
-    - 4 — Exception during the query execution. 
+    - 4 — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `query_start_time` (DateTime) — Time of the query processing start.
-- `query_duration_ms` (UInt64) — Duration of the query processing. 
+- `query_duration_ms` (UInt64) — Duration of the query processing.
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
 - `written_rows` (UInt64) — For `INSERT` queries, number of written rows. For other queries, the column value is 0.
 - `written_bytes` (UInt64) — For `INSERT` queries, number of written bytes. For other queries, the column value is 0.
-- `result_rows` (UInt64) — Number of rows in a result. 
+- `result_rows` (UInt64) — Number of rows in a result.
 - `result_bytes` (UInt64) — Number of bytes in a result.
 - `memory_usage` (UInt64) — Memory consumption by the query.
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Kind of query. Possible values: 
+- `is_initial_query` (UInt8) — Kind of query. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user initiated the current query.
@@ -313,7 +413,7 @@ Columns:
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
 - `http_method` (UInt8) — HTTP method initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface. 
+    - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method is used.
     - 2 — `POST` method is used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
@@ -510,13 +610,13 @@ This table contains the following columns (the type of the corresponding column 
 - `engine` (String) — Table engine name (without parameters).
 - `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
 - `data_path` (String) - Path to the table data in the file system.
-- `metadata_path` (String) - Path to the table metadata in the file system. 
+- `metadata_path` (String) - Path to the table metadata in the file system.
 - `metadata_modification_time` (DateTime) - Time of latest modification of the table metadata.
 - `dependencies_database` (Array(String)) - Database dependencies.
 - `dependencies_table` (Array(String)) - Table dependencies ([MaterializedView](table_engines/materializedview.md) tables based on the current table).
 - `create_table_query` (String) - The query that was used to create the table.
 - `engine_full` (String) - Parameters of the table engine.
-- `partition_key` (String) - The partition key expression specified in the table. 
+- `partition_key` (String) - The partition key expression specified in the table.
 - `sorting_key` (String) - The sorting key expression specified in the table.
 - `primary_key` (String) - The primary key expression specified in the table.
 - `sampling_key` (String) - The sampling key expression specified in the table.

@@ -1,29 +1,24 @@
-#include <Databases/IDatabase.h>
+#include "StorageMergeTree.h"
 
+#include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
-#include <Common/localBackup.h>
-
+#include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-
 #include <optional>
 
 
@@ -193,6 +188,47 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 }
 
 
+std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepareAlterTransactions(
+    const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context)
+{
+    auto parts = getDataParts({MergeTreeDataPartState::PreCommitted,
+                                    MergeTreeDataPartState::Committed,
+                                    MergeTreeDataPartState::Outdated});
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
+    transactions.reserve(parts.size());
+
+    const auto & columns_for_parts = new_columns.getAllPhysical();
+
+    const Settings & settings = context.getSettingsRef();
+    size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
+    ThreadPool thread_pool(thread_pool_size);
+
+
+    for (const auto & part : parts)
+    {
+        transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
+
+        thread_pool.schedule(
+            [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
+            {
+                this->alterDataPart(columns_for_parts, new_indices, false, transaction);
+            }
+        );
+    }
+
+    thread_pool.wait();
+
+    auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
+        [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
+        {
+            return !transaction->isValid();
+        }
+    );
+    transactions.erase(erase_pos, transactions.end());
+
+    return transactions;
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & params,
     const String & current_database_name,
@@ -225,14 +261,7 @@ void StorageMergeTree::alter(
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
-    auto parts = getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
-    auto columns_for_parts = new_columns.getAllPhysical();
-    std::vector<AlterDataPartTransactionPtr> transactions;
-    for (const DataPartPtr & part : parts)
-    {
-        if (auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false))
-            transactions.push_back(std::move(transaction));
-    }
+    auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -258,7 +287,10 @@ void StorageMergeTree::alter(
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
     for (auto & transaction : transactions)
+    {
         transaction->commit();
+        transaction.reset();
+    }
 
     /// Columns sizes could be changed
     recalculateColumnSizes();
@@ -698,10 +730,10 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
-            clearOldPartsFromFilesystem();
             {
                 /// TODO: Implement tryLockStructureForShare.
                 auto lock_structure = lockStructureForShare(false, "");
+                clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
             }
             clearOldMutations();
@@ -812,7 +844,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false))
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (transaction->isValid())
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
@@ -822,7 +856,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         return;
 
     for (auto & transaction : transactions)
+    {
         transaction->commit();
+        transaction.reset();
+    }
 
     /// Recalculate columns size (not only for the modified column)
     recalculateColumnSizes();

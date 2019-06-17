@@ -73,41 +73,41 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
     if (task->size_predictor)
         task->size_predictor->startBlock();
 
-    const auto current_max_block_size_rows = max_block_size_rows;
-    const auto current_preferred_block_size_bytes = preferred_block_size_bytes;
-    const auto current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
-    const auto & index_granularity = task->data_part->index_granularity;
+    const UInt64 current_max_block_size_rows = max_block_size_rows;
+    const UInt64 current_preferred_block_size_bytes = preferred_block_size_bytes;
+    const UInt64 current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
+    const MergeTreeIndexGranularity & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
     auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
-        index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
+        &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
         if (!current_task.size_predictor)
-            return current_max_block_size_rows;
+            return static_cast<size_t>(current_max_block_size_rows);
 
         /// Calculates number of rows will be read using preferred_block_size_bytes.
         /// Can't be less than avg_index_granularity.
-        UInt64 rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
+        size_t rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
         if (!rows_to_read)
             return rows_to_read;
-        UInt64 total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
-        rows_to_read = std::max<UInt64>(total_row_in_current_granule, rows_to_read);
+        auto total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
+        rows_to_read = std::max(total_row_in_current_granule, rows_to_read);
 
         if (current_preferred_max_column_in_block_size_bytes)
         {
             /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
-            UInt64 rows_to_read_for_max_size_column
+            auto rows_to_read_for_max_size_column
                 = current_task.size_predictor->estimateNumRowsForMaxSizeColumn(current_preferred_max_column_in_block_size_bytes);
             double filtration_ratio = std::max(min_filtration_ratio, 1.0 - current_task.size_predictor->filtered_rows_ratio);
             auto rows_to_read_for_max_size_column_with_filtration
-                = static_cast<UInt64>(rows_to_read_for_max_size_column / filtration_ratio);
+                = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
 
             /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
             rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
         }
 
-        UInt64 unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
+        auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
         if (unread_rows_in_current_granule >= rows_to_read)
             return rows_to_read;
 

@@ -83,7 +83,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -101,7 +101,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -537,7 +537,7 @@ Queries are logged in the [system.query_log](../system_tables.md#system_tables-q
 Use the following parameters to configure logging:
 
 - `database` – Name of the database.
-- `table` – Name of the system table the queries will be logged in. 
+- `table` – Name of the system table the queries will be logged in.
 - `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
@@ -664,34 +664,56 @@ Path to the file that contains:
 ```
 
 
-## zookeeper
+## zookeeper {#server-settings_zookeeper}
 
-Configuration of ZooKeeper servers.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing replica metadata when using replicated tables.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter can be omitted if replicated tables are not used.
+This section contains the following parameters:
 
-For more information, see the section "[Replication](../../operations/table_engines/replication.md)".
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
-**Example**
+    For example:
+
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
+
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+
+**Example configuration**
 
 ```xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
-        <host>example3</host>
-        <port>2181</port>
-    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
 </zookeeper>
 ```
+
+**See Also**
+
+- [Replication](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 

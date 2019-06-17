@@ -11,6 +11,7 @@
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Exception.h>
 #include <common/StringRef.h>
 
 

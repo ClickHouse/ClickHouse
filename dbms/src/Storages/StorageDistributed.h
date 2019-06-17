@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
+#include <Common/ActionBlocker.h>
 
 
 namespace DB
@@ -105,8 +106,11 @@ public:
     /// ensure connection pool creation and return it
     ConnectionPoolPtr requireConnectionPool(const std::string & name);
 
+    void flushClusterNodesAllData();
+
     ClusterPtr getCluster() const;
 
+    ActionLock getActionLock(StorageActionBlockType type) override;
 
     String table_name;
     String remote_database;
@@ -135,7 +139,9 @@ public:
         /// Creates connection_pool if not exists.
         void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
         /// Creates directory_monitor if not exists.
-        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker);
+
+        void flushAllData();
 
         void shutdownAndDropAllData();
     };
@@ -144,6 +150,8 @@ public:
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
+
+    ActionBlocker monitors_blocker;
 
 protected:
     StorageDistributed(

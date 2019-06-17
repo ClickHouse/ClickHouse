@@ -689,7 +689,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const DataPartPtr & part : unexpected_parts)
     {
         LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-        forgetPartAndMoveToDetached(part, "ignored_", true);
+        forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
 
@@ -1061,8 +1061,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
-        throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
-                        + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
@@ -1529,8 +1529,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false);
-        if (!transaction)
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (!transaction->isValid())
             continue;
 
         updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
@@ -3985,8 +3986,6 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(global_context.getSettingsRef());
-
     const auto & query_settings = query_context.getSettingsRef();
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
@@ -4002,7 +4001,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, timeouts, "Follower replica");
+        user, password, "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
@@ -4615,17 +4614,19 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
     zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names, NameSet * parts_should_be_retried)
 {
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
-    exists_futures.reserve(part_names.size());
-    for (const String & part_name : part_names)
-    {
-        String part_path = replica_path + "/parts/" + part_name;
-        exists_futures.emplace_back(zookeeper->asyncExists(part_path));
-    }
-
     std::vector<std::future<Coordination::MultiResponse>> remove_futures;
+    exists_futures.reserve(part_names.size());
     remove_futures.reserve(part_names.size());
     try
     {
+        /// Exception can be thrown from loop
+        /// if zk session will be dropped
+        for (const String & part_name : part_names)
+        {
+            String part_path = replica_path + "/parts/" + part_name;
+            exists_futures.emplace_back(zookeeper->asyncExists(part_path));
+        }
+
         for (size_t i = 0; i < part_names.size(); ++i)
         {
             Coordination::ExistsResponse exists_resp = exists_futures[i].get();

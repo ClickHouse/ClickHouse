@@ -10,7 +10,7 @@ namespace DB
 class DelimitedReadBuffer : public ReadBuffer
 {
 public:
-    DelimitedReadBuffer(ReadBuffer * buffer_, char delimiter_) : ReadBuffer(nullptr, 0), buffer(buffer_), delimiter(delimiter_)
+    DelimitedReadBuffer(std::unique_ptr<ReadBuffer> buffer_, char delimiter_) : ReadBuffer(nullptr, 0), buffer(std::move(buffer_)), delimiter(delimiter_)
     {
         // TODO: check that `buffer_` is not nullptr.
     }
@@ -49,4 +49,4 @@ private:
     bool put_delimiter = false;
 };
 
-} // namespace DB
+}

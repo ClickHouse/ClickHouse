@@ -54,10 +54,10 @@ public:
             const String & host_, UInt16 port_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, const ConnectionTimeouts & timeouts, const Settings & settings_)
+            const String & json_path_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency),
-        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
+        connections(concurrency, host_, port_, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
@@ -240,7 +240,8 @@ private:
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         for (size_t i = 0; i < concurrency; ++i)
-            pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
+            pool.schedule(std::bind(&Benchmark::thread, this,
+                                    connections.get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
         InterruptListener interrupt_listener;
         info_per_interval.watch.restart();
@@ -310,7 +311,9 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(*connection, query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(
+            *connection,
+            query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -325,8 +328,8 @@ private:
         double seconds = watch.elapsedSeconds();
 
         std::lock_guard lock(mutex);
-        info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
-        info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
+        info_per_interval.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        info_total.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
     }
 
 
@@ -485,7 +488,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
         return benchmark.run();
     }

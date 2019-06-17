@@ -39,7 +39,14 @@ void KafkaBlockInputStream::readPrefixImpl()
 
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.topics);
 
-    addChild(FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size));
+    const auto & limits = getLimits();
+    const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
+    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
+    rows_portion_size = std::max(rows_portion_size, 1ul);
+
+    auto child = FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size, rows_portion_size);
+    child->setLimits(limits);
+    addChild(child);
 
     broken = true;
 }

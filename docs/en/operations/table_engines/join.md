@@ -1,6 +1,6 @@
 # Join
 
-Always located in RAM, prepared data structure for using in `JOIN` operations.
+Prepared data structure for using in [JOIN](../../query_language/select.md#select-join) operations.
 
 ## Creating a table
 
@@ -20,8 +20,7 @@ See the detailed description of [CREATE TABLE](../../query_language/create.md#cr
 - `join_type` – `JOIN` type.
 - `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
-Set the parameters `join_strictness` and `join_type` without quotes. They must match the `JOIN` operation that the table will be used for. For more information about `JOIN` type and strictness, see the [JOIN Clause](../../query_language/select.md#select-join) section.
-
+Set the parameters `join_strictness` and `join_type` without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. For more information about `JOIN` type and strictness, see the `JOIN` clause description.
 
 ## Table Usage
 
@@ -39,13 +38,15 @@ When creating a table, the following settings are applied:
 
 You can use `INSERT` to add data to the table. For the `ANY` strictness, data for duplicated keys are ignored. For the `ALL` strictness, data are counted.
 
-You cannot perform the `SELECT` query directly from the table. Use the table at the right side in a `JOIN` clause.
+You cannot perform the `SELECT` query directly from the table. Use one of the following ways:
+
+- Place the table at the right side in a `JOIN` clause.
+- Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which allows to extract data from the table as from a dictionary.
 
 ## Data Storage
 
 Data for the `Join` tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory of tables on the disk. When starting the server, this data is loaded to RAM.
 
 At the abnormal server restart, the block of data on the disk might be lost or damaged. In this case, you may need to manually delete the file with damaged data.
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->

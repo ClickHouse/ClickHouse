@@ -21,9 +21,9 @@
         #pragma clang diagnostic ignored "-Wshift-negative-value"
     #endif
 
-    #include <vectorf128.h> // Y_IGNORE
-    #include <vectormath_exp.h> // Y_IGNORE
-    #include <vectormath_trig.h> // Y_IGNORE
+    #include <vectorf128.h>
+    #include <vectormath_exp.h>
+    #include <vectormath_trig.h>
 
     #ifdef __clang__
         #pragma clang diagnostic pop
@@ -56,7 +56,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arg = arguments.front();
-        if (!isNumber(arg) && !isDecimal(arg))
+        if (!isNumber(arg))
             throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 

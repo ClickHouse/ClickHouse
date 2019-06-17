@@ -1,8 +1,6 @@
 #include <daemon/BaseDaemon.h>
-#include <daemon/OwnFormattingChannel.h>
-#include <daemon/OwnPatternFormatter.h>
+
 #include <Common/Config/ConfigProcessor.h>
-#include <daemon/OwnSplitChannel.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -23,18 +21,13 @@
 #include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
-#include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
 #include <common/getThreadNumber.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/ConsoleChannel.h>
 #include <Poco/TaskManager.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Message.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
@@ -49,9 +42,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/config_version.h>
-#include <daemon/OwnPatternFormatter.h>
-#include <Common/CurrentThread.h>
-#include <Poco/Net/RemoteSyslogChannel.h>
+#include <common/argsToConfig.h>
 
 #if USE_UNWIND
     #define UNW_LOCAL_ONLY
@@ -257,7 +248,7 @@ public:
             else if (sig == SIGHUP || sig == SIGUSR1)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
-                BaseDaemon::instance().closeLogs();
+                BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
             else if (sig == Signals::StdTerminate)
@@ -572,6 +563,7 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
+
 static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
 {
     try
@@ -767,146 +759,6 @@ void BaseDaemon::wakeup()
     wakeup_event.set();
 }
 
-
-void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
-{
-    auto current_logger = config.getString("logger");
-    if (config_logger == current_logger)
-        return;
-    config_logger = current_logger;
-
-    bool is_daemon = config.getBool("application.runAsDaemon", false);
-
-    /// Split logs to ordinary log, error log, syslog and console.
-    /// Use extended interface of Channel for more comprehensive logging.
-    Poco::AutoPtr<DB::OwnSplitChannel> split = new DB::OwnSplitChannel;
-
-    auto log_level = config.getString("logger.level", "trace");
-    const auto log_path = config.getString("logger.log", "");
-    if (!log_path.empty())
-    {
-        createDirectory(log_path);
-        std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
-
-        // Set up two channel chains.
-        log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
-        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
-        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
-        log_file->open();
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
-        split->addChannel(log);
-    }
-
-    const auto errorlog_path = config.getString("logger.errorlog", "");
-    if (!errorlog_path.empty())
-    {
-        createDirectory(errorlog_path);
-        std::cerr << "Logging errors to " << errorlog_path << std::endl;
-
-        error_log_file = new Poco::FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
-        errorlog->setLevel(Poco::Message::PRIO_NOTICE);
-        errorlog->open();
-        split->addChannel(errorlog);
-    }
-
-    /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
-    /// We don't need this configuration parameter.
-
-    if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
-    {
-        const std::string & cmd_name = commandName();
-
-        if (config.has("logger.syslog.address"))
-        {
-            syslog_channel = new Poco::Net::RemoteSyslogChannel();
-            // syslog address
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_LOGHOST, config.getString("logger.syslog.address"));
-            if (config.has("logger.syslog.hostname"))
-            {
-                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
-            }
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
-        }
-        else
-        {
-            syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
-        }
-        syslog_channel->open();
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
-        split->addChannel(log);
-    }
-
-    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
-    {
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(new OwnPatternFormatter(this), new Poco::ConsoleChannel);
-        logger().warning("Logging " + log_level + " to console");
-        split->addChannel(log);
-    }
-
-    split->open();
-    logger().close();
-    logger().setChannel(split);
-
-    // Global logging level (it can be overridden for specific loggers).
-    logger().setLevel(log_level);
-
-    // Set level to all already created loggers
-    std::vector <std::string> names;
-    Logger::root().names(names);
-    for (const auto & name : names)
-        Logger::root().get(name).setLevel(log_level);
-
-    // Attach to the root logger.
-    Logger::root().setLevel(log_level);
-    Logger::root().setChannel(logger().getChannel());
-
-    // Explicitly specified log levels for specific loggers.
-    Poco::Util::AbstractConfiguration::Keys levels;
-    config.keys("logger.levels", levels);
-
-    if (!levels.empty())
-        for (const auto & level : levels)
-            Logger::get(level).setLevel(config.getString("logger.levels." + level, "trace"));
-}
-
-
-void BaseDaemon::closeLogs()
-{
-    if (log_file)
-        log_file->close();
-    if (error_log_file)
-        error_log_file->close();
-
-    if (!log_file)
-        logger().warning("Logging to console but received signal to close log file (ignoring).");
-}
-
 std::string BaseDaemon::getDefaultCorePath() const
 {
     return "/opt/cores/";
@@ -951,62 +803,8 @@ void BaseDaemon::initialize(Application & self)
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
 
-    {
-        /// Parsing all args and converting to config layer
-        /// Test: -- --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19= --20 21 22 --23 --24 25 --26 -27 28 ---29=30 -- ----31 32 --33 3-4
-        Poco::AutoPtr<Poco::Util::MapConfiguration> map_config = new Poco::Util::MapConfiguration;
-        std::string key;
-        for(auto & arg : argv())
-        {
-            auto key_start = arg.find_first_not_of('-');
-            auto pos_minus = arg.find('-');
-            auto pos_eq = arg.find('=');
-
-            // old saved '--key', will set to some true value "1"
-            if (!key.empty() && pos_minus != std::string::npos && pos_minus < key_start)
-            {
-                map_config->setString(key, "1");
-                key = "";
-            }
-
-            if (pos_eq == std::string::npos)
-            {
-                if (!key.empty())
-                {
-                    if (pos_minus == std::string::npos || pos_minus > key_start)
-                    {
-                        map_config->setString(key, arg);
-                    }
-                    key = "";
-                }
-                if (pos_minus != std::string::npos && key_start != std::string::npos && pos_minus < key_start)
-                    key = arg.substr(key_start);
-                continue;
-            }
-            else
-            {
-                key = "";
-            }
-
-            if (key_start == std::string::npos)
-                continue;
-
-            if (pos_minus > key_start)
-                continue;
-
-            key = arg.substr(key_start, pos_eq - key_start);
-            if (key.empty())
-                continue;
-            std::string value;
-            if (arg.size() > pos_eq)
-                value = arg.substr(pos_eq+1);
-
-            map_config->setString(key, value);
-            key = "";
-        }
-        /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
-        config().add(map_config, PRIO_APPLICATION - 100);
-    }
+    /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
+    argsToConfig(argv(), config(), PRIO_APPLICATION - 100);
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
 
@@ -1083,7 +881,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// Create pid file.
-    if (is_daemon && config().has("pid"))
+    if (config().has("pid"))
         pid.seed(config().getString("pid"));
 
     /// Change path for logging.
@@ -1101,7 +899,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    buildLoggers(config());
+    buildLoggers(config(), logger());
 
     if (is_daemon)
     {

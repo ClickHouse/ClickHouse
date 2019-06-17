@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace Poco
@@ -44,7 +44,7 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context) override;
+    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     bool empty(const Context & context) const override;
 
@@ -96,7 +96,7 @@ private:
 
     Poco::Logger * log;
 
-    Tables listTables(const Context & context);
+    Tables listTables(const Context & context, const FilterByNameFunction & filter_by_name);
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 

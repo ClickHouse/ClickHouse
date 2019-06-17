@@ -151,7 +151,7 @@ MergeTreeData::MergeTreeData(
         catch (Exception & e)
         {
             /// Better error message.
-            e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
+            e.addMessage("(while initializing MergeTree partition key from date column " + backQuote(date_column_name) + ")");
             throw;
         }
     }
@@ -381,7 +381,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
-                        "Index with name `" + new_indices.back()->name + "` already exsists",
+                        "Index with name " + backQuote(new_indices.back()->name) + " already exsists",
                         ErrorCodes::LOGICAL_ERROR);
 
             ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
@@ -1112,6 +1112,10 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
+    /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
+    for (DataPartPtr part : data_parts_by_info) /// a copy intended
+        part->remove();
+
     Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -1323,7 +1327,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name))
+            if (!part || part->hasColumnFiles(column.name, *column.type))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -1345,7 +1349,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             const String new_type_name = new_type->getName();
             const auto * old_type = column.type.get();
 
-            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name)))
+            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name, *column.type)))
             {
                 if (isMetadataOnlyConversion(old_type, new_type))
                 {
@@ -1435,14 +1439,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     }
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
-    const DataPartPtr & part,
+void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
-    bool skip_sanity_checks)
+    bool skip_sanity_checks,
+    AlterDataPartTransactionPtr & transaction)
 {
     ExpressionActionsPtr expression;
-    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
+    const auto & part = transaction->getDataPart();
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
             getIndices().indices, new_indices,
@@ -1476,12 +1480,12 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
                 exception_message << ", ";
             if (forbidden_because_of_modify)
             {
-                exception_message << "from `" << from_to.first << "' to `" << from_to.second << "'";
+                exception_message << "from " << backQuote(from_to.first) << " to " << backQuote(from_to.second);
                 first = false;
             }
             else if (from_to.second.empty())
             {
-                exception_message << "`" << from_to.first << "'";
+                exception_message << backQuote(from_to.first);
                 first = false;
             }
         }
@@ -1504,7 +1508,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     if (transaction->rename_map.empty() && !force_update_metadata)
     {
         transaction->clear();
-        return nullptr;
+        return;
     }
 
     /// Apply the expression and write the result to temporary files.
@@ -1573,7 +1577,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
 
-    return transaction;
+    return;
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
@@ -1596,9 +1600,11 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     }
 
     LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
-
-    if (auto transaction = alterDataPart(data_part, new_columns, getIndices().indices, false))
+    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
+    alterDataPart(new_columns, getIndices().indices, false, transaction);
+    if (transaction->isValid())
         transaction->commit();
+
     empty_columns.clear();
 }
 
@@ -1607,10 +1613,24 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
+
+bool MergeTreeData::AlterDataPartTransaction::isValid() const
+{
+    return valid && data_part;
+}
+
+void MergeTreeData::AlterDataPartTransaction::clear()
+{
+    valid = false;
+}
+
 void MergeTreeData::AlterDataPartTransaction::commit()
 {
+    if (!isValid())
+        return;
     if (!data_part)
         return;
+
     try
     {
         std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
@@ -1668,11 +1688,14 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 {
+
+    if (!isValid())
+        return;
+    if (!data_part)
+        return;
+
     try
     {
-        if (!data_part)
-            return;
-
         LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
         String path = data_part->getFullPath();
@@ -2549,6 +2572,39 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+std::vector<DetachedPartInfo>
+MergeTreeData::getDetachedParts() const
+{
+    std::vector<DetachedPartInfo> res;
+
+    for (Poco::DirectoryIterator it(full_path + "detached");
+        it != Poco::DirectoryIterator(); ++it)
+    {
+        auto dir_name = it.name();
+
+        res.emplace_back();
+        auto & part = res.back();
+
+        /// First, try to parse as <part_name>.
+        if (MergeTreePartInfo::tryParsePartName(dir_name, &part, format_version))
+            continue;
+
+        /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
+        part.prefix = dir_name;
+        const auto first_separator = dir_name.find_first_of('_');
+        if (first_separator == String::npos)
+            continue;
+
+        const auto part_name = dir_name.substr(first_separator + 1,
+            dir_name.size() - first_separator - 1);
+        if (!MergeTreePartInfo::tryParsePartName(part_name, &part, format_version))
+           continue;
+
+        part.prefix = dir_name.substr(0, first_separator);
+    }
+    return res;
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
@@ -2777,6 +2833,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
+        part->is_frozen = true;
         ++parts_processed;
     }
 
