@@ -556,7 +556,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             return;
 
         /// In case if somebody is sleeping and prepare_queue is not empty.
-        main_executor_condvar.notify_one();
+        main_executor_condvar.notify_all();
 
         while (found_processor_to_execute)
         {
@@ -622,7 +622,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             }
 
             /// Let another thread to continue.
-            main_executor_condvar.notify_one();
+            main_executor_condvar.notify_all();
 
             processing_time_ns += processing_time_watch.elapsed();
         }
