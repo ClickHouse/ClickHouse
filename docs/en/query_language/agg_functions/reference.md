@@ -839,12 +839,12 @@ simpleLinearRegression(x, y)
 
 Parameters:
 
-- `x` — Column with values of dependent variable.
-- `y` — Column with explanatory variable.
+- `x` — Column with dependent variable values.
+- `y` — Column with explanatory variable values.
 
 Returned values:
 
-Parameters `(a, b)` of the resulting line `y = a*x + b`.
+Constants `(a, b)` of the resulting line `y = a*x + b`.
 
 **Examples**
 
