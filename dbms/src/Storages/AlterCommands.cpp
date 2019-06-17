@@ -274,7 +274,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                     });
 
             if (insert_it == indices_description.indices.end())
-                throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
+                throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
                         ErrorCodes::LOGICAL_ERROR);
 
             ++insert_it;
@@ -293,8 +293,12 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 });
 
         if (erase_it == indices_description.indices.end())
-            throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
-                    ErrorCodes::LOGICAL_ERROR);
+        {
+            if (if_exists)
+                return;
+            throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.",
+                            ErrorCodes::LOGICAL_ERROR);
+        }
 
         indices_description.indices.erase(erase_it);
     }

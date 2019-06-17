@@ -87,7 +87,7 @@ Extracts all the fragments of a string using a regular expression. If 'haystack'
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
 
-``% indicates any quantity of any bytes (including zero characters).
+`%` indicates any quantity of any bytes (including zero characters).
 
 `_` indicates any one byte.
 
