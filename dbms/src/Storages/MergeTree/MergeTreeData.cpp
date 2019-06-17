@@ -151,7 +151,7 @@ MergeTreeData::MergeTreeData(
         catch (Exception & e)
         {
             /// Better error message.
-            e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
+            e.addMessage("(while initializing MergeTree partition key from date column " + backQuote(date_column_name) + ")");
             throw;
         }
     }
@@ -381,7 +381,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
-                        "Index with name `" + new_indices.back()->name + "` already exsists",
+                        "Index with name " + backQuote(new_indices.back()->name) + " already exsists",
                         ErrorCodes::LOGICAL_ERROR);
 
             ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
@@ -1112,6 +1112,10 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
+    /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
+    for (DataPartPtr part : data_parts_by_info) /// a copy intended
+        part->remove();
+
     Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -1323,7 +1327,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name))
+            if (!part || part->hasColumnFiles(column.name, *column.type))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -1345,7 +1349,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             const String new_type_name = new_type->getName();
             const auto * old_type = column.type.get();
 
-            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name)))
+            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name, *column.type)))
             {
                 if (isMetadataOnlyConversion(old_type, new_type))
                 {
@@ -1476,12 +1480,12 @@ void MergeTreeData::alterDataPart(
                 exception_message << ", ";
             if (forbidden_because_of_modify)
             {
-                exception_message << "from `" << from_to.first << "' to `" << from_to.second << "'";
+                exception_message << "from " << backQuote(from_to.first) << " to " << backQuote(from_to.second);
                 first = false;
             }
             else if (from_to.second.empty())
             {
-                exception_message << "`" << from_to.first << "'";
+                exception_message << backQuote(from_to.first);
                 first = false;
             }
         }

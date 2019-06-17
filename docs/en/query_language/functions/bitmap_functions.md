@@ -4,7 +4,7 @@ Bitmap functions work for two bitmaps Object value calculation, it is to return 
 
 There are 2 kinds of construction methods for Bitmap Object. One is to be constructed by aggregation function groupBitmap with -State, the other is to be constructed by Array Object. It is also to convert Bitmap Object to Array Object.
 
-RoaringBitmap is wrapped into a data structure while actual storage of Bitmap objects. When the cardinality is less than or equal to 32, it uses Set objet. When the cardinality is greater than 32, it uses RoaringBitmap object. That is why storage of low cardinality set is faster. 
+RoaringBitmap is wrapped into a data structure while actual storage of Bitmap objects. When the cardinality is less than or equal to 32, it uses Set objet. When the cardinality is greater than 32, it uses RoaringBitmap object. That is why storage of low cardinality set is faster.
 
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
@@ -23,8 +23,13 @@ bitmapBuild(array)
 
 **Example**
 
-``` sql
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res
+```sql
+SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
+```
+```text
+┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
+│     │ AggregateFunction(groupBitmap, UInt8)    │
+└─────┴──────────────────────────────────────────────┘
 ```
 
 ## bitmapToArray
@@ -53,16 +58,20 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapHasAny
 
-Analogous to `hasAny(array, array)` returns 1 if bitmaps have any common elements, 0 otherwise.
-For empty bitmaps returns 0.
+Checks whether two bitmaps have intersection by some elements.
 
 ```
-bitmapHasAny(bitmap,bitmap)
+bitmapHasAny(bitmap1, bitmap2)
 ```
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+- `bitmap*` – bitmap object.
+
+**Return values**
+
+- `1`, if `bitmap1` and `bitmap2` have one similar element at least.
+- `0`, otherwise.
 
 **Example**
 
@@ -78,8 +87,8 @@ SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 
 ## bitmapHasAll
 
-Analogous to `hasAll(array, array)` returns 1 if the first bitmap contains all the elements of the second one, 0 otherwise. 
-If the second argument is an empty bitmap then returns 1. 
+Analogous to `hasAll(array, array)` returns 1 if the first bitmap contains all the elements of the second one, 0 otherwise.
+If the second argument is an empty bitmap then returns 1.
 
 ```
 bitmapHasAll(bitmap,bitmap)
@@ -320,6 +329,32 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 ┌─res─┐
 │   2 │
+└─────┘
+```
+
+## bitmapContains
+
+Returns 1 if bitmap contains the given element, 0 otherwise.
+For empty bitmaps returns 0.
+
+```
+bitmapContains(bitmap,element)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+- `element` – UInt32 integer.
+
+**Example**
+
+``` sql
+select bitmapContains(bitmapBuild([1,5,7,9]),CAST(9, 'UInt32')) AS res;
+```
+
+```
+┌─res─┐
+│  1  │
 └─────┘
 ```
 
