@@ -77,7 +77,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
 
-        if (storage.settings.write_final_mark)
+        if (with_final_mark)
             writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
     }
 

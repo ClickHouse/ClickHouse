@@ -126,12 +126,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
-            if (storage.settings.write_final_mark)
+            if (with_final_mark)
                 writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
         }
     }
 
-    if (storage.settings.write_final_mark)
+    if (with_final_mark)
         index_granularity.appendMark(0); /// last mark
 
     /// Finish skip index serialization
@@ -154,7 +154,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (index_stream)
     {
-        if (storage.settings.write_final_mark)
+        if (with_final_mark)
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {

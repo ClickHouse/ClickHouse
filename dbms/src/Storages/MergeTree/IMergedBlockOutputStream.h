@@ -141,6 +141,8 @@ protected:
 
     const bool compute_granularity;
     CompressionCodecPtr codec;
+
+    const bool with_final_mark;
 };
 
 }
