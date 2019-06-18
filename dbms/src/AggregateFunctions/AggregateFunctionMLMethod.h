@@ -37,8 +37,7 @@ public:
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
-        size_t row_num)
-        = 0;
+        size_t row_num) = 0;
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
@@ -201,9 +200,8 @@ private:
 };
 
 
-/**
-* LinearModelData is a class which manages current state of learning
-*/
+/** LinearModelData is a class which manages current state of learning
+  */
 class LinearModelData
 {
 public:
@@ -249,9 +247,8 @@ private:
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
 
-    /**
-     * The function is called when we want to flush current batch and update our weights
-     */
+    /** The function is called when we want to flush current batch and update our weights
+      */
     void update_state();
 };
 
@@ -268,7 +265,7 @@ public:
 
     explicit AggregateFunctionMLMethod(
         UInt32 param_num,
-        std::shared_ptr<IGradientComputer> gradient_computer,
+        std::unique_ptr<IGradientComputer> gradient_computer,
         std::string weights_updater_name,
         Float64 learning_rate,
         Float64 l2_reg_coef,
@@ -300,19 +297,15 @@ public:
     void create(AggregateDataPtr place) const override
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
-        if (weights_updater_name == "\'SGD\'")
-        {
+        if (weights_updater_name == "SGD")
             new_weights_updater = std::make_shared<StochasticGradientDescent>();
-        } else if (weights_updater_name == "\'Momentum\'")
-        {
+        else if (weights_updater_name == "Momentum")
             new_weights_updater = std::make_shared<Momentum>();
-        } else if (weights_updater_name == "\'Nesterov\'")
-        {
+        else if (weights_updater_name == "Nesterov")
             new_weights_updater = std::make_shared<Nesterov>();
-        } else
-        {
+        else
             throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
-        }
+
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
 

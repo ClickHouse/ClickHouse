@@ -11,7 +11,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Only if the FROM section uses a distributed table containing more than one shard.
-- If the subquery concerns a distributed table containing more than one shard,
+- If the subquery concerns a distributed table containing more than one shard.
 - Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
 Possible values:
@@ -104,6 +104,19 @@ Default value: 3.
 ## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
+
+Enables or disables sending of the `X-ClickHouse-Progress` HTTP response headers in an answer from `clickhouse-server`.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
 
@@ -258,6 +271,25 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 **Default value**: `ALL`
 
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes behavior of join operations with `ANY` strictness.
+
+!!! note "Attention"
+    This setting applies only for the [Join](../table_engines/join.md) table engine.
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+Default value: 0.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
@@ -674,12 +706,55 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## max_network_bytes {#settings-max_network_bytes}
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Data volume control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth {#settings-max_network_bandwidth}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Bandwidth control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
 ## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
 
 Possible values:
 
@@ -688,5 +763,22 @@ Possible values:
 
 Default value: 1.
 
+**See Also**
+
+- [Multiple JOIN](../../query_language/select.md#select-join)
+
+
+## count_distinct_implementation {#settings-count_distinct_implementation}
+
+Specifies which of the `uniq*` functions should be used for performing the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+
+Possible values:
+
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+
+Default value: `uniqExact`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

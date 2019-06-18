@@ -34,21 +34,24 @@ public:
     ConnectionPoolWithFailover(
             ConnectionPoolPtrs nested_pools_,
             LoadBalancing load_balancing,
-            size_t max_tries_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD);
 
     using Entry = IConnectionPool::Entry;
 
     /** Allocates connection to work. */
-    Entry get(const Settings * settings = nullptr, bool force_connected = true) override; /// From IConnectionPool
+    Entry get(const ConnectionTimeouts & timeouts,
+              const Settings * settings = nullptr,
+              bool force_connected = true) override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
-    std::vector<Entry> getMany(const Settings * settings, PoolMode pool_mode);
+    std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
+                               const Settings * settings, PoolMode pool_mode);
 
     /// The same as getMany(), but return std::vector<TryResult>.
-    std::vector<TryResult> getManyForTableFunction(const Settings * settings, PoolMode pool_mode);
+    std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
+                                                   const Settings * settings, PoolMode pool_mode);
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
@@ -56,7 +59,10 @@ public:
     /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
     /// Delay threshold is taken from settings.
     std::vector<TryResult> getManyChecked(
-            const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check);
+            const ConnectionTimeouts & timeouts,
+            const Settings * settings,
+            PoolMode pool_mode,
+            const QualifiedTableName & table_to_check);
 
 private:
     /// Get the values of relevant settings and call Base::getMany()
@@ -70,6 +76,7 @@ private:
     /// for this table is not too large.
     TryResult tryGetEntry(
             IConnectionPool & pool,
+            const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings * settings,
             const QualifiedTableName * table_to_check = nullptr);
