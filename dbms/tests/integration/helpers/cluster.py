@@ -345,6 +345,8 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+    def open_bash_shell(self, instance_name):
+        os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
     def get_kazoo_client(self, zoo_instance_name):
         zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
