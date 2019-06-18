@@ -1,10 +1,10 @@
 #pragma once
 
+#include <common/Types.h>
+#include <common/DayNum.h>
+#include <common/likely.h>
 #include <ctime>
 #include <string>
-#include <common/DayNum.h>
-#include <common/Types.h>
-#include <common/likely.h>
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
@@ -84,6 +84,7 @@ private:
     /// Time zone name.
     std::string time_zone;
 
+
     /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
     /// We don't care about overflow.
     inline DayNum findIndex(time_t t) const
@@ -103,7 +104,10 @@ private:
         return DayNum(guess - 1);
     }
 
-    inline const Values & find(time_t t) const { return lut[findIndex(t)]; }
+    inline const Values & find(time_t t) const
+    {
+        return lut[findIndex(t)];
+    }
 
 public:
     const std::string & getTimeZone() const { return time_zone; }
@@ -124,9 +128,15 @@ public:
         return lut[DayNum(index - (lut[index].day_of_week - 1))].date;
     }
 
-    inline DayNum toFirstDayNumOfWeek(DayNum d) const { return DayNum(d - (lut[d].day_of_week - 1)); }
+    inline DayNum toFirstDayNumOfWeek(DayNum d) const
+    {
+        return DayNum(d - (lut[d].day_of_week - 1));
+    }
 
-    inline DayNum toFirstDayNumOfWeek(time_t t) const { return toFirstDayNumOfWeek(toDayNum(t)); }
+    inline DayNum toFirstDayNumOfWeek(time_t t) const
+    {
+        return toFirstDayNumOfWeek(toDayNum(t));
+    }
 
     /// Round down to start of month.
     inline time_t toFirstDayOfMonth(time_t t) const
@@ -135,9 +145,15 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    inline DayNum toFirstDayNumOfMonth(DayNum d) const { return DayNum(d - (lut[d].day_of_month - 1)); }
+    inline DayNum toFirstDayNumOfMonth(DayNum d) const
+    {
+        return DayNum(d - (lut[d].day_of_month - 1));
+    }
 
-    inline DayNum toFirstDayNumOfMonth(time_t t) const { return toFirstDayNumOfMonth(toDayNum(t)); }
+    inline DayNum toFirstDayNumOfMonth(time_t t) const
+    {
+        return toFirstDayNumOfMonth(toDayNum(t));
+    }
 
     /// Round down to start of quarter.
     inline DayNum toFirstDayNumOfQuarter(DayNum d) const
@@ -155,16 +171,31 @@ public:
         return DayNum(index + 1);
     }
 
-    inline DayNum toFirstDayNumOfQuarter(time_t t) const { return toFirstDayNumOfQuarter(toDayNum(t)); }
+    inline DayNum toFirstDayNumOfQuarter(time_t t) const
+    {
+        return toFirstDayNumOfQuarter(toDayNum(t));
+    }
 
-    inline time_t toFirstDayOfQuarter(time_t t) const { return fromDayNum(toFirstDayNumOfQuarter(t)); }
+    inline time_t toFirstDayOfQuarter(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfQuarter(t));
+    }
 
     /// Round down to start of year.
-    inline time_t toFirstDayOfYear(time_t t) const { return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date; }
+    inline time_t toFirstDayOfYear(time_t t) const
+    {
+        return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
+    }
 
-    inline DayNum toFirstDayNumOfYear(DayNum d) const { return years_lut[lut[d].year - DATE_LUT_MIN_YEAR]; }
+    inline DayNum toFirstDayNumOfYear(DayNum d) const
+    {
+        return years_lut[lut[d].year - DATE_LUT_MIN_YEAR];
+    }
 
-    inline DayNum toFirstDayNumOfYear(time_t t) const { return toFirstDayNumOfYear(toDayNum(t)); }
+    inline DayNum toFirstDayNumOfYear(time_t t) const
+    {
+        return toFirstDayNumOfYear(toDayNum(t));
+    }
 
     inline time_t toFirstDayOfNextMonth(time_t t) const
     {
@@ -180,9 +211,15 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    inline UInt8 daysInMonth(DayNum d) const { return lut[d].days_in_month; }
+    inline UInt8 daysInMonth(DayNum d) const
+    {
+        return lut[d].days_in_month;
+    }
 
-    inline UInt8 daysInMonth(time_t t) const { return find(t).days_in_month; }
+    inline UInt8 daysInMonth(time_t t) const
+    {
+        return find(t).days_in_month;
+    }
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
@@ -193,7 +230,10 @@ public:
 
     /** Round to start of day, then shift for specified amount of days.
       */
-    inline time_t toDateAndShift(time_t t, Int32 days) const { return lut[DayNum(findIndex(t) + days)].date; }
+    inline time_t toDateAndShift(time_t t, Int32 days) const
+    {
+        return lut[DayNum(findIndex(t) + days)].date;
+    }
 
     inline time_t toTime(time_t t) const
     {
@@ -295,7 +335,10 @@ public:
         return (d + 8 - toDayOfWeek(d)) / 7;
     }
 
-    inline unsigned toRelativeWeekNum(time_t t) const { return toRelativeWeekNum(toDayNum(t)); }
+    inline unsigned toRelativeWeekNum(time_t t) const
+    {
+        return toRelativeWeekNum(toDayNum(t));
+    }
 
     /// Get year that contains most of the current week. Week begins at monday.
     inline unsigned toISOYear(DayNum d) const
@@ -304,7 +347,10 @@ public:
         return toYear(DayNum(d + 4 - toDayOfWeek(d)));
     }
 
-    inline unsigned toISOYear(time_t t) const { return toISOYear(toDayNum(t)); }
+    inline unsigned toISOYear(time_t t) const
+    {
+        return toISOYear(toDayNum(t));
+    }
 
     /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.
     /// Example: ISO year 2019 begins at 2018-12-31. And ISO year 2017 begins at 2017-01-02.
@@ -316,21 +362,33 @@ public:
         DayNum first_day_of_year = years_lut[iso_year - DATE_LUT_MIN_YEAR];
         auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
 
-        return DayNum(
-            first_day_of_week_of_year <= 4 ? first_day_of_year + 1 - first_day_of_week_of_year
-                                           : first_day_of_year + 8 - first_day_of_week_of_year);
+        return DayNum(first_day_of_week_of_year <= 4
+            ? first_day_of_year + 1 - first_day_of_week_of_year
+            : first_day_of_year + 8 - first_day_of_week_of_year);
     }
 
-    inline DayNum toFirstDayNumOfISOYear(time_t t) const { return toFirstDayNumOfISOYear(toDayNum(t)); }
+    inline DayNum toFirstDayNumOfISOYear(time_t t) const
+    {
+        return toFirstDayNumOfISOYear(toDayNum(t));
+    }
 
-    inline time_t toFirstDayOfISOYear(time_t t) const { return fromDayNum(toFirstDayNumOfISOYear(t)); }
+    inline time_t toFirstDayOfISOYear(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfISOYear(t));
+    }
 
     /// ISO 8601 week number. Week begins at monday.
     /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
-    inline unsigned toISOWeek(DayNum d) const { return 1 + DayNum(toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7; }
+    inline unsigned toISOWeek(DayNum d) const
+    {
+        return 1 + DayNum(toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
+    }
 
-    inline unsigned toISOWeek(time_t t) const { return toISOWeek(toDayNum(t)); }
-
+    inline unsigned toISOWeek(time_t t) const
+    {
+        return toISOWeek(toDayNum(t));
+    }
+    
     /*
       The bits in week_mode has the following meaning:
        WeekModeFlag::MONDAY_FIRST (0)  If not set	Sunday is first day of week
@@ -493,13 +551,25 @@ public:
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)
-    inline unsigned toRelativeMonthNum(DayNum d) const { return lut[d].year * 12 + lut[d].month; }
+    inline unsigned toRelativeMonthNum(DayNum d) const
+    {
+        return lut[d].year * 12 + lut[d].month;
+    }
 
-    inline unsigned toRelativeMonthNum(time_t t) const { return toRelativeMonthNum(toDayNum(t)); }
+    inline unsigned toRelativeMonthNum(time_t t) const
+    {
+        return toRelativeMonthNum(toDayNum(t));
+    }
 
-    inline unsigned toRelativeQuarterNum(DayNum d) const { return lut[d].year * 4 + (lut[d].month - 1) / 3; }
+    inline unsigned toRelativeQuarterNum(DayNum d) const
+    {
+        return lut[d].year * 4 + (lut[d].month - 1) / 3;
+    }
 
-    inline unsigned toRelativeQuarterNum(time_t t) const { return toRelativeQuarterNum(toDayNum(t)); }
+    inline unsigned toRelativeQuarterNum(time_t t) const
+    {
+        return toRelativeQuarterNum(toDayNum(t));
+    }
 
     /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
@@ -512,11 +582,20 @@ public:
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 
-    inline time_t toRelativeHourNum(DayNum d) const { return toRelativeHourNum(lut[d].date); }
+    inline time_t toRelativeHourNum(DayNum d) const
+    {
+        return toRelativeHourNum(lut[d].date);
+    }
 
-    inline time_t toRelativeMinuteNum(time_t t) const { return t / 60; }
+    inline time_t toRelativeMinuteNum(time_t t) const
+    {
+        return t / 60;
+    }
 
-    inline time_t toRelativeMinuteNum(DayNum d) const { return toRelativeMinuteNum(lut[d].date); }
+    inline time_t toRelativeMinuteNum(DayNum d) const
+    {
+        return toRelativeMinuteNum(lut[d].date);
+    }
 
     inline DayNum toStartOfYearInterval(DayNum d, UInt64 years) const
     {
@@ -586,14 +665,16 @@ public:
     /// Create DayNum from year, month, day of month.
     inline DayNum makeDayNum(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (unlikely(
-                year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return DayNum(0);
 
         return DayNum(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }
 
-    inline time_t makeDate(UInt16 year, UInt8 month, UInt8 day_of_month) const { return lut[makeDayNum(year, month, day_of_month)].date; }
+    inline time_t makeDate(UInt16 year, UInt8 month, UInt8 day_of_month) const
+    {
+        return lut[makeDayNum(year, month, day_of_month)].date;
+    }
 
     /** Does not accept daylight saving time as argument: in case of ambiguity, it choose greater timestamp.
       */
@@ -635,21 +716,38 @@ public:
         return values.year * 10000 + values.month * 100 + values.day_of_month;
     }
 
-    inline time_t YYYYMMDDToDate(UInt32 num) const { return makeDate(num / 10000, num / 100 % 100, num % 100); }
+    inline time_t YYYYMMDDToDate(UInt32 num) const
+    {
+        return makeDate(num / 10000, num / 100 % 100, num % 100);
+    }
 
-    inline DayNum YYYYMMDDToDayNum(UInt32 num) const { return makeDayNum(num / 10000, num / 100 % 100, num % 100); }
+    inline DayNum YYYYMMDDToDayNum(UInt32 num) const
+    {
+        return makeDayNum(num / 10000, num / 100 % 100, num % 100);
+    }
 
 
     inline UInt64 toNumYYYYMMDDhhmmss(time_t t) const
     {
         const Values & values = find(t);
-        return toSecond(t) + toMinute(t) * 100 + toHour(t) * 10000 + UInt64(values.day_of_month) * 1000000
-            + UInt64(values.month) * 100000000 + UInt64(values.year) * 10000000000;
+        return
+              toSecond(t)
+            + toMinute(t) * 100
+            + toHour(t) * 10000
+            + UInt64(values.day_of_month) * 1000000
+            + UInt64(values.month) * 100000000
+            + UInt64(values.year) * 10000000000;
     }
 
     inline time_t YYYYMMDDhhmmssToTime(UInt64 num) const
     {
-        return makeDateTime(num / 10000000000, num / 100000000 % 100, num / 1000000 % 100, num / 10000 % 100, num / 100 % 100, num % 100);
+        return makeDateTime(
+            num / 10000000000,
+            num / 100000000 % 100,
+            num / 1000000 % 100,
+            num / 10000 % 100,
+            num / 100 % 100,
+            num % 100);
     }
 
     /// Adding calendar intervals.
@@ -668,7 +766,10 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline time_t addWeeks(time_t t, Int64 delta) const { return addDays(t, delta * 7); }
+    inline time_t addWeeks(time_t t, Int64 delta) const
+    {
+        return addDays(t, delta * 7);
+    }
 
     inline UInt8 saturateDayOfMonth(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
@@ -721,9 +822,15 @@ public:
         }
     }
 
-    inline time_t addQuarters(time_t t, Int64 delta) const { return addMonths(t, delta * 3); }
+    inline time_t addQuarters(time_t t, Int64 delta) const
+    {
+        return addMonths(t, delta * 3);
+    }
 
-    inline DayNum addQuarters(DayNum d, Int64 delta) const { return addMonths(d, delta * 3); }
+    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    {
+        return addMonths(d, delta * 3);
+    }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
     inline time_t addYears(time_t t, Int64 delta) const
@@ -758,7 +865,7 @@ public:
     {
         const Values & values = find(t);
 
-        std::string s{"0000-00-00 00:00:00"};
+        std::string s {"0000-00-00 00:00:00"};
 
         s[0] += values.year / 1000;
         s[1] += (values.year / 100) % 10;
@@ -787,7 +894,7 @@ public:
     {
         const Values & values = find(t);
 
-        std::string s{"0000-00-00"};
+        std::string s {"0000-00-00"};
 
         s[0] += values.year / 1000;
         s[1] += (values.year / 100) % 10;
@@ -805,7 +912,7 @@ public:
     {
         const Values & values = lut[d];
 
-        std::string s{"0000-00-00"};
+        std::string s {"0000-00-00"};
 
         s[0] += values.year / 1000;
         s[1] += (values.year / 100) % 10;
@@ -821,7 +928,7 @@ public:
 };
 
 #if defined(__PPC__)
-#    if !__clang__
-#        pragma GCC diagnostic pop
-#    endif
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 #endif
