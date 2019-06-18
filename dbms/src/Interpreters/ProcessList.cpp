@@ -90,7 +90,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         const auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
-
             if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
@@ -117,10 +116,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
-                const int sleep_by_ms = 10;
-                int slept_ms = 0;
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                while (running_query != user_process_list->second.queries.end())
+
+                if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
@@ -128,15 +126,17 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
-                    lock.unlock();
-                    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_by_ms));
-                    slept_ms += sleep_by_ms;
-                    if (slept_ms > max_wait_ms)
+
+                    if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{
+                        running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                        if (running_query == user_process_list->second.queries.end())
+                            return true;
+                        running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                        return false;
+                        }))
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
-                    lock.lock();
-                    running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                }
+                 }
             }
         }
 
@@ -259,8 +259,7 @@ ProcessListEntry::~ProcessListEntry()
         LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
-
-    parent.have_space.notify_one();
+    parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
     if (user_process_list.queries.empty())
