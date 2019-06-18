@@ -3986,8 +3986,6 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(global_context.getSettingsRef());
-
     const auto & query_settings = query_context.getSettingsRef();
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
@@ -4003,7 +4001,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, timeouts, "Follower replica");
+        user, password, "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
