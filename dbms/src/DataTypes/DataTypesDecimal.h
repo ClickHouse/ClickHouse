@@ -332,12 +332,12 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
         {
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
             static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
-            if (! (out > min_int128 && out < max_int128))
+            if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
                 throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {
-            if (! (out > std::numeric_limits<ToNativeType>::min() && out < std::numeric_limits<ToNativeType>::max()))
+            if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
                 throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
         }
         return out;
