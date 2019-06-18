@@ -95,6 +95,12 @@ Returns the date.
 Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
+## toStartOfWeek(t[,mode])
+
+Rounds down a date or date with time to the nearest Sunday or Monday by mode.
+Returns the date.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
+
 ## toStartOfDay
 
 Rounds down a date with time to the start of the day.
@@ -169,9 +175,9 @@ Converts a date or date with time to a UInt16 number containing the ISO Year num
 
 Converts a date or date with time to a UInt8 number containing the ISO Week number.
 
-## week(date[,mode])
-This function returns the week number for date or datetime. The two-argument form of week() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
-`toISOWeek() `is a compatibility function that is equivalent to `week(date,3)`.
+## toWeek(date[,mode])
+This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+`toISOWeek() `is a compatibility function that is equivalent to `toWeek(date,3)`.
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range |  Week 1 is the first week … |
@@ -196,7 +202,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn't matter how many days in the new year the week contained, even if it contained only one day.
 
 ```
-week(date, [, mode][, Timezone])
+toWeek(date, [, mode][, Timezone])
 ```
 **Parameters**
 
@@ -207,7 +213,7 @@ week(date, [, mode][, Timezone])
 **Example**
 
 ``` sql
-SELECT toDate('2016-12-27') AS date, week(date) AS week0, week(date,1) AS week1, week(date,9) AS week9;
+SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
 ```
 
 ```
@@ -216,17 +222,17 @@ SELECT toDate('2016-12-27') AS date, week(date) AS week0, week(date,1) AS week1,
 └────────────┴───────┴───────┴───────┘
 ```
 
-## yearWeek(date[,mode])
+## toYearWeek(date[,mode])
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to week(). For the single-argument syntax, a mode value of 0 is used. 
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
 
-`toISOYear() `is a compatibility function that is equivalent to `intDiv(yearWeek(date,3),100)`.
+`toISOYear() `is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
 
 **Example**
 
 ``` sql
-SELECT toDate('2016-12-27') AS date, yearWeek(date) AS yearWeek0, yearWeek(date,1) AS yearWeek1, yearWeek(date,9) AS yearWeek9;
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
 ```
 
 ```
