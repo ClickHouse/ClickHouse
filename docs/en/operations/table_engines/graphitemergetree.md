@@ -80,8 +80,6 @@ patterns
 
 ### Required Columns
 
-Set the following parameters only if the name of columns differs from their default values:
-
 - `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 - `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 - `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
