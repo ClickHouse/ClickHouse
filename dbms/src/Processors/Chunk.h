@@ -19,15 +19,17 @@ class Chunk
 {
 public:
     Chunk() = default;
-    Chunk(const Chunk & other) = default;
+    Chunk(const Chunk & other) = delete;
     Chunk(Chunk && other) noexcept;
     Chunk(Columns columns_, UInt64 num_rows_);
     Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
     Chunk(MutableColumns columns_, UInt64 num_rows_);
     Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
 
-    Chunk & operator=(const Chunk & other) = default;
+    Chunk & operator=(const Chunk & other) = delete;
     Chunk & operator=(Chunk && other) noexcept;
+
+    Chunk clone() const;
 
     const Columns & getColumns() const { return columns; }
     void setColumns(Columns columns_, UInt64 num_rows_);

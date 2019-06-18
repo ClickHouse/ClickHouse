@@ -577,7 +577,7 @@ void MergeSortingTransform::remerge()
                     << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter remerge_sorter(chunks, description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(std::move(chunks), description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;
@@ -587,7 +587,7 @@ void MergeSortingTransform::remerge()
     {
         new_sum_rows_in_blocks += chunk.getNumRows();
         new_sum_bytes_in_blocks += chunk.allocatedBytes();
-        new_chunks.emplace_back(chunk);
+        new_chunks.emplace_back(std::move(chunk));
     }
 
     LOG_DEBUG(log, "Memory usage is lowered from "

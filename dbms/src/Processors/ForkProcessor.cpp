@@ -12,12 +12,14 @@ ForkProcessor::Status ForkProcessor::prepare()
 
     bool all_finished = true;
     bool all_can_push = true;
+    size_t num_active_outputs = 0;
 
     for (const auto & output : outputs)
     {
         if (!output.isFinished())
         {
             all_finished = false;
+            ++num_active_outputs;
 
             /// The order is important.
             if (!output.canPush())
@@ -55,10 +57,19 @@ ForkProcessor::Status ForkProcessor::prepare()
     /// Move data.
 
     auto data = input.pull();
+    size_t num_processed_outputs = 0;
 
     for (auto & output : outputs)
+    {
         if (!output.isFinished())  /// Skip finished outputs.
-            output.push(data);  /// Can push because no full or unneeded outputs.
+        {
+            ++num_processed_outputs;
+            if (num_processed_outputs == num_active_outputs)
+                output.push(std::move(data));  /// Can push because no full or unneeded outputs.
+            else
+                output.push(data.clone());
+        }
+    }
 
     /// Now, we pulled from input. It must be empty.
     return Status::NeedData;
