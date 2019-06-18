@@ -53,6 +53,7 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 └────┴─────┴─────────────────┘
 ```
 
+<<<<<<< HEAD
 Retrieving the data from the `Join` table, specifying the join key value:
 
 ```sql
@@ -88,6 +89,15 @@ The table can't be used in `GLOBAL JOIN` operations.
 ## Data Storage
 
 Data for the `Join` tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory on disk to be able to restore them on server restart.
+=======
+The following setting are supported by JOIN engine:
+
+- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- `max_rows_in_join`
+- `max_bytes_in_join`
+- [join_overflow_mode](../settings/settings.md#settings-join_overflow_mode)
+- [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
+>>>>>>> d86e5d451eb53cbc09ccdff87413b1a3ae489a7c
 
 At the abnormal server restart, the block of data on the disk might be lost or damaged. In this case, you may need to manually delete the file with damaged data.
 

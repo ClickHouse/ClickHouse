@@ -62,6 +62,11 @@ public:
         return getMarkRows(last);
     }
 
+    bool hasFinalMark() const
+    {
+        return getLastMarkRows() == 0;
+    }
+
     bool empty() const
     {
         return marks_rows_partial_sums.empty();
