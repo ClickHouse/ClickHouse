@@ -16,7 +16,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE 0xFFFFFF
+#define AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB
@@ -39,12 +39,57 @@ struct MovingSumData
     Array value;
     Array window;
     T sum = 0;
+
+    void add(T val, Arena * arena)
+    {
+        sum += val;
+
+        value.push_back(sum, arena);
+    }
+
+    T get(size_t idx, UInt64 win_size) const
+    {
+        if (idx < win_size)
+            return value[idx];
+        else
+            return value[idx] - value[idx - win_size];
+    }
+
+};
+
+template <typename T>
+struct MovingAvgData
+{
+    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
+    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
+    using Array = PODArray<T, 32, Allocator>;
+
+    Array value;
+    Array window;
+    T sum = 0;
+
+    void add(T val, Arena * arena)
+    {
+        sum += val;
+
+        value.push_back(sum, arena);
+    }
+
+    T get(size_t idx, UInt64 win_size) const
+    {
+        if (idx < win_size)
+            return value[idx] / win_size;
+        else
+            return (value[idx] - value[idx - win_size]) / win_size;
+    }
+
 };
 
 
-template <typename T, typename Tlimit_num_elems>
-class MovingSumImpl final
-    : public IAggregateFunctionDataHelper<MovingSumData<T>, MovingSumImpl<T, Tlimit_num_elems>>
+
+template <typename T, typename Tlimit_num_elems, typename Data>
+class MovingImpl final
+    : public IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
     DataTypePtr & data_type;
@@ -54,11 +99,11 @@ public:
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>; // probably for overflow function in the future
 
-    explicit MovingSumImpl(const DataTypePtr & data_type_, UInt64 win_size_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<MovingSumData<T>, MovingSumImpl<T, Tlimit_num_elems>>({data_type_}, {})
+    explicit MovingImpl(const DataTypePtr & data_type_, UInt64 win_size_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>({data_type_}, {})
         , data_type(this->argument_types[0]), win_size(win_size_) {}
 
-    String getName() const override { return "movingSum"; }
+    String getName() const override { return "movingXXX"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -67,11 +112,9 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        auto & sum = this->data(place).sum;
+        auto val = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
-        sum += static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
-
-        this->data(place).value.push_back(sum, arena);
+        this->data(place).add(val, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -105,7 +148,7 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (unlikely(size > AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE))
+        if (unlikely(size > AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE))
             throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         auto & value = this->data(place).value;
@@ -118,8 +161,8 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        const auto & value = this->data(place).value;
-        size_t size = value.size();
+        const auto & data = this->data(place);
+        size_t size = data.value.size();
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -130,20 +173,15 @@ public:
         {
             typename ColVecResult::Container & data_to = static_cast<ColVecResult &>(arr_to.getData()).getData();
 
-            if (!limit_num_elems)
+            for (size_t i = 0; i < size; ++i)
             {
-                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
-            }
-            else
-            {
-                size_t i = 0;
-                for (; i < std::min(static_cast<size_t>(win_size), size); ++i)
+                if (!limit_num_elems)
                 {
-                    data_to.push_back(value[i]);
+                    data_to.push_back(data.get(i, size));
                 }
-                for (; i < size; ++i)
+                else
                 {
-                    data_to.push_back(value[i] - value[i - win_size]);
+                    data_to.push_back(data.get(i, win_size));
                 }
             }
         }
@@ -157,6 +195,6 @@ public:
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
-#undef AGGREGATE_FUNCTION_MOVING_SUM_MAX_ARRAY_SIZE
+#undef AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE
 
 }
