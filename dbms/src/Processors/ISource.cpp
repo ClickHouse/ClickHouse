@@ -45,8 +45,8 @@ void ISource::work()
 {
     try
     {
-        current_chunk = generate();
-        if (!std::get<Chunk>(current_chunk))
+        current_chunk.first = generate();
+        if (!current_chunk.first)
             finished = true;
         else
             has_input = true;

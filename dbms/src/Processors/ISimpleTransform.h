@@ -15,7 +15,7 @@ protected:
     InputPort & input;
     OutputPort & output;
 
-    std::variant<Chunk, std::exception_ptr> current_data;
+    Port::Data current_data;
     bool has_input = false;
     bool transformed = false;
     bool no_more_data_needed = false;

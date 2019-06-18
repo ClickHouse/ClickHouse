@@ -41,23 +41,6 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_
 {
 }
 
-Chunk::Chunk(Chunk && other) noexcept
-    : columns(std::move(other.columns))
-    , num_rows(other.num_rows)
-    , chunk_info(std::move(other.chunk_info))
-{
-    other.num_rows = 0;
-}
-
-Chunk & Chunk::operator=(Chunk && other) noexcept
-{
-    columns = std::move(other.columns);
-    chunk_info = std::move(other.chunk_info);
-    num_rows = other.num_rows;
-    other.num_rows = 0;
-    return *this;
-}
-
 Chunk Chunk::clone() const
 {
     return Chunk(getColumns(), getNumRows());
