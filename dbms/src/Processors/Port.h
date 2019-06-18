@@ -26,7 +26,7 @@ protected:
     class State
     {
     public:
-        using Data = std::variant<Chunk, std::exception_ptr>;
+        using Data = std::pair<Chunk, std::exception_ptr>;
 
         State() = default;
 
@@ -47,12 +47,12 @@ protected:
 
         void push(Chunk chunk)
         {
-            pushData(std::move(chunk));
+            pushData({std::move(chunk), {}});
         }
 
         void push(std::exception_ptr exception)
         {
-            pushData(std::move(exception));
+            pushData({Chunk(), std::move(exception)});
         }
 
         auto pullData()
@@ -72,10 +72,10 @@ protected:
         {
             auto cur_data = pullData();
 
-            if (std::holds_alternative<std::exception_ptr>(cur_data))
-                std::rethrow_exception(std::get<std::exception_ptr>(std::move(cur_data)));
+            if (cur_data.second)
+                std::rethrow_exception(std::move(cur_data.second));
 
-            return std::get<Chunk>(std::move(cur_data));
+            return std::move(cur_data.first);
         }
 
         bool hasData() const
@@ -103,8 +103,7 @@ protected:
             finished = true;
             has_data = false;
 
-            if (std::holds_alternative<Chunk>(data))
-                std::get<Chunk>(data).clear();
+            data.first.clear();
         }
 
         /// Only empty ports are finished.
@@ -320,10 +319,10 @@ public:
 
     void pushData(Data data)
     {
-        if (std::holds_alternative<std::exception_ptr>(data))
-            push(std::get<std::exception_ptr>(std::move(data)));
+        if (data.second)
+            push(std::move(data.second));
         else
-            push(std::get<Chunk>(std::move(data)));
+            push(std::move(data.first));
     }
 
     void finish()

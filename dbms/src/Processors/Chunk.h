@@ -20,14 +20,28 @@ class Chunk
 public:
     Chunk() = default;
     Chunk(const Chunk & other) = delete;
-    Chunk(Chunk && other) noexcept;
+    Chunk(Chunk && other) noexcept
+        : columns(std::move(other.columns))
+        , num_rows(other.num_rows)
+        , chunk_info(std::move(other.chunk_info))
+    {
+        other.num_rows = 0;
+    }
+
     Chunk(Columns columns_, UInt64 num_rows_);
     Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
     Chunk(MutableColumns columns_, UInt64 num_rows_);
     Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
 
     Chunk & operator=(const Chunk & other) = delete;
-    Chunk & operator=(Chunk && other) noexcept;
+    Chunk & operator=(Chunk && other) noexcept
+    {
+        columns = std::move(other.columns);
+        chunk_info = std::move(other.chunk_info);
+        num_rows = other.num_rows;
+        other.num_rows = 0;
+        return *this;
+    }
 
     Chunk clone() const;
 
