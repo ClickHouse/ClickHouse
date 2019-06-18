@@ -190,13 +190,16 @@ def run_gofakes3():
 
     def gofakes3_thread():
         with tempfile.TemporaryDirectory() as d:
-            subprocess.run(['git', 'clone', 'https://github.com/johannesboyne/gofakes3'], cwd=d).check_returncode()
-            repo = os.path.join(d, 'gofakes3')
-            subprocess.run(['git', 'checkout', 'd419e1bd286f47170a4f87851a81f5c30107551a'], cwd=repo).check_returncode()
-            tool = os.path.join(repo, 'cmd', 'gofakes3', 'main.go')
-            subprocess.run(['go', 'build', tool], cwd=d).check_returncode()
-            l.release()
-            subprocess.run(['./main', '-backend', 'memory', '-host', ':{}'.format(fakes3_port), '-initialbucket', bucket], cwd=d).check_returncode()
+            try:
+                subprocess.run(['git', 'clone', 'https://github.com/johannesboyne/gofakes3'], cwd=d).check_returncode()
+                repo = os.path.join(d, 'gofakes3')
+                subprocess.run(['git', 'checkout', 'd419e1bd286f47170a4f87851a81f5c30107551a'], cwd=repo).check_returncode()
+                tool = os.path.join(repo, 'cmd', 'gofakes3', 'main.go')
+                subprocess.run(['go', 'build', tool], cwd=repo).check_returncode()
+            finally:
+                l.release()
+            binary = os.path.join(repo, 'main')
+            subprocess.run([binary, '-backend', 'memory', '-host', ':{}'.format(fakes3_port), '-initialbucket', bucket]).check_returncode()
 
     thread = threading.Thread(target=gofakes3_thread)
     thread.start()
