@@ -753,8 +753,8 @@ Default value: 0.
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
 
 Possible values:
 
@@ -762,6 +762,11 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
+
+**See Also**
+
+- [Multiple JOIN](../../query_language/select.md#select-join)
+
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 

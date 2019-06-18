@@ -667,4 +667,22 @@ load_balancing = first_or_random
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
+
+Включает или отключает:
+
+1. Перезапись запросов из синтаксиса с запятыми в синтаксис `JOIN ON/USING`. Если значение параметра равно 0, ClickHouse не обрабатывает запросы с синтаксисом, использующим запятые, и генерирует исключение.
+2. Преобразование `CROSS JOIN` в `INNER JOIN`, если условия объединения таблиц это позволяют.
+
+Возможные значения:
+
+- 0 — выключена.
+- 1 — включена.
+
+Значение по умолчанию: 1.
+
+**Смотрите также**
+
+- [Множественный JOIN](../../query_language/select.md#select-join)
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->

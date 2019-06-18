@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
@@ -29,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
@@ -57,12 +59,14 @@ namespace
 }
 
 
-StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool)
+StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
+    StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker)
     : storage(storage), pool{pool}, path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
     , log{&Logger::get(getLoggerName())}
+    , monitor_blocker(monitor_blocker)
 {
     const Settings & settings = storage.global_context.getSettingsRef();
     should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
@@ -84,6 +88,14 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     }
 }
 
+void StorageDistributedDirectoryMonitor::flushAllData()
+{
+    if (!quit)
+    {
+        std::unique_lock lock{mutex};
+        processFiles();
+    }
+}
 
 void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 {
@@ -113,18 +125,25 @@ void StorageDistributedDirectoryMonitor::run()
     {
         auto do_sleep = true;
 
-        try
+        if (!monitor_blocker.isCancelled())
         {
-            do_sleep = !findFiles();
+            try
+            {
+                do_sleep = !processFiles();
+            }
+            catch (...)
+            {
+                do_sleep = true;
+                ++error_count;
+                sleep_time = std::min(
+                    std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
+                    std::chrono::milliseconds{max_sleep_time});
+                tryLogCurrentException(getLoggerName().data());
+            }
         }
-        catch (...)
+        else
         {
-            do_sleep = true;
-            ++error_count;
-            sleep_time = std::min(
-                std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
-                std::chrono::milliseconds{max_sleep_time});
-            tryLogCurrentException(getLoggerName().data());
+            LOG_DEBUG(log, "Skipping send data over distributed table.");
         }
 
         if (do_sleep)
@@ -142,8 +161,7 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
-    const auto pool_factory = [&storage, &timeouts] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
@@ -164,7 +182,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         }
 
         return std::make_shared<ConnectionPool>(
-            1, address.host_name, address.port, address.default_database, address.user, address.password, timeouts,
+            1, address.host_name, address.port, address.default_database, address.user, address.password,
             storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
@@ -174,7 +192,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-bool StorageDistributedDirectoryMonitor::findFiles()
+bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
 
@@ -212,7 +230,8 @@ bool StorageDistributedDirectoryMonitor::findFiles()
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
     LOG_TRACE(log, "Started processing `" << file_path << '`');
-    auto connection = pool->get();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
+    auto connection = pool->get(timeouts);
 
     try
     {
@@ -224,7 +243,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         std::string insert_query;
         readQueryAndSettings(in, insert_settings, insert_query);
 
-        RemoteBlockOutputStream remote{*connection, insert_query, &insert_settings};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -334,8 +353,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             WriteBufferFromFile out{parent.current_batch_file_path};
             writeText(out);
         }
-
-        auto connection = parent.pool->get();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
+        auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
         try
@@ -361,7 +380,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, insert_query, &insert_settings);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings);
                     remote->writePrefix();
                 }
 
