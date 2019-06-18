@@ -48,8 +48,8 @@ PerformanceTestInfo::PerformanceTestInfo(
     : profiles_file(profiles_file_)
     , settings(global_settings_)
 {
-    test_name = config->getString("name");
     path = config->getString("path");
+    test_name = fs::path(path).stem().string();
     if (config->has("main_metric"))
     {
         Strings main_metrics;
