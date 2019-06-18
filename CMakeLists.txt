@@ -67,8 +67,8 @@ if (NOT MAKE_STATIC_LIBRARIES)
     option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
 endif ()
 
-if(MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    message(WARNING "Defining SPLIT_SHARED_LIBRARIES=1 without MAKE_STATIC_LIBRARIES=0 have no effect.")
+if (MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without MAKE_STATIC_LIBRARIES=0 have no effect.")
 endif()
 
 if (NOT MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
