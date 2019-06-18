@@ -35,35 +35,53 @@ struct ZeroTransform
     static inline UInt16 execute(UInt16, UInt8, const DateLUTImpl &) { return 0; }
 };
 
-struct WeekImpl
+struct ToWeekImpl
 {
-    static constexpr auto name = "week";
+    static constexpr auto name = "toWeek";
 
     static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        UInt32 year = 0;
-        return time_zone.calc_week(time_zone.toDayNum(t), week_mode, &year);
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
     }
     static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        UInt32 year = 0;
-        return time_zone.calc_week(DayNum(d), week_mode, &year);
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
+        return yw.second;
     }
 
     using FactorTransform = ZeroTransform;
 };
 
-struct YearWeekImpl
+struct ToYearWeekImpl
 {
-    static constexpr auto name = "yearWeek";
+    static constexpr auto name = "toYearWeek";
 
     static inline UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.calc_yearWeek(time_zone.toDayNum(t), week_mode);
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
     }
     static inline UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.calc_yearWeek(DayNum(d), week_mode);
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfWeekImpl
+{
+    static constexpr auto name = "toStartOfWeek";
+
+    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
 
     using FactorTransform = ZeroTransform;
