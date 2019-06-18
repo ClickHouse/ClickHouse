@@ -11,8 +11,8 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(Block header)
-        : IOutputFormat(std::move(header), out), queue(1), finished_processing(false) {}
+    explicit LazyOutputFormat(const Block & header)
+        : IOutputFormat(header, out), queue(1), finished_processing(false) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -27,7 +27,7 @@ public:
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
 protected:
-    void consume(Chunk chunk) override { queue.push(chunk); }
+    void consume(Chunk chunk) override { queue.emplace(std::move(chunk)); }
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
 
@@ -36,7 +36,7 @@ protected:
         finished_processing = true;
 
         /// In case we are waiting for result.
-        queue.push({});
+        queue.emplace(Chunk());
     }
 
 private:

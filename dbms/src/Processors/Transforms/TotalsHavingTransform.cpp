@@ -153,7 +153,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     if (!chunk)
         return;
 
-    auto finalized = chunk;
+    auto finalized = chunk.clone();
     if (final)
         finalizeChunk(finalized);
 

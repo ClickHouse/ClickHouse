@@ -58,6 +58,11 @@ Chunk & Chunk::operator=(Chunk && other) noexcept
     return *this;
 }
 
+Chunk Chunk::clone() const
+{
+    return Chunk(getColumns(), getNumRows());
+}
+
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
 {
     columns = std::move(columns_);
