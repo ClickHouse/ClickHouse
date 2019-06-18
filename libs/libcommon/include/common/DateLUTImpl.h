@@ -388,7 +388,7 @@ public:
     {
         return toISOWeek(toDayNum(t));
     }
-    
+
     /*
       The bits in week_mode has the following meaning:
        WeekModeFlag::MONDAY_FIRST (0)  If not set	Sunday is first day of week
@@ -445,7 +445,7 @@ public:
         // get weekday from first day in year.
         UInt16 weekday = calc_weekday(DayNum(first_daynr), !monday_first_mode);
 
-        if (toMonth(d) == 1 && toDayOfMonth(d) <= 7 - weekday)
+        if (toMonth(d) == 1 && toDayOfMonth(d) <= static_cast<UInt32>(7 - weekday))
         {
             if (!week_year_mode && ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4)))
                 return yw;
