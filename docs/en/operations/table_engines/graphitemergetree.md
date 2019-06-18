@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+See a detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
