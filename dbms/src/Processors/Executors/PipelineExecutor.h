@@ -42,6 +42,9 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
 
+        IProcessor * processor;
+        UInt64 processors_id;
+
         size_t num_executed_jobs = 0;
         UInt64 execution_time_ns = 0;
         UInt64 preparation_time_ns = 0;
@@ -60,7 +63,12 @@ private:
         IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
         std::unique_ptr<ExecutionState> execution_state;
 
-        Node() { execution_state = std::make_unique<ExecutionState>(); }
+        Node(IProcessor * processor_, UInt64 processor_id) : processor(processor_)
+        {
+            execution_state = std::make_unique<ExecutionState>();
+            execution_state->processor = processor;
+            execution_state->processors_id = processor_id;
+        }
     };
 
     using Nodes = std::vector<Node>;
@@ -80,8 +88,8 @@ private:
 
     EventCounter event_counter;
 
-    UInt64 num_waited_tasks = 0;
-    UInt64 num_tasks_to_wait = 0;
+    std::atomic<UInt64> num_waited_tasks;
+    std::atomic<UInt64> num_tasks_to_wait;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
@@ -106,6 +114,7 @@ private:
     std::vector<ExecutionState *> execution_states_queue;
 
     std::mutex main_executor_mutex;
+    std::atomic_bool main_executor_flag;
     std::condition_variable main_executor_condvar;
 
     std::atomic<size_t> num_waiting_threads;
@@ -138,7 +147,7 @@ private:
     void processPrepareQueue();
     void processAsyncQueue();
 
-    void addJob(IProcessor * processor, ExecutionState * execution_state);
+    void addJob(ExecutionState * execution_state);
     void addAsyncJob(UInt64 pid);
     bool tryAssignJob(ExecutionState * state);
     void assignJobs();
