@@ -92,6 +92,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     virtual bool hasColumn(const String & column_name) const;
 
     Block getSampleBlock() const; /// ordinary + materialized.
+    Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 

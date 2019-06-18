@@ -57,8 +57,6 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-
-
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
@@ -66,6 +64,8 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
         /// Format Native ignores header and write blocks as is.
         if (query.format == "Native")
             return {};
+        else if (query.no_destination)
+            return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
     }
@@ -108,14 +108,14 @@ BlockIO InterpreterInsertQuery::execute()
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
     auto query_sample_block = getSampleBlock(query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, table->getSampleBlock(), table->getColumns().getDefaults(), context);
+        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
