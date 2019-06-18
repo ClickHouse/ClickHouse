@@ -30,7 +30,7 @@ protected:
 
         State() = default;
 
-        void pushData(Data data_)
+        void ALWAYS_INLINE pushData(Data data_)
         {
             if (finished)
                 throw Exception("Cannot push block to finished port.", ErrorCodes::LOGICAL_ERROR);
@@ -45,17 +45,17 @@ protected:
             has_data = true;
         }
 
-        void push(Chunk chunk)
+        void ALWAYS_INLINE push(Chunk chunk)
         {
             pushData({std::move(chunk), {}});
         }
 
-        void push(std::exception_ptr exception)
+        void ALWAYS_INLINE push(std::exception_ptr exception)
         {
             pushData({Chunk(), std::move(exception)});
         }
 
-        auto pullData()
+        auto ALWAYS_INLINE pullData()
         {
             if (!needed)
                 throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
@@ -68,7 +68,7 @@ protected:
             return std::move(data);
         }
 
-        Chunk pull()
+        Chunk ALWAYS_INLINE pull()
         {
             auto cur_data = pullData();
 
@@ -78,7 +78,7 @@ protected:
             return std::move(cur_data.first);
         }
 
-        bool hasData() const
+        bool ALWAYS_INLINE hasData() const
         {
 // TODO: check for output port only.
 //            if (finished)
@@ -92,13 +92,13 @@ protected:
 
         /// Only for output port.
         /// If port still has data, it will be finished after pulling.
-        void finish()
+        void ALWAYS_INLINE finish()
         {
             finished = true;
         }
 
         /// Only for input port. Removes data if has.
-        void close()
+        void ALWAYS_INLINE close()
         {
             finished = true;
             has_data = false;
@@ -107,10 +107,10 @@ protected:
         }
 
         /// Only empty ports are finished.
-        bool isFinished() const { return finished && !has_data; }
-        bool isSetFinished() const { return finished; }
+        bool ALWAYS_INLINE isFinished() const { return finished && !has_data; }
+        bool ALWAYS_INLINE isSetFinished() const { return finished; }
 
-        void setNeeded()
+        void ALWAYS_INLINE setNeeded()
         {
             if (isFinished())
                 throw Exception("Can't set port needed if it is finished.", ErrorCodes::LOGICAL_ERROR);
@@ -121,7 +121,7 @@ protected:
             needed = true;
         }
 
-        void setNotNeeded()
+        void ALWAYS_INLINE setNotNeeded()
         {
 //            if (finished)
 //                throw Exception("Can't set port not needed if it is finished.", ErrorCodes::LOGICAL_ERROR);
@@ -130,7 +130,7 @@ protected:
         }
 
         /// Only for output port.
-        bool isNeeded() const { return needed && !finished; }
+        bool ALWAYS_INLINE isNeeded() const { return needed && !finished; }
 
     private:
         Data data;
@@ -155,15 +155,15 @@ public:
     Port(Block header, IProcessor * processor) : header(std::move(header)), processor(processor) {}
 
     const Block & getHeader() const { return header; }
-    bool isConnected() const { return state != nullptr; }
+    bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
 
-    void assumeConnected() const
+    void ALWAYS_INLINE assumeConnected() const
     {
         if (!isConnected())
             throw Exception("Port is not connected", ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool hasData() const
+    bool ALWAYS_INLINE hasData() const
     {
         assumeConnected();
         return state->hasData();
@@ -204,7 +204,7 @@ public:
 
     void setVersion(UInt64 * value) { version = value; }
 
-    Chunk pull()
+    Chunk ALWAYS_INLINE pull()
     {
         if (version)
             ++(*version);
@@ -213,7 +213,7 @@ public:
         return state->pull();
     }
 
-    Data pullData()
+    Data ALWAYS_INLINE pullData()
     {
         if (version)
             ++(*version);
@@ -222,13 +222,13 @@ public:
         return state->pullData();
     }
 
-    bool isFinished() const
+    bool ALWAYS_INLINE isFinished() const
     {
         assumeConnected();
         return state->isFinished();
     }
 
-    void setNeeded()
+    void ALWAYS_INLINE setNeeded()
     {
         assumeConnected();
 
@@ -238,13 +238,13 @@ public:
         state->setNeeded();
     }
 
-    void setNotNeeded()
+    void ALWAYS_INLINE setNotNeeded()
     {
         assumeConnected();
         state->setNotNeeded();
     }
 
-    void close()
+    void ALWAYS_INLINE close()
     {
         if (version && !isFinished())
             ++(*version);
@@ -287,7 +287,7 @@ public:
 
     void setVersion(UInt64 * value) { version = value; }
 
-    void push(Chunk chunk)
+    void ALWAYS_INLINE push(Chunk chunk)
     {
         if (version)
             ++(*version);
@@ -308,7 +308,7 @@ public:
         state->push(std::move(chunk));
     }
 
-    void push(std::exception_ptr exception)
+    void ALWAYS_INLINE push(std::exception_ptr exception)
     {
         if (version)
             ++(*version);
@@ -317,7 +317,7 @@ public:
         state->push(std::move(exception));
     }
 
-    void pushData(Data data)
+    void ALWAYS_INLINE pushData(Data data)
     {
         if (data.second)
             push(std::move(data.second));
@@ -325,7 +325,7 @@ public:
             push(std::move(data.first));
     }
 
-    void finish()
+    void ALWAYS_INLINE finish()
     {
         if (version && !isFinished())
             ++(*version);
@@ -334,19 +334,19 @@ public:
         state->finish();
     }
 
-    bool isNeeded() const
+    bool ALWAYS_INLINE isNeeded() const
     {
         assumeConnected();
         return state->isNeeded();
     }
 
-    bool isFinished() const
+    bool ALWAYS_INLINE isFinished() const
     {
         assumeConnected();
         return state->isSetFinished();
     }
 
-    bool canPush() const { return isNeeded() && !hasData(); }
+    bool ALWAYS_INLINE canPush() const { return isNeeded() && !hasData(); }
 
     InputPort & getInputPort()
     {
