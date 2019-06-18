@@ -31,6 +31,7 @@ private:
 
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
+    void flushDistributed(ASTSystemQuery & query);
 };
 
 
