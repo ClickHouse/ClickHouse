@@ -62,7 +62,7 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-                "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
+                "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     for (const auto & bloom_filter : bloom_filters)
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
@@ -703,7 +703,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     }
     else
     {
-        throw Exception("Unknown index type: `" + node->name + "`.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unknown index type: " + backQuote(node->name), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
