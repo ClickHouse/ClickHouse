@@ -336,7 +336,8 @@ def test_kafka_flush_on_big_message(kafka_cluster):
                 kafka_topic_list = 'flush',
                 kafka_group_name = 'flush',
                 kafka_format = 'JSONEachRow',
-                kafka_max_block_size = 10;
+                kafka_max_block_size = 10,
+                kafka_commit_on_every_batch = 1;
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
             ORDER BY key;
