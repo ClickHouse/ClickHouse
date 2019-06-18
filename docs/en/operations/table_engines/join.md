@@ -2,7 +2,7 @@
 
 Prepared data structure for using in [JOIN](../../query_language/select.md#select-join) operations.
 
-## Creating a table
+## Creating a Table
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -24,7 +24,56 @@ Set the parameters `join_strictness` and `join_type` without quotes, for example
 
 ## Table Usage
 
-The table can't be used in `GLOBAL JOIN` operations.
+### Example
+
+Creating the right-side table:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+```
+
+Creating the left-side `Join` table:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
+```
+
+Joining the tables:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_nulls = 1
+```
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │            ᴺᵁᴸᴸ │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+Retrieving the data from the `Join` table, specifying the join key value:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1))
+```
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+### Selecting and Inserting Data
+
+You can use `INSERT` to add data to the table. For the `ANY` strictness, data for duplicated keys are ignored. For the `ALL` strictness, all rows are kept.
+
+You cannot perform the `SELECT` query directly from the table. Use one of the following ways:
+
+- Place the table at the right side in a `JOIN` clause.
+- Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which allows to extract data from the table as from a dictionary.
+
+### Limitations and Settings
 
 When creating a table, the following settings are applied:
 
@@ -34,18 +83,11 @@ When creating a table, the following settings are applied:
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
 - [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
-## Selecting and Inserting data
-
-You can use `INSERT` to add data to the table. For the `ANY` strictness, data for duplicated keys are ignored. For the `ALL` strictness, data are counted.
-
-You cannot perform the `SELECT` query directly from the table. Use one of the following ways:
-
-- Place the table at the right side in a `JOIN` clause.
-- Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which allows to extract data from the table as from a dictionary.
+The table can't be used in `GLOBAL JOIN` operations.
 
 ## Data Storage
 
-Data for the `Join` tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory of tables on the disk. When starting the server, this data is loaded to RAM.
+Data for the `Join` tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory on disk to be able to restore them on server restart.
 
 At the abnormal server restart, the block of data on the disk might be lost or damaged. In this case, you may need to manually delete the file with damaged data.
 
