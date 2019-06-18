@@ -56,6 +56,37 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapContains {#bitmap_functions-bitmapcontains}
+
+Checks whether bitmap contains an element.
+
+```
+bitmapContains(bitmap, expr)
+```
+
+**Parameters**
+
+- `bitmap` – Bitmap object.
+- `expr` – [Expression](../syntax.md#syntax-expressions), resulting to the value of [UInt32](../../data_types/int_uint.md) data type.
+
+**Returned value**
+
+- 0 — If `bitmap` doesn't contain the result of `expr`, or if `bitmap` is empty.
+- 1 — If `bitmap` contains the result of `expr`.
+
+Type: `UInt8`.
+
+**Example**
+
+``` sql
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+```
+```text
+┌─res─┐
+│  1  │
+└─────┘
+```
+
 ## bitmapHasAny
 
 Checks whether two bitmaps have intersection by some elements.
@@ -63,6 +94,8 @@ Checks whether two bitmaps have intersection by some elements.
 ```
 bitmapHasAny(bitmap1, bitmap2)
 ```
+
+If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficient.
 
 **Parameters**
 
@@ -329,32 +362,6 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 ┌─res─┐
 │   2 │
-└─────┘
-```
-
-## bitmapContains
-
-Returns 1 if bitmap contains the given element, 0 otherwise.
-For empty bitmaps returns 0.
-
-```
-bitmapContains(bitmap,element)
-```
-
-**Parameters**
-
-- `bitmap` – bitmap object.
-- `element` – UInt32 integer.
-
-**Example**
-
-``` sql
-select bitmapContains(bitmapBuild([1,5,7,9]),CAST(9, 'UInt32')) AS res;
-```
-
-```
-┌─res─┐
-│  1  │
 └─────┘
 ```
 
