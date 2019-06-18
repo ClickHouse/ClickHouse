@@ -138,7 +138,7 @@ private:
     void processPrepareQueue();
     void processAsyncQueue();
 
-    void addJob(UInt64 pid);
+    void addJob(IProcessor * processor, ExecutionState * execution_state);
     void addAsyncJob(UInt64 pid);
     bool tryAssignJob(ExecutionState * state);
     void assignJobs();

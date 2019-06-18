@@ -197,11 +197,11 @@ bool PipelineExecutor::tryAssignJob(ExecutionState * state)
     return false;
 }
 
-void PipelineExecutor::addJob(UInt64 pid)
+void PipelineExecutor::addJob(IProcessor * processor, ExecutionState * execution_state)
 {
 ///    if (!threads.empty())
     {
-        auto job = [processor = graph[pid].processor, execution_state = graph[pid].execution_state.get()]()
+        auto job = [processor, execution_state]()
         {
             // SCOPE_EXIT(
                     /// while (!finished_execution_queue.push(pid));
@@ -223,7 +223,7 @@ void PipelineExecutor::addJob(UInt64 pid)
             }
         };
 
-        graph[pid].execution_state->job = std::move(job);
+        execution_state->job = std::move(job);
         /// auto * state = graph[pid].execution_state.get();
 
 //        bool is_stream_updated = false;
@@ -361,7 +361,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
         case IProcessor::Status::Ready:
         {
             node.status = ExecStatus::Executing;
-            addJob(pid);
+            /// addJob(pid);
             break;
         }
         case IProcessor::Status::Async:
@@ -477,6 +477,7 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
     Stopwatch total_time_watch;
 
     ExecutionState * state = nullptr;
+    IProcessor * processor = nullptr;
     UInt64 processor_to_execute = 0;
     bool found_processor_to_execute = false;
 
@@ -485,6 +486,8 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
         {
+            Stopwatch processing_time_watch;
+
             {
                 std::unique_lock lock(main_executor_mutex);
 
@@ -493,7 +496,6 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                     if (finished)
                         break;
 
-                    Stopwatch processing_time_watch;
 
                     while (!prepare_stack.empty())
                     {
@@ -507,6 +509,7 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                             found_processor_to_execute = true;
                             processor_to_execute = proc;
                             state = graph[processor_to_execute].execution_state.get();
+                            processor = graph[processor_to_execute].processor;
 
                             break;
                         }
@@ -514,7 +517,6 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
 
                     if (found_processor_to_execute)
                     {
-                        processing_time_ns += processing_time_watch.elapsed();
                         break;
                     }
 
@@ -523,17 +525,16 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                         finished = true;
                         main_executor_condvar.notify_all();
                         finish_condvar.notify_one();
-                        processing_time_ns += processing_time_watch.elapsed();
                         break;
                     }
-
-                    processing_time_ns += processing_time_watch.elapsed();
 
                     main_executor_condvar.wait(lock, [&]() { return finished || !prepare_stack.empty(); });
 
                     num_waiting_threads.fetch_sub(1);
                 }
             }
+
+            processing_time_ns += processing_time_watch.elapsed();
         }
 
         if (finished)
@@ -546,6 +547,8 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
         {
             if (finished)
                 break;
+
+            addJob(processor, state);
 
             {
                 Stopwatch execution_time_watch;
@@ -572,7 +575,9 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
 
                 /// Execute again if can.
                 if (graph[processor_to_execute].status == ExecStatus::Executing)
+                {
                     found_processor_to_execute = true;
+                }
 
                 std::queue<UInt64> neighbours;
 
@@ -595,6 +600,7 @@ void PipelineExecutor::executeSingleThread(size_t num_threads)
                         found_processor_to_execute = true;
                         processor_to_execute = current_processor;
                         state = graph[processor_to_execute].execution_state.get();
+                        processor = graph[processor_to_execute].processor;
                     }
                 }
 
