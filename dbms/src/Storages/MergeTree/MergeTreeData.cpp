@@ -212,7 +212,7 @@ std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionF
             if (startsWith(table_it.name(), "tmp"))
                 continue;
 
-            if (table_it.path().isDirectory())
+            if (Poco::File(table_it.path()).isDirectory())
             {
                 for (Poco::DirectoryIterator part_it(table_it.path()); part_it != end; ++part_it)
                 {
