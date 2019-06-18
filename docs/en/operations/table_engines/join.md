@@ -26,11 +26,12 @@ CREATE TABLE join_any_left_null ( ... ) ENGINE = Join(ANY, LEFT, ...) SETTINGS j
 ```
 
 The following setting are supported by JOIN engine:
-* `join_use_nulls`
-* `max_rows_in_join`
-* `max_bytes_in_join`
-* `join_overflow_mode`
-* `join_any_take_last_row` 
+
+- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- `max_rows_in_join`
+- `max_bytes_in_join`
+- [join_overflow_mode](../settings/settings.md#settings-join_overflow_mode)
+- [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->
