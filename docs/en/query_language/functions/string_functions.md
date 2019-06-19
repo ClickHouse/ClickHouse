@@ -165,9 +165,9 @@ Returns a string that removes the whitespace characters on right side.
 
 Returns a string that removes the whitespace characters on either side.
 
-## crc32(s)
+## CRC32(s)
 
-Returns the crc32 hashsum of a string
+Returns the CRC32 checksum of a string
 The result type is UInt32.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->
