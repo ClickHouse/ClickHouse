@@ -28,7 +28,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.index_granularity_info.fixed_index_granularity;
+    index_granularity = data.settings.index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
@@ -47,7 +47,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedAST(data.ttl_table_ast);
     skip_indices = data.getIndices().toString();
-    index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
+    index_granularity_bytes = data.settings.index_granularity_bytes;
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -115,9 +115,6 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("granularity bytes: ", in))
         in >> index_granularity_bytes >> "\n";
-    else
-        index_granularity_bytes = 0;
-
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)

@@ -197,57 +197,6 @@ MergeTreeData::MergeTreeData(
                 "MergeTree data format version on disk doesn't support custom partitioning",
                 ErrorCodes::METADATA_MISMATCH);
     }
-    index_granularity_info.init(settings, format_version, full_path);
-}
-
-
-
-std::optional<std::string> MergeTreeData::IndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_table) const
-{
-    if (Poco::File(path_to_table).exists())
-    {
-        Poco::DirectoryIterator end;
-        for (Poco::DirectoryIterator table_it(path_to_table); table_it != end; ++table_it)
-        {
-            if (startsWith(table_it.name(), "tmp"))
-                continue;
-
-            if (Poco::File(table_it.path()).isDirectory())
-            {
-                for (Poco::DirectoryIterator part_it(table_it.path()); part_it != end; ++part_it)
-                {
-                    const auto & ext = part_it.path().getExtension();
-                    if (ext == "mrk" || ext == "mrk2")
-                        return ext;
-                }
-            }
-        }
-    }
-    return {};
-}
-
-void MergeTreeData::IndexGranularityInfo::init(
-    const MergeTreeSettings & storage_settings,
-    const MergeTreeDataFormatVersion & format,
-    const std::string & path_to_table)
-{
-    fixed_index_granularity = storage_settings.index_granularity;
-    auto mrk_ext = getMrkExtensionFromFS(path_to_table);
-    /// Granularity is fixed
-    if (storage_settings.index_granularity_bytes == 0 || (mrk_ext && *mrk_ext == "mrk") || format < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        is_adaptive = false;
-        mark_size_in_bytes = sizeof(UInt64) * 2;
-        marks_file_extension = ".mrk";
-        index_granularity_bytes = 0;
-    }
-    else
-    {
-        is_adaptive = true;
-        mark_size_in_bytes = sizeof(UInt64) * 3;
-        marks_file_extension = ".mrk2";
-        index_granularity_bytes = storage_settings.index_granularity_bytes;
-    }
 }
 
 
@@ -1317,6 +1266,11 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
+    String part_mrk_file_extension;
+    if (part)
+        part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
+    else
+        part_mrk_file_extension = settings.index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1337,7 +1291,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_indices_set.count(index.name))
         {
             out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
+            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = "";
         }
     }
 
@@ -1366,7 +1320,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + index_granularity_info.marks_file_extension] = "";
+                        out_rename_map[file_name + part_mrk_file_extension] = "";
                     }
                 }, {});
             }
@@ -1441,7 +1395,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
+                    out_rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
                 }, {});
         }
 

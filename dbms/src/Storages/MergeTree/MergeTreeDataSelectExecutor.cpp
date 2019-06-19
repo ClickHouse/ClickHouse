@@ -623,17 +623,16 @@ namespace
 size_t roundRowsOrBytesToMarks(
     size_t rows_setting,
     size_t bytes_setting,
-    const MergeTreeData::IndexGranularityInfo & granularity_info)
+    size_t rows_granularity,
+    size_t bytes_granularity)
 {
-    if (!granularity_info.is_adaptive)
+    if (bytes_granularity == 0)
     {
-        size_t fixed_index_granularity = granularity_info.fixed_index_granularity;
-        return  (rows_setting + fixed_index_granularity - 1) / fixed_index_granularity;
+        return  (rows_setting + rows_granularity - 1) / rows_granularity;
     }
     else
     {
-        size_t index_granularity_bytes = granularity_info.index_granularity_bytes;
-        return (bytes_setting + index_granularity_bytes - 1) / index_granularity_bytes;
+        return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
     }
 }
 
@@ -650,20 +649,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
-        settings.merge_tree_max_rows_to_use_cache,
-        settings.merge_tree_max_bytes_to_use_cache,
-        data.index_granularity_info);
-
-    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
-        settings.merge_tree_min_rows_for_concurrent_read,
-        settings.merge_tree_min_bytes_for_concurrent_read,
-        data.index_granularity_info);
 
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
     size_t sum_marks = 0;
     size_t total_rows = 0;
+
+    size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
         total_rows += parts[i].getRowsCount();
@@ -674,7 +666,25 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             sum_marks_in_parts[i] += range.end - range.begin;
 
         sum_marks += sum_marks_in_parts[i];
+        if (parts[i].data_part->index_granularity_info.is_adaptive)
+            adaptive_parts++;
     }
+
+    size_t index_granularity_bytes = 0;
+    if (adaptive_parts > parts.size() / 2)
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+
+    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+        settings.merge_tree_max_rows_to_use_cache,
+        settings.merge_tree_max_bytes_to_use_cache,
+        data.settings.index_granularity,
+        index_granularity_bytes);
+
+    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
+        settings.merge_tree_min_rows_for_concurrent_read,
+        settings.merge_tree_min_bytes_for_concurrent_read,
+        data.settings.index_granularity,
+        index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
@@ -798,15 +808,27 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & virt_columns,
     const Settings & settings) const
 {
+
+    size_t sum_marks = 0;
+    size_t adaptive_parts = 0;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        for (size_t j = 0; j < parts[i].ranges.size(); ++j)
+            sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+
+        if (parts[i].data_part->index_granularity_info.is_adaptive)
+            adaptive_parts++;
+    }
+
+    size_t index_granularity_bytes = 0;
+    if (adaptive_parts >= parts.size() / 2)
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,
-        data.index_granularity_info);
-
-    size_t sum_marks = 0;
-    for (size_t i = 0; i < parts.size(); ++i)
-        for (size_t j = 0; j < parts[i].ranges.size(); ++j)
-            sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+        data.settings.index_granularity,
+        index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
@@ -827,6 +849,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.sorting_key_expr));
     }
+
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
@@ -921,7 +944,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         size_t min_marks_for_seek = roundRowsOrBytesToMarks(
             settings.merge_tree_min_rows_for_seek,
             settings.merge_tree_min_bytes_for_seek,
-            data.index_granularity_info);
+            part->index_granularity_info.fixed_index_granularity,
+            part->index_granularity_info.index_granularity_bytes);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
@@ -1006,7 +1030,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
         settings.merge_tree_min_bytes_for_seek,
-        data.index_granularity_info);
+        part->index_granularity_info.index_granularity_bytes,
+        part->index_granularity_info.fixed_index_granularity);
 
     size_t granules_dropped = 0;
 

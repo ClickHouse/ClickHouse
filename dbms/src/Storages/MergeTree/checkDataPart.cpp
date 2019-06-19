@@ -433,7 +433,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     return checkDataPart(
         data_part->getFullPath(),
         data_part->index_granularity,
-        data_part->storage.index_granularity_info.marks_file_extension,
+        data_part->index_granularity_info.marks_file_extension,
         require_checksums,
         primary_key_data_types,
         indices,
