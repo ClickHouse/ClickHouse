@@ -2,6 +2,7 @@
 
 #include <thread>
 #include <atomic>
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
@@ -101,22 +102,10 @@ public:
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
-    void add(const LogElement & element)
-    {
-        if (is_shutdown)
-            return;
-
-        /// Without try we could block here in case of queue overflow.
-        if (!queue.tryPush({false, element}))
-            LOG_ERROR(log, "SystemLog queue is full");
-    }
+    void add(const LogElement & element);
 
     /// Flush data in the buffer to disk
-    void flush()
-    {
-        if (!is_shutdown)
-            flushImpl(false);
-    }
+    void flush();
 
     /// Stop the background flush thread before destructor. No more data will be written.
     void shutdown();
@@ -130,7 +119,14 @@ protected:
     const size_t flush_interval_milliseconds;
     std::atomic<bool> is_shutdown{false};
 
-    using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
+    enum class ElementType
+    {
+        REGULAR = 0,
+        SHUTDOWN,
+        FORCE_FLUSH
+    };
+
+    using QueueItem = std::pair<ElementType, LogElement>;
 
     /// Queue is bounded. But its size is quite large to not block in all normal cases.
     ConcurrentBoundedQueue<QueueItem> queue {DBMS_SYSTEM_LOG_QUEUE_SIZE};
@@ -140,7 +136,6 @@ protected:
       *  than accumulation of large amount of log records (for example, for query log - processing of large amount of queries).
       */
     std::vector<LogElement> data;
-    std::mutex data_mutex;
 
     Logger * log;
 
@@ -157,6 +152,12 @@ protected:
     bool is_prepared = false;
     void prepareTable();
 
+    std::mutex flush_mutex;
+    std::mutex condvar_mutex;
+    std::condition_variable flush_condvar;
+    bool force_flushing = false;
+
+    /// flushImpl can be executed only in saving_thread.
     void flushImpl(bool quiet);
 };
 
@@ -179,6 +180,36 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 
 
 template <typename LogElement>
+void SystemLog<LogElement>::add(const LogElement & element)
+{
+    if (is_shutdown)
+        return;
+
+    /// Without try we could block here in case of queue overflow.
+    if (!queue.tryPush({ElementType::REGULAR, element}))
+        LOG_ERROR(log, "SystemLog queue is full");
+}
+
+
+template <typename LogElement>
+void SystemLog<LogElement>::flush()
+{
+    if (is_shutdown)
+        return;
+
+    std::lock_guard flush_lock(flush_mutex);
+    /// Tell thread to execute extra flush.
+    queue.push({ElementType::FORCE_FLUSH, {}});
+
+    /// Wait for flush being finished.
+    std::unique_lock lock(condvar_mutex);
+    force_flushing = true;
+    while (force_flushing)
+        flush_condvar.wait(lock);
+}
+
+
+template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
     bool old_val = false;
@@ -186,7 +217,7 @@ void SystemLog<LogElement>::shutdown()
         return;
 
     /// Tell thread to shutdown.
-    queue.push({true, {}});
+    queue.push({ElementType::SHUTDOWN, {}});
     saving_thread.join();
 }
 
@@ -219,16 +250,10 @@ void SystemLog<LogElement>::threadFunction()
             QueueItem element;
             bool has_element = false;
 
-            bool is_empty;
-            {
-                std::unique_lock lock(data_mutex);
-                is_empty = data.empty();
-            }
-
             /// data.size() is increased only in this function
             /// TODO: get rid of data and queue duality
 
-            if (is_empty)
+            if (data.empty())
             {
                 queue.pop(element);
                 has_element = true;
@@ -242,18 +267,20 @@ void SystemLog<LogElement>::threadFunction()
 
             if (has_element)
             {
-                if (element.first)
+                if (element.first == ElementType::SHUTDOWN)
                 {
-                    /// Shutdown.
                     /// NOTE: MergeTree engine can write data even it is already in shutdown state.
-                    flush();
+                    flushImpl(true);
                     break;
                 }
-                else
+                else if (element.first == ElementType::FORCE_FLUSH)
                 {
-                    std::unique_lock lock(data_mutex);
-                    data.push_back(element.second);
+                    flushImpl(false);
+                    time_after_last_write.restart();
+                    continue;
                 }
+                else
+                    data.push_back(element.second);
             }
 
             size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
@@ -277,8 +304,6 @@ void SystemLog<LogElement>::threadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(bool quiet)
 {
-    std::unique_lock lock(data_mutex);
-
     try
     {
         if (quiet && data.empty())
@@ -319,6 +344,12 @@ void SystemLog<LogElement>::flushImpl(bool quiet)
         tryLogCurrentException(__PRETTY_FUNCTION__);
         /// In case of exception, also clean accumulated data - to avoid locking.
         data.clear();
+    }
+    if (!quiet)
+    {
+        std::lock_guard lock(condvar_mutex);
+        force_flushing = false;
+        flush_condvar.notify_one();
     }
 }
 
