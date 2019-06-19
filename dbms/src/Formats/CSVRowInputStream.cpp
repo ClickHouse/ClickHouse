@@ -143,8 +143,8 @@ void CSVRowInputStream::readPrefix()
 
     if (with_names)
     {
-		/// This CSV file has a header row with column names. Depending on the
-		/// settings, use it or skip it. 
+        /// This CSV file has a header row with column names. Depending on the
+        /// settings, use it or skip it.
         if (format_settings.with_names_use_header)
         {
             /// Look at the file header to see which columns we have there.
@@ -218,10 +218,11 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
             const auto & type = data_types[*table_column];
             const bool at_delimiter = *istr.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
-                    && (*istr.position() == '\n' || *istr.position() == '\r');
+                    && (*istr.position() == '\n' || *istr.position() == '\r'
+                        || istr.eof());
 
             if (format_settings.csv.empty_as_default
-                    && (at_delimiter || at_last_column_line_end || istr.eof()))
+                    && (at_delimiter || at_last_column_line_end))
             {
                 /// Treat empty unquoted column value as default value, if
                 /// specified in the settings. Tuple columns might seem
@@ -357,14 +358,15 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
                     file_column + 1 == column_indexes_for_input_fields.size();
             const bool at_delimiter = *istr.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
-                    && (*istr.position() == '\n' || *istr.position() == '\r');
+                    && (*istr.position() == '\n' || *istr.position() == '\r'
+                        || istr.eof());
 
             out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
                 << "name: " << header.safeGetByPosition(table_column).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(table_column).name.size(), ' ')
                 << "type: " << current_column_type->getName() << ", " << std::string(max_length_of_data_type_name - current_column_type->getName().size(), ' ');
 
             if (format_settings.csv.empty_as_default
-                    && (at_delimiter || at_last_column_line_end || istr.eof()))
+                    && (at_delimiter || at_last_column_line_end))
             {
                 columns[table_column]->insertDefault();
             }
