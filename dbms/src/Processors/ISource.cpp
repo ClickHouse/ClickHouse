@@ -45,8 +45,8 @@ void ISource::work()
 {
     try
     {
-        current_chunk.first = generate();
-        if (!current_chunk.first)
+        current_chunk.chunk = generate();
+        if (!current_chunk.chunk)
             finished = true;
         else
             has_input = true;

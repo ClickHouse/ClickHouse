@@ -60,7 +60,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         current_data = input.pullData();
         has_input = true;
 
-        if (current_data.second)
+        if (current_data.exception)
         {
             /// Skip transform in case of exception.
             has_input = false;
@@ -80,16 +80,16 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
 void ISimpleTransform::work()
 {
-    if (current_data.second)
+    if (current_data.exception)
         return;
 
     try
     {
-        transform(current_data.first);
+        transform(current_data.chunk);
     }
     catch (DB::Exception &)
     {
-        current_data.second = std::current_exception();
+        current_data.exception = std::current_exception();
         transformed = true;
         has_input = false;
         return;
@@ -97,12 +97,12 @@ void ISimpleTransform::work()
 
     has_input = false;
 
-    if (!skip_empty_chunks || current_data.first)
+    if (!skip_empty_chunks || current_data.chunk)
         transformed = true;
 
-    if (transformed && !current_data.first)
+    if (transformed && !current_data.chunk)
         /// Support invariant that chunks must have the same number of columns as header.
-        current_data.first = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
+        current_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }
 
 }
