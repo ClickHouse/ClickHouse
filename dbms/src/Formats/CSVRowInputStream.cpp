@@ -207,26 +207,37 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
     bool have_default_columns = have_always_default_columns;
 
     const auto delimiter = format_settings.csv.delimiter;
-    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
-        const auto & column_index = column_indexes_for_input_fields[input_position];
-        if (column_index)
+        const auto & table_column = column_indexes_for_input_fields[file_column];
+        const bool is_last_file_column =
+                file_column + 1 == column_indexes_for_input_fields.size();
+
+        if (table_column)
         {
-            const auto & type = data_types[*column_index];
-            if (*istr.position() == delimiter
-                    && format_settings.csv.empty_as_default)
+            const auto & type = data_types[*table_column];
+            const bool at_delimiter = *istr.position() == delimiter;
+            const bool at_last_column_line_end = is_last_file_column
+                    && (*istr.position() == '\n' || *istr.position() == '\r');
+
+            if (format_settings.csv.empty_as_default
+                    && (at_delimiter || at_last_column_line_end || istr.eof()))
             {
                 /// Treat empty unquoted column value as default value, if
-                /// specified in the settings.
-                read_columns[*column_index] = false;
+                /// specified in the settings. Tuple columns might seem
+                /// problematic, because they are never quoted but still contain
+                /// commas, which might be also used as delimiters. However,
+                /// they do not contain empty unquoted fields, so this check
+                /// works for tuples as well.
+                read_columns[*table_column] = false;
                 have_default_columns = true;
             }
             else
             {
                 /// Read the column normally.
-                read_columns[*column_index] = true;
+                read_columns[*table_column] = true;
                 skipWhitespacesAndTabs(istr);
-                type->deserializeAsTextCSV(*columns[*column_index], istr,
+                type->deserializeAsTextCSV(*columns[*table_column], istr,
                     format_settings);
                 skipWhitespacesAndTabs(istr);
             }
@@ -238,8 +249,7 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
             readCSVString(tmp, istr, format_settings.csv);
         }
 
-        skipDelimiter(istr, delimiter,
-            input_position + 1 == column_indexes_for_input_fields.size());
+        skipDelimiter(istr, delimiter, is_last_file_column);
     }
 
     if (have_default_columns)
@@ -248,14 +258,13 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
         {
             if (!read_columns[i])
             {
-                ///!!!FIXME
-                /// 1. Why are the defaults inserted by every row source,
-                /// and not by the caller, given that it walks this array
-                /// anyway?
-                /// 2. The value is overwritten by
-                /// AddingDefaultsBlockInputStream, so we don't care what it
-                /// is. Should we use IColumn::insertDefault() instead?
-                data_types[i]->insertDefaultInto(*columns[i]);
+                /// The column value for this row is going to be overwritten
+                /// with default by the caller, but the general assumption is
+                /// that the column size increases for each row, so we have
+                /// to insert something. Since we do not care about the exact
+                /// value, we do not have to use the default value specified by
+                /// the data type, and can just use IColumn::insertDefault().
+                columns[i]->insertDefault();
             }
         }
         ext.read_columns = read_columns;
@@ -332,27 +341,32 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
 {
     const char delimiter = format_settings.csv.delimiter;
 
-    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
-        if (input_position == 0 && istr.eof())
+        if (file_column == 0 && istr.eof())
         {
             out << "<End of stream>\n";
             return false;
         }
 
-        if (column_indexes_for_input_fields[input_position].has_value())
+        if (column_indexes_for_input_fields[file_column].has_value())
         {
-            const auto & column_index = *column_indexes_for_input_fields[input_position];
-            const auto & current_column_type = data_types[column_index];
+            const auto & table_column = *column_indexes_for_input_fields[file_column];
+            const auto & current_column_type = data_types[table_column];
+            const bool is_last_file_column =
+                    file_column + 1 == column_indexes_for_input_fields.size();
+            const bool at_delimiter = *istr.position() == delimiter;
+            const bool at_last_column_line_end = is_last_file_column
+                    && (*istr.position() == '\n' || *istr.position() == '\r');
 
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
-                << "name: " << header.safeGetByPosition(column_index).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(column_index).name.size(), ' ')
+            out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
+                << "name: " << header.safeGetByPosition(table_column).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(table_column).name.size(), ' ')
                 << "type: " << current_column_type->getName() << ", " << std::string(max_length_of_data_type_name - current_column_type->getName().size(), ' ');
 
-            if (*istr.position() == delimiter
-                    && format_settings.csv.empty_as_default)
+            if (format_settings.csv.empty_as_default
+                    && (at_delimiter || at_last_column_line_end || istr.eof()))
             {
-                current_column_type->insertDefaultInto(*columns[column_index]);
+                columns[table_column]->insertDefault();
             }
             else
             {
@@ -364,7 +378,7 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
                 {
                     skipWhitespacesAndTabs(istr);
                     prev_position = istr.position();
-                    current_column_type->deserializeAsTextCSV(*columns[column_index], istr, format_settings);
+                    current_column_type->deserializeAsTextCSV(*columns[table_column], istr, format_settings);
                     curr_position = istr.position();
                     skipWhitespacesAndTabs(istr);
                 }
@@ -424,7 +438,7 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
         else
         {
             static const String skipped_column_str = "<SKIPPED COLUMN>";
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
+            out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
                 << "name: " << skipped_column_str << ", " << std::string(max_length_of_column_name - skipped_column_str.length(), ' ')
                 << "type: " << skipped_column_str << ", " << std::string(max_length_of_data_type_name - skipped_column_str.length(), ' ');
 
@@ -433,7 +447,7 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
         }
 
         /// Delimiters
-        if (input_position + 1 == column_indexes_for_input_fields.size())
+        if (file_column + 1 == column_indexes_for_input_fields.size())
         {
             if (istr.eof())
                 return false;
