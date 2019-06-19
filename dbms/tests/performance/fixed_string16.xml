@@ -1,6 +1,4 @@
 <test>
-    <name>Comparison of FixedString(16)</name>
-
     <tags>
         <tag>comparison</tag>
     </tags>

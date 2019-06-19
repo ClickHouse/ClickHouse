@@ -1,5 +1,4 @@
 <test>
-    <name>general_purpose_hashes</name>
     <type>once</type>
 
     <stop_conditions>
