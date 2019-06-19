@@ -32,7 +32,7 @@
                <value>hiveHash</value>
                <value>xxHash32</value>
                <value>xxHash64</value>
-               <value>crc32</value>
+               <value>CRC32</value>
            </values>
         </substitution>
         <substitution>
