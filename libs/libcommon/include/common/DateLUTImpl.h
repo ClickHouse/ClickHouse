@@ -412,7 +412,7 @@ public:
                   If set	The week that contains the first
                         'first-day-of-week' is week 1.
 
-      WeekModeFlag::NEWYEAR_DAY (3)
+      WeekModeFlag::NEWYEAR_DAY (3)   If not set  no meaning
                   If set	The week that contains the January 1 is week 1.
                             Week is in range 1-53.
                             And ignore WeekModeFlag::YEAR, WeekModeFlag::FIRST_WEEKDAY
