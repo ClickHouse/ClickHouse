@@ -56,7 +56,7 @@ private:
 
 struct NameCRC32
 {
-    static constexpr auto name = "crc32";
+    static constexpr auto name = "CRC32";
 };
 using FunctionCRC32 = FunctionStringOrArrayToT<CRC32Impl, NameCRC32, UInt32>;
 
