@@ -402,12 +402,19 @@ void MergeTreeDataPart::remove() const
     {
         /// Remove each expected file in directory, then remove directory itself.
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#endif
         for (const auto & [file, _] : checksums.files)
         {
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
                 throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
         }
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
         for (const auto & file : {"checksums.txt", "columns.txt"})
         {
