@@ -45,6 +45,20 @@ public:
 
     Chunk clone() const;
 
+    void swap(Chunk & other)
+    {
+        columns.swap(other.columns);
+        chunk_info.swap(other.chunk_info);
+        std::swap(num_rows, other.num_rows);
+    }
+
+    void clear()
+    {
+        num_rows = 0;
+        columns.clear();
+        chunk_info.reset();
+    }
+
     const Columns & getColumns() const { return columns; }
     void setColumns(Columns columns_, UInt64 num_rows_);
     void setColumns(MutableColumns columns_, UInt64 num_rows_);
@@ -63,7 +77,6 @@ public:
     bool empty() const { return hasNoRows() && hasNoColumns(); }
     operator bool() const { return !empty(); }
 
-    void clear();
     void erase(size_t position);
 
     UInt64 bytes() const;

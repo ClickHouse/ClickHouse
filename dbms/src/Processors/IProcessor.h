@@ -219,10 +219,10 @@ public:
     /// Debug output.
     void dump() const;
 
-    std::string description;
+    std::string processor_description;
 
-    void setDescription(const std::string & description_) { description = description_; }
-    const std::string & getDescription() const { return description; }
+    void setDescription(const std::string & description_) { processor_description = description_; }
+    const std::string & getDescription() const { return processor_description; }
 };
 
 

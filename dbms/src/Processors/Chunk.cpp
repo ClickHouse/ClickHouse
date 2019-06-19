@@ -96,13 +96,6 @@ Columns Chunk::detachColumns()
     return std::move(columns);
 }
 
-void Chunk::clear()
-{
-    num_rows = 0;
-    columns.clear();
-    chunk_info.reset();
-}
-
 void Chunk::erase(size_t position)
 {
     if (columns.empty())
