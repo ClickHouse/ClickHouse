@@ -1,5 +1,4 @@
 <test>
-    <name>json_extract_rapidjson</name>
     <type>once</type>
 
     <stop_conditions>
