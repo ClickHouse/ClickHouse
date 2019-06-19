@@ -127,7 +127,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
 
-                    if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{
+                    if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]
+                        {
                         running_query = user_process_list->second.queries.find(client_info.current_query_id);
                         if (running_query == user_process_list->second.queries.end())
                             return true;
