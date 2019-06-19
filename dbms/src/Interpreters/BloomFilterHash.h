@@ -43,16 +43,16 @@ struct BloomFilterHash
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    static ColumnPtr hashWithColumn(const IDataType * data_type, const IColumn * column, size_t pos, size_t limit)
+    static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
-        getAnyTypeHash<true>(data_type, column, index_column_vec, pos);
+        getAnyTypeHash<true>(&*data_type, &*column, index_column_vec, pos);
         return index_column;
     }
 
     template <bool is_first>
-    static void getAnyTypeHash(const IDataType *data_type, const IColumn *column, ColumnUInt64::Container &vec, size_t pos)
+    static void getAnyTypeHash(const IDataType * data_type, const IColumn * column, ColumnUInt64::Container & vec, size_t pos)
     {
         WhichDataType which(data_type);
 
