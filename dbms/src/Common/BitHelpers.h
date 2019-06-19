@@ -79,5 +79,16 @@ inline size_t getTrailingZeroBits(T x)
 template <typename T>
 inline T maskLowBits(unsigned char bits)
 {
-    return static_cast<T>(static_cast<T>(~T{0}) >> (sizeof(T) * 8 - bits));
+    if (bits == 0)
+    {
+        return 0;
+    }
+
+    T result = static_cast<T>(~T{0});
+    if (bits < sizeof(T) * 8)
+    {
+        result = static_cast<T>(result >> (sizeof(T) * 8 - bits));
+    }
+
+    return result;
 }
