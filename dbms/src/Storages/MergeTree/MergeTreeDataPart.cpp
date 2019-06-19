@@ -138,7 +138,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
-    , index_granularity_info(storage.settings, storage.format_version)
+    , index_granularity_info(storage.settings)
 {
 }
 
@@ -146,7 +146,7 @@ MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const Strin
     : storage(storage_)
     , name(name_)
     , info(info_)
-    , index_granularity_info(storage.settings, storage.format_version)
+    , index_granularity_info(storage.settings)
 {
 }
 
