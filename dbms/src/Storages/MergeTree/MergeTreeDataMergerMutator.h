@@ -32,12 +32,27 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_);
 };
 
+struct MargeTreeMoveEntry
+{
+    MergeTreeData::DataPartPtr part;
+    DiskSpaceMonitor::ReservationPtr reserved_space;
+
+    MargeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpaceMonitor::ReservationPtr reservation_)
+        : part(part_),
+          reserved_space(std::move(reservation_)) { }
+
+    MargeTreeMoveEntry() { }
+};
+
+using MergeTreeMovingParts = std::vector<MargeTreeMoveEntry>;
+
 /** Can select the parts to merge and merge them.
   */
 class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
+    using AllowedMovingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, String * reason)>;
 
 public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
@@ -65,6 +80,10 @@ public:
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
         String * out_disable_reason = nullptr);
+
+    bool selectPartsToMove(
+        MergeTreeMovingParts & parts_to_move,
+        const AllowedMovingPredicate & can_move);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
@@ -102,6 +121,8 @@ public:
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
+
+    MergeTreeData::DataPartsVector cloneParts(const MergeTreeMovingParts & parts);
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);

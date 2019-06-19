@@ -37,6 +37,35 @@ namespace ErrorCodes
 class Disk
 {
 public:
+    class SpaceInformation {
+        struct statvfs fs;
+        UInt64 keep_free_space_bytes;
+
+    public:
+        SpaceInformation(const Disk & disk) {
+            if (statvfs(disk.path.c_str(), &fs) != 0)
+                throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
+            keep_free_space_bytes = disk.keep_free_space_bytes;
+        }
+
+        UInt64 getTotalSpace() {
+            UInt64 size = fs.f_blocks * fs.f_bsize;
+            if (size < keep_free_space_bytes) {
+                return 0;
+            }
+            return size - keep_free_space_bytes;
+        }
+
+        UInt64 getAvailableSpace() {
+            UInt64 size = fs.f_bfree * fs.f_bsize;
+            if (size < keep_free_space_bytes) {
+                return 0;
+            }
+            return size - keep_free_space_bytes;
+        }
+    };
+
+
     Disk(String name_, String path_, UInt64 keep_free_space_bytes_)
         : name(std::move(name_)),
           path(std::move(path_)),
@@ -59,32 +88,18 @@ public:
         return keep_free_space_bytes;
     }
 
+    auto getSpaceInformation() const {
+        return SpaceInformation(*this);
+    }
+
     UInt64 getTotalSpace() const
     {
-        struct statvfs fs;
-
-        if (statvfs(path.c_str(), &fs) != 0)
-            throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
-
-        UInt64 size = fs.f_blocks * fs.f_bsize;
-
-        size -= std::min(size, keep_free_space_bytes);
-
-        return size;
+        return getSpaceInformation().getTotalSpace();
     }
 
     UInt64 getAvailableSpace() const
     {
-        struct statvfs fs;
-
-        if (statvfs(path.c_str(), &fs) != 0)
-            throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
-
-        UInt64 size = fs.f_bfree * fs.f_bsize;
-
-        size -= std::min(size, keep_free_space_bytes);
-
-        return size;
+        return getSpaceInformation().getAvailableSpace();
     }
 
 private:
@@ -344,11 +359,26 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Reserve space on any volume with priority > min_volume_index
     /// Returns valid reservation or null
-    DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+    DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size, size_t min_volume_index=0) const;
 
     /// Returns valid reservation or null
     DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
+
+    auto getVolumePriorityByDisk(const DiskPtr & disk_ptr) const
+    {
+        for (size_t i = 0; i != volumes.size(); ++i)
+        {
+            const auto & volume = volumes[i];
+            for (auto && disk : volume.disks)
+            {
+                if (disk->getName() == disk_ptr->getName())
+                    return i;
+            }
+        }
+        throw Exception("No disk " + disk_ptr->getName() + " in Policy " + name, ErrorCodes::UNKNOWN_DISK);
+    }
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size!!!

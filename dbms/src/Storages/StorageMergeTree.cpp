@@ -365,6 +365,44 @@ public:
 };
 
 
+/// While exists, marks parts as 'currently_moving' and kwpp reservations.
+struct CurrentlyMovingPartsTagger
+{
+    MergeTreeMovingParts parts;
+
+    bool is_successful = false;
+    String exception_message;
+
+    StorageMergeTree & storage;
+
+public:
+    CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, StorageMergeTree & storage_)
+            : parts(std::move(parts_)), storage(storage_)
+    {
+        /// Assume mutex is already locked, because this method is called from mergeTask.
+        for (const auto & part : parts)
+        {
+            if (storage.currently_merging.count(part.part))
+                throw Exception("Tagging already tagged part " + part.part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+            storage.currently_merging.insert(part.part);
+        }
+    }
+
+    ~CurrentlyMovingPartsTagger()
+    {
+        std::lock_guard lock(storage.currently_merging_mutex);
+
+        for (const auto & part : parts)
+        {
+            if (!storage.currently_merging.count(part.part))
+                std::terminate();
+            storage.currently_merging.erase(part.part);
+        }
+    }
+};
+
+
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     /// Choose any disk.
@@ -602,6 +640,100 @@ bool StorageMergeTree::merge(
 }
 
 
+bool StorageMergeTree::move_parts()
+{
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
+    MergeTreeMovingParts parts_to_move;
+
+    /// You must call destructor with unlocked `currently_merging_mutex`.
+    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+
+    {
+        std::lock_guard lock(currently_merging_mutex);
+
+        auto can_move = [this] (const DataPartPtr & part, String *)
+        {
+            return !currently_merging.count(part);
+        };
+
+        if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
+            return false;
+
+        moving_tagger.emplace(std::move(parts_to_move), *this);
+    }
+
+//    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part);
+
+//    /// Logging
+//    Stopwatch stopwatch;
+//    MutableDataPartPtr new_part;
+
+//    auto write_part_log = [&] (const ExecutionStatus & execution_status)
+//    {
+//        try
+//        {
+//            auto part_log = global_context.getPartLog(database_name);
+//            if (!part_log)
+//                return;
+//
+//            PartLogElement part_log_elem;
+//
+//            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
+//            part_log_elem.event_time = time(nullptr);
+//            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
+//
+//            part_log_elem.database_name = database_name;
+//            part_log_elem.table_name = table_name;
+//            part_log_elem.partition_id = future_part.part_info.partition_id;
+//            part_log_elem.part_name = future_part.name;
+//
+//            if (new_part)
+//                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
+//
+//            part_log_elem.source_part_names.reserve(future_part.parts.size());
+//            for (const auto & source_part : future_part.parts)
+//                part_log_elem.source_part_names.push_back(source_part->name);
+//
+//            part_log_elem.rows_read = (*merge_entry)->rows_read;
+//            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
+//
+//            part_log_elem.rows = (*merge_entry)->rows_written;
+//            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
+//
+//            part_log_elem.error = static_cast<UInt16>(execution_status.code);
+//            part_log_elem.exception = execution_status.message;
+//
+//            part_log->add(part_log_elem);
+//        }
+//        catch (...)
+//        {
+//            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+//        }
+//    };
+
+    auto copied_parts = merger_mutator.cloneParts(moving_tagger->parts);
+
+    for (auto && copied_part : copied_parts)
+    {
+        auto part = getActiveContainingPart(copied_part->name);
+        if (!part || part->name != copied_part->name)
+        {
+            ///@TODO_IGR LOG here that original part does not exists after move
+            continue;
+        }
+
+        copied_part->renameTo(part->name);
+
+        auto old_active_part = swapActivePart(copied_part);
+
+        old_active_part->deleteOnDestroy();
+    }
+
+    return true;
+}
+
+
 bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
@@ -743,6 +875,9 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+
+        if (move_parts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())

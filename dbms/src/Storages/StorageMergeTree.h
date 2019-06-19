@@ -101,6 +101,8 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
+    bool move_parts();
+
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
@@ -121,6 +123,7 @@ private:
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
+    friend struct CurrentlyMovingPartsTagger;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
