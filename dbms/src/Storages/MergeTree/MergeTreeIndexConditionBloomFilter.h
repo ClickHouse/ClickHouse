@@ -57,13 +57,19 @@ private:
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
+    SetPtr getPreparedSet(const ASTPtr & node);
+
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
 
     bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool processInOrNotInOperator(const String &function_name, const ASTPtr &key_ast, const ASTPtr &expr_list, RPNElement &out);
+    bool traverseASTIn(const String &function_name, const ASTPtr &key_ast, const SetPtr &prepared_set, RPNElement &out);
 
-    bool processEqualsOrNotEquals(const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out);
+    bool traverseASTIn(const String &function_name, const ASTPtr &key_ast, const DataTypePtr &type, const ColumnPtr &column,
+                       RPNElement &out);
+
+    bool traverseASTEquals(const String &function_name, const ASTPtr &key_ast, const DataTypePtr &value_type, const Field &value_field,
+                           RPNElement &out);
 };
 
 }

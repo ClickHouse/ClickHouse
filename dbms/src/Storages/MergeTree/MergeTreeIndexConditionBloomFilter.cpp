@@ -10,6 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Columns/ColumnTuple.h>
+#include "MergeTreeIndexConditionBloomFilter.h"
 
 
 namespace DB
@@ -28,6 +29,14 @@ PreparedSetKey getPreparedSetKey(const ASTPtr & node, const DataTypePtr & data_t
         return PreparedSetKey::forLiteral(*node, date_type_tuple->getElements());
 
     return PreparedSetKey::forLiteral(*node, DataTypes(1, data_type));
+}
+
+ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
+{
+    if (prepared_set->getDataTypes().size() == 1)
+        return {prepared_set->getSetElements()[0], prepared_set->getDataTypes()[0], "dummy"};
+
+    return {ColumnTuple::create(prepared_set->getSetElements()), std::make_shared<DataTypeTuple>(prepared_set->getDataTypes()), "dummy"};
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)
@@ -208,68 +217,77 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
             return false;
 
         if (functionIsInOrGlobalInOperator(function->name))
-            return processInOrNotInOperator(function->name, arguments[0], arguments[1], out);
-
-        if (function->name == "equals" || function->name  == "notEquals")
+        {
+            if (const auto & prepared_set = getPreparedSet(arguments[1]))
+                return traverseASTIn(function->name, arguments[0], prepared_set, out);
+        }
+        else if (function->name == "equals" || function->name  == "notEquals")
         {
             Field const_value;
             DataTypePtr const_type;
             if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
-                return processEqualsOrNotEquals(function->name, arguments[0], const_type, const_value, out);
+                return traverseASTEquals(function->name, arguments[0], const_type, const_value, out);
             else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
-                return processEqualsOrNotEquals(function->name, arguments[1], const_type, const_value, out);
+                return traverseASTEquals(function->name, arguments[1], const_type, const_value, out);
         }
     }
 
     return false;
 }
 
-bool MergeTreeIndexConditionBloomFilter::processInOrNotInOperator(
-    const String & function_name, const ASTPtr & key_ast, const ASTPtr & expr_list, RPNElement & out)
+bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
+    const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out)
+{
+    const auto & prepared_info = getPreparedSetInfo(prepared_set);
+    return traverseASTIn(function_name, key_ast, prepared_info.type, prepared_info.column, out);
+}
+
+bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
+    const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out)
 {
     if (header.has(key_ast->getColumnName()))
     {
-        const auto & column_and_type = header.getByName(key_ast->getColumnName());
-        const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(expr_list, column_and_type.type));
+        size_t row_size = column->size();
+        size_t position = header.getPositionByName(key_ast->getColumnName());
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(type, column, 0, row_size)));
 
-        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
+        if (function_name == "in"  || function_name == "globalIn")
+            out.function = RPNElement::FUNCTION_IN;
+
+        if (function_name == "notIn"  || function_name == "globalNotIn")
+            out.function = RPNElement::FUNCTION_NOT_IN;
+
+        return true;
+    }
+
+    if (const auto * function = key_ast->as<ASTFunction>())
+    {
+        WhichDataType which(type);
+
+        if (which.isTuple() && function->name == "tuple")
         {
-            const IDataType * type = &*column_and_type.type;
-            const auto & prepared_set = prepared_set_it->second;
+            const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
+            const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
+            const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
-            if (!typeid_cast<const DataTypeTuple *>(type))
-            {
-                const Columns & columns = prepared_set->getSetElements();
+            if (tuple_data_type->getElements().size() != arguments.size() || tuple_column->getColumns().size() != arguments.size())
+                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                if (columns.size() != 1)
-                    throw Exception("LOGICAL ERROR: prepared_set columns size must be 1.", ErrorCodes::LOGICAL_ERROR);
+            bool match_with_subtype = false;
+            const auto & sub_columns = tuple_column->getColumns();
+            const auto & sub_data_types = tuple_data_type->getElements();
 
-                ColumnPtr column = columns[0];
-                size_t position = header.getPositionByName(key_ast->getColumnName());
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(type, &*column, 0, column->size())));
-            }
-            else
-            {
-                size_t position = header.getPositionByName(key_ast->getColumnName());
-                const auto & tuple_column = ColumnTuple::create(prepared_set->getSetElements());
-                const auto & bf_hash_column = BloomFilterHash::hashWithColumn(type, &*tuple_column, 0, prepared_set->getTotalRowCount());
-                out.predicate.emplace_back(std::make_pair(position, bf_hash_column));
-            }
+            for (size_t index = 0; index < arguments.size(); ++index)
+                match_with_subtype |= traverseASTIn(function_name, arguments[index], sub_data_types[index], sub_columns[index], out);
 
-            if (function_name == "in"  || function_name == "globalIn")
-                out.function = RPNElement::FUNCTION_IN;
-
-            if (function_name == "notIn"  || function_name == "globalNotIn")
-                out.function = RPNElement::FUNCTION_NOT_IN;
-
-            return true;
+            return match_with_subtype;
         }
     }
 
     return false;
 }
 
-bool MergeTreeIndexConditionBloomFilter::processEqualsOrNotEquals(
+bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out)
 {
     if (header.has(key_ast->getColumnName()))
@@ -284,7 +302,6 @@ bool MergeTreeIndexConditionBloomFilter::processEqualsOrNotEquals(
     {
         WhichDataType which(value_type);
 
-        /// TODO: support SQL: where array(index_column_x, column_y) = [1, 2]
         if (which.isTuple() && function->name == "tuple")
         {
             const TupleBackend & tuple = get<const Tuple &>(value_field).toUnderType();
@@ -298,13 +315,33 @@ bool MergeTreeIndexConditionBloomFilter::processEqualsOrNotEquals(
             const DataTypes & subtypes = value_tuple_data_type->getElements();
 
             for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= processEqualsOrNotEquals(function_name, arguments[index], subtypes[index], tuple[index], out);
+                match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out);
 
             return match_with_subtype;
         }
     }
 
     return false;
+}
+
+SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
+{
+    if (header.has(node->getColumnName()))
+    {
+        const auto & column_and_type = header.getByName(node->getColumnName());
+        const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(node, column_and_type.type));
+
+        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
+            return prepared_set_it->second;
+    }
+    else
+    {
+        for (const auto & prepared_set_it : query_info.sets)
+            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set_it.second->hasExplicitSetElements())
+                return prepared_set_it.second;
+    }
+
+    return DB::SetPtr();
 }
 
 }
