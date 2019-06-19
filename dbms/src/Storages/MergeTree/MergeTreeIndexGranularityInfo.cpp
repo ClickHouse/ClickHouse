@@ -22,12 +22,11 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    const MergeTreeSettings & storage_settings,
-    const MergeTreeDataFormatVersion & format)
+    const MergeTreeSettings & storage_settings)
 {
     fixed_index_granularity = storage_settings.index_granularity;
     /// Granularity is fixed
-    if (storage_settings.index_granularity_bytes == 0 || format < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (storage_settings.index_granularity_bytes == 0)
         setNonAdaptive();
     else
         setAdaptive(storage_settings.index_granularity_bytes);
@@ -43,7 +42,7 @@ void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const std::strin
 
 void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_)
 {
-    is_adaptive = false;
+    is_adaptive = true;
     mark_size_in_bytes = getAdaptiveMrkSize();
     marks_file_extension = getAdaptiveMrkExtension();
     index_granularity_bytes = index_granularity_bytes_;
@@ -51,7 +50,7 @@ void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_)
 
 void MergeTreeIndexGranularityInfo::setNonAdaptive()
 {
-    is_adaptive = true;
+    is_adaptive = false;
     mark_size_in_bytes = getNonAdaptiveMrkSize();
     marks_file_extension = getNonAdaptiveMrkExtension();
     index_granularity_bytes = 0;

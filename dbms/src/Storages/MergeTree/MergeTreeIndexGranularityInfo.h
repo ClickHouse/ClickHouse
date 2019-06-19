@@ -27,8 +27,7 @@ public:
     size_t index_granularity_bytes;
 
     MergeTreeIndexGranularityInfo(
-        const MergeTreeSettings & storage_settings,
-        const MergeTreeDataFormatVersion & format);
+        const MergeTreeSettings & storage_settings);
 
     void changeGranularityIfRequired(const std::string & path_to_part);
 
