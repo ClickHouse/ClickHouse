@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
@@ -40,8 +41,8 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
-    , marks_file_extension(storage.index_granularity_info.marks_file_extension)
-    , mark_size_in_bytes(storage.index_granularity_info.mark_size_in_bytes)
+    , marks_file_extension(storage.settings.index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
+    , mark_size_in_bytes(storage.settings.index_granularity_bytes ? getAdaptiveMrkSize() : getNonAdaptiveMrkSize())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
@@ -148,8 +149,8 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
     fillIndexGranularityImpl(
         block,
-        storage.index_granularity_info.index_granularity_bytes,
-        storage.index_granularity_info.fixed_index_granularity,
+        storage.settings.index_granularity_bytes,
+        storage.settings.index_granularity,
         blocks_are_granules_size,
         index_offset,
         index_granularity);
@@ -190,7 +191,7 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
 
             writeIntBinary(stream.plain_hashing.count(), stream.marks);
             writeIntBinary(stream.compressed.offset(), stream.marks);
-            if (storage.index_granularity_info.is_adaptive)
+            if (storage.settings.index_granularity_bytes != 0)
                 writeIntBinary(number_of_rows, stream.marks);
         }, serialize_settings.path);
     }
@@ -705,7 +706,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                         writeIntBinary(stream.compressed.offset(), stream.marks);
                         /// Actually this numbers is redundant, but we have to store them
                         /// to be compatible with normal .mrk2 file format
-                        if (storage.index_granularity_info.is_adaptive)
+                        if (storage.settings.index_granularity_bytes != 0)
                             writeIntBinary(1UL, stream.marks);
                     }
                 }

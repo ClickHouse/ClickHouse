@@ -977,13 +977,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
+        auto mrk_extension = data.settings.index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
         for (const auto & entry : in_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
                 String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
                 files_to_skip.insert(stream_name + ".bin");
-                files_to_skip.insert(stream_name + data.index_granularity_info.marks_file_extension);
+                files_to_skip.insert(stream_name + mrk_extension);
             };
 
             IDataType::SubstreamPath stream_path;
