@@ -258,3 +258,11 @@ select toDecimal128(1000000000000000000000.1, 18); -- { serverError 407 }
 select toDecimal32(-10000.1, 6); -- { serverError 407 }
 select toDecimal64(-10000.1, 18); -- { serverError 407 }
 select toDecimal128(-1000000000000000000000.1, 18); -- { serverError 407 }
+
+select toDecimal32(2147483647.0 + 1.0, 0); -- { serverError 407 }
+select toDecimal64(9223372036854775807.0, 0); -- { serverError 407 }
+select toDecimal128(170141183460469231731687303715884105729.0, 0); -- { serverError 407 }
+
+select toDecimal32(-2147483647.0 - 1.0, 0); -- { serverError 407 }
+select toDecimal64(-9223372036854775807.0, 0); -- { serverError 407 }
+select toDecimal128(-170141183460469231731687303715884105729.0, 0); -- { serverError 407 }

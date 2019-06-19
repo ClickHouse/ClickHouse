@@ -29,6 +29,7 @@
 #cmakedefine01 USE_RAPIDJSON
 #cmakedefine01 USE_LFALLOC
 #cmakedefine01 USE_LFALLOC_RANDOM_HINT
+#cmakedefine01 USE_GPERF
 
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 LLVM_HAS_RTTI
