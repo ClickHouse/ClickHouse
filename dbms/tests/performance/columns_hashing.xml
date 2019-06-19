@@ -1,5 +1,7 @@
 <test>
-    <name>columns_hashing</name>
+    <tags>
+        <tag>columns_hashing</tag>
+    </tags>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>

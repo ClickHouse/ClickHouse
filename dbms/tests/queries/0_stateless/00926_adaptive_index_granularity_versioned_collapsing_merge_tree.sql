@@ -9,7 +9,7 @@ CREATE TABLE zero_rows_per_granule (
   Sign Int8,
   Version UInt8
 ) ENGINE VersionedCollapsingMergeTree(Sign, Version) PARTITION BY toYYYYMM(p) ORDER BY k
-  SETTINGS index_granularity_bytes=20,
+  SETTINGS index_granularity_bytes=20, write_final_mark = 0,
            enable_vertical_merge_algorithm=1,
            vertical_merge_algorithm_min_rows_to_activate=0,
            vertical_merge_algorithm_min_columns_to_activate=0;
@@ -41,7 +41,7 @@ CREATE TABLE four_rows_per_granule (
   Sign Int8,
   Version UInt8
 ) ENGINE VersionedCollapsingMergeTree(Sign, Version) PARTITION BY toYYYYMM(p) ORDER BY k
-  SETTINGS index_granularity_bytes=120,
+  SETTINGS index_granularity_bytes=120, write_final_mark = 0,
   enable_vertical_merge_algorithm=1,
   vertical_merge_algorithm_min_rows_to_activate=0,
   vertical_merge_algorithm_min_columns_to_activate=0;
@@ -86,7 +86,7 @@ CREATE TABLE six_rows_per_granule (
   Sign Int8,
   Version UInt8
 ) ENGINE VersionedCollapsingMergeTree(Sign, Version) PARTITION BY toYYYYMM(p) ORDER BY k
-  SETTINGS index_granularity_bytes=170,
+  SETTINGS index_granularity_bytes=170, write_final_mark = 0,
   enable_vertical_merge_algorithm=1,
   vertical_merge_algorithm_min_rows_to_activate=0,
   vertical_merge_algorithm_min_columns_to_activate=0;
