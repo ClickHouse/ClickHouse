@@ -40,7 +40,7 @@ Optional parameters:
 - `kafka_row_delimiter` – Delimiter character, which ends the message.
 - `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
-- `kafka_skip_broken_messages` – Kafka message parser mode. If `kafka_skip_broken_messages = 1` then the engine skips the Kafka messages that can't be parsed (a message equals a row of data).
+- `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
 
 Examples:
 
