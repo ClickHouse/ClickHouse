@@ -1,6 +1,6 @@
 #include "FunctionsStringRegex.h"
-#include "FunctionsStringSearch.h"
 
+#include "FunctionsStringSearch.h"
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
@@ -10,7 +10,6 @@
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
-
 #include <algorithm>
 #include <memory>
 #include <optional>

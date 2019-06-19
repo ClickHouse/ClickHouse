@@ -1,10 +1,11 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufReader.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <boost/numeric/conversion/cast.hpp>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Formats/ProtobufReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
