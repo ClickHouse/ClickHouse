@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/BloomFilterHash.h>
 
 
 namespace DB
@@ -97,7 +98,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(const NamesAndTypesL
     if (node->type->arguments && !node->type->arguments->children.empty())
         max_conflict_probability = typeid_cast<const ASTLiteral &>(*node->type->arguments->children[0]).value.get<Float64>();
 
-    const auto & bits_per_row_and_size_of_hash_functions = calculationBestPractices(max_conflict_probability);
+    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
 
     return std::make_unique<MergeTreeIndexBloomFilter>(
         node->name, std::move(index_expr), index_sample.getNames(), index_sample.getDataTypes(), index_sample, node->granularity,

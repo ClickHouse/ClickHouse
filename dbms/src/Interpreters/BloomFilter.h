@@ -26,8 +26,8 @@ public:
     void add(const char * data, size_t len);
     void clear();
 
-    void addHashWithSeed(const UInt64 & hash, const UInt64 & seed);
-    bool containsWithSeed(const UInt64 & hash, const UInt64 & seed);
+    void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
+    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
 
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.
@@ -52,7 +52,5 @@ private:
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
-
-std::pair<size_t, size_t> calculationBestPractices(double max_conflict_probability);
 
 }
