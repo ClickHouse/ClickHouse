@@ -62,7 +62,7 @@ using FunctionCRC32 = FunctionStringOrArrayToT<CRC32Impl, NameCRC32, UInt32>;
 
 void registerFunctionCRC32(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionCRC32>(NameCRC32, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCRC32>(NameCRC32.name, FunctionFactory::CaseInsensitive);
 }
 
 }
