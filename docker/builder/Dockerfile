@@ -23,7 +23,8 @@ RUN apt-get update -y \
             python-requests \
             python-termcolor \
             sudo \
-            tzdata
+            tzdata \
+            gperf
 
 COPY build.sh /
 
