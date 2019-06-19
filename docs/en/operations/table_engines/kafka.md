@@ -26,7 +26,7 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
-    [kafka_skip_broken_messages = <0|1>]
+    [kafka_skip_broken_messages = N]
 ```
 Required parameters:
 
