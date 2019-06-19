@@ -2834,4 +2834,16 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
+bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
+{
+    if (!settings.enable_mixed_granularity_parts || settings.index_granularity_bytes == 0)
+    {
+        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
+            return false;
+        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.is_adaptive)
+            return false;
+    }
+    return true;
+}
+
 }
