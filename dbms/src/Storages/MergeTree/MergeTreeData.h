@@ -574,6 +574,12 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
+    bool canUseAdaptiveGranularity() const
+    {
+        return settings.index_granularity_bytes != 0 &&
+            (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+    }
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
@@ -630,6 +636,8 @@ public:
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
+
+    bool has_non_adaptive_index_granularity_parts = false;
 
 protected:
     friend struct MergeTreeDataPart;

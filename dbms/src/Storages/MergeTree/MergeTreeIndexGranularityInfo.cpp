@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Poco/Path.h>
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
@@ -22,14 +23,14 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    const MergeTreeSettings & storage_settings)
+    const MergeTreeData & storage)
 {
-    fixed_index_granularity = storage_settings.index_granularity;
+    fixed_index_granularity = storage.settings.index_granularity;
     /// Granularity is fixed
-    if (storage_settings.index_granularity_bytes == 0)
+    if (!storage.canUseAdaptiveGranularity())
         setNonAdaptive();
     else
-        setAdaptive(storage_settings.index_granularity_bytes);
+        setAdaptive(storage.settings.index_granularity_bytes);
 }
 
 

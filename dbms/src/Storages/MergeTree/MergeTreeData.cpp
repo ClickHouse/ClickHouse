@@ -743,6 +743,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     auto lock = lockParts();
     data_parts_indexes.clear();
 
+    bool has_adaptive_parts = false, has_non_adaptive_parts = false;
     for (const String & file_name : part_file_names)
     {
         MergeTreePartInfo part_info;
@@ -827,6 +828,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
             continue;
         }
+        if (!part->index_granularity_info.is_adaptive)
+            has_non_adaptive_parts = true;
+        else
+            has_adaptive_parts = true;
 
         part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
         /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
@@ -835,6 +840,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
     }
+
+    if (has_non_adaptive_parts && has_adaptive_parts && !settings.enable_mixed_granularity_parts)
+        throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
+
+    has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
     if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",

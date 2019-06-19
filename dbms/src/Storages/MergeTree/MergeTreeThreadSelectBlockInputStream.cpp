@@ -29,7 +29,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
     /// Maybe it will make sence to add settings `max_block_size_bytes`
-    if (max_block_size_rows && storage.settings.index_granularity_bytes == 0)
+    if (max_block_size_rows && !storage.canUseAdaptiveGranularity())
     {
         size_t fixed_index_granularity = storage.settings.index_granularity;
         min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
