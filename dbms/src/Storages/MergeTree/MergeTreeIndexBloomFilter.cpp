@@ -36,15 +36,18 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
 
 bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
-    const String column_name = node->getColumnName();
+    const String & column_name = node->getColumnName();
 
     for (const auto & name : columns)
         if (column_name == name)
             return true;
 
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-        if (func->arguments->children.size() == 1)
-            return mayBenefitFromIndexForIn(func->arguments->children.front());
+    {
+        for (const auto & children : func->arguments->children)
+            if (mayBenefitFromIndexForIn(children))
+                return true;
+    }
 
     return false;
 }
@@ -59,6 +62,24 @@ IndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQu
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, header, hash_functions);
 }
 
+static void assertIndexColumnsType(const Block &header)
+{
+    if (!header || !header.columns())
+        throw Exception("Index must have columns.", ErrorCodes::INCORRECT_QUERY);
+
+    const DataTypes & columns_data_types = header.getDataTypes();
+
+    for (size_t index = 0; index < columns_data_types.size(); ++index)
+    {
+        WhichDataType which(columns_data_types[index]);
+
+        if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
+            !which.isDateOrDateTime() && !which.isEnum())
+            throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+}
+
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context)
 {
     if (node->name.empty())
@@ -70,8 +91,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(const NamesAndTypesL
     auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
     auto index_sample = ExpressionAnalyzer(expr_list, syntax, context).getActions(true)->getSampleBlock();
 
-    if (!index_sample || !index_sample.columns())
-        throw Exception("Index must have columns.", ErrorCodes::INCORRECT_QUERY);
+    assertIndexColumnsType(index_sample);
 
     double max_conflict_probability = 0.025;
     if (node->type->arguments && !node->type->arguments->children.empty())
