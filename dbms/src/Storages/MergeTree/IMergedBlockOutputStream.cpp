@@ -27,13 +27,13 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
-    , marks_file_extension(storage.settings.index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
-    , mark_size_in_bytes(storage.settings.index_granularity_bytes ? getAdaptiveMrkSize() : getNonAdaptiveMrkSize())
+    , marks_file_extension(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
+    , mark_size_in_bytes(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkSize() : getNonAdaptiveMrkSize())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
-    , with_final_mark(storage.settings.write_final_mark && storage.settings.index_granularity_bytes)
+    , with_final_mark(storage.settings.write_final_mark && storage.canUseAdaptiveGranularity())
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);

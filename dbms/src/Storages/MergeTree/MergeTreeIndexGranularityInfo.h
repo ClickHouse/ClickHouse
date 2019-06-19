@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <optional>
 #include <Core/Types.h>
 
 namespace DB
 {
+
+class MergeTreeData;
 /// Meta information about index granularity
 struct MergeTreeIndexGranularityInfo
 {
@@ -27,7 +27,7 @@ public:
     size_t index_granularity_bytes;
 
     MergeTreeIndexGranularityInfo(
-        const MergeTreeSettings & storage_settings);
+        const MergeTreeData & storage);
 
     void changeGranularityIfRequired(const std::string & path_to_part);
 

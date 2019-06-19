@@ -127,12 +127,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
-            if (with_final_mark)
+            if (with_final_mark && rows_count != 0)
                 writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
         }
     }
 
-    if (with_final_mark)
+    if (with_final_mark && rows_count != 0)
         index_granularity.appendMark(0); /// last mark
 
     /// Finish skip index serialization
@@ -155,7 +155,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (index_stream)
     {
-        if (with_final_mark)
+        if (with_final_mark && rows_count != 0)
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
@@ -415,7 +415,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                         writeIntBinary(stream.compressed.offset(), stream.marks);
                         /// Actually this numbers is redundant, but we have to store them
                         /// to be compatible with normal .mrk2 file format
-                        if (storage.settings.index_granularity_bytes != 0)
+                        if (storage.canUseAdaptiveGranularity())
                             writeIntBinary(1UL, stream.marks);
                     }
                 }

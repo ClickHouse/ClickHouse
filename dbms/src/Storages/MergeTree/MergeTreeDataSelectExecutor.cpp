@@ -627,13 +627,9 @@ size_t roundRowsOrBytesToMarks(
     size_t bytes_granularity)
 {
     if (bytes_granularity == 0)
-    {
-        return  (rows_setting + rows_granularity - 1) / rows_granularity;
-    }
+        return (rows_setting + rows_granularity - 1) / rows_granularity;
     else
-    {
         return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
-    }
 }
 
 }
