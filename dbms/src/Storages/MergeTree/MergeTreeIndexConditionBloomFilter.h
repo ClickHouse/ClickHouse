@@ -53,6 +53,7 @@ public:
 
 private:
     const Block & header;
+    const Context & context;
     const SelectQueryInfo & query_info;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
@@ -63,13 +64,11 @@ private:
 
     bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
 
-    bool traverseASTIn(const String &function_name, const ASTPtr &key_ast, const SetPtr &prepared_set, RPNElement &out);
+    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
 
-    bool traverseASTIn(const String &function_name, const ASTPtr &key_ast, const DataTypePtr &type, const ColumnPtr &column,
-                       RPNElement &out);
+    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
 
-    bool traverseASTEquals(const String &function_name, const ASTPtr &key_ast, const DataTypePtr &value_type, const Field &value_field,
-                           RPNElement &out);
+    bool traverseASTEquals(const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out);
 };
 
 }

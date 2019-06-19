@@ -30,10 +30,12 @@ struct BloomFilterHash
     {
         WhichDataType which(data_type);
 
-        if (which.isUInt())
+        if (which.isUInt() || which.isDateOrDateTime())
             return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
-        else if (which.isInt())
+        else if (which.isInt() || which.isEnum())
             return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
+        else if (which.isFloat())
+            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
         else if (which.isString() || which.isFixedString())
         {
             const auto & value = field.safeGet<String>();

@@ -10,7 +10,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Columns/ColumnTuple.h>
-#include "MergeTreeIndexConditionBloomFilter.h"
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -76,7 +77,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const SelectQueryInfo & info, const Context & context, const Block & header, size_t hash_functions)
-    : header(header), query_info(info), hash_functions(hash_functions)
+    : header(header), context(context), query_info(info), hash_functions(hash_functions)
 {
     auto atomFromAST = [this](auto & node, auto &, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
     rpn = std::move(RPNBuilder<RPNElement>(info, context, atomFromAST).extractRPN());
@@ -249,7 +250,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     {
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_ast->getColumnName());
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(type, column, 0, row_size)));
+        const DataTypePtr & index_type = header.getByPosition(position).type;
+        const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type, context);
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -293,7 +296,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     if (header.has(key_ast->getColumnName()))
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*value_type, value_field)));
+        const DataTypePtr & index_type = header.getByPosition(position).type;
+        Field converted_field = convertFieldToType(value_field, *index_type, &*value_type);
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
         out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
         return true;
     }
