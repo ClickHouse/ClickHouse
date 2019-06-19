@@ -540,13 +540,13 @@ void MergeTreeDataPart::loadIndexGranularity()
 {
 
     String full_path = getFullPath();
-    index_granularity_info.changeGranularityIfRequired(getFullPath());
+    index_granularity_info.changeGranularityIfRequired(full_path);
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(getFullPath() + escapeForFileName(columns.front().name));
+    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + escapeForFileName(columns.front().name));
     if (!Poco::File(marks_file_path).exists())
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -707,7 +707,7 @@ void MergeTreeDataPart::loadRowsCount()
                     ErrorCodes::LOGICAL_ERROR);
             }
 
-            size_t last_mark_index_granularity = index_granularity.getLastMarkRows();
+            size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
             size_t rows_approx = index_granularity.getTotalRows();
             if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
                 throw Exception(

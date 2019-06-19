@@ -98,8 +98,8 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (in.eof())
         data_format_version = 0;
-    else
-        in >> "data format version: " >> data_format_version.toUnderType() >> "\n";
+    else if (checkString("data format version: ", in))
+        in >> data_format_version.toUnderType() >> "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         in >> "partition key: " >> partition_key >> "\n";
