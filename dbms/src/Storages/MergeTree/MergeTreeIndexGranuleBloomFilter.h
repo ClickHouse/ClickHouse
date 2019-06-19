@@ -29,7 +29,7 @@ private:
 
     void assertGranuleBlocksStructure(const Blocks & granule_index_blocks) const;
 
-    void fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column, size_t hash_functions);
+    void fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column);
 };
 
 

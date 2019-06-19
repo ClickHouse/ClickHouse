@@ -44,7 +44,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         }
 
         for (size_t column = 0, columns = granule_index_block.columns(); column < columns; ++column)
-            fillingBloomFilter(bloom_filters[column], granule_index_block, column, hash_functions);
+            fillingBloomFilter(bloom_filters[column], granule_index_block, column);
     }
 }
 
@@ -94,8 +94,7 @@ void MergeTreeIndexGranuleBloomFilter::assertGranuleBlocksStructure(const Blocks
     }
 }
 
-void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(
-    std::shared_ptr<BloomFilter> & bf, const Block & granule_index_block, size_t index_hash_column, size_t hash_functions)
+void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column)
 {
     const auto & column = granule_index_block.getByPosition(index_hash_column);
 
