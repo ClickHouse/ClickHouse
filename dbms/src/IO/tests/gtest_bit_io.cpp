@@ -1,3 +1,4 @@
+#include <string.h>
 #include <IO/BitHelpers.h>
 
 #include <Core/Types.h>
@@ -6,10 +7,14 @@
 #include <Common/BitHelpers.h>
 #include <Common/PODArray.h>
 
-#include <memory>
-#include <iostream>
+#include <cmath>
 #include <iomanip>
+#include <memory>
 #include <bitset>
+#include <string>
+#include <vector>
+#include <typeinfo>
+#include <iostream>
 
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #ifdef __clang__
@@ -19,9 +24,6 @@
 
 #include <gtest/gtest.h>
 
-
-namespace
-{
 using namespace DB;
 
 // Intentionally asymmetric both byte and word-size to detect read and write inconsistencies
@@ -168,7 +170,7 @@ INSTANTIATE_TEST_CASE_P(Simple,
             TestCaseParameter({{33, BIT_PATTERN}, {33, BIT_PATTERN}}),
             TestCaseParameter({{24, 0xFFFFFFFF}},
                 "11111111 11111111 11111111 ")
-));
+),);
 
 TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
 {
@@ -192,11 +194,9 @@ INSTANTIATE_TEST_CASE_P(Primes,
         ::testing::Values(
             primes_case(11, 0xFFFFFFFFFFFFFFFFULL),
             primes_case(11, BIT_PATTERN)
-));
+),);
 
-}
-
-TEST(BitHelpers, MaskLowBits)
+TEST(BitHelpers, maskLowBits)
 {
     EXPECT_EQ(0b00000111, ::maskLowBits<UInt8>(3));
     EXPECT_EQ(0b01111111, ::maskLowBits<UInt8>(7));
@@ -205,4 +205,9 @@ TEST(BitHelpers, MaskLowBits)
     EXPECT_EQ(0b00000111111111111111111111111111, ::maskLowBits<UInt32>(27));
     EXPECT_EQ(0b111111111111111111111111111111111, ::maskLowBits<UInt64>(33));
     EXPECT_EQ(0b11111111111111111111111111111111111, ::maskLowBits<UInt64>(35));
+
+    EXPECT_EQ(0xFF, ::maskLowBits<UInt8>(8));
+    EXPECT_EQ(0xFFFF, ::maskLowBits<UInt16>(16));
+    EXPECT_EQ(0xFFFFFFFF, ::maskLowBits<UInt32>(32));
+    EXPECT_EQ(0xFFFFFFFFFFFFFFFF, ::maskLowBits<UInt64>(64));
 }

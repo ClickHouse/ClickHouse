@@ -22,9 +22,9 @@ INSERT INTO codecTest (key, ref_valueF64, valueF64, ref_valueF32, valueF32)
 INSERT INTO codecTest (key, ref_valueF64, valueF64, ref_valueF32, valueF32)
 	SELECT number AS n, n*sqrt(n) AS v, v, v, v FROM system.numbers LIMIT 201, 100;
 
--- worst case - random values
+-- worst case - almost like a random values
 INSERT INTO codecTest (key, ref_valueF64, valueF64, ref_valueF32, valueF32)
-	SELECT number AS n, (rand64() - 9223372036854775808)/10000000000000 AS v, v, v, v FROM system.numbers LIMIT 3001, 100;
+	SELECT number AS n, sin(n * n * n ) * n AS v, v, v, v FROM system.numbers LIMIT 3001, 100;
 
 
 -- These floating-point values are expected to be BINARY equal, hence comparing the values are safe.
