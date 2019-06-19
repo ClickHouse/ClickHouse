@@ -9,7 +9,7 @@ RoaringBitmap is wrapped into a data structure while actual storage of Bitmap ob
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
 
-## bitmapBuild
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Build a bitmap from unsigned integer array.
 
@@ -61,17 +61,17 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 Checks whether bitmap contains an element.
 
 ```
-bitmapContains(bitmap, expr)
+bitmapContains(haystack, needle)
 ```
 
 **Parameters**
 
-- `bitmap` – Bitmap object.
-- `expr` – [Expression](../syntax.md#syntax-expressions), resulting to the value of [UInt32](../../data_types/int_uint.md) data type.
+- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the functions searches.
+- `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
 
 **Returned value**
 
-- 0 — If `bitmap` doesn't contain the result of `expr`, or if `bitmap` is empty.
+- 0 — If `bitmap` doesn't contain the result of `expr`.
 - 1 — If `bitmap` contains the result of `expr`.
 
 Type: `UInt8`.
@@ -95,7 +95,7 @@ Checks whether two bitmaps have intersection by some elements.
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
-If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficient.
+If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficiently.
 
 **Parameters**
 
