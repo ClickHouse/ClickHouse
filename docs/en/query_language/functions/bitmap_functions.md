@@ -58,7 +58,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
-Checks whether bitmap contains an element.
+Checks whether the bitmap contains an element.
 
 ```
 bitmapContains(haystack, needle)
@@ -71,8 +71,8 @@ bitmapContains(haystack, needle)
 
 **Returned value**
 
-- 0 — If `bitmap` doesn't contain the result of `expr`.
-- 1 — If `bitmap` contains the result of `expr`.
+- 0 — If `haystack` doesn't contain `needle`.
+- 1 — If `haystack` contains `needle`.
 
 Type: `UInt8`.
 
