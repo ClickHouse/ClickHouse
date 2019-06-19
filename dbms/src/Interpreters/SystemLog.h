@@ -198,12 +198,13 @@ void SystemLog<LogElement>::flush()
         return;
 
     std::lock_guard flush_lock(flush_mutex);
+    force_flushing = true;
+
     /// Tell thread to execute extra flush.
     queue.push({ElementType::FORCE_FLUSH, {}});
 
     /// Wait for flush being finished.
     std::unique_lock lock(condvar_mutex);
-    force_flushing = true;
     while (force_flushing)
         flush_condvar.wait(lock);
 }
