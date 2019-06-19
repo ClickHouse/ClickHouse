@@ -117,8 +117,8 @@ SELECT format('{} {}', 'Hello', 'World')
 ## tryBase64Decode(s)
 Функционал аналогичен base64Decode, но при невозможности декодирования возвращает пустую строку.
 
-## crc32(s)
-Возвращает хэш-сумму crc32 данной строки.
+## CRC32(s)
+Возвращает чексумму CRC32 данной строки.
 Тип результата - UInt32.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_functions/) <!--hide-->
