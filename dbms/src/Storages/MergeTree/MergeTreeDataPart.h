@@ -102,8 +102,9 @@ struct MergeTreeDataPart
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
-    /// We can change temp state when move part to another disk
-    mutable bool is_temp = false;
+    bool is_temp = false;
+
+    mutable bool remove_on_destroy = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
@@ -160,7 +161,7 @@ struct MergeTreeDataPart
         return false;
     }
 
-    void deleteOnDestroy() const { is_temp = true; }
+    void deleteOnDestroy() const { remove_on_destroy = true; }
 
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<State> & affordable_states) const;

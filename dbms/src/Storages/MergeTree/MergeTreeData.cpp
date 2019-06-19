@@ -1157,7 +1157,7 @@ void MergeTreeData::move(const String & part_name, const String & destination_di
 
     auto reservation = reserveSpaceAtDisk(disk, part->bytes_on_disk);
     if (!reservation)
-        throw Exception("Move is not possible. Not enought space on disk " + destination_disk_name, ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception("Move is not possible. Not enough space on disk " + destination_disk_name, ErrorCodes::NOT_ENOUGH_SPACE);
 
     LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
     part->makeCloneOnDiskDetached(reservation);
@@ -1173,8 +1173,6 @@ void MergeTreeData::move(const String & part_name, const String & destination_di
     auto old_active_part = swapActivePart(copied_part);
 
     old_active_part->deleteOnDestroy();
-
-    std::cerr << "USE COUNT" << old_active_part.use_count() << std::endl;
 }
 
 void MergeTreeData::dropAllData()

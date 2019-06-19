@@ -281,10 +281,10 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_index) const
 {
-    for (const auto & volume : volumes)
-    {
+    for (size_t i = min_volume_index; i < volumes.size(); ++i) {
+        const auto & volume = volumes[i];
         auto reservation = volume.reserve(expected_size);
         if (reservation)
             return reservation;

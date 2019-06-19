@@ -23,7 +23,7 @@ BlockIO InterpreterMoveQuery::execute()
 
     if (!move.cluster.empty())
     {
-        ; ///@TODO_IGR ASK WHAT SHOULD I DO HERE
+        ///@TODO_IGR ASK WHAT SHOULD I DO HERE
 //            NameSet databases;
 //            for (const auto & elem : rename.elements)
 //            {

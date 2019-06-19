@@ -307,7 +307,7 @@ time_t MergeTreeDataPart::getMaxTime() const
 
 MergeTreeDataPart::~MergeTreeDataPart()
 {
-    if (is_temp)
+    if (remove_on_destroy || is_temp)
     {
         try
         {
@@ -317,11 +317,14 @@ MergeTreeDataPart::~MergeTreeDataPart()
             if (!dir.exists())
                 return;
 
-            if (!startsWith(getNameWithPrefix(), "tmp"))
+            if (is_temp)
             {
-                LOG_ERROR(storage.log, "~DataPart() should remove part " << path
-                    << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
-                return;
+                if (!startsWith(getNameWithPrefix(), "tmp"))
+                {
+                    LOG_ERROR(storage.log, "~DataPart() should remove part " << path
+                        << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+                    return;
+                }
             }
 
             dir.remove(true);
