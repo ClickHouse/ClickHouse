@@ -58,12 +58,12 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, columns);
 }
 
-IndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, header, hash_functions);
 }
 
-static void assertIndexColumnsType(const Block &header)
+static void assertIndexColumnsType(const Block & header)
 {
     if (!header || !header.columns())
         throw Exception("Index must have columns.", ErrorCodes::INCORRECT_QUERY);
@@ -81,7 +81,8 @@ static void assertIndexColumnsType(const Block &header)
     }
 }
 
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context)
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
+    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name.", ErrorCodes::INCORRECT_QUERY);

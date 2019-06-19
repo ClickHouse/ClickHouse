@@ -19,7 +19,7 @@ public:
 
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    IndexConditionPtr createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

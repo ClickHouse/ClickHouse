@@ -12,12 +12,12 @@
 namespace DB
 {
 
-class MergeTreeSetSkippingIndex;
+class MergeTreeIndexSet;
 
-struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index);
-    MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index, MutableColumns && columns);
+    explicit MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index);
+    MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index, MutableColumns && columns);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
@@ -25,17 +25,17 @@ struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
 
-    ~MergeTreeSetIndexGranule() override = default;
+    ~MergeTreeIndexGranuleSet() override = default;
 
-    const MergeTreeSetSkippingIndex & index;
+    const MergeTreeIndexSet & index;
     Block block;
 };
 
 
-struct MergeTreeSetIndexAggregator : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorSet : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index);
-    ~MergeTreeSetIndexAggregator() override = default;
+    explicit MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index);
+    ~MergeTreeIndexAggregatorSet() override = default;
 
     size_t size() const { return data.getTotalRowCount(); }
     bool empty() const override { return !size(); }
@@ -55,26 +55,26 @@ private:
             size_t limit,
             ClearableSetVariants & variants) const;
 
-    const MergeTreeSetSkippingIndex & index;
+    const MergeTreeIndexSet & index;
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
 };
 
 
-class SetIndexCondition : public IIndexCondition
+class MergeTreeIndexConditionSet : public IMergeTreeIndexCondition
 {
 public:
-    SetIndexCondition(
+    MergeTreeIndexConditionSet(
             const SelectQueryInfo & query,
             const Context & context,
-            const MergeTreeSetSkippingIndex & index);
+            const MergeTreeIndexSet & index);
 
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
-    ~SetIndexCondition() override = default;
+    ~MergeTreeIndexConditionSet() override = default;
 private:
     void traverseAST(ASTPtr & node) const;
     bool atomFromAST(ASTPtr & node) const;
@@ -82,7 +82,7 @@ private:
 
     bool checkASTUseless(const ASTPtr &node, bool atomic = false) const;
 
-    const MergeTreeSetSkippingIndex & index;
+    const MergeTreeIndexSet & index;
 
     bool useless;
     std::set<String> key_columns;
@@ -91,10 +91,10 @@ private:
 };
 
 
-class MergeTreeSetSkippingIndex : public IMergeTreeIndex
+class MergeTreeIndexSet : public IMergeTreeIndex
 {
 public:
-    MergeTreeSetSkippingIndex(
+    MergeTreeIndexSet(
         String name_,
         ExpressionActionsPtr expr_,
         const Names & columns_,
@@ -104,12 +104,12 @@ public:
         size_t max_rows_)
         : IMergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
 
-    ~MergeTreeSetSkippingIndex() override = default;
+    ~MergeTreeIndexSet() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    IndexConditionPtr createIndexCondition(
+    MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
