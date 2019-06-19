@@ -13,7 +13,7 @@ chl="$CLICKHOUSE_CLIENT -q"
 ch_dir=`${CLICKHOUSE_EXTRACT_CONFIG} -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
-$chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"
+$chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(31), 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(1), 2)"
 
@@ -51,7 +51,7 @@ $chl "DROP TABLE test.partition_428"
 # Test 2. Simple test
 
 $chl "drop table if exists test.partition_428"
-$chl "create table test.partition_428 (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) ENGINE=MergeTree(date,sample_key,(date,x,sample_key),8192)"
+$chl "create table test.partition_428 (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) ENGINE=MergeTree PARTITION BY date SAMPLE BY sample_key ORDER BY (date,x,sample_key) SETTINGS index_granularity=8192, index_granularity_bytes=0"
 $chl "insert into test.partition_428 ( x ) VALUES ( now() )"
 $chl "insert into test.partition_428 ( x ) VALUES ( now()+1 )"
 $chl "alter table test.partition_428 detach partition 197001"

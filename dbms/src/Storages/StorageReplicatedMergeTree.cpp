@@ -4787,6 +4787,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         /// Save deduplication block ids with special prefix replace_partition
 
         auto & src_part = src_all_parts[i];
+
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
         String hash_hex = src_part->checksums.getTotalChecksumHex();
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 

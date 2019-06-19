@@ -580,6 +580,7 @@ public:
             (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
@@ -798,6 +799,9 @@ protected:
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+
+    bool canReplacePartition(const DataPartPtr & data_part) const;
+
 };
 
 }
