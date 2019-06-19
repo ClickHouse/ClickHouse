@@ -2,7 +2,7 @@
 
 #include <Functions/domain.h>
 #include <common/find_symbols.h>
-#include <Common/config.h>
+#include <Common/config_functions.h>
 #if USE_GPERF
 #    include <Functions/tldLookup.h>
 #endif

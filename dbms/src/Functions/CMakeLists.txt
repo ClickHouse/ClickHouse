@@ -1,3 +1,6 @@
+
+configure_file (config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
@@ -34,7 +37,8 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
+target_include_directories(clickhouse_functions PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include/)
+target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
 if (CONSISTENT_HASHING_INCLUDE_DIR)
     target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
