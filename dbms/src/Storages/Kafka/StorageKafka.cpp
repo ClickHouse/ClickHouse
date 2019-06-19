@@ -209,9 +209,8 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
 
 BufferPtr StorageKafka::createBuffer()
 {
-    // Create a consumer and subscribe to topics
+    // Create a consumer.
     auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-    consumer->subscribe(topics);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
