@@ -1,3 +1,4 @@
+include (${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
 configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
@@ -5,7 +6,6 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions .)
 
-include (${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
 if (USE_GPERF)
     add_custom_command(
 	    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
