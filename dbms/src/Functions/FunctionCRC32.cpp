@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/** Calculates the crc32 of a string
+/** Calculates the CRC32 of a string
   */
 struct CRC32Impl
 {
@@ -43,7 +43,7 @@ struct CRC32Impl
 
     static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt32> & /*res*/)
     {
-        throw Exception("Cannot apply function crc32 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Cannot apply function CRC32 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 private:
@@ -62,7 +62,7 @@ using FunctionCRC32 = FunctionStringOrArrayToT<CRC32Impl, NameCRC32, UInt32>;
 
 void registerFunctionCRC32(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionCRC32>();
+    factory.registerFunction<FunctionCRC32>(NameCRC32, FunctionFactory::CaseInsensitive);
 }
 
 }
