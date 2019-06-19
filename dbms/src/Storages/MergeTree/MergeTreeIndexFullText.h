@@ -49,7 +49,7 @@ struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeConditionFullText : public IIndexCondition
+class MergeTreeConditionFullText : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionFullText(
@@ -189,7 +189,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    IndexConditionPtr createIndexCondition(
+    MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;

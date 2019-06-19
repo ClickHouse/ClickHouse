@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -16,14 +16,14 @@ namespace ErrorCodes
 }
 
 
-MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
+MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index)
     : IMergeTreeIndexGranule(), index(index), parallelogram() {}
 
-MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(
-    const MergeTreeMinMaxIndex & index, std::vector<Range> && parallelogram)
+MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
+    const MergeTreeIndexMinMax & index, std::vector<Range> && parallelogram)
     : IMergeTreeIndexGranule(), index(index), parallelogram(std::move(parallelogram)) {}
 
-void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
@@ -50,7 +50,7 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
 {
     parallelogram.clear();
     Field min_val;
@@ -83,15 +83,15 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeMinMaxAggregator::MergeTreeMinMaxAggregator(const MergeTreeMinMaxIndex & index)
+MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index)
     : index(index) {}
 
-MergeTreeIndexGranulePtr MergeTreeMinMaxAggregator::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
-    return std::make_shared<MergeTreeMinMaxGranule>(index, std::move(parallelogram));
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index, std::move(parallelogram));
 }
 
-void MergeTreeMinMaxAggregator::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -122,21 +122,21 @@ void MergeTreeMinMaxAggregator::update(const Block & block, size_t * pos, size_t
 }
 
 
-MinMaxCondition::MinMaxCondition(
+MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo &query,
     const Context &context,
-    const MergeTreeMinMaxIndex &index)
-    : IIndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
+    const MergeTreeIndexMinMax &index)
+    : IMergeTreeIndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
 
-bool MinMaxCondition::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
     return condition.alwaysUnknownOrTrue();
 }
 
-bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeMinMaxGranule> granule
-        = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
+        = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
@@ -147,25 +147,25 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
 }
 
 
-MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeMinMaxGranule>(*this);
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(*this);
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeMinMaxIndex::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeMinMaxAggregator>(*this);
+    return std::make_shared<MergeTreeIndexAggregatorMinMax>(*this);
 }
 
 
-IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<MinMaxCondition>(query, context, *this);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(query, context, *this);
 };
 
-bool MergeTreeMinMaxIndex::mayBenefitFromIndexForIn(const ASTPtr & node) const
+bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
 
@@ -210,7 +210,7 @@ std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
         data_types.emplace_back(column.type);
     }
 
-    return std::make_unique<MergeTreeMinMaxIndex>(
+    return std::make_unique<MergeTreeIndexMinMax>(
         node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity);
 }
 

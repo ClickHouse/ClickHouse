@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class MergeTreeIndexConditionBloomFilter : public IIndexCondition
+class MergeTreeIndexConditionBloomFilter : public IMergeTreeIndexCondition
 {
 public:
     struct RPNElement
@@ -44,9 +44,7 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
-        {
             return mayBeTrueOnGranule(bf_granule);
-        }
 
         throw Exception("LOGICAL ERROR: require bloom filter index granule.", ErrorCodes::LOGICAL_ERROR);
     }
@@ -66,9 +64,11 @@ private:
 
     bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
 
-    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
+    bool traverseASTIn(
+        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
 
-    bool traverseASTEquals(const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out);
+    bool traverseASTEquals(
+        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out);
 };
 
 }

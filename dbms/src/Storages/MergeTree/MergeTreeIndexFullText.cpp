@@ -486,7 +486,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() cons
     return std::make_shared<MergeTreeIndexAggregatorFullText>(*this);
 }
 
-IndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, *this);

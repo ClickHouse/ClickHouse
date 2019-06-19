@@ -59,17 +59,17 @@ using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
 
 /// Condition on the index.
-class IIndexCondition
+class IMergeTreeIndexCondition
 {
 public:
-    virtual ~IIndexCondition() = default;
+    virtual ~IMergeTreeIndexCondition() = default;
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };
 
-using IndexConditionPtr = std::shared_ptr<IIndexCondition>;
+using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 
 
 /// Structure for storing basic index info like columns, expression, arguments, ...
@@ -101,7 +101,7 @@ public:
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual IndexConditionPtr createIndexCondition(
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
     String name;
