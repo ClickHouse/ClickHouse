@@ -2,7 +2,7 @@
 
 #include <string>
 #include <Parsers/IAST.h>
-#include <DataTypes/IDataType.h>
+#include "IDataType.h"
 
 namespace DB
 {

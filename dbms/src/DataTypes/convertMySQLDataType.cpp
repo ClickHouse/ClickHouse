@@ -4,13 +4,13 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include "IDataType.h"
+#include "DataTypeString.h"
+#include "DataTypesNumber.h"
+#include "DataTypeDate.h"
+#include "DataTypeDateTime.h"
+#include "DataTypeNullable.h"
+#include "DataTypeFixedString.h"
 
 namespace DB
 {
