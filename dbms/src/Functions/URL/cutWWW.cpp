@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/FunctionsURL.h>
-#include <Functions/protocol.h>
+#include "protocol.h"
 #include <common/find_symbols.h>
 
 

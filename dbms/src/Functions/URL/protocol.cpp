@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/protocol.h>
+#include "protocol.h"
 
 
 namespace DB

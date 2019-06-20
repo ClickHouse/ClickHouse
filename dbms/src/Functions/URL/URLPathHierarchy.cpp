@@ -1,20 +1,18 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringArray.h>
-#include <Functions/FunctionsURL.h>
 
 namespace DB
 {
 
-class URLPathHierarchyImpl
+class URLHierarchyImpl
 {
 private:
     Pos begin;
     Pos pos;
     Pos end;
-    Pos start;
 
 public:
-    static constexpr auto name = "URLPathHierarchy";
+    static constexpr auto name = "URLHierarchy";
     static String getName() { return name; }
 
     static size_t getNumberOfArguments() { return 1; }
@@ -38,7 +36,6 @@ public:
     void set(Pos pos_, Pos end_)
     {
         begin = pos = pos_;
-        start = begin;
         end = end_;
     }
 
@@ -46,7 +43,6 @@ public:
     bool get(Pos & token_begin, Pos & token_end)
     {
         /// Code from URLParser.
-
         if (pos == end)
             return false;
 
@@ -59,23 +55,28 @@ public:
                 ++pos;
 
             /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-             * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there.
-             * For the rest, just return an empty array.
+             * (http, file - fit, mailto, magnet - do not fit), and after two slashes still at least something is there
+             * For the rest, simply return the full URL as the only element of the hierarchy.
              */
             if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
             {
                 pos = end;
-                return false;
+                token_begin = begin;
+                token_end = end;
+                return true;
             }
 
-            /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or `?` or `#`
+            /// The domain for simplicity is everything that after the protocol and two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
                 ++pos;
 
-            start = pos;
-
             if (pos != end)
                 ++pos;
+
+            token_begin = begin;
+            token_end = pos;
+
+            return true;
         }
 
         /// We go to the next `/` or `?` or `#`, skipping all those at the beginning.
@@ -89,7 +90,7 @@ public:
         if (pos != end)
             ++pos;
 
-        token_begin = start;
+        token_begin = begin;
         token_end = pos;
 
         return true;
@@ -97,12 +98,12 @@ public:
 };
 
 
-struct NameURLPathHierarchy { static constexpr auto name = "URLPathHierarchy"; };
-using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
+struct NameURLHierarchy { static constexpr auto name = "URLHierarchy"; };
+using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
 
-void registerFunctionURLPathHierarchy(FunctionFactory & factory)
+void registerFunctionURLHierarchy(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionURLPathHierarchy>();
+    factory.registerFunction<FunctionURLHierarchy>();
 }
 
 }
