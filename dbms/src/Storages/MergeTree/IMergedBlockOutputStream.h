@@ -134,7 +134,6 @@ protected:
     size_t current_mark = 0;
 
     const std::string marks_file_extension;
-    const size_t mark_size_in_bytes;
     const bool blocks_are_granules_size;
 
     MergeTreeIndexGranularity index_granularity;
