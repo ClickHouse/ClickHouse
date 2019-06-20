@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Functions/domain.h>
 #include <common/find_symbols.h>
-#include <Common/config.h>
-#if USE_GPERF
-#    include <Functions/tldLookup.h>
-#endif
+#include "domain.h"
+#include "tldLookup.h"
 
 namespace DB
 {

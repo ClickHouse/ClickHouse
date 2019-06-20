@@ -7,7 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/config.h>
+#include "config_functions.h"
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
   * Disabled due to license compatibility limitations.
