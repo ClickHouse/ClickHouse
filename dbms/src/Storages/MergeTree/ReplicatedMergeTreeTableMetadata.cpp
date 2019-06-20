@@ -47,7 +47,11 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedAST(data.ttl_table_ast);
     skip_indices = data.getIndices().toString();
-    index_granularity_bytes = data.settings.index_granularity_bytes;
+    if (data.canUseAdaptiveGranularity())
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+    else
+        index_granularity_bytes = 0;
+    }
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -114,7 +118,12 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         in >> skip_indices >> "\n";
 
     if (checkString("granularity bytes: ", in))
+    {
         in >> index_granularity_bytes >> "\n";
+        index_granularity_bytes_found_in_zk = true;
+    }
+    else
+        index_granularity_bytes = 0;
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -227,7 +236,7 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (index_granularity_bytes != from_zk.index_granularity_bytes)
+    if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
         throw Exception("Existing table metadata in ZooKeeper differs in index granularity bytes."
             " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity_bytes) +
             ", local: " + DB::toString(index_granularity_bytes),
