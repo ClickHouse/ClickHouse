@@ -28,7 +28,6 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
     , marks_file_extension(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
-    , mark_size_in_bytes(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkSize() : getNonAdaptiveMrkSize())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
@@ -99,11 +98,12 @@ void fillIndexGranularityImpl(
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
     size_t index_offset,
-    MergeTreeIndexGranularity & index_granularity)
+    MergeTreeIndexGranularity & index_granularity,
+    bool can_use_adaptive_index_granularity)
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
-    if (index_granularity_bytes == 0)
+    if (!can_use_adaptive_index_granularity)
         index_granularity_for_block = fixed_index_granularity_rows;
     else
     {
@@ -139,7 +139,8 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         storage.settings.index_granularity,
         blocks_are_granules_size,
         index_offset,
-        index_granularity);
+        index_granularity,
+        storage.canUseAdaptiveGranularity());
 }
 
 void IMergedBlockOutputStream::writeSingleMark(
@@ -170,7 +171,7 @@ void IMergedBlockOutputStream::writeSingleMark(
 
          writeIntBinary(stream.plain_hashing.count(), stream.marks);
          writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (storage.settings.index_granularity_bytes)
+         if (storage.canUseAdaptiveGranularity())
              writeIntBinary(number_of_rows, stream.marks);
      }, path);
 }
