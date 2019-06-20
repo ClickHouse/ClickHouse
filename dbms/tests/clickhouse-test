@@ -443,7 +443,7 @@ if __name__ == '__main__':
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
-    parser.add_argument('-j', '--jobs', default=1, help='Run all tests in parallel', type=int) # default=multiprocessing.cpu_count()
+    parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -506,5 +506,8 @@ if __name__ == '__main__':
             args.extract_from_config = args.binary + '-extract-from-config'
         else:
             args.extract_from_config = args.binary + ' extract-from-config'
+
+    if args.jobs is None:
+        args.jobs=multiprocessing.cpu_count()
 
     main(args)

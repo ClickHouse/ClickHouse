@@ -1,3 +1,6 @@
+include (${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
+configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
@@ -6,7 +9,7 @@ add_headers_and_sources(clickhouse_functions .)
 if (USE_GPERF)
     add_custom_command(
 	    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
-	    COMMAND ${GPERF} ${CMAKE_CURRENT_SOURCE_DIR}/gperf/tldLookup.gperf --output-file=${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
+	    COMMAND ${GPERF} ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.gperf --output-file=${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
     )
 
     list(APPEND clickhouse_functions_sources ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp)
@@ -34,7 +37,8 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
+target_include_directories(clickhouse_functions PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
 if (CONSISTENT_HASHING_INCLUDE_DIR)
     target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
