@@ -1,12 +1,12 @@
 # Formats for input and output data {#formats}
 
-ClickHouse can accept and return data in various formats. A format that is
-supported for output can be used to arrange the results of a `SELECT` query,
-and the data for an `INSERT` query can be accepted in a format that is
-supported for input. Conversely, when working with a data file using the
-[File](../operations/table_engines/file.md) table engine, to enable `SELECT`s
-from the file, its format must be supported for input, and to enable `INSERT`s
--- for output. The table below lists the supported formats.
+ClickHouse can accept and return data in various formats. A format supported
+for input can be used to parse the data provided to `INSERT`s, to perform
+`SELECT`s from a file-backed table such as File, URL or HDFS, or to read an
+external dictionary. A format supported for output can be used to arrange the
+results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
+
+The supported formats are:
 
 | Format | input | output |
 | ------- | -------- | -------- |
