@@ -1,6 +1,7 @@
 #include "Loggers.h"
 
 #include <iostream>
+#include <Common/SensitiveDataMasker.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
@@ -152,12 +153,20 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             logger.root().get(level).setLevel(config.getString("logger.levels." + level, "trace"));
 }
 
+void Loggers::setLoggerSensitiveDataMasker(Poco::Logger & logger, DB::SensitiveDataMasker * sensitive_data_masker)
+{
+    if (auto split = dynamic_cast<DB::OwnSplitChannel *>(logger.getChannel())) {
+        split->setMasker(sensitive_data_masker);
+    }
+}
+
 void Loggers::closeLogs(Poco::Logger & logger)
 {
     if (log_file)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");
