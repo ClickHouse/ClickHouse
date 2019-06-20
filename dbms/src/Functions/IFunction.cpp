@@ -1,3 +1,5 @@
+#include "IFunction.h"
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/LRUCache.h>
@@ -13,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>

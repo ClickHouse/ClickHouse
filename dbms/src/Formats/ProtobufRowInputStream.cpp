@@ -1,11 +1,12 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufRowInputStream.h"
 
 #include <Core/Block.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufRowInputStream.h>
 #include <Formats/ProtobufSchemas.h>
 
 

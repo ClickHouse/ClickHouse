@@ -1,9 +1,10 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_CAPNP
+
+#include "CapnProtoRowInputStream.h"
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/CapnProtoRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatSchemaInfo.h>
