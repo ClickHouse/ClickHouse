@@ -24,14 +24,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+See a detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
-A table for the Graphite date should have the following columns:
+A table for the Graphite data should have the following columns for the following data:
 
-- Column with the metric name (Graphite sensor). Data type: `String`.
-- Column with the time of measuring the metric. Data type: `DateTime`.
-- Column with the value of the metric. Data type: any numeric.
-- Column with the version of the metric. Data type: any numeric.
+- Metric name (Graphite sensor). Data type: `String`.
+- Time of measuring the metric. Data type: `DateTime`.
+- Value of the metric. Data type: any numeric.
+- Version of the metric. Data type: any numeric.
 
     ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
@@ -75,6 +75,21 @@ Rollup configuration structure:
 
 ```
 required-columns
+patterns
+```
+
+### Required Columns
+
+- `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
+- `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
+- `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
+- `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
+
+### Patterns
+
+Structure of the `patterns` section:
+
+```
 pattern
     regexp
     function
@@ -95,14 +110,14 @@ default
     ...
 ```
 
-**Important:** The order of patterns should be next:
+!!! warning "Attention"
+    Patterns must be strictly ordered:
 
-1. Patterns *without* `function` *or* `retention`.
-1. Patterns *with* both `function` *and* `retention`.
-1. Pattern `dafault`.
+    1. Patterns without `function` or `retention`.
+    1. Patterns with both `function` and `retention`.
+    1. Pattern `default`.
 
-
-When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections could contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
+When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
@@ -111,20 +126,11 @@ Fields for `pattern` and `default` sections:
 - `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 - `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
-The `required-columns`:
 
-- `path_column_name` — Column with the metric name (Graphite sensor).
-- `time_column_name` — Column with the time of measuring the metric.
-- `value_column_name` — Column with the value of the metric at the time set in `time_column_name`.
-- `version_column_name` — Column with the version of the metric.
-
-Example of settings:
+### Configuration Example
 
 ```xml
 <graphite_rollup>
-    <path_column_name>Path</path_column_name>
-    <time_column_name>Time</time_column_name>
-    <value_column_name>Value</value_column_name>
     <version_column_name>Version</version_column_name>
     <pattern>
         <regexp>click_cost</regexp>

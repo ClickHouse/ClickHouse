@@ -9,7 +9,7 @@ endif()
 
 SET(WITH_KERBEROS false)
 # project and source dir
-set(HDFS3_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/libhdfs3)
+set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
 set(HDFS3_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
 
@@ -183,7 +183,7 @@ set(SRCS
     )
 
 # target
-add_library(hdfs3 STATIC ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
+add_library(hdfs3 ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(hdfs3 protoc)
@@ -208,7 +208,8 @@ target_link_libraries(hdfs3 ${LIBXML2_LIBRARY})
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
-target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
-
 target_link_libraries(hdfs3 ${Protobuf_LIBRARY})
-target_link_libraries(hdfs3 ${OPENSSL_LIBRARIES})
+if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBRARIES)
+    target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_link_libraries(hdfs3 ${OPENSSL_LIBRARIES})
+endif()

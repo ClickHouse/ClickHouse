@@ -15,6 +15,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Databases/IDatabase.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -22,6 +23,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+#include "InterpreterSystemQuery.h"
 
 
 namespace DB
@@ -42,6 +44,7 @@ namespace ActionLocks
     extern StorageActionBlockType PartsFetch;
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
+    extern StorageActionBlockType DistributedSend;
 }
 
 
@@ -117,7 +120,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto & query = typeid_cast<ASTSystemQuery &>(*query_ptr);
+    auto & query = query_ptr->as<ASTSystemQuery &>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -156,7 +159,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            system_context.getExternalDictionaries().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
@@ -194,8 +197,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, true);
             break;
+        case Type::STOP_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, false);
+            break;
+        case Type::START_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, true);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
+            break;
+        case Type::FLUSH_DISTRIBUTED:
+            flushDistributed(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -239,7 +251,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(context.getCurrentQueryId());
+        auto table_lock = table->lockExclusively(context.getCurrentQueryId());
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -248,7 +260,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
         std::string data_path = database->getDataPath();
@@ -303,11 +315,21 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-    if (!table_replicated)
+    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+}
 
-    table_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+{
+    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
+    String & table_name = query.target_table;
+
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+        storage_distributed->flushClusterNodesAllData();
+    else
+        throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

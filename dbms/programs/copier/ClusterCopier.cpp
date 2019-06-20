@@ -1,7 +1,6 @@
 #include "ClusterCopier.h"
 
 #include <chrono>
-
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
@@ -13,14 +12,10 @@
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
-
 #include <boost/algorithm/string.hpp>
 #include <pcg_random.hpp>
-
 #include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <daemon/OwnPatternFormatter.h>
-
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -59,13 +54,16 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
 
@@ -483,7 +481,7 @@ String DB::TaskShard::getHostNameExample() const
 
 static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
+    const auto & storage = storage_ast->as<ASTStorage &>();
     return storage.partition_by || storage.order_by || storage.sample_by;
 }
 
@@ -491,17 +489,14 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
-    const ASTFunction & engine = typeid_cast<const ASTFunction &>(*storage.engine);
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
     {
         throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                         ErrorCodes::BAD_ARGUMENTS);
     }
-
-    ASTPtr arguments_ast = engine.arguments->clone();
-    ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
 
     if (isExtendedDefinitionStorage(storage_ast))
     {
@@ -515,6 +510,12 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     {
         bool is_replicated = startsWith(engine.name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
+
+        if (!engine.arguments)
+            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
+
+        ASTPtr arguments_ast = engine.arguments->clone();
+        ASTs & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
             throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
@@ -798,13 +799,13 @@ public:
     }
 
 
-    void discoverShardPartitions(const TaskShardPtr & task_shard)
+    void discoverShardPartitions(const ConnectionTimeouts & timeouts, const TaskShardPtr & task_shard)
     {
         TaskTable & task_table = task_shard->task_table;
 
         LOG_INFO(log, "Discover partitions of shard " << task_shard->getDescription());
 
-        auto get_partitions = [&] () { return getShardPartitions(*task_shard); };
+        auto get_partitions = [&] () { return getShardPartitions(timeouts, *task_shard); };
         auto existing_partitions_names = retry(get_partitions, 60);
         Strings filtered_partitions_names;
         Strings missing_partitions;
@@ -880,18 +881,40 @@ public:
     }
 
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
-    void discoverTablePartitions(TaskTable & task_table, UInt64 num_threads = 0)
+    void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0)
     {
         /// Fetch partitions list from a shard
         {
             ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
             for (const TaskShardPtr & task_shard : task_table.all_shards)
-                thread_pool.schedule([this, task_shard]() { discoverShardPartitions(task_shard); });
+                thread_pool.schedule([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
 
             LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
             thread_pool.wait();
         }
+    }
+
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
+    {
+        auto local_task_description_path = task_path + "/description";
+
+        String task_config_str;
+        {
+            ReadBufferFromFile in(task_file);
+            readStringUntilEOF(task_config_str, in);
+        }
+        if (task_config_str.empty())
+            return;
+
+        auto zookeeper = context.getZooKeeper();
+
+        zookeeper->createAncestors(local_task_description_path);
+        auto code = zookeeper->tryCreate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+        if (code && force)
+            zookeeper->createOrUpdate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+
+        LOG_DEBUG(log, "Task description " << ((code && !force) ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
     }
 
     void reloadTaskDescription()
@@ -933,7 +956,7 @@ public:
         task_descprtion_current_version = version_to_update;
     }
 
-    void process()
+    void process(const ConnectionTimeouts & timeouts)
     {
         for (TaskTable & task_table : task_cluster->table_tasks)
         {
@@ -947,7 +970,7 @@ public:
             if (!task_table.has_enabled_partitions)
             {
                 /// If there are no specified enabled_partitions, we must discover them manually
-                discoverTablePartitions(task_table);
+                discoverTablePartitions(timeouts, task_table);
 
                 /// After partitions of each shard are initialized, initialize cluster partitions
                 for (const TaskShardPtr & task_shard : task_table.all_shards)
@@ -987,7 +1010,7 @@ public:
             bool table_is_done = false;
             for (UInt64 num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
             {
-                if (tryProcessTable(task_table))
+                if (tryProcessTable(timeouts, task_table))
                 {
                     table_is_done = true;
                     break;
@@ -1031,8 +1054,10 @@ protected:
         return getWorkersPath() + "/" + host_id;
     }
 
-    zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(const zkutil::ZooKeeperPtr & zookeeper,
-                                                                       const String & description, bool unprioritized)
+    zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const String & description,
+        bool unprioritized)
     {
         std::chrono::milliseconds current_sleep_time = default_sleep_time;
         static constexpr std::chrono::milliseconds max_sleep_time(30000); // 30 sec
@@ -1179,12 +1204,12 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->columns->children;
+        const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
         auto new_columns = std::make_shared<ASTExpressionList>();
 
         for (const ASTPtr & column_ast : column_asts)
         {
-            const ASTColumnDeclaration & column = typeid_cast<const ASTColumnDeclaration &>(*column_ast);
+            const auto & column = column_ast->as<ASTColumnDeclaration &>();
 
             if (!column.default_specifier.empty())
             {
@@ -1197,12 +1222,12 @@ protected:
         }
 
         ASTPtr new_query_ast = query_ast->clone();
-        ASTCreateQuery & new_query = typeid_cast<ASTCreateQuery &>(*new_query_ast);
+        auto & new_query = new_query_ast->as<ASTCreateQuery &>();
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, new_columns);
-        new_columns_list->set(
-                new_columns_list->indices, typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->indices->clone());
+        if (auto indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
+            new_columns_list->set(new_columns_list->indices, indices->clone());
 
         new_query.replace(new_query.columns_list, new_columns_list);
 
@@ -1212,7 +1237,7 @@ protected:
     /// Replaces ENGINE and table name in a create query
     std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
     {
-        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*create_query_ast);
+        const auto & create = create_query_ast->as<ASTCreateQuery &>();
         auto res = std::make_shared<ASTCreateQuery>(create);
 
         if (create.storage == nullptr || new_storage_ast == nullptr)
@@ -1307,7 +1332,7 @@ protected:
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
 
-    bool tryProcessTable(TaskTable & task_table)
+    bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table)
     {
         /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
         bool previous_shard_is_instantly_finished = false;
@@ -1338,7 +1363,7 @@ protected:
                     /// If not, did we check existence of that partition previously?
                     if (shard->checked_partitions.count(partition_name) == 0)
                     {
-                        auto check_shard_has_partition = [&] () { return checkShardHasPartition(*shard, partition_name); };
+                        auto check_shard_has_partition = [&] () { return checkShardHasPartition(timeouts, *shard, partition_name); };
                         bool has_partition = retry(check_shard_has_partition);
 
                         shard->checked_partitions.emplace(partition_name);
@@ -1375,7 +1400,7 @@ protected:
                 bool was_error = false;
                 for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
-                    task_status = tryProcessPartitionTask(partition, is_unprioritized_task);
+                    task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
 
                     /// Exit if success
                     if (task_status == PartitionTaskStatus::Finished)
@@ -1461,13 +1486,13 @@ protected:
         Error,
     };
 
-    PartitionTaskStatus tryProcessPartitionTask(ShardPartition & task_partition, bool is_unprioritized_task)
+    PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
     {
         PartitionTaskStatus res;
 
         try
         {
-            res = processPartitionTaskImpl(task_partition, is_unprioritized_task);
+            res = processPartitionTaskImpl(timeouts, task_partition, is_unprioritized_task);
         }
         catch (...)
         {
@@ -1488,7 +1513,7 @@ protected:
         return res;
     }
 
-    PartitionTaskStatus processPartitionTaskImpl(ShardPartition & task_partition, bool is_unprioritized_task)
+    PartitionTaskStatus processPartitionTaskImpl(const ConnectionTimeouts & timeouts, ShardPartition & task_partition, bool is_unprioritized_task)
     {
         TaskShard & task_shard = task_partition.task_shard;
         TaskTable & task_table = task_shard.task_table;
@@ -1589,7 +1614,7 @@ protected:
         zookeeper->createAncestors(current_task_status_path);
 
         /// We need to update table definitions for each partition, it could be changed after ALTER
-        createShardInternalTables(task_shard);
+        createShardInternalTables(timeouts, task_shard);
 
         /// Check that destination partition is empty if we are first worker
         /// NOTE: this check is incorrect if pull and push tables have different partition key!
@@ -1646,7 +1671,7 @@ protected:
         /// Try create table (if not exists) on each shard
         {
             auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query, task_table.table_push, task_table.engine_push_ast);
-            typeid_cast<ASTCreateQuery &>(*create_query_push_ast).if_not_exists = true;
+            create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create destination tables. Query: " << query);
@@ -1779,7 +1804,7 @@ protected:
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast)
     {
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        const auto & create = create_ast->as<ASTCreateQuery &>();
         dropLocalTableIfExists({create.database, create.table});
 
         InterpreterCreateQuery interpreter(create_ast, context);
@@ -1806,23 +1831,25 @@ protected:
         return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
     }
 
-    ASTPtr getCreateTableForPullShard(TaskShard & task_shard)
+    ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
     {
         /// Fetch and parse (possibly) new definition
-        auto connection_entry = task_shard.info.pool->get(&task_cluster->settings_pull);
-        String create_query_pull_str = getRemoteCreateTable(task_shard.task_table.table_pull, *connection_entry,
-                                                            &task_cluster->settings_pull);
+        auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
+        String create_query_pull_str = getRemoteCreateTable(
+            task_shard.task_table.table_pull,
+            *connection_entry,
+            &task_cluster->settings_pull);
 
         ParserCreateQuery parser_create_query;
         return parseQuery(parser_create_query, create_query_pull_str, 0);
     }
 
-    void createShardInternalTables(TaskShard & task_shard, bool create_split = true)
+    void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true)
     {
         TaskTable & task_table = task_shard.task_table;
 
         /// We need to update table definitions for each part, it could be changed after ALTER
-        task_shard.current_pull_table_create_query = getCreateTableForPullShard(task_shard);
+        task_shard.current_pull_table_create_query = getCreateTableForPullShard(timeouts, task_shard);
 
         /// Create local Distributed tables:
         ///  a table fetching data from current shard and a table inserting data to the whole destination cluster
@@ -1850,9 +1877,9 @@ protected:
     }
 
 
-    std::set<String> getShardPartitions(TaskShard & task_shard)
+    std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
     {
-        createShardInternalTables(task_shard, false);
+        createShardInternalTables(timeouts, task_shard, false);
 
         TaskTable & task_table = task_shard.task_table;
 
@@ -1892,9 +1919,9 @@ protected:
         return res;
     }
 
-    bool checkShardHasPartition(TaskShard & task_shard, const String & partition_quoted_name)
+    bool checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name)
     {
-        createShardInternalTables(task_shard, false);
+        createShardInternalTables(timeouts, task_shard, false);
 
         TaskTable & task_table = task_shard.task_table;
 
@@ -1976,7 +2003,8 @@ protected:
                 Settings current_settings = settings ? *settings : task_cluster->settings_common;
                 current_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
 
-                auto connections = shard.pool->getMany(&current_settings, pool_mode);
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+                auto connections = shard.pool->getMany(timeouts, &current_settings, pool_mode);
 
                 for (auto & connection : connections)
                 {
@@ -2032,7 +2060,7 @@ private:
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_descprtion_current_stat;
+    Coordination::Stat task_descprtion_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 
@@ -2104,6 +2132,10 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
                           .argument("task-path").binding("task-path"));
+    options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
+                          .argument("task-file").binding("task-file"));
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
+                          .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
@@ -2143,6 +2175,7 @@ void ClusterCopierApp::mainImpl()
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     static const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
@@ -2154,8 +2187,13 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
+
+    auto task_file = config().getString("task-file", "");
+    if (!task_file.empty())
+        copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
+
     copier->init();
-    copier->process();
+    copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
 }
 
 

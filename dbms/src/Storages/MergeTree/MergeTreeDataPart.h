@@ -4,10 +4,12 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -28,10 +30,7 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
-        : storage(storage_), name(name_), info(info_)
-    {
-    }
+    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_);
 
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
@@ -94,7 +93,6 @@ struct MergeTreeDataPart
     mutable String relative_path;
 
     size_t rows_count = 0;
-    size_t marks_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
                                             /// May not contain size of checksums.txt and columns.txt
@@ -107,6 +105,9 @@ struct MergeTreeDataPart
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
+
+    /// Frozen by ALTER TABLE ... FREEZE ...
+    mutable bool is_frozen = false;
 
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
@@ -128,6 +129,11 @@ struct MergeTreeDataPart
         Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
+
+    using TTLInfo = MergeTreeDataPartTTLInfo;
+    using TTLInfos = MergeTreeDataPartTTLInfos;
+
+    TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
@@ -181,6 +187,10 @@ struct MergeTreeDataPart
 
     MergeTreePartition partition;
 
+    /// Amount of rows between marks
+    /// As index always loaded into memory
+    MergeTreeIndexGranularity index_granularity;
+
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
     /// Currently this index is built using only columns required by partition expression, but in principle it
@@ -215,6 +225,9 @@ struct MergeTreeDataPart
 
     /// Columns description.
     NamesAndTypesList columns;
+
+    /// Columns with values, that all have been zeroed by expired ttl
+    NameSet empty_columns;
 
     using ColumnToSize = std::map<std::string, UInt64>;
 
@@ -261,11 +274,12 @@ struct MergeTreeDataPart
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column) const;
+    bool hasColumnFiles(const String & column, const IDataType & type) const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getMarksCount() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -274,12 +288,18 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->marks_count if marks_count = 0
+    /// Loads marks index granularity into memory
+    void loadIndexGranularity();
+
+    /// Loads index file.
     void loadIndex();
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 

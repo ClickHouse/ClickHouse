@@ -38,6 +38,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 struct HasParam
 {
     using ResultType = UInt8;

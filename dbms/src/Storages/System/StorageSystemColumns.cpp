@@ -1,8 +1,6 @@
 #include <optional>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -38,10 +36,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
         { "comment",                    std::make_shared<DataTypeString>() },
         { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sorting_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sampling_key", std::make_shared<DataTypeUInt8>() },
-        { "compression_codec", std::make_shared<DataTypeString>() },
+        { "is_in_sorting_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
+        { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -88,10 +86,7 @@ protected:
             const std::string table_name = (*tables)[db_table_num].get<std::string>();
             ++db_table_num;
 
-            NamesAndTypesList columns;
-            ColumnDefaults column_defaults;
-            ColumnComments column_comments;
-            ColumnCodecs column_codecs;
+            ColumnsDescription columns;
             Names cols_required_for_partition_key;
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
@@ -100,11 +95,11 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockPtr table_lock;
+                TableStructureReadLockHolder table_lock;
 
                 try
                 {
-                    table_lock = storage->lockStructure(false, query_id);
+                    table_lock = storage->lockStructureForShare(false, query_id);
                 }
                 catch (const Exception & e)
                 {
@@ -119,10 +114,7 @@ protected:
                         throw;
                 }
 
-                columns = storage->getColumns().getAll();
-                column_codecs = storage->getColumns().codecs;
-                column_defaults = storage->getColumns().defaults;
-                column_comments = storage->getColumns().comments;
+                columns = storage->getColumns();
 
                 cols_required_for_partition_key = storage->getColumnsRequiredForPartitionKey();
                 cols_required_for_sorting_key = storage->getColumnsRequiredForSortingKey();
@@ -130,16 +122,10 @@ protected:
                 cols_required_for_sampling = storage->getColumnsRequiredForSampling();
 
                 /** Info about sizes of columns for tables of MergeTree family.
-                * NOTE: It is possible to add getter for this info to IStorage interface.
-                */
-                if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_plain->getData().getColumnSizes();
-                }
-                else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_replicated->getData().getColumnSizes();
-                }
+                  * NOTE: It is possible to add getter for this info to IStorage interface.
+                  */
+                if (auto storage_concrete = dynamic_cast<const MergeTreeData *>(storage.get()))
+                    column_sizes = storage_concrete->getColumnSizes();
             }
 
             for (const auto & column : columns)
@@ -156,22 +142,19 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
 
+                if (column.default_desc.expression)
                 {
-                    const auto it = column_defaults.find(column.name);
-                    if (it == std::end(column_defaults))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(toString(it->second.kind));
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(queryToString(it->second.expression));
-                    }
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(toString(column.default_desc.kind));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
+                }
+                else
+                {
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insertDefault();
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 {
@@ -196,19 +179,8 @@ protected:
                     }
                 }
 
-                {
-                    const auto it = column_comments.find(column.name);
-                    if (it == std::end(column_comments))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second);
-                    }
-                }
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(column.comment);
 
                 {
                     auto find_in_vector = [&key = column.name](const Names& names)
@@ -226,18 +198,12 @@ protected:
                         res_columns[res_index++]->insert(find_in_vector(cols_required_for_sampling));
                 }
 
+                if (columns_mask[src_index++])
                 {
-                    const auto it = column_codecs.find(column.name);
-                    if (it == std::end(column_codecs))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
+                    if (column.codec)
+                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
                     else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert("CODEC(" + it->second->getCodecDesc() + ")");
-                    }
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 ++rows_count;

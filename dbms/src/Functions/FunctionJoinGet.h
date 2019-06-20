@@ -1,22 +1,20 @@
 #include <Functions/IFunction.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/TableStructureLockHolder.h>
 
 namespace DB
 {
 class Context;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
-class TableStructureReadLock;
-using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 
-class FunctionJoinGet final : public IFunction, public std::enable_shared_from_this<FunctionJoinGet>
+class FunctionJoinGet final : public IFunction
 {
 public:
     static constexpr auto name = "joinGet";
 
     FunctionJoinGet(
-        TableStructureReadLockPtr table_lock, StoragePtr storage_join, JoinPtr join, const String & attr_name, DataTypePtr return_type)
+        TableStructureReadLockHolder table_lock, StoragePtr storage_join, JoinPtr join, const String & attr_name, DataTypePtr return_type)
         : table_lock(std::move(table_lock))
         , storage_join(std::move(storage_join))
         , join(std::move(join))
@@ -36,7 +34,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
 
 private:
-    TableStructureReadLockPtr table_lock;
+    TableStructureReadLockHolder table_lock;
     StoragePtr storage_join;
     JoinPtr join;
     const String attr_name;

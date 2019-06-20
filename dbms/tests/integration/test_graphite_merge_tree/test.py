@@ -231,6 +231,50 @@ SELECT * FROM test.graphite;
     assert TSV(result) == TSV(expected)
 
 
+def test_system_graphite_retentions(graphite_table):
+    expected = '''
+graphite_rollup	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
+graphite_rollup	\\\\.max$	max	0	0	2	0	['test']	['graphite']
+graphite_rollup	^five_min\\\\.		31536000	14400	3	0	['test']	['graphite']
+graphite_rollup	^five_min\\\\.		5184000	3600	3	0	['test']	['graphite']
+graphite_rollup	^five_min\\\\.		0	300	3	0	['test']	['graphite']
+graphite_rollup	^one_min	avg	31536000	600	4	0	['test']	['graphite']
+graphite_rollup	^one_min	avg	7776000	300	4	0	['test']	['graphite']
+graphite_rollup	^one_min	avg	0	60	4	0	['test']	['graphite']
+    '''
+    result = q('SELECT * from system.graphite_retentions')
+
+    assert TSV(result) == TSV(expected)
+
+    q('''
+DROP TABLE IF EXISTS test.graphite2;
+CREATE TABLE test.graphite2
+    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+    ENGINE = GraphiteMergeTree('graphite_rollup')
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (metric, timestamp)
+    SETTINGS index_granularity=8192;
+    ''')
+    expected = '''
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+graphite_rollup	['test','test']	['graphite','graphite2']
+    '''
+    result = q('''
+    SELECT
+        config_name,
+        Tables.database,
+        Tables.table
+    FROM system.graphite_retentions
+    ''')
+    assert TSV(result) == TSV(expected)
+
+
 def test_path_dangling_pointer(graphite_table):
     q('''
 DROP TABLE IF EXISTS test.graphite2;

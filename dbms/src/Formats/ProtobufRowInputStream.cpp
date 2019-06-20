@@ -1,11 +1,12 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufRowInputStream.h"
 
 #include <Core/Block.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufRowInputStream.h>
 #include <Formats/ProtobufSchemas.h>
 
 
@@ -72,11 +73,12 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        UInt64 rows_portion_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
-            std::make_shared<ProtobufRowInputStream>(buf, sample, FormatSchemaInfo(context, "proto")),
-            sample, max_block_size, settings);
+            std::make_shared<ProtobufRowInputStream>(buf, sample, FormatSchemaInfo(context, "Protobuf")),
+            sample, max_block_size, rows_portion_size, settings);
     });
 }
 

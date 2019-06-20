@@ -266,6 +266,11 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
+    /** Computes value of constant expression and its data type.
+      * Returns false, if expression isn't constant.
+      */
+    static bool getConstant(
+            const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
         const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);

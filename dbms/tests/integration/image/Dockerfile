@@ -1,7 +1,8 @@
+# docker build -t yandex/clickhouse-integration-tests-runner .
 FROM ubuntu:18.04
 
-
-RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --force-yes \
+RUN apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     ca-certificates \
     bash \
     btrfs-progs \
@@ -19,12 +20,21 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     tzdata \
     libreadline-dev \
     libicu-dev \
-    curl
+    bsdutils \
+    curl \
+    liblua5.1-dev \
+    luajit \
+    libssl-dev \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal
+RUN pip install pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -61,4 +71,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD []
+CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+

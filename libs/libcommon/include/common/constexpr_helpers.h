@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <utility>
 
 template <auto Val, decltype(Val)... List>
 inline constexpr bool static_in_v = std::disjunction_v<std::bool_constant<Val == List>...>;

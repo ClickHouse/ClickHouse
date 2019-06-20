@@ -1,7 +1,6 @@
-CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.decimal;
+DROP TABLE IF EXISTS decimal;
 
-CREATE TABLE IF NOT EXISTS test.decimal
+CREATE TABLE IF NOT EXISTS decimal
 (
     a DECIMAL(9,4) DEFAULT 0,
     b DECIMAL(18,4) DEFAULT a / 2,
@@ -11,10 +10,10 @@ CREATE TABLE IF NOT EXISTS test.decimal
     f ALIAS c * 6
 ) ENGINE = Memory;
 
-DESC TABLE test.decimal;
+DESC TABLE decimal;
 
-INSERT INTO test.decimal (a) VALUES (0), (1), (2), (3);
-SELECT * FROM test.decimal;
-SELECT a, b, c, d, e, f FROM test.decimal;
+INSERT INTO decimal (a) VALUES (0), (1), (2), (3);
+SELECT * FROM decimal;
+SELECT a, b, c, d, e, f FROM decimal;
 
-DROP TABLE IF EXISTS test.decimal;
+DROP TABLE IF EXISTS decimal;

@@ -1,7 +1,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
-#include <Common/MemoryTracker.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
@@ -39,15 +38,12 @@ MergeTreeReader::MergeTreeReader(const String & path,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
-    : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
+    : data_part(data_part), avg_value_size_hints(avg_value_size_hints), path(path), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
     try
     {
-        if (!Poco::File(path).exists())
-            throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
-
         for (const NameAndTypePair & column : columns)
             addStreams(column.name, *column.type, profile_callback, clock_type);
     }
@@ -164,7 +160,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
         if (streams.count(stream_name))
             return;
 
-        bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
+        bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -173,10 +169,12 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            aio_threshold, max_read_buffer_size,
+            &storage.index_granularity_info,
+            profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath substream_path;
@@ -300,7 +298,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.getColumns().defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().hasDefault(requested_column.name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -367,7 +365,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.global_context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
     }
     catch (Exception & e)
     {

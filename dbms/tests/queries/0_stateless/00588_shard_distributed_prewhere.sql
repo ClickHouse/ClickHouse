@@ -1,15 +1,15 @@
-DROP TABLE IF EXISTS test.mergetree;
-DROP TABLE IF EXISTS test.distributed;
+DROP TABLE IF EXISTS mergetree_00588;
+DROP TABLE IF EXISTS distributed_00588;
 
-CREATE TABLE test.mergetree (x UInt64, s String) ENGINE = MergeTree ORDER BY x;
-INSERT INTO test.mergetree VALUES (1, 'hello'), (2, 'world');
+CREATE TABLE mergetree_00588 (x UInt64, s String) ENGINE = MergeTree ORDER BY x;
+INSERT INTO mergetree_00588 VALUES (1, 'hello'), (2, 'world');
 
-SELECT * FROM test.mergetree PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
-SELECT * FROM remote('127.0.0.{1,2,3}', test.mergetree) PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
+SELECT * FROM mergetree_00588 PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
+SELECT * FROM remote('127.0.0.{1,2,3}', currentDatabase(), mergetree_00588) PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
 
-CREATE TABLE test.distributed AS test.mergetree ENGINE = Distributed(test_shard_localhost, test, mergetree);
+CREATE TABLE distributed_00588 AS mergetree_00588 ENGINE = Distributed(test_shard_localhost, currentDatabase(), mergetree_00588);
 
-SELECT * FROM test.distributed PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
+SELECT * FROM distributed_00588 PREWHERE x = 1 WHERE s LIKE '%l%' ORDER BY x, s;
 
-DROP TABLE test.mergetree;
-DROP TABLE test.distributed;
+DROP TABLE mergetree_00588;
+DROP TABLE distributed_00588;

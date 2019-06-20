@@ -1,5 +1,4 @@
-#include <Common/config.h>
-
+#include "config_formats.h"
 #if USE_PARQUET
 #    include "ParquetBlockInputStream.h"
 
@@ -26,11 +25,11 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
-#    include <common/DateLUTImpl.h>
-#    include <ext/range.h>
 #    include <arrow/api.h>
 #    include <parquet/arrow/reader.h>
 #    include <parquet/file_reader.h>
+#    include <common/DateLUTImpl.h>
+#    include <ext/range.h>
 
 namespace DB
 {
@@ -223,7 +222,8 @@ void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, Mu
         auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+            column_data.emplace_back(
+                chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
         }
     }
 }
@@ -259,45 +259,46 @@ void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, M
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
 
-const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
-    //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal>()},
-    {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
-    {arrow::Type::INT8, std::make_shared<DataTypeInt8>()},
-    {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
-    {arrow::Type::INT16, std::make_shared<DataTypeInt16>()},
-    {arrow::Type::UINT32, std::make_shared<DataTypeUInt32>()},
-    {arrow::Type::INT32, std::make_shared<DataTypeInt32>()},
-    {arrow::Type::UINT64, std::make_shared<DataTypeUInt64>()},
-    {arrow::Type::INT64, std::make_shared<DataTypeInt64>()},
-    {arrow::Type::HALF_FLOAT, std::make_shared<DataTypeFloat32>()},
-    {arrow::Type::FLOAT, std::make_shared<DataTypeFloat32>()},
-    {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
-
-    {arrow::Type::BOOL, std::make_shared<DataTypeUInt8>()},
-    //{arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
-    {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
-    //{arrow::Type::DATE32, std::make_shared<DataTypeDateTime>()},
-    {arrow::Type::DATE64, std::make_shared<DataTypeDateTime>()},
-    {arrow::Type::TIMESTAMP, std::make_shared<DataTypeDateTime>()},
-    //{arrow::Type::TIME32, std::make_shared<DataTypeDateTime>()},
-
-
-    {arrow::Type::STRING, std::make_shared<DataTypeString>()},
-    {arrow::Type::BINARY, std::make_shared<DataTypeString>()},
-    //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
-    //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
-
-
-    // TODO: add other types that are convertable to internal ones:
-    // 0. ENUM?
-    // 1. UUID -> String
-    // 2. JSON -> String
-    // Full list of types: contrib/arrow/cpp/src/arrow/type.h
-};
-
 
 Block ParquetBlockInputStream::readImpl()
 {
+    static const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
+        //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal>()},
+        {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
+        {arrow::Type::INT8, std::make_shared<DataTypeInt8>()},
+        {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
+        {arrow::Type::INT16, std::make_shared<DataTypeInt16>()},
+        {arrow::Type::UINT32, std::make_shared<DataTypeUInt32>()},
+        {arrow::Type::INT32, std::make_shared<DataTypeInt32>()},
+        {arrow::Type::UINT64, std::make_shared<DataTypeUInt64>()},
+        {arrow::Type::INT64, std::make_shared<DataTypeInt64>()},
+        {arrow::Type::HALF_FLOAT, std::make_shared<DataTypeFloat32>()},
+        {arrow::Type::FLOAT, std::make_shared<DataTypeFloat32>()},
+        {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
+
+        {arrow::Type::BOOL, std::make_shared<DataTypeUInt8>()},
+        //{arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
+        {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
+        //{arrow::Type::DATE32, std::make_shared<DataTypeDateTime>()},
+        {arrow::Type::DATE64, std::make_shared<DataTypeDateTime>()},
+        {arrow::Type::TIMESTAMP, std::make_shared<DataTypeDateTime>()},
+        //{arrow::Type::TIME32, std::make_shared<DataTypeDateTime>()},
+
+
+        {arrow::Type::STRING, std::make_shared<DataTypeString>()},
+        {arrow::Type::BINARY, std::make_shared<DataTypeString>()},
+        //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
+        //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
+
+
+        // TODO: add other types that are convertable to internal ones:
+        // 0. ENUM?
+        // 1. UUID -> String
+        // 2. JSON -> String
+        // Full list of types: contrib/arrow/cpp/src/arrow/type.h
+    };
+
+
     Block res;
 
     if (!istr.eof())
@@ -308,7 +309,9 @@ Block ParquetBlockInputStream::readImpl()
         */
 
         if (row_group_current < row_group_total)
-            throw Exception{"Got new data, but data from previous chunks not readed " + std::to_string(row_group_current) + "/" + std::to_string(row_group_total), ErrorCodes::CANNOT_READ_ALL_DATA};
+            throw Exception{"Got new data, but data from previous chunks not readed " + std::to_string(row_group_current) + "/"
+                                + std::to_string(row_group_total),
+                            ErrorCodes::CANNOT_READ_ALL_DATA};
 
         file_data.clear();
         {
@@ -471,7 +474,8 @@ void registerInputFormatParquet(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const Context & context,
-           size_t /*max_block_size */,
+           UInt64 /* max_block_size */,
+           UInt64 /* rows_portion_size */,
            const FormatSettings & /* settings */) { return std::make_shared<ParquetBlockInputStream>(buf, sample, context); });
 }
 

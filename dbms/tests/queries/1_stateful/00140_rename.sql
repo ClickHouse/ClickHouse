@@ -21,12 +21,12 @@ RENAME TABLE test.hits10 TO test.hits;
 
 SELECT count() FROM test.hits WHERE CounterID = 732797;
 
-RENAME TABLE test.hits TO hits, test.visits TO test.hits;
+RENAME TABLE test.hits TO default.hits, test.visits TO test.hits;
 
 SELECT sum(Sign) FROM test.hits WHERE CounterID = 912887;
-SELECT count() FROM hits WHERE CounterID = 732797;
+SELECT count() FROM default.hits WHERE CounterID = 732797;
 
-RENAME TABLE test.hits TO test.visits, hits TO test.hits;
+RENAME TABLE test.hits TO test.visits, default.hits TO test.hits;
 
 SELECT count() FROM test.hits WHERE CounterID = 732797;
 SELECT sum(Sign) FROM test.visits WHERE CounterID = 912887;

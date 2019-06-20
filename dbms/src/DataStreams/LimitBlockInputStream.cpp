@@ -6,9 +6,14 @@
 namespace DB
 {
 
-LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_, bool always_read_till_end_)
+LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_, bool always_read_till_end_, bool use_limit_as_total_rows_approx)
     : limit(limit_), offset(offset_), always_read_till_end(always_read_till_end_)
 {
+    if (use_limit_as_total_rows_approx)
+    {
+        addTotalRowsApprox(static_cast<size_t>(limit));
+    }
+
     children.push_back(input);
 }
 

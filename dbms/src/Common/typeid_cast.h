@@ -25,18 +25,32 @@ namespace DB
 template <typename To, typename From>
 std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
 {
-    if (typeid(from) == typeid(To))
-        return static_cast<To>(from);
-    else
-        throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-            DB::ErrorCodes::BAD_CAST);
+    try
+    {
+        if (typeid(from) == typeid(To))
+            return static_cast<To>(from);
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception(e.what(), DB::ErrorCodes::BAD_CAST);
+    }
+
+    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
+                        DB::ErrorCodes::BAD_CAST);
 }
 
 template <typename To, typename From>
 To typeid_cast(From * from)
 {
-    if (typeid(*from) == typeid(std::remove_pointer_t<To>))
-        return static_cast<To>(from);
-    else
-        return nullptr;
+    try
+    {
+        if (typeid(*from) == typeid(std::remove_pointer_t<To>))
+            return static_cast<To>(from);
+        else
+            return nullptr;
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception(e.what(), DB::ErrorCodes::BAD_CAST);
+    }
 }

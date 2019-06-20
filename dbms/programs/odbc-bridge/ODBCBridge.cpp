@@ -123,7 +123,7 @@ void ODBCBridge::initialize(Application & self)
 
     config().setString("logger", "ODBCBridge");
 
-    buildLoggers(config());
+    buildLoggers(config(), logger());
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");

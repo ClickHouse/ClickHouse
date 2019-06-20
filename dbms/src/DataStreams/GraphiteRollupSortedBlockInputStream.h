@@ -113,6 +113,7 @@ namespace Graphite
     struct Pattern
     {
         std::shared_ptr<OptimizedRegularExpression> regexp;
+        std::string regexp_str;
         AggregateFunctionPtr function;
         Retentions retentions;    /// Must be ordered by 'age' descending.
         enum { TypeUndef, TypeRetention, TypeAggregation, TypeAll } type = TypeAll; /// The type of defined pattern, filled automatically
@@ -124,6 +125,7 @@ namespace Graphite
 
     struct Params
     {
+        String config_name;
         String path_column_name;
         String time_column_name;
         String value_column_name;
@@ -215,6 +217,7 @@ private:
     const Graphite::Pattern undef_pattern =
     { /// temporary empty pattern for selectPatternForPath
         nullptr,
+        "",
         nullptr,
         DB::Graphite::Retentions(),
         undef_pattern.TypeUndef,

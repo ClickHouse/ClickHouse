@@ -2,6 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/memcmpSmall.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -12,10 +13,10 @@ namespace DB
 /** A column of values of "fixed-length string" type.
   * If you insert a smaller string, it will be padded with zero bytes.
   */
-class ColumnFixedString final : public COWPtrHelper<ColumnVectorHelper, ColumnFixedString>
+class ColumnFixedString final : public COWHelper<ColumnVectorHelper, ColumnFixedString>
 {
 public:
-    friend class COWPtrHelper<ColumnVectorHelper, ColumnFixedString>;
+    friend class COWHelper<ColumnVectorHelper, ColumnFixedString>;
 
     using Chars = PaddedPODArray<UInt8>;
 
@@ -55,6 +56,11 @@ public:
     size_t allocatedBytes() const override
     {
         return chars.allocated_bytes() + sizeof(n);
+    }
+
+    void protect() override
+    {
+        chars.protect();
     }
 
     Field operator[](size_t index) const override
@@ -129,6 +135,12 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
+            return n == rhs_concrete->n;
+        return false;
+    }
 
     bool canBeInsideNullable() const override { return true; }
 

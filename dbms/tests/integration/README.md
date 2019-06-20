@@ -14,9 +14,9 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal`
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal kafka-python protobuf`
 
-(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python-pytest python-dicttoxml python-docker python-pymysql python-kazoo python-psycopg2`
+(highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python-pytest python-dicttoxml python-docker python-pymysql python-pymongo python-tzlocal python-kazoo python-psycopg2 python-kafka`
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
@@ -30,7 +30,8 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
   `users.xml`) are taken.
-  
+
+
 ### Running with runner script
 
 The only requirement is fresh docker configured docker.
@@ -42,7 +43,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse  --bridge-binary $HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -68,7 +69,9 @@ Path to binary and configs maybe specified via env variables:
 ```
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/dbms/programs/server/
 $ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse
+$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
+$ # or ./runner '-v -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -78,6 +81,9 @@ collected 6 items
 test_odbc_interaction/test.py ......                                     [100%]
 ==================== 6 passed, 1 warnings in 96.33 seconds =====================
 ```
+
+You can just open shell inside a container by overwritting the command:
+./runner --command=bash
 
 ### Adding new tests
 

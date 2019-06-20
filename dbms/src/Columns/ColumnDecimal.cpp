@@ -94,7 +94,7 @@ ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t li
     for (size_t i = 0; i < size; ++i)
         res_data[i] = data[perm[i]];
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -117,7 +117,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -140,7 +140,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -169,7 +169,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         ++data_pos;
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -202,7 +202,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
             res_data.push_back(data[i]);
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>

@@ -9,11 +9,14 @@
 
 namespace DB
 {
-
 /** Calculate similarity metrics:
   *
-  * trigramDistance(haystack, needle) --- calculate so called 3-gram distance between haystack and needle.
+  * ngramDistance(haystack, needle) - calculate n-gram distance between haystack and needle.
   * Returns float number from 0 to 1 - the closer to zero, the more strings are similar to each other.
+  * Also support CaseInsensitive and UTF8 formats.
+  * ngramDistanceCaseInsensitive(haystack, needle)
+  * ngramDistanceUTF8(haystack, needle)
+  * ngramDistanceCaseInsensitiveUTF8(haystack, needle)
   */
 
 namespace ErrorCodes
@@ -59,21 +62,20 @@ public:
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
-        if (!col_needle_const)
-            throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
-
-        if (col_haystack_const)
+        if (col_haystack_const && col_needle_const)
         {
             ResultType res{};
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
                 throw Exception(
-                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
-                        ErrorCodes::TOO_LARGE_STRING_SIZE);
+                    "String size of needle is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constant_constant(col_haystack_const->getValue<String>(), needle, res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
+            block.getByPosition(result).column
+                = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
             return;
         }
 
@@ -83,18 +85,40 @@ public:
         vec_res.resize(column_haystack->size());
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
 
-        if (col_haystack_vector)
+        if (col_haystack_vector && col_needle_const)
         {
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
                 throw Exception(
-                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
-                        ErrorCodes::TOO_LARGE_STRING_SIZE);
+                    "String size of needle is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::vector_constant(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+        }
+        else if (col_haystack_vector && col_needle_vector)
+        {
+            Impl::vector_vector(
+                col_haystack_vector->getChars(),
+                col_haystack_vector->getOffsets(),
+                col_needle_vector->getChars(),
+                col_needle_vector->getOffsets(),
+                vec_res);
+        }
+        else if (col_haystack_const && col_needle_vector)
+        {
+            const String & haystack = col_haystack_const->getValue<String>();
+            if (haystack.size() > Impl::max_string_size)
+            {
+                throw Exception(
+                    "String size of haystack is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
+            Impl::constant_vector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {

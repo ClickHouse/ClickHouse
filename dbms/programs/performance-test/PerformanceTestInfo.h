@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/AutoPtr.h>
 
@@ -42,8 +42,7 @@ public:
 
     std::vector<TestStopConditions> stop_conditions_by_run;
 
-    Strings create_queries;
-    Strings fill_queries;
+    Strings create_and_fill_queries;
     Strings drop_queries;
 
 private:
@@ -52,7 +51,6 @@ private:
     void processSubstitutions(XMLConfigurationPtr config);
     void getExecutionType(XMLConfigurationPtr config);
     void getStopConditions(XMLConfigurationPtr config);
-    void getMetrics(XMLConfigurationPtr config);
     void extractAuxiliaryQueries(XMLConfigurationPtr config);
 };
 

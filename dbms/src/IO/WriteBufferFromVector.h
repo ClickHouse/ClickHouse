@@ -34,9 +34,11 @@ private:
 
         size_t old_size = vector.size();
         vector.resize(old_size * 2);
-        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(vector.data() + vector.size()));
+        internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + old_size), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
+
+    static constexpr size_t initial_size = 32;
 
 public:
     WriteBufferFromVector(VectorType & vector_)
@@ -44,10 +46,19 @@ public:
     {
         if (vector.empty())
         {
-            static constexpr size_t initial_size = 32;
             vector.resize(initial_size);
             set(reinterpret_cast<Position>(vector.data()), vector.size());
         }
+    }
+
+    /// Append to vector instead of rewrite.
+    struct AppendModeTag {};
+    WriteBufferFromVector(VectorType & vector_, AppendModeTag)
+        : WriteBuffer(nullptr, 0), vector(vector_)
+    {
+        size_t old_size = vector.size();
+        vector.resize(vector.capacity() < initial_size ? initial_size : vector.capacity());
+        set(reinterpret_cast<Position>(vector.data() + old_size), (vector.size() - old_size) * sizeof(typename VectorType::value_type));
     }
 
     void finish()

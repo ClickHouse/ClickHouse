@@ -3,12 +3,12 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h> // Y_IGNORE
+#include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadBufferFromHDFS.h> // Y_IGNORE
-#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
+#include <IO/ReadBufferFromHDFS.h>
+#include <IO/WriteBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -163,11 +163,11 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageHDFS::create(url, args.table_name, format_name, args.columns, args.context);
     });

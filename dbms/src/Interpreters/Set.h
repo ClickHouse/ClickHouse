@@ -68,7 +68,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
-    const Columns & getSetElements() const { return set_elements; }
+    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
 private:
     size_t keys_size = 0;
@@ -113,7 +113,7 @@ private:
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    Columns set_elements;
+    std::vector<IColumn::WrappedPtr> set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -192,4 +192,4 @@ private:
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 };
 
- }
+}

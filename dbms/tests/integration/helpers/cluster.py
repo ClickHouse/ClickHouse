@@ -17,6 +17,7 @@ import psycopg2
 import requests
 import base64
 import pymongo
+import urllib
 
 import docker
 from docker.errors import ContainerError
@@ -101,6 +102,7 @@ class ClickHouseCluster:
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
+        self.with_net_trics = False
 
         self.docker_client = None
         self.is_up = False
@@ -135,12 +137,19 @@ class ClickHouseCluster:
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address)
 
         self.instances[name] = instance
+        if ipv4_address is not None or ipv6_address is not None:
+            self.with_net_trics = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+
         self.base_cmd.extend(['--file', instance.docker_compose_path])
+
+        cmds = []
         if with_zookeeper and not self.with_zookeeper:
             self.with_zookeeper = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+                                           self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+            cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
@@ -148,11 +157,14 @@ class ClickHouseCluster:
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
 
+            cmds.append(self.base_mysql_cmd)
+
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+            cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -161,29 +173,39 @@ class ClickHouseCluster:
                 self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                cmds.append(self.base_mysql_cmd)
+
             if not self.with_postgres:
                 self.with_postgres = True
                 self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+            cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+            cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+            cmds.append(self.base_mongo_cmd)
+
+        if self.with_net_trics:
+            for cmd in cmds:
+                cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
 
         return instance
 
@@ -192,6 +214,32 @@ class ClickHouseCluster:
         # According to how docker-compose names containers.
         return self.project_name + '_' + instance_name + '_1'
 
+    def _replace(self, path, what, to):
+        with open(path, 'r') as p:
+            data = p.read()
+        data = data.replace(what, to)
+        with open(path, 'w') as p:
+            p.write(data)
+
+    def restart_instance_with_ip_change(self, node, new_ip):
+        if '::' in new_ip:
+            if node.ipv6_address is None:
+                raise Exception("You shoud specity ipv6_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
+            node.ipv6_address = new_ip
+        else:
+            if node.ipv4_address is None:
+                raise Exception("You shoud specity ipv4_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
+            node.ipv4_address = new_ip
+        subprocess.check_call(self.base_cmd + ["stop", node.name])
+        subprocess.check_call(self.base_cmd + ["rm", "--force", "--stop", node.name])
+        subprocess.check_call(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
+        node.ip_address = self.get_instance_ip(node.name)
+        node.client = Client(node.ip_address, command=self.client_bin_path)
+        start_deadline = time.time() + 20.0 # seconds
+        node.wait_for_start(start_deadline)
+        return node
 
     def get_instance_ip(self, instance_name):
         docker_id = self.get_instance_docker_id(instance_name)
@@ -396,19 +444,8 @@ services:
             {app_net}
                 {ipv4_address}
                 {ipv6_address}
-
-networks:
-  app_net:
-    driver: bridge
-    enable_ipv6: true
-    ipam:
-      driver: default
-      config:
-      - subnet: 10.5.0.0/12
-        gateway: 10.5.1.1
-      - subnet: 2001:3984:3989::/64
-        gateway: 2001:3984:3989::1
 '''
+
 
 class ClickHouseInstance:
 
@@ -482,6 +519,21 @@ class ClickHouseInstance:
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
 
+    # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_query(self, sql, data=None):
+        return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
+
+    def restart_clickhouse(self, stop_start_wait_sec=5):
+        if not self.stay_alive:
+            raise Exception("clickhouse can be restarted only with stay_alive=True instance")
+
+        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        time.sleep(stop_start_wait_sec)
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user='root')
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()
@@ -493,6 +545,10 @@ class ClickHouseInstance:
         if exit_code:
             raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
+
+    def contains_in_log(self, substring):
+        result = self.exec_in_container(["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+        return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
         with open(local_path, 'r') as fdata:
@@ -507,7 +563,7 @@ class ClickHouseInstance:
 
 
     def stop(self):
-        self.get_docker_handle().stop(self.default_timeout)
+        self.get_docker_handle().stop()
 
 
     def start(self):
@@ -688,7 +744,7 @@ class ClickHouseInstance:
             app_net = ""
         else:
             networks = "networks:"
-            app_net = "app_net:"
+            app_net = "default:"
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:

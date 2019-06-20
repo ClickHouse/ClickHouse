@@ -65,9 +65,7 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)
-        && (!(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
-            || std::is_same_v<Data, QuantileTiming<Value>>);
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -163,7 +161,7 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
             else
             {
@@ -171,7 +169,7 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getMany(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
         }
         else
