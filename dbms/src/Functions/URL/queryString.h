@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Functions/FunctionsURL.h>
+#include "FunctionsURL.h"
 #include <common/find_symbols.h>
+
 
 namespace DB
 {
 
 template <bool without_leading_char>
-struct ExtractFragment
+struct ExtractQueryString
 {
     static size_t getReserveLengthForElement() { return 10; }
 
@@ -19,10 +20,12 @@ struct ExtractFragment
         Pos pos = data;
         Pos end = pos + size;
 
-        if (end != (pos = find_first_symbols<'#'>(pos, end)))
+        if (end != (pos = find_first_symbols<'?'>(pos, end)))
         {
+            Pos fragment = find_first_symbols<'#'>(pos, end);
+
             res_data = pos + (without_leading_char ? 1 : 0);
-            res_size = end - res_data;
+            res_size = fragment - res_data;
         }
     }
 };

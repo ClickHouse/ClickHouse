@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/firstSignificantSubdomain.h>
+#include "firstSignificantSubdomain.h"
 
 
 namespace DB

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/queryStringAndFragment.h>
+#include "queryStringAndFragment.h"
 
 namespace DB
 {

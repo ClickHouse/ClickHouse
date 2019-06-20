@@ -1,6 +1,7 @@
+#include "domain.h"
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/domain.h>
 
 namespace DB
 {
