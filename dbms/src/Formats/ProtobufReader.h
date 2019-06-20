@@ -5,7 +5,7 @@
 #include <Common/UInt128.h>
 #include <Core/UUID.h>
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <boost/noncopyable.hpp>

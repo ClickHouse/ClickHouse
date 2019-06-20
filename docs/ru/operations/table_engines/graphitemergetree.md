@@ -23,17 +23,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md).
+Смотрите описание запроса [CREATE TABLE](../../query_language/create.md#create-table-query).
 
-Таблица для данных Graphite должна содержать следующие столбцы:
+В таблице должны быть столбцы для следующих данных:
 
-- Колонка с названием метрики (Graphite sensor). Тип данных: `String`.
+- Название метрики (сенсора Graphite). Тип данных: `String`.
 
-- Столбец со временем измерения метрики. Тип данных `DateTime`.
+- Время измерения метрики. Тип данных `DateTime`.
 
-- Столбец со значением метрики. Тип данных: любой числовой.
+- Значение метрики. Тип данных: любой числовой.
 
-- Столбец с версией метрики. Тип данных: любой числовой.
+- Версия метрики. Тип данных: любой числовой.
 
     ClickHouse сохраняет строки с последней версией или последнюю записанную строку, если версии совпадают. Другие строки удаляются при слиянии кусков данных.
 
@@ -45,12 +45,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-При создании таблицы `GraphiteMergeTree` используются те же [секции](mergetree.md#table_engine-mergetree-creating-a-table) запроса, что при создании таблицы `MergeTree`.
+При создании таблицы `GraphiteMergeTree` используются те же [секции](mergetree.md#table_engine-mergetree-creating-a-table) запроса, что и при создании таблицы `MergeTree`.
 
 <details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 
 !!! attention
-Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
+    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -72,12 +72,27 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация rollup
 
-Настройки для прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup). Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 
 ```
 required-columns
+patterns
+```
+
+### Требуемые столбцы (required-columns)
+
+- `path_column_name` — столбец, в котором хранится название метрики (сенсор Graphite). Значение по умолчанию: `Path`.
+- `time_column_name` — столбец, в котором хранится время измерения метрики. Значение по умолчанию: `Time`.
+- `value_column_name` — столбец со значением метрики в момент времени, установленный в `time_column_name`. Значение по умолчанию: `Value`.
+- `version_column_name` — столбец, в котором хранится версия метрики. Значение по умолчанию: `Timestamp`.
+
+### Правила (patterns)
+
+Структура раздела `patterns`:
+
+```
 pattern
     regexp
     function
@@ -98,40 +113,27 @@ default
     ...
 ```
 
-**Важно**: порядок разделов `pattern` должен быть следующим:
+!!! warning "Внимание"
+    Правила должны быть строго упорядочены:
 
-1. Разделы *без* параметра `function` *или* `retention`.
-1. Разделы *с* параметрами `function` *и* `retention`.
-1. Раздел `default`.
+    1. Правила без `function` или `retention`.
+    1. Правила одновремено содержащие `function` и `retention`.
+    1. Правило `default`.
 
-При обработке строки ClickHouse проверяет правила в разделах `pattern`. Каждый из разделов `pattern` (включая `default`) может содержать параметр `function` для аггрегации, правила `retention` для прореживания или оба эти параметра. Если имя метрики соответствует шаблону `regexp`, то применяются правила из раздела (или разделов) `pattern`, в противном случае из раздела `default`.
+При обработке строки ClickHouse проверяет правила в разделе `pattern`. Каждый `pattern` (включая `default`) может содержать параметр агрегации `function`, параметр `retention`, или оба параметра одновременно. Если имя метрики соответствует шаблону `regexp`, то применяются правила `pattern`, в противном случае правило `default`.
 
 Поля для разделов `pattern` и `default`:
 
 - `regexp` – шаблон имени метрики.
 - `age` – минимальный возраст данных в секундах.
-- `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в дне).
+- `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
 - `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
 
-`required-columns`:
-
-- `path_column_name` — колонка с названием метрики (Graphite sensor).
-- `time_column_name` — столбец со временем измерения метрики.
-- `value_column_name` — столбец со значением метрики в момент времени, установленный в `time_column_name`.
-- `version_column_name` — столбец с версией метрики.
-
-Пример настройки:
+### Пример конфигурации
 
 ```xml
 <graphite_rollup>
-    <path_column_name>Path</path_column_name>
-    <time_column_name>Time</time_column_name>
-    <value_column_name>Value</value_column_name>
     <version_column_name>Version</version_column_name>
-    <pattern>
-        <regexp>\.count$</regexp>
-        <function>sum</function>
-    </pattern>
     <pattern>
         <regexp>click_cost</regexp>
         <function>any</function>

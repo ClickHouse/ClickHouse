@@ -1,5 +1,4 @@
 <test>
-    <name>int_parsing</name>
     <type>loop</type>
 
     <stop_conditions>
