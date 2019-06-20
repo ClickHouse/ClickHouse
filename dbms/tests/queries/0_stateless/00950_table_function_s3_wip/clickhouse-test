@@ -96,6 +96,8 @@ class PreservingDataServer(http.server.BaseHTTPRequestHandler):
 
     def handle_expect_100(self):
         print('Received Expect-100', file=sys.stderr)
+        self.send_response_only(100)
+        self.end_headers()
         return True
 
     def do_POST(self):
@@ -137,6 +139,9 @@ class RedirectingPreservingDataServer(http.server.BaseHTTPRequestHandler):
 
     def handle_expect_100(self):
         print('Received Expect-100', file=sys.stderr)
+        return True
+
+    def do_POST(self):
         query = urllib.parse.urlparse(self.path).query
         if query:
             query = '?{}'.format(query)
@@ -150,14 +155,23 @@ class RedirectingPreservingDataServer(http.server.BaseHTTPRequestHandler):
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
   <Endpoint>{host}:{port}</Endpoint>
-</Error>'''.encode().format(host=localhost, port=fakes3_port))
-        return False
-
-    def do_POST(self):
-        assert False
+</Error>'''.format(host=localhost, port=fakes3_port).encode())
 
     def do_PUT(self):
-        assert False
+        query = urllib.parse.urlparse(self.path).query
+        if query:
+            query = '?{}'.format(query)
+        self.send_response(307)
+        self.send_header('Content-type', 'text/xml')
+        self.send_header('Location', 'http://{host}:{port}/{bucket}/test.csv{query}'.format(host=localhost, port=fakes3_port, bucket=bucket, query=query))
+        self.end_headers()
+        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>TemporaryRedirect</Code>
+  <Message>Please re-send this request to the specified temporary endpoint.
+  Continue to use the original request endpoint for future requests.</Message>
+  <Endpoint>{host}:{port}</Endpoint>
+</Error>'''.format(host=localhost, port=fakes3_port).encode())
 
 
 servers = []
@@ -199,7 +213,7 @@ def run_gofakes3():
             finally:
                 l.release()
             binary = os.path.join(repo, 'main')
-            subprocess.run([binary, '-backend', 'memory', '-host', ':{}'.format(fakes3_port), '-initialbucket', bucket]).check_returncode()
+            subprocess.run([binary, '-backend', 'memory', '-host', ':{}'.format(fakes3_port), '-initialbucket', bucket])
 
     thread = threading.Thread(target=gofakes3_thread)
     thread.start()
@@ -262,4 +276,5 @@ for query in check_queries:
 stop_subprocesses()
 
 [ server.socket.close() for server in servers ]
+os._exit(0)
 [ job.join() for job in jobs ]
