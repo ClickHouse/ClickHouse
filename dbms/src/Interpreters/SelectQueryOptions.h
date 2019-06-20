@@ -27,6 +27,7 @@ struct SelectQueryOptions
     bool only_analyze;
     bool modify_inplace;
     bool remove_duplicates;
+    bool ignore_limits;
 
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
         : to_stage(stage)
@@ -34,6 +35,7 @@ struct SelectQueryOptions
         , only_analyze(false)
         , modify_inplace(false)
         , remove_duplicates(false)
+        , ignore_limits(false)
     {}
 
     SelectQueryOptions copy() const { return *this; }
@@ -69,6 +71,12 @@ struct SelectQueryOptions
     SelectQueryOptions & noSubquery()
     {
         subquery_depth = 0;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreLimits(bool value = true)
+    {
+        ignore_limits = value;
         return *this;
     }
 };
