@@ -1,20 +1,19 @@
 #include "convertMySQLDataType.h"
 
 #include <Core/Types.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include "IDataType.h"
-#include "DataTypeString.h"
-#include "DataTypesNumber.h"
+#include <Parsers/IAST.h>
 #include "DataTypeDate.h"
 #include "DataTypeDateTime.h"
-#include "DataTypeNullable.h"
 #include "DataTypeFixedString.h"
+#include "DataTypeNullable.h"
+#include "DataTypeString.h"
+#include "DataTypesNumber.h"
+#include "IDataType.h"
 
 namespace DB
 {
-
 ASTPtr dataTypeConvertToQuery(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);

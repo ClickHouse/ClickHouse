@@ -6,7 +6,6 @@
 
 namespace DB
 {
-
 /// Convert data type to query. for example
 /// DataTypeUInt8 -> ASTIdentifier(UInt8)
 /// DataTypeNullable(DataTypeUInt8) -> ASTFunction(ASTIdentifier(UInt8))
