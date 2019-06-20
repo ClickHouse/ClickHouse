@@ -1,11 +1,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringArray.h>
-#include <Functions/FunctionsURL.h>
 
 namespace DB
 {
 
-class ExtractURLParameterNamesImpl
+class ExtractURLParametersImpl
 {
 private:
     Pos pos;
@@ -13,7 +12,7 @@ private:
     bool first;
 
 public:
-    static constexpr auto name = "extractURLParameterNames";
+    static constexpr auto name = "extractURLParameters";
     static String getName() { return name; }
 
     static size_t getNumberOfArguments() { return 1; }
@@ -25,13 +24,13 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
+
     /// Returns the position of the argument that is the column of rows
     size_t getStringsArgumentPosition()
     {
         return 0;
     }
-
-    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -51,23 +50,17 @@ public:
         {
             first = false;
             pos = find_first_symbols<'?', '#'>(pos, end);
+            if (pos + 1 >= end)
+                return false;
+            ++pos;
         }
-        else
-            pos = find_first_symbols<'&', '#'>(pos, end);
-
-        if (pos + 1 >= end)
-            return false;
-        ++pos;
 
         while (true)
         {
             token_begin = pos;
-
             pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
             if (pos == end)
                 return false;
-            else
-                token_end = pos;
 
             if (*pos == '?')
             {
@@ -78,16 +71,30 @@ public:
             break;
         }
 
+        if (*pos == '&' || *pos == '#')
+        {
+            token_end = pos++;
+        }
+        else
+        {
+            ++pos;
+            pos = find_first_symbols<'&', '#'>(pos, end);
+            if (pos == end)
+                token_end = end;
+            else
+                token_end = pos++;
+        }
+
         return true;
     }
 };
 
-struct NameExtractURLParameterNames { static constexpr auto name = "extractURLParameterNames"; };
-using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
+struct NameExtractURLParameters { static constexpr auto name = "extractURLParameters"; };
+using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
 
-void registerFunctionExtractURLParameterNames(FunctionFactory & factory)
+void registerFunctionExtractURLParameters(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionExtractURLParameterNames>();
+    factory.registerFunction<FunctionExtractURLParameters>();
 }
 
 }

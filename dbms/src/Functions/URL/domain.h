@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/protocol.h>
+#include "protocol.h"
 #include <common/find_symbols.h>
 #include <cstring>
 

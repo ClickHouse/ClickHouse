@@ -1,19 +1,19 @@
-include (${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
+#include (${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
 configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
+#include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions .)
 
-if (USE_GPERF)
-    add_custom_command(
-	    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
-	    COMMAND ${GPERF} ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.gperf --output-file=${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
-    )
-
-    list(APPEND clickhouse_functions_sources ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp)
-endif ()
+#if (USE_GPERF)
+#    add_custom_command(
+#	    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
+#	    COMMAND ${GPERF} ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.gperf --output-file=${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp
+#    )
+#
+#    list(APPEND clickhouse_functions_sources ${CMAKE_CURRENT_BINARY_DIR}/tldLookup.cpp)
+#endif ()
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
@@ -89,3 +89,6 @@ endif()
 if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
+
+add_subdirectory(URL)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_url)

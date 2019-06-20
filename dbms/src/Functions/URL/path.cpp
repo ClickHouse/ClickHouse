@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/FunctionsURL.h>
+#include "FunctionsURL.h"
 #include <common/find_symbols.h>
 
 namespace DB
