@@ -344,6 +344,7 @@ find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
 include (cmake/find_parquet.cmake)
+include (cmake/find_gperf.cmake)
 
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
