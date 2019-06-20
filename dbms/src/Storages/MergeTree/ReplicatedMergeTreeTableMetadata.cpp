@@ -51,7 +51,6 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         index_granularity_bytes = data.settings.index_granularity_bytes;
     else
         index_granularity_bytes = 0;
-    }
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
