@@ -1,5 +1,7 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufWriter.h"
 
 #include <cassert>
 #include <optional>
@@ -7,11 +9,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <boost/numeric/conversion/cast.hpp>
-#include <google/protobuf/descriptor.h> // Y_IGNORE
-#include <google/protobuf/descriptor.pb.h> // Y_IGNORE
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "ProtobufWriter.h"
 
 
 namespace DB
@@ -59,7 +60,7 @@ namespace
     {
         size_t old_size = buf.size();
         buf.reserve(old_size + MAX_VARINT_SIZE);
-        UInt8 * ptr = &buf[old_size];
+        UInt8 * ptr = buf.data() + old_size;
         ptr = writeVarint(value, ptr);
         buf.resize_assume_reserved(ptr - buf.data());
     }
@@ -200,7 +201,7 @@ void ProtobufWriter::SimpleWriter::writeUInt(UInt32 field_number, UInt64 value)
 {
     size_t old_size = buffer.size();
     buffer.reserve(old_size + 2 * MAX_VARINT_SIZE);
-    UInt8 * ptr = &buffer[old_size];
+    UInt8 * ptr = buffer.data() + old_size;
     ptr = writeFieldNumber(field_number, VARINT, ptr);
     ptr = writeVarint(value, ptr);
     buffer.resize_assume_reserved(ptr - buffer.data());
@@ -223,7 +224,7 @@ void ProtobufWriter::SimpleWriter::writeFixed(UInt32 field_number, T value)
     constexpr WireType wire_type = (sizeof(T) == 4) ? BITS32 : BITS64;
     size_t old_size = buffer.size();
     buffer.reserve(old_size + MAX_VARINT_SIZE + sizeof(T));
-    UInt8 * ptr = &buffer[old_size];
+    UInt8 * ptr = buffer.data() + old_size;
     ptr = writeFieldNumber(field_number, wire_type, ptr);
     memcpy(ptr, &value, sizeof(T));
     ptr += sizeof(T);
@@ -234,7 +235,7 @@ void ProtobufWriter::SimpleWriter::writeString(UInt32 field_number, const String
 {
     size_t old_size = buffer.size();
     buffer.reserve(old_size + 2 * MAX_VARINT_SIZE + str.size);
-    UInt8 * ptr = &buffer[old_size];
+    UInt8 * ptr = buffer.data() + old_size;
     ptr = writeFieldNumber(field_number, LENGTH_DELIMITED, ptr);
     ptr = writeVarint(str.size, ptr);
     memcpy(ptr, str.data, str.size);
@@ -294,7 +295,7 @@ void ProtobufWriter::SimpleWriter::addFixedToRepeatedPack(T value)
     static_assert((sizeof(T) == 4) || (sizeof(T) == 8));
     size_t old_size = buffer.size();
     buffer.resize(old_size + sizeof(T));
-    memcpy(&buffer[old_size], &value, sizeof(T));
+    memcpy(buffer.data() + old_size, &value, sizeof(T));
 }
 
 
@@ -334,14 +335,14 @@ public:
     virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             "Could not convert data type '" + type_name + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value)
+    [[noreturn]] void cannotConvertValue(const String & value)
     {
         throw Exception(
             "Could not convert value '" + value + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",

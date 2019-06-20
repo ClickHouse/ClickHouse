@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS test.visits;
-CREATE TABLE test.visits
+DROP TABLE IF EXISTS visits1;
+CREATE TABLE visits1
 (
     Sign Int8,
     Arr Array(Int8),
@@ -8,10 +8,10 @@ CREATE TABLE test.visits
     CounterID UInt32
 ) ENGINE = Memory;
 
-SELECT arrayMap(x -> x * Sign, Arr) FROM test.visits;
+SELECT arrayMap(x -> x * Sign, Arr) FROM visits1;
 
 SELECT PP.Key2 AS `ym:s:pl2`
-FROM test.visits
+FROM visits1
 ARRAY JOIN
     `ParsedParams.Key2` AS `PP.Key2`,
     `ParsedParams.Key1` AS `PP.Key1`,
@@ -19,7 +19,7 @@ ARRAY JOIN
     arrayEnumerateUniq(`ParsedParams.Key2`) AS _uniq_ParsedParams
 WHERE CounterID = 100500;
 
-DROP TABLE test.visits;
+DROP TABLE visits1;
 
 select u, cumSum from (
    select u, min(d) mn, max(d) mx, groupArray(d) dg, groupArray(v) vg,

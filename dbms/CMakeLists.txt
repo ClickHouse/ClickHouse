@@ -20,7 +20,7 @@ set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
 include (cmake/version.cmake)
-message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION}")
+message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 configure_file (src/Common/config.h.in ${CONFIG_COMMON})
 configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
 
@@ -49,19 +49,20 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-
         if (WEVERYTHING)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
         endif ()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow-field -Wstring-plus-int")
+        if(NOT APPLE)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wempty-init-stmt")
+        endif()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-        if (WEVERYTHING)
+        if (WEVERYTHING AND NOT APPLE)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
         endif ()
     endif ()
@@ -134,7 +135,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctio
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
-add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -154,7 +155,6 @@ if (USE_EMBEDDED_COMPILER)
     target_link_libraries (dbms PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
-
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
@@ -184,19 +184,27 @@ target_link_libraries (clickhouse_common_io
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
+        PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
-    pocoext
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
-    ${RE2_LIBRARY}
-    ${RE2_ST_LIBRARY}
+)
+
+if(RE2_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
+endif()
+if(RE2_ST_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_ST_LIBRARY})
+endif()
+
+target_link_libraries(clickhouse_common_io
+        PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARY}
-    ${ELF_LIBRARY}
+    ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
@@ -210,7 +218,13 @@ target_link_libraries (clickhouse_common_io
 )
 
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+if(RE2_INCLUDE_DIR)
+    target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+endif()
+
+if (USE_LFALLOC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LFALLOC_INCLUDE_DIR})
+endif ()
 
 if(CPUID_LIBRARY)
     target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
@@ -221,8 +235,9 @@ if(CPUINFO_LIBRARY)
 endif()
 
 target_link_libraries (dbms
-        PRIVATE
+        PUBLIC
     clickhouse_compression
+        PRIVATE
     clickhouse_parsers
     clickhouse_common_config
         PUBLIC
@@ -230,7 +245,6 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_dictionaries_embedded
         PUBLIC
-    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}
@@ -255,8 +269,8 @@ if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR} SYSTEM PUBLIC ${Poco_SQL_INCLUDE_DIR})
     endif()
 endif()
 
@@ -269,7 +283,7 @@ if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_Data_LIBRARY})
     target_link_libraries (dbms PRIVATE ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
     endif()
 endif()
 
@@ -307,7 +321,10 @@ if (USE_PARQUET)
     endif ()
 endif ()
 
-target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
+if(OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+endif ()
+target_link_libraries(dbms PRIVATE Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
@@ -331,7 +348,7 @@ if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
 endif ()
 
-target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
@@ -351,6 +368,6 @@ if (ENABLE_TESTS)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
-    target_link_libraries(unit_tests_dbms PRIVATE gtest_main dbms clickhouse_common_zookeeper)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper)
     add_check(unit_tests_dbms)
 endif ()

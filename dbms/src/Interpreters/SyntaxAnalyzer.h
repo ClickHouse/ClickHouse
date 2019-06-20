@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Aliases.h>
+#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
@@ -55,9 +54,10 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class SyntaxAnalyzer
 {
 public:
-    SyntaxAnalyzer(const Context & context_, size_t subquery_depth_ = 0)
+    SyntaxAnalyzer(const Context & context_, const SelectQueryOptions & select_options = {})
         : context(context_)
-        , subquery_depth(subquery_depth_)
+        , subquery_depth(select_options.subquery_depth)
+        , remove_duplicates(select_options.remove_duplicates)
     {}
 
     SyntaxAnalyzerResultPtr analyze(
@@ -69,6 +69,7 @@ public:
 private:
     const Context & context;
     size_t subquery_depth;
+    bool remove_duplicates;
 };
 
 }

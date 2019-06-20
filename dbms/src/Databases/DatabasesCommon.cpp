@@ -1,14 +1,16 @@
-#include <sstream>
+#include <Databases/DatabasesCommon.h>
 
-#include <Common/typeid_cast.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Databases/DatabasesCommon.h>
+#include <Common/typeid_cast.h>
+
+#include <sstream>
 
 
 namespace DB
@@ -26,7 +28,7 @@ namespace ErrorCodes
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
     ASTPtr query_clone = query->clone();
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
+    auto & create = query_clone->as<ASTCreateQuery &>();
 
     /// We remove everything that is not needed for ATTACH from the query.
     create.attach = true;
@@ -35,6 +37,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.as_table.clear();
     create.if_not_exists = false;
     create.is_populate = false;
+    create.replace_view = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!create.is_view && !create.is_materialized_view)
@@ -61,7 +64,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
 
@@ -104,10 +107,16 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     return it->second;
 }
 
-DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
+DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
-    return std::make_unique<DatabaseSnapshotIterator>(tables);
+    if (!filter_by_table_name)
+        return std::make_unique<DatabaseSnapshotIterator>(tables);
+    Tables filtered_tables;
+    for (const auto & [table_name, storage] : tables)
+        if (filter_by_table_name(table_name))
+            filtered_tables.emplace(table_name, storage);
+    return std::make_unique<DatabaseSnapshotIterator>(std::move(filtered_tables));
 }
 
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const

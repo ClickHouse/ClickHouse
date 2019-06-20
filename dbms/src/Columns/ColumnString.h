@@ -1,6 +1,7 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
+#include <cassert>
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
@@ -17,13 +18,14 @@ namespace DB
 
 /** Column for String values.
   */
-class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
+class ColumnString final : public COWHelper<IColumn, ColumnString>
 {
 public:
+    using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    friend class COWPtrHelper<IColumn, ColumnString>;
+    friend class COWHelper<IColumn, ColumnString>;
 
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
     Offsets offsets;
@@ -67,25 +69,31 @@ public:
         return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
+    void protect() override;
+
     MutableColumnPtr cloneResized(size_t to_size) const override;
 
     Field operator[](size_t n) const override
     {
+        assert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
+        assert(n < size());
         res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAt(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
@@ -103,7 +111,7 @@ public:
         const size_t new_size = old_size + size_to_append;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], s.c_str(), size_to_append);
+        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
 
@@ -114,36 +122,22 @@ public:
     void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
+        const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
 
-        if (n != 0)
+        if (size_to_append == 1)
         {
-            const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];
-
-            if (size_to_append == 1)
-            {
-                /// shortcut for empty string
-                chars.push_back(0);
-                offsets.push_back(chars.size());
-            }
-            else
-            {
-                const size_t old_size = chars.size();
-                const size_t offset = src.offsets[n - 1];
-                const size_t new_size = old_size + size_to_append;
-
-                chars.resize(new_size);
-                memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
-                offsets.push_back(new_size);
-            }
+            /// shortcut for empty string
+            chars.push_back(0);
+            offsets.push_back(chars.size());
         }
         else
         {
             const size_t old_size = chars.size();
-            const size_t size_to_append = src.offsets[0];
+            const size_t offset = src.offsets[n - 1];
             const size_t new_size = old_size + size_to_append;
 
             chars.resize(new_size);
-            memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[0], size_to_append);
+            memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[offset], size_to_append);
             offsets.push_back(new_size);
         }
     }
@@ -155,7 +149,7 @@ public:
 
         chars.resize(new_size);
         if (length)
-            memcpy(&chars[old_size], pos, length);
+            memcpy(chars.data() + old_size, pos, length);
         chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }
@@ -167,7 +161,7 @@ public:
         const size_t new_size = old_size + length;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], pos, length);
+        memcpy(chars.data() + old_size, pos, length);
         offsets.push_back(new_size);
     }
 
@@ -237,6 +231,11 @@ public:
 
 
     bool canBeInsideNullable() const override { return true; }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnString);
+    }
 
 
     Chars & getChars() { return chars; }

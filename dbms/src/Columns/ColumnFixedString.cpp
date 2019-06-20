@@ -55,7 +55,7 @@ void ColumnFixedString::insert(const Field & x)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], s.data(), s.size());
+    memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -67,7 +67,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[n * index], n);
+    memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
 void ColumnFixedString::insertData(const char * pos, size_t length)
@@ -77,7 +77,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], pos, length);
+    memcpy(chars.data() + old_size, pos, length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -91,7 +91,7 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(&chars[old_size], pos, n);
+    memcpy(chars.data() + old_size, pos, n);
     return pos + n;
 }
 
@@ -151,7 +151,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
-    memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
+    memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const

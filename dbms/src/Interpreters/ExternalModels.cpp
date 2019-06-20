@@ -9,45 +9,21 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-namespace
-{
-
-    const ExternalLoaderUpdateSettings externalModelsUpdateSettings { };
-
-    const ExternalLoaderConfigSettings & getExternalModelsConfigSettings()
-    {
-        static ExternalLoaderConfigSettings settings;
-        static std::once_flag flag;
-
-        std::call_once(flag, []
-        {
-            settings.external_config = "model";
-            settings.external_name = "name";
-            settings.path_setting_name = "models_config";
-        });
-
-        return settings;
-    }
-}
-
 
 ExternalModels::ExternalModels(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-    Context & context,
-    bool throw_on_error)
+    Context & context)
         : ExternalLoader(context.getConfigRef(),
-                         externalModelsUpdateSettings,
-                         getExternalModelsConfigSettings(),
-                         std::move(config_repository),
-                         &Logger::get("ExternalModels"),
-                         "external model"),
+                         "external model",
+                         &Logger::get("ExternalModels")),
           context(context)
 {
-    init(throw_on_error);
+    addConfigRepository(std::move(config_repository), {"model", "name", "models_config"});
+    enablePeriodicUpdates(true);
 }
 
-std::unique_ptr<IExternalLoadable> ExternalModels::create(
-        const std::string & name, const Configuration & config, const std::string & config_prefix)
+std::shared_ptr<const IExternalLoadable> ExternalModels::create(
+        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) const
 {
     String type = config.getString(config_prefix + ".type");
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");

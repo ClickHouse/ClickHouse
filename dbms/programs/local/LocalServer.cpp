@@ -34,6 +34,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
+#include <common/argsToConfig.h>
 
 
 namespace DB
@@ -59,21 +60,35 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    // Turn off server logging to stderr
-    if (!config().has("verbose"))
+    /// Load config files if exists
+    if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        const auto config_path = config().getString("config-file", "config.xml");
+        ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+        auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
+        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+
+    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    {
+        buildLoggers(config(), logger());
+    }
+    else
+    {
+        // Turn off server logging to stderr
+        if (!config().has("verbose"))
+        {
+            Poco::Logger::root().setLevel("none");
+            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        }
     }
 }
 
 void LocalServer::applyCmdSettings()
 {
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (cmd_settings.NAME.changed) \
-            context->getSettingsRef().NAME = cmd_settings.NAME;
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
+    context->getSettingsRef().copyChangesFrom(cmd_settings);
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -114,16 +129,6 @@ try
         return Application::EXIT_OK;
     }
 
-    /// Load config files if exists
-    if (config().has("config-file") || Poco::File("config.xml").exists())
-    {
-        const auto config_path = config().getString("config-file", "config.xml");
-        ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
-        auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-    }
 
     context = std::make_unique<Context>(Context::createGlobal());
     context->setGlobalContext(*context);
@@ -369,7 +374,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << '\n';
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
 std::string LocalServer::getHelpHeader() const
@@ -414,7 +419,6 @@ void LocalServer::init(int argc, char ** argv)
         min_description_length = std::min(min_description_length, line_length - 2);
     }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
     po::options_description description("Main options", line_length, min_description_length);
     description.add_options()
         ("help", "produce help message")
@@ -433,15 +437,19 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.log", po::value<std::string>(), "Log file name")
+        ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
         ("version,V", "print version information and exit")
-        APPLY_FOR_SETTINGS(DECLARE_SETTING);
-#undef DECLARE_SETTING
+        ;
+
+    cmd_settings.addProgramOptions(description);
 
     /// Parse main commandline options.
     po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
     po::variables_map options;
     po::store(parsed, options);
+    po::notify(options);
 
     if (options.count("version") || options.count("V"))
     {
@@ -456,13 +464,6 @@ void LocalServer::init(int argc, char ** argv)
         std::cout << getHelpFooter() << "\n";
         exit(0);
     }
-
-    /// Extract settings and limits from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    if (options.count(#NAME)) \
-        cmd_settings.set(#NAME, options[#NAME].as<std::string>());
-    APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
 
     /// Save received data into the internal config.
     if (options.count("config-file"))
@@ -491,8 +492,17 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.log"))
+        config().setString("logger.log", options["logger.log"].as<std::string>());
+    if (options.count("logger.level"))
+        config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+
+    std::vector<std::string> arguments;
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+        arguments.emplace_back(argv[arg_num]);
+    argsToConfig(arguments, config(), 100);
 }
 
 void LocalServer::applyCmdOptions()

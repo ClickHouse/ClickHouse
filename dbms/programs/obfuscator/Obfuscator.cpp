@@ -912,8 +912,8 @@ public:
         size_t columns = header.columns();
         models.reserve(columns);
 
-        for (size_t i = 0; i < columns; ++i)
-            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_params));
+        for (const auto & elem : header)
+            models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
     }
 
     void train(const Columns & columns)
@@ -954,7 +954,7 @@ try
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")

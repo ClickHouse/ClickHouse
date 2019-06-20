@@ -2,6 +2,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -62,7 +63,7 @@ ASTPtr ASTFunction::clone() const
   */
 static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const IAST::FormatSettings & settings, const char * metacharacters)
 {
-    if (auto literal = dynamic_cast<const ASTLiteral *>(node.get()))
+    if (const auto * literal = node->as<ASTLiteral>())
     {
         if (literal->value.getType() == Field::Types::String)
         {
@@ -132,7 +133,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         * Instead, add a space.
                         * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
                         */
-                    if (name == "negate" && typeid_cast<const ASTLiteral *>(&*arguments->children[0]))
+                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
                         settings.ostr << ' ';
 
                     arguments->formatImpl(settings, state, nested_need_parens);
@@ -141,7 +142,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        /** need_parens - do I need parentheses around the expression with the operator.
+        /** need_parens - do we need parentheses around the expression with the operator.
           * They are needed only if this expression is included in another expression with the operator.
           */
 
@@ -182,7 +183,22 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         && (name == "like" || name == "notLike")
                         && highlightStringLiteralWithMetacharacters(arguments->children[1], settings, "%_");
 
-                    if (!special_hilite)
+                    /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
+                    const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
+                    const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
+                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                        && !(second_arg_func && second_arg_func->name == "tuple")
+                        && !(second_arg_literal && second_arg_literal->value.getType() == Field::Types::Tuple)
+                        && !arguments->children[1]->as<ASTSubquery>();
+
+                    if (extra_parents_around_in_rhs)
+                    {
+                        settings.ostr << '(';
+                        arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
+                        settings.ostr << ')';
+                    }
+
+                    if (!special_hilite && !extra_parents_around_in_rhs)
                         arguments->children[1]->formatImpl(settings, state, nested_need_parens);
 
                     if (frame.need_parens)
@@ -203,7 +219,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
                 /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
-                if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(arguments->children[1].get()))
+                if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
                 {
                     if (lit->value.getType() == Field::Types::UInt64)
                     {
@@ -222,7 +238,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (frame.need_parens)
                     settings.ostr << '(';
 
-                const ASTFunction * first_arg_func = typeid_cast<const ASTFunction *>(arguments->children[0].get());
+                const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
                 if (first_arg_func
                     && first_arg_func->name == "tuple"
                     && first_arg_func->arguments

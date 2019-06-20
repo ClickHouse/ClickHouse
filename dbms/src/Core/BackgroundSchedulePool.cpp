@@ -23,20 +23,21 @@ namespace DB
 class TaskNotification final : public Poco::Notification
 {
 public:
-    explicit TaskNotification(const BackgroundSchedulePool::TaskInfoPtr & task) : task(task) {}
+    explicit TaskNotification(const BackgroundSchedulePoolTaskInfoPtr & task) : task(task) {}
     void execute() { task->execute(); }
 
 private:
-    BackgroundSchedulePool::TaskInfoPtr task;
+    BackgroundSchedulePoolTaskInfoPtr task;
 };
 
 
-BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const TaskFunc & function_)
-    : pool(pool_) , log_name(log_name_) , function(function_)
+BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
+    BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
+    : pool(pool_), log_name(log_name_), function(function_)
 {
 }
 
-bool BackgroundSchedulePool::TaskInfo::schedule()
+bool BackgroundSchedulePoolTaskInfo::schedule()
 {
     std::lock_guard lock(schedule_mutex);
 
@@ -47,7 +48,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms)
 {
     std::lock_guard lock(schedule_mutex);
 
@@ -58,7 +59,7 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
     return true;
 }
 
-void BackgroundSchedulePool::TaskInfo::deactivate()
+void BackgroundSchedulePoolTaskInfo::deactivate()
 {
     std::lock_guard lock_exec(exec_mutex);
     std::lock_guard lock_schedule(schedule_mutex);
@@ -73,13 +74,13 @@ void BackgroundSchedulePool::TaskInfo::deactivate()
         pool.cancelDelayedTask(shared_from_this(), lock_schedule);
 }
 
-void BackgroundSchedulePool::TaskInfo::activate()
+void BackgroundSchedulePoolTaskInfo::activate()
 {
     std::lock_guard lock(schedule_mutex);
     deactivated = false;
 }
 
-bool BackgroundSchedulePool::TaskInfo::activateAndSchedule()
+bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
 {
     std::lock_guard lock(schedule_mutex);
 
@@ -91,7 +92,7 @@ bool BackgroundSchedulePool::TaskInfo::activateAndSchedule()
     return true;
 }
 
-void BackgroundSchedulePool::TaskInfo::execute()
+void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
@@ -131,7 +132,7 @@ void BackgroundSchedulePool::TaskInfo::execute()
     }
 }
 
-void BackgroundSchedulePool::TaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock)
+void BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock)
 {
     scheduled = true;
 
@@ -145,7 +146,7 @@ void BackgroundSchedulePool::TaskInfo::scheduleImpl(std::lock_guard<std::mutex> 
         pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
 }
 
-Coordination::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
+Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 {
      return [t = shared_from_this()](const Coordination::WatchResponse &)
      {
@@ -250,7 +251,8 @@ void BackgroundSchedulePool::threadFunction()
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-    CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
+    if (auto memory_tracker = CurrentThread::getMemoryTracker())
+        memory_tracker->setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
     {

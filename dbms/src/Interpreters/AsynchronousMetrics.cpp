@@ -17,7 +17,7 @@
 #endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h> // Y_IGNORE
+    #include <gperftools/malloc_extension.h>
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer
@@ -191,12 +191,12 @@ void AsynchronousMetrics::update()
                             "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                     }
 
-                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getMaxPartsCountForPartition());
                 }
 
                 if (table_merge_tree)
                 {
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
                 }
             }
         }

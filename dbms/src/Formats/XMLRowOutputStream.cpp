@@ -215,10 +215,10 @@ void XMLRowOutputStream::writeStatistics()
     writeText(watch.elapsedSeconds(), *ostr);
     writeCString("</elapsed>\n", *ostr);
     writeCString("\t\t<rows_read>", *ostr);
-    writeText(progress.rows.load(), *ostr);
+    writeText(progress.read_rows.load(), *ostr);
     writeCString("</rows_read>\n", *ostr);
     writeCString("\t\t<bytes_read>", *ostr);
-    writeText(progress.bytes.load(), *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
     writeCString("</bytes_read>\n", *ostr);
     writeCString("\t</statistics>\n", *ostr);
 }

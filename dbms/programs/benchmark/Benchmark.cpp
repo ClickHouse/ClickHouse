@@ -54,10 +54,10 @@ public:
             const String & host_, UInt16 port_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, const ConnectionTimeouts & timeouts, const Settings & settings_)
+            const String & json_path_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency),
-        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
+        connections(concurrency, host_, port_, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
@@ -240,7 +240,8 @@ private:
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         for (size_t i = 0; i < concurrency; ++i)
-            pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
+            pool.schedule(std::bind(&Benchmark::thread, this,
+                                    connections.get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
         InterruptListener interrupt_listener;
         info_per_interval.watch.restart();
@@ -310,7 +311,9 @@ private:
     void execute(ConnectionPool::Entry & connection, Query & query)
     {
         Stopwatch watch;
-        RemoteBlockInputStream stream(*connection, query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(
+            *connection,
+            query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -325,8 +328,8 @@ private:
         double seconds = watch.elapsedSeconds();
 
         std::lock_guard lock(mutex);
-        info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
-        info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
+        info_per_interval.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        info_total.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
     }
 
 
@@ -439,7 +442,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
@@ -451,14 +454,14 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-
-        #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
-            APPLY_FOR_SETTINGS(DECLARE_SETTING)
-        #undef DECLARE_SETTING
         ;
+
+        Settings settings;
+        settings.addProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::notify(options);
 
         if (options.count("help"))
         {
@@ -468,15 +471,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         }
 
         print_stacktrace = options.count("stacktrace");
-
-        /// Extract `settings` and `limits` from received `options`
-        Settings settings;
-
-        #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (options.count(#NAME)) \
-            settings.set(#NAME, options[#NAME].as<std::string>());
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-        #undef EXTRACT_SETTING
 
         UseSSL use_ssl;
 
@@ -494,7 +488,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
         return benchmark.run();
     }

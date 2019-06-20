@@ -27,10 +27,13 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     pool{pool}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
-    if (max_block_size_rows)
+    /// If granularity is adaptive it doesn't make sense
+    /// Maybe it will make sence to add settings `max_block_size_bytes`
+    if (max_block_size_rows && !storage.index_granularity_info.is_adaptive)
     {
-        min_marks_to_read = (min_marks_to_read_ * storage.index_granularity + max_block_size_rows - 1)
-                            / max_block_size_rows * max_block_size_rows / storage.index_granularity;
+        size_t fixed_index_granularity = storage.index_granularity_info.fixed_index_granularity;
+        min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
+            / max_block_size_rows * max_block_size_rows / fixed_index_granularity;
     }
     else
         min_marks_to_read = min_marks_to_read_;
@@ -71,7 +74,7 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
 
     if (!reader)
     {
-        auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
+        auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
 
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
@@ -92,7 +95,7 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
         /// in other case we can reuse readers, anyway they will be "seeked" to required mark
         if (path != last_readed_part_path)
         {
-            auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
+            auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
             /// retain avg_value_size_hints
             reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,

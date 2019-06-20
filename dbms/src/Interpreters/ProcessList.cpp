@@ -1,5 +1,5 @@
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -38,7 +38,7 @@ static bool isUnlimitedQuery(const IAST * ast)
         return false;
 
     /// It is KILL QUERY
-    if (typeid_cast<const ASTKillQueryQuery *>(ast))
+    if (ast->as<ASTKillQueryQuery>())
         return true;
 
     /// It is SELECT FROM system.processes
@@ -46,12 +46,12 @@ static bool isUnlimitedQuery(const IAST * ast)
     /// False negative: USE system; SELECT * FROM processes;
     /// False positive: SELECT * FROM system.processes CROSS JOIN (SELECT ...)
 
-    if (auto ast_selects = typeid_cast<const ASTSelectWithUnionQuery *>(ast))
+    if (const auto * ast_selects = ast->as<ASTSelectWithUnionQuery>())
     {
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
             return false;
 
-        auto ast_select = typeid_cast<const ASTSelectQuery *>(ast_selects->list_of_selects->children[0].get());
+        const auto * ast_select = ast_selects->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!ast_select)
             return false;
 
@@ -400,11 +400,13 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.client_info       = client_info;
     res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
-    res.read_rows         = progress_in.rows;
-    res.read_bytes        = progress_in.bytes;
-    res.total_rows        = progress_in.total_rows;
-    res.written_rows      = progress_out.rows;
-    res.written_bytes     = progress_out.bytes;
+    res.read_rows         = progress_in.read_rows;
+    res.read_bytes        = progress_in.read_bytes;
+    res.total_rows        = progress_in.total_rows_to_read;
+
+    /// TODO: Use written_rows and written_bytes when real time progress is implemented
+    res.written_rows      = progress_out.read_rows;
+    res.written_bytes     = progress_out.read_bytes;
 
     if (thread_group)
     {

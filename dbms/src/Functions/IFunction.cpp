@@ -1,3 +1,5 @@
+#include "IFunction.h"
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/LRUCache.h>
@@ -13,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
@@ -25,7 +26,7 @@
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#include <llvm/IR/IRBuilder.h>
 #pragma GCC diagnostic pop
 #endif
 

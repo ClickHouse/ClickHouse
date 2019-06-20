@@ -1,3 +1,7 @@
+option (ENABLE_BROTLI "Enable brotli" ON)
+
+if (ENABLE_BROTLI)
+
 option (USE_INTERNAL_BROTLI_LIBRARY "Set to FALSE to use system libbrotli library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/brotli/c/include/brotli/decode.h")
@@ -26,5 +30,7 @@ elseif (NOT MISSING_INTERNAL_BROTLI_LIBRARY)
     set (BROTLI_LIBRARY brotli)
     set (USE_BROTLI 1)
 endif ()
+
+endif()
 
 message (STATUS "Using brotli=${USE_BROTLI}: ${BROTLI_INCLUDE_DIR} : ${BROTLI_LIBRARY}")

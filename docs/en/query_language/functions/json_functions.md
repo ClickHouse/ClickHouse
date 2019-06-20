@@ -55,5 +55,144 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+
+## JSONHas(json[, indices_or_keys]...)
+
+If the value exists in the JSON document, `1` will be returned.
+
+If the value does not exist, `0` will be returned.
+
+Examples:
+
+```
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
+```
+
+`indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
+
+* String = access object member by key.
+* Positive integer = access the n-th member/key from the beginning.
+* Negative integer = access the n-th member/key from the end.
+
+Minimum index of the element is 1. Thus the element 0 doesn't exist.
+
+You may use integers to access both JSON arrays and JSON objects.
+
+So, for example:
+
+```
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+```
+
+## JSONLength(json[, indices_or_keys]...)
+
+Return the length of a JSON array or a JSON object.
+
+If the value does not exist or has a wrong type, `0` will be returned.
+
+Examples:
+
+```
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+```
+
+## JSONType(json[, indices_or_keys]...)
+
+Return the type of a JSON value.
+
+If the value does not exist, `Null` will be returned.
+
+Examples:
+
+```
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+```
+
+## JSONExtractUInt(json[, indices_or_keys]...)
+## JSONExtractInt(json[, indices_or_keys]...)
+## JSONExtractFloat(json[, indices_or_keys]...)
+## JSONExtractBool(json[, indices_or_keys]...)
+
+Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
+
+If the value does not exist or has a wrong type, `0` will be returned.
+
+Examples:
+
+```
+select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```
+
+## JSONExtractString(json[, indices_or_keys]...)
+
+Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
+
+If the value does not exist or has a wrong type, an empty string will be returned.
+
+The value is unescaped. If unescaping failed, it returns an empty string.
+
+Examples:
+
+```
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
+select JSONExtractString('{"abc":"hello}', 'abc') = ''
+```
+
+## JSONExtract(json[, indices_or_keys...], return_type)
+
+Parses a JSON and extract a value of the given ClickHouse data type.
+
+This is a generalization of the previous `JSONExtract<type>` functions.
+This means
+`JSONExtract(..., 'String')` returns exactly the same as `JSONExtractString()`,
+`JSONExtract(..., 'Float64')` returns exactly the same as `JSONExtractFloat()`.
+
+Examples:
+
+```
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(Int64)') = NULL
+SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
+SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Thursday'
+SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
+```
+
+## JSONExtractKeysAndValues(json[, indices_or_keys...], value_type)
+
+Parse key-value pairs from a JSON where the values are of the given ClickHouse data type.
+
+Example:
+
+```
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+```
+
+## JSONExtractRaw(json[, indices_or_keys]...)
+
+Returns a part of JSON.
+
+If the part does not exist or has a wrong type, an empty string will be returned.
+
+Example:
+
+```
+select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->

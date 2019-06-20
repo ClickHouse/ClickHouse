@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 enum ClusterOperation
@@ -110,7 +111,7 @@ public:
 
         const auto type_x = arguments[0];
 
-        if (!isNumber(type_x))
+        if (!isNativeNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 

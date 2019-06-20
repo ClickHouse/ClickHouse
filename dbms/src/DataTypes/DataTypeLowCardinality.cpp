@@ -195,6 +195,12 @@ struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkS
     ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
 
+    /// If dictionary should be updated.
+    /// Can happen is some granules was skipped while reading from MergeTree.
+    /// We should store this flag in State because
+    ///   in case of long block of empty arrays we may not need read dictionary at first reading.
+    bool need_update_dictionary = false;
+
     explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
 };
 
@@ -684,9 +690,13 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     };
 
     if (!settings.continuous_reading)
+    {
         low_cardinality_state->num_pending_rows = 0;
 
-    bool first_dictionary = true;
+        /// Remember in state that some granules were skipped and we need to update dictionary.
+        low_cardinality_state->need_update_dictionary = true;
+    }
+
     while (limit)
     {
         if (low_cardinality_state->num_pending_rows == 0)
@@ -699,10 +709,12 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
             index_type.deserialize(*indexes_stream);
 
-            if (index_type.need_global_dictionary && (!global_dictionary || index_type.need_update_dictionary || (first_dictionary && !settings.continuous_reading)))
+            bool need_update_dictionary =
+                !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
+            if (index_type.need_global_dictionary && need_update_dictionary)
             {
                 readDictionary();
-                first_dictionary = false;
+                low_cardinality_state->need_update_dictionary = false;
             }
 
             if (low_cardinality_state->index_type.has_additional_keys)
@@ -809,7 +821,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    if (isNumber(type))
+    if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
         TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));

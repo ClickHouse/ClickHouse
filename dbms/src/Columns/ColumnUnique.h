@@ -25,9 +25,9 @@ namespace ErrorCodes
 }
 
 template <typename ColumnType>
-class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>
+class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnType>>
 {
-    friend class COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>;
+    friend class COWHelper<IColumnUnique, ColumnUnique<ColumnType>>;
 
 private:
     explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
@@ -80,6 +80,7 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
+    void protect() override { column_holder->protect(); }
     size_t allocatedBytes() const override
     {
         return column_holder->allocatedBytes()
@@ -94,20 +95,27 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
+            return column_holder->structureEquals(*rhs_concrete->column_holder);
+        return false;
+    }
+
     const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
 private:
 
-    ColumnPtr column_holder;
+    IColumn::WrappedPtr column_holder;
     bool is_nullable;
     size_t size_of_value_if_fixed = 0;
     ReverseIndex<UInt64, ColumnType> index;
 
     /// For DataTypeNullable, stores null map.
-    ColumnPtr nested_null_mask;
-    ColumnPtr nested_column_nullable;
+    IColumn::WrappedPtr nested_null_mask;
+    IColumn::WrappedPtr nested_column_nullable;
 
     class IncrementalHash
     {
@@ -130,7 +138,7 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder->assumeMutable().get()); }
+    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder.get()); }
     const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
@@ -222,10 +230,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-        {
-            IColumn & null_mask = nested_null_mask->assumeMutableRef();
-            static_cast<ColumnUInt8 &>(null_mask).getData().resize_fill(size);
-        }
+            static_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
 }
 

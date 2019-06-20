@@ -49,7 +49,6 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
-
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
     const SelectQueryInfo &,
@@ -75,7 +74,7 @@ BlockInputStreams StorageSystemNumbers::read(
         res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-            res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0);
+            res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0,  false, true);
     }
 
     return res;

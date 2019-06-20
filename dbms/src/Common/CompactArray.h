@@ -55,6 +55,28 @@ public:
         return locus;
     }
 
+    /// Used only in arcadia/metrika
+    void readText(ReadBuffer & in)
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                assertChar(',', in);
+            readIntText(bitset[i], in);
+        }
+    }
+
+    /// Used only in arcadia/metrika
+    void writeText(WriteBuffer & out) const
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                writeCString(",", out);
+            writeIntText(bitset[i], out);
+        }
+    }
+
 private:
     /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;

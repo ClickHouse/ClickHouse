@@ -7,6 +7,8 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -18,9 +20,9 @@ namespace ErrorCodes
 
 
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
-    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, Context & context)
+    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context)
 {
-    const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
         throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
@@ -28,8 +30,6 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     String format = ast_insert_query->format;
     if (format.empty())
         format = "Values";
-    if (ast_insert_query->settings_ast)
-        InterpreterSetQuery(ast_insert_query->settings_ast, context).executeForCurrentContext();
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
 
@@ -51,9 +51,13 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    auto columns_description = ColumnsDescription::loadFromContext(context, ast_insert_query->database, ast_insert_query->table);
-    if (columns_description && !columns_description->defaults.empty())
-        res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns_description->defaults, context);
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields)
+    {
+        StoragePtr storage = context.getTable(ast_insert_query->database, ast_insert_query->table);
+        auto column_defaults = storage->getColumns().getDefaults();
+        if (!column_defaults.empty())
+            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);
+    }
 }
 
 }

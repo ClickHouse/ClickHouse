@@ -37,6 +37,8 @@ const std::string & ThreadStatus::getQueryId() const
 
 void CurrentThread::defaultThreadDeleter()
 {
+    if (unlikely(!current_thread))
+        return;
     ThreadStatus & thread = CurrentThread::get();
     thread.detachQuery(true, true);
 }
@@ -152,10 +154,12 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.query_start_time = query_start_time;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
 
-    elem.read_rows = progress_in.rows.load(std::memory_order_relaxed);
-    elem.read_bytes = progress_in.bytes.load(std::memory_order_relaxed);
-    elem.written_rows = progress_out.rows.load(std::memory_order_relaxed);
-    elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
+    elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+
+    /// TODO: Use written_rows and written_bytes when run time progress is implemented
+    elem.written_rows = progress_out.read_rows.load(std::memory_order_relaxed);
+    elem.written_bytes = progress_out.read_bytes.load(std::memory_order_relaxed);
     elem.memory_usage = memory_tracker.get();
     elem.peak_memory_usage = memory_tracker.getPeak();
 
@@ -191,44 +195,63 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 
 void CurrentThread::initializeQuery()
 {
+    if (unlikely(!current_thread))
+        return;
     get().initializeQuery();
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
+    if (unlikely(!current_thread))
+        return;
     get().attachQuery(thread_group, true);
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
+    if (unlikely(!current_thread))
+        return;
     get().attachQuery(thread_group, false);
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 const std::string & CurrentThread::getQueryId()
 {
+    if (unlikely(!current_thread))
+    {
+        const static std::string empty;
+        return empty;
+    }
     return get().getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
 {
+    if (unlikely(!current_thread))
+        return;
     return get().attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
 {
+    if (unlikely(!current_thread))
+        return;
     get().finalizePerformanceCounters();
 }
 
 void CurrentThread::detachQuery()
 {
+    if (unlikely(!current_thread))
+        return;
     get().detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
 {
+    if (unlikely(!current_thread))
+        return;
     get().detachQuery(true);
 }
 
@@ -241,8 +264,12 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()
 {
+    auto group = CurrentThread::getGroup();
+    if (!group)
+        return;
+
     log_peak_memory_usage_in_destructor = false;
-    CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+    group->memory_tracker.logPeakMemoryUsage();
 }
 
 CurrentThread::QueryScope::~QueryScope()

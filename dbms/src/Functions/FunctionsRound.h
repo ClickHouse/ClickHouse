@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
@@ -119,6 +119,8 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -132,6 +134,8 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
@@ -496,7 +500,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!isNumber(type) && !isDecimal(type))
+            if (!isNumber(type))
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -584,7 +588,7 @@ public:
     {
         const DataTypePtr & type_x = arguments[0];
 
-        if (!(isNumber(type_x) || isDecimal(type_x)))
+        if (!isNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName()
                             + " of first argument of function " + getName()
                             + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -597,7 +601,7 @@ public:
 
         const auto type_arr_nested = type_arr->getNestedType();
 
-        if (!(isNumber(type_arr_nested) || isDecimal(type_arr_nested)))
+        if (!isNumber(type_arr_nested))
         {
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <memory>
@@ -77,7 +77,7 @@ namespace ProtobufColumnMatcher
 
     namespace details
     {
-        void throwNoCommonColumns();
+        [[noreturn]] void throwNoCommonColumns();
 
         class ColumnNameMatcher
         {

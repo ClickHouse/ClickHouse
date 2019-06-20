@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Poco/Event.h>
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -14,20 +15,18 @@
 namespace DB
 {
 
-using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
-friend class KafkaBlockInputStream;
-friend class KafkaBlockOutputStream;
+    friend class KafkaBlockInputStream;
+    friend class KafkaBlockOutputStream;
 
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const { return database_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     void startup() override;
     void shutdown() override;
@@ -40,7 +39,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override
     {
         table_name = new_table_name;
         database_name = new_database_name;
@@ -74,18 +73,21 @@ private:
     // Consumer list
     Poco::Semaphore semaphore;
     std::mutex mutex;
-    std::vector<ConsumerPtr> consumers; /// Available consumers
+    std::vector<BufferPtr> buffers; /// available buffers for Kafka consumers
 
     size_t skip_broken;
+
+    bool intermediate_commit;
 
     // Stream thread
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
     cppkafka::Configuration createConsumerConfiguration();
-    ConsumerPtr claimConsumer();
-    ConsumerPtr tryClaimConsumer(long wait_ms);
-    void pushConsumer(ConsumerPtr c);
+    BufferPtr createBuffer();
+    BufferPtr claimBuffer();
+    BufferPtr tryClaimBuffer(long wait_ms);
+    void pushBuffer(BufferPtr buf);
 
     void streamThread();
     bool streamToViews();
@@ -99,7 +101,8 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
+        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
+        bool intermediate_commit_);
 };
 
 }

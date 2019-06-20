@@ -22,9 +22,10 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
-#include <Poco/Ext/ThreadNumber.h>
-
+#include <common/getThreadNumber.h>
 #include <ext/range.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -150,7 +151,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructure(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -200,9 +201,9 @@ BlockInputStreams StorageBuffer::read(
                 for (auto & stream : streams_from_dst)
                 {
                     stream = std::make_shared<AddingMissedBlockInputStream>(
-                                stream, header_after_adding_defaults, getColumns().defaults, context);
+                        stream, header_after_adding_defaults, getColumns().getDefaults(), context);
                     stream = std::make_shared<ConvertingBlockInputStream>(
-                                context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+                        context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
                 }
             }
         }
@@ -221,7 +222,21 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, stream, processed_stage).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, stream, SelectQueryOptions(processed_stage)).execute().in;
+
+    if (query_info.prewhere_info)
+    {
+        for (auto & stream : streams_from_buffers)
+            stream = std::make_shared<FilterBlockInputStream>(stream, query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+
+        if (query_info.prewhere_info->alias_actions)
+        {
+            for (auto & stream : streams_from_buffers)
+                stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->alias_actions);
+
+        }
+    }
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -325,7 +340,7 @@ public:
         }
 
         /// We distribute the load on the shards by the stream number.
-        const auto start_shard_num = Poco::ThreadNumber::get() % storage.num_shards;
+        const auto start_shard_num = getThreadNumber() % storage.num_shards;
 
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
@@ -677,15 +692,15 @@ void StorageBuffer::flushThread()
 }
 
 
-void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
@@ -713,17 +728,17 @@ void registerStorageBuffer(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String destination_database = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
-        String destination_table = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String destination_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[2]).value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[2]->as<ASTLiteral &>().value);
 
-        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*engine_args[3]).value);
-        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*engine_args[4]).value);
-        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[5]).value);
-        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[6]).value);
-        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[7]).value);
-        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*engine_args[8]).value);
+        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[3]->as<ASTLiteral &>().value);
+        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[4]->as<ASTLiteral &>().value);
+        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[5]->as<ASTLiteral &>().value);
+        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[6]->as<ASTLiteral &>().value);
+        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[7]->as<ASTLiteral &>().value);
+        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[8]->as<ASTLiteral &>().value);
 
         return StorageBuffer::create(
             args.table_name, args.columns,

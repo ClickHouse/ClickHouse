@@ -17,22 +17,36 @@ namespace ErrorCodes
 
 
 MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
-    : IMergeTreeIndexGranule(), index(index), parallelogram()
-{
-}
+    : IMergeTreeIndexGranule(), index(index), parallelogram() {}
+
+MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(
+    const MergeTreeMinMaxIndex & index, std::vector<Range> && parallelogram)
+    : IMergeTreeIndexGranule(), index(index), parallelogram(std::move(parallelogram)) {}
 
 void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-                "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-
-        type->serializeBinary(parallelogram[i].left, ostr);
-        type->serializeBinary(parallelogram[i].right, ostr);
+        if (!type->isNullable())
+        {
+            type->serializeBinary(parallelogram[i].left, ostr);
+            type->serializeBinary(parallelogram[i].right, ostr);
+        }
+        else
+        {
+            bool is_null = parallelogram[i].left.isNull() || parallelogram[i].right.isNull(); // one is enough
+            writeBinary(is_null, ostr);
+            if (!is_null)
+            {
+                type->serializeBinary(parallelogram[i].left, ostr);
+                type->serializeBinary(parallelogram[i].right, ostr);
+            }
+        }
     }
 }
 
@@ -44,14 +58,40 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-        type->deserializeBinary(min_val, istr);
-        type->deserializeBinary(max_val, istr);
-
+        if (!type->isNullable())
+        {
+            type->deserializeBinary(min_val, istr);
+            type->deserializeBinary(max_val, istr);
+        }
+        else
+        {
+            bool is_null;
+            readBinary(is_null, istr);
+            if (!is_null)
+            {
+                type->deserializeBinary(min_val, istr);
+                type->deserializeBinary(max_val, istr);
+            }
+            else
+            {
+                min_val = Null();
+                max_val = Null();
+            }
+        }
         parallelogram.emplace_back(min_val, true, max_val, true);
     }
 }
 
-void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
+
+MergeTreeMinMaxAggregator::MergeTreeMinMaxAggregator(const MergeTreeMinMaxIndex & index)
+    : index(index) {}
+
+MergeTreeIndexGranulePtr MergeTreeMinMaxAggregator::getGranuleAndReset()
+{
+    return std::make_shared<MergeTreeMinMaxGranule>(index, std::move(parallelogram));
+}
+
+void MergeTreeMinMaxAggregator::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -100,6 +140,9 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    for (const auto & range : granule->parallelogram)
+        if (range.left.isNull() || range.right.isNull())
+            return true;
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
 
@@ -109,12 +152,33 @@ MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
     return std::make_shared<MergeTreeMinMaxGranule>(*this);
 }
 
+
+MergeTreeIndexAggregatorPtr MergeTreeMinMaxIndex::createIndexAggregator() const
+{
+    return std::make_shared<MergeTreeMinMaxAggregator>(*this);
+}
+
+
 IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MinMaxCondition>(query, context, *this);
 };
 
+bool MergeTreeMinMaxIndex::mayBenefitFromIndexForIn(const ASTPtr & node) const
+{
+    const String column_name = node->getColumnName();
+
+    for (const auto & name : columns)
+        if (column_name == name)
+            return true;
+
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+        if (func->arguments->children.size() == 1)
+            return mayBenefitFromIndexForIn(func->arguments->children.front());
+
+    return false;
+}
 
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
     const NamesAndTypesList & new_columns,

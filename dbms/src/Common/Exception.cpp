@@ -1,17 +1,14 @@
+#include "Exception.h"
+
 #include <string.h>
 #include <cxxabi.h>
-
 #include <Poco/String.h>
-
 #include <common/logger_useful.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-
-#include <Common/Exception.h>
 #include <common/demangle.h>
-
+#include <Common/config_version.h>
 
 namespace DB
 {
@@ -22,8 +19,8 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int NOT_IMPLEMENTED;
 }
-
 
 std::string errnoToString(int code, int e)
 {
@@ -81,14 +78,15 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
+        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace) << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
     }
     catch (const Poco::Exception & e)
     {
         try
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText();
+                << ", e.displayText() = " << e.displayText()
+                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {}
     }
@@ -102,7 +100,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
+            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what() << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }
@@ -116,7 +114,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
+            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {}
     }

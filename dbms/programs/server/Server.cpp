@@ -33,6 +33,7 @@
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -49,6 +50,7 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
+#include "MySQLHandlerFactory.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -79,6 +81,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -132,7 +135,7 @@ int Server::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
     return Application::run();
@@ -260,6 +263,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+        global_context->shutdown();
+        LOG_DEBUG(log, "Shutted down storages.");
+
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
@@ -299,7 +311,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
+    LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
     /// Directory with temporary data for processing of heavy queries.
     {
@@ -394,7 +406,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
+            buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
@@ -498,17 +510,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setCurrentDatabase(default_database);
 
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-        global_context->shutdown();
-        LOG_DEBUG(log, "Shutted down storages.");
-    });
-
     if (has_zookeeper && config().has("distributed_ddl"))
     {
         /// DDL worker should be started after all tables were loaded
@@ -589,12 +590,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
         {
                auto address = make_socket_address(host, port);
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
                if (secure)
-                   /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+                   /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257
                    socket.bind(address, /* reuseAddress = */ true);
                else
@@ -613,13 +614,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
+            uint16_t listen_port = 0;
             try
             {
                 /// HTTP
                 if (config().has("http_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
+                    listen_port = config().getInt("http_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -636,7 +639,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
+                    listen_port = config().getInt("https_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -656,7 +660,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
+                    listen_port = config().getInt("tcp_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -665,7 +670,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         new Poco::Net::TCPServerParams));
 
-                    LOG_INFO(log, "Listening tcp: " + address.toString());
+                    LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
                 }
 
                 /// TCP with SSL
@@ -673,7 +678,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
+                    listen_port = config().getInt("tcp_port_secure");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -681,7 +687,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcp_secure: " + address.toString());
+                    LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -696,7 +702,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("interserver_http_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
+                    listen_port = config().getInt("interserver_http_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -705,14 +712,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver http: " + address.toString());
+                    LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
                 }
 
                 if (config().has("interserver_https_port"))
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
+                    listen_port = config().getInt("interserver_https_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -721,23 +729,39 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver https: " + address.toString());
+                    LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
+
+                if (config().has("mysql_port"))
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("mysql_port"), /* secure = */ true);
+                    socket.setReceiveTimeout(Poco::Timespan());
+                    socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                        new MySQLHandlerFactory(*this),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+
+                    LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+                }
             }
-            catch (const Poco::Net::NetException & e)
+            catch (const Poco::Exception & e)
             {
+                std::string message = "Listen [" + listen_host + "]:" + std::to_string(listen_port) + " failed: " + std::to_string(e.code()) + ": " + e.what() + ": " + e.message();
                 if (listen_try)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.code() << ": " << e.what() << ": " << e.message()
+                    LOG_ERROR(log, message
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                         "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                         " Example for disabled IPv4: <listen_host>::</listen_host>");
                 else
-                    throw;
+                    throw Exception{message, ErrorCodes::NETWORK_ERROR};
             }
         }
 
@@ -809,7 +833,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (!config().getBool("dictionaries_lazy_load", true))
             {
                 global_context->tryCreateEmbeddedDictionaries();
-                global_context->tryCreateExternalDictionaries();
+                global_context->getExternalDictionaries().enableAlwaysLoadEverything(true);
             }
         }
         catch (...)

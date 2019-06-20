@@ -1,4 +1,4 @@
-add_library (btrie
+add_library(btrie
     src/btrie.c
     include/btrie.h
 )
