@@ -18,11 +18,17 @@ endif()
 include(${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
 if (USE_GPERF)
     # Only for regenerate
+    add_custom_target(generate-tldlookup-gperf ./tldLookup.sh
+        SOURCES tldLookup.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.gperf
+    )
     add_custom_target(generate-tldlookup ${GPERF} tldLookup.gperf --output-file=tldLookup.generated.cpp
         SOURCES tldLookup.gperf
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         # BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.generated.cpp
     )
+    add_dependencies(generate-tldlookup generate-tldlookup-gperf)
     if(NOT TARGET generate-source)
         add_custom_target(generate-source)
     endif()
