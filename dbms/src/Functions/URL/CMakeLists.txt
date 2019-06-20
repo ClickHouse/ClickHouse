@@ -23,7 +23,7 @@ if (USE_GPERF)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.gperf
     )
-    add_custom_target(generate-tldlookup ${GPERF} tldLookup.gperf --output-file=tldLookup.generated.cpp
+    add_custom_target(generate-tldlookup ${GPERF} tldLookup.gperf --output-file=tldLookup.generated.cpp && clang-format -i tldLookup.generated.cpp
         SOURCES tldLookup.gperf
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         # BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.generated.cpp
