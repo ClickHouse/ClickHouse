@@ -17,7 +17,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/convertMySQLDataType.h>
+#include <DataTypes/convertMySQLDataType.h>
 
 
 namespace DB

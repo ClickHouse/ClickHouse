@@ -1,4 +1,16 @@
-#include <Common/convertMySQLDataType.h>
+#include "convertMySQLDataType.h"
+
+#include <Core/Types.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFixedString.h>
 
 namespace DB
 {
@@ -13,7 +25,7 @@ ASTPtr dataTypeConvertToQuery(const DataTypePtr & data_type)
     return makeASTFunction("Nullable", dataTypeConvertToQuery(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
 }
 
-DataTypePtr convertMySQLDataType(const String & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length)
+DataTypePtr convertMySQLDataType(const std::string & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length)
 {
     DataTypePtr res;
     if (mysql_data_type == "tinyint")
