@@ -24,9 +24,10 @@ namespace ErrorCodes
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
-    const String & name, const ExpressionActionsPtr & expr, const Names & columns, const DataTypes & data_types, const Block & header,
-    size_t granularity, size_t bits_per_row_, size_t hash_functions_)
-    : IMergeTreeIndex(name, expr, columns, data_types, header, granularity), bits_per_row(bits_per_row_), hash_functions(hash_functions_)
+    const String & name_, const ExpressionActionsPtr & expr_, const Names & columns_, const DataTypes & data_types_, const Block & header_,
+    size_t granularity_, size_t bits_per_row_, size_t hash_functions_)
+    : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_), bits_per_row(bits_per_row_),
+      hash_functions(hash_functions_)
 {
 }
 
