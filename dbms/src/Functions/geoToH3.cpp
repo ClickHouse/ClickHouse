@@ -1,9 +1,9 @@
 #include <array>
 #include <math.h>
-#include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
@@ -27,9 +27,7 @@ class FunctionGeoToH3 : public IFunction
 public:
     static constexpr auto name = "geoToH3";
 
-    FunctionGeoToH3(const Context & context) : context(context) {}
-
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGeoToH3>(context); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeoToH3>(); }
 
     std::string getName() const override { return name; }
 
@@ -157,9 +155,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
-
-private:
-    const Context & context;
 };
 
 
