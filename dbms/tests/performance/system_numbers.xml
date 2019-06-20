@@ -1,5 +1,4 @@
 <test>
-    <name>system_numbers</name>
     <type>once</type>
 
     <stop_conditions>
@@ -10,13 +9,6 @@
         </any_of>
     </stop_conditions>
 
-    <metrics>
-        <!-- For running one infinite query -->
-        <max_rows_per_second />
-        <max_bytes_per_second />
-        <avg_rows_per_second />
-        <avg_bytes_per_second />
-    </metrics>
 
 <!-- 9. Генератор случайных чисел.
 Функция rand представляет собой linear congruential generator (то есть, целочисленное умножение на константу и сложение с константой), возвращающий 32-битные целые случайные числа.

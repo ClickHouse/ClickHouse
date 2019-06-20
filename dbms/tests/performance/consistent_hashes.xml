@@ -1,5 +1,4 @@
 <test>
-    <name>consistent_hashes</name>
     <type>once</type>
 
     <stop_conditions>
