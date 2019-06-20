@@ -78,6 +78,7 @@ For a description of request parameters, see [request description](../../query_l
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, then ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+    <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
 
 **Example of sections setting**
@@ -315,12 +316,42 @@ For concurrent table access, we use multi-versioning. In other words, when a tab
 Reading from a table is automatically parallelized.
 
 
-## TTL for columns and tables
+## TTL for columns and tables {#table_engine-mergetree-ttl}
 
-Data with expired TTL is removed while executing merges.
+Determines the lifetime of values.
 
-If TTL is set for column, when it expires, value will be replaced by default. If all values in columns were zeroed in part, data for this column will be deleted from disk for part. You are not allowed to set TTL for all key columns. If TTL is set for table, when it expires, row will be deleted.
+The `TTL` clause can be set for the whole table and for each individual column. If `TTL` is set for the whole table, individual `TTL` for columns are ignored.
 
-When TTL expires on some value or row in part, extra merge will be executed. To control frequency of merges with TTL you can set `merge_with_ttl_timeout`. If it is too low, many extra merges and lack of regular merges can reduce the perfomance.  
+
+The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval from the date column value.
+
+```
+TTL date_time + interval
+```
+
+You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use the `INTERVAL` operator and [time interval](../../query_language/operators.md#operators-datetime) operators.
+
+```
+TTL date_time + INTERVAL 1 MONTH
+TTL date_time + INTERVAL 15 HOUR
+```
+
+**Column TTL**
+
+When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part were expired, ClickHouse deletes this column from the data part in a filesystem.
+
+The `TTL` clause cannot be used for key columns.
+
+**Table TTL**
+
+When some data in table is expired, then ClickHouse deletes all the corresponding rows.
+
+**Deleting of Data**
+
+Data with expired TTL are removed, when ClickHouse merges data parts.
+
+When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges can reduce the performance.
+
+If you perform the `SELECT` query between merges you can get the expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->

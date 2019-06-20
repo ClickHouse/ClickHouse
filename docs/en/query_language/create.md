@@ -1,13 +1,33 @@
-## CREATE DATABASE
+## CREATE DATABASE {#query_language-create-database}
 
-Creating db_name databases
+Creates database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE]
 ```
 
-`A database` is just a directory for tables.
-If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
+### Clauses
+
+- `IF NOT EXISTS`
+
+    If the `db_name` database already exists then:
+
+    - If clause is specified, ClickHouse doesn't creates a new database and doesn't throw an exception.
+    - If clause is not specified, then ClickHouse doesn't creates a new database and throw and exception.
+
+- `ON CLUSTER`
+
+    ClickHouse creates the `db_name` database on all the servers of a cluster.
+
+- `ENGINE`
+
+    - [ClickHouse](../database_engines/clickhouse.md)
+
+        This is the default database engine. Should never be specified in the query.
+
+    - [MySQL](../database_engines/mysql.md)
+
+        Allows to retrieve data from the remote MySQL server.
 
 
 ## CREATE TABLE {#create-table-query}
@@ -82,10 +102,7 @@ It is not possible to set default values for elements in nested data structures.
 
 ### TTL expression
 
-Can be specified only for MergeTree-family tables. An expression for setting storage time for values. It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
-    `TTL date + INTERVAL 1 DAY`
-
-You are not allowed to set TTL for key columns. For more details, see [TTL for columns and tables](../operations/table_engines/mergetree.md)
+Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
 ## Column Compression Codecs
 

@@ -5,163 +5,118 @@ Manages data on the remote MySQL server.
 The engine connects to the remote MySQL database, creates the table structure and proxy queries to tables.
 
 
-## Data Types Matching
+## Data Types Support
 
-DataTypePtr convertMySQLDataType(const String & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length)
-{
-    DataTypePtr res;
-    if (mysql_data_type == "tinyint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt8>();
-        else
-            res = std::make_shared<DataTypeInt8>();
-    }
-    else if (mysql_data_type == "smallint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt16>();
-        else
-            res = std::make_shared<DataTypeInt16>();
-    }
-    else if (mysql_data_type == "int" || mysql_data_type == "mediumint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt32>();
-        else
-            res = std::make_shared<DataTypeInt32>();
-    }
-    else if (mysql_data_type == "bigint")
-    {
-        if (is_unsigned)
-            res = std::make_shared<DataTypeUInt64>();
-        else
-            res = std::make_shared<DataTypeInt64>();
-    }
-    else if (mysql_data_type == "float")
-        res = std::make_shared<DataTypeFloat32>();
-    else if (mysql_data_type == "double")
-        res = std::make_shared<DataTypeFloat64>();
-    else if (mysql_data_type == "date")
-        res = std::make_shared<DataTypeDate>();
-    else if (mysql_data_type == "datetime" || mysql_data_type == "timestamp")
-        res = std::make_shared<DataTypeDateTime>();
-    else if (mysql_data_type == "binary")
-        res = std::make_shared<DataTypeFixedString>(length);
-    else
-        /// Also String is fallback for all unknown types.
-        res = std::make_shared<DataTypeString>();
-    if (is_nullable)
-        res = std::make_shared<DataTypeNullable>(res);
-    return res;
-}
+MySQL | ClickHouse
+------|------------
+UNSIGNED TINYINT | [UInt8](../data_types/int_uint.md)
+TINYINT | [Int8](../data_types/int_uint.md)
+UNSIGNED SMALLINT | [UInt16](../data_types/int_uint.md)
+SMALLINT | [Int16](../data_types/int_uint.md)
+UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md)
+INT, MEDIUMINT | [Int32](../data_types/int_uint.md)
+UNSIGNED BIGINT | [UInt64](../data_types/int_uint.md)
+BIGINT | [Int64](../data_types/int_uint.md)
+FLOAT | [Float32](../data_types/float.md)
+DOUBLE | [Float64](../data_types/float.md)
+DATE | [Date](../data_types/date.md)
+DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md)
+BINARY | [FixedString](../data_types/fixedstring.md)
 
+All other data types are converted into [String](../data_types/string.md).
 
+[Nullable](../data_types/nullable.md) data type is supported.
+
+## Creating a Database
+
+``` sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', 'database', 'user', 'password')
+```
+
+**Engine Parameters**
+
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Usage
 
-throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
+MySQL database engine doesn't support:
 
-throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
-
-
-
-StoragePtr detachTable(const String &) override
-    {
-        throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void loadTables(Context &, ThreadPool *, bool) override
-    {
-        /// do nothing
-    }
-
-    void removeTable(const Context &, const String &) override
-    {
-        throw Exception("MySQL database engine does not support remove table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void attachTable(const String &, const StoragePtr &) override
-    {
-        throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void renameTable(const Context &, const String &, IDatabase &, const String &) override
-    {
-        throw Exception("MySQL database engine does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void createTable(const Context &, const String &, const StoragePtr &, const ASTPtr &) override
-    {
-        throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void alterTable(const Context &, const String &, const ColumnsDescription &, const IndicesDescription &, const ASTModifier &) override
-    {
-        throw Exception("MySQL database engine does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
+- Attaching/Detaching tables.
+- Removing tables.
+- Renaming tables.
+- Creating tables.
+- Altering tables.
 
 
+## Example
 
 
-    node1.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql1:3306', 'clickhouse', 'root', 'clickhouse')")
-           yield cluster
+Table in MySQL:
 
-       finally:
-           cluster.shutdown()
+```
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
 
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
 
-   def test_sync_tables_list_between_clickhouse_and_mysql(started_cluster):
-       mysql_connection = get_mysql_conn()
-       assert node1.query('SHOW TABLES FROM clickhouse_mysql FORMAT TSV').rstrip() == ''
+mysql> select * from test;
++--------+--------------+-------+----------------+
+| int_id | int_nullable | float | float_nullable |
++--------+--------------+-------+----------------+
+|      1 |         NULL |     2 |           NULL |
++--------+--------------+-------+----------------+
+1 row in set (0,00 sec)
+```
 
-       create_mysql_table(mysql_connection, 'first_mysql_table')
-       assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'first_mysql_table' FORMAT TSV").rstrip() == 'first_mysql_table'
+Database in ClickHouse, exchanging data with the MySQL server:
 
-       create_mysql_table(mysql_connection, 'second_mysql_table')
-       assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'second_mysql_table' FORMAT TSV").rstrip() == 'second_mysql_table'
-
-       drop_mysql_table(mysql_connection, 'second_mysql_table')
-       assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'second_mysql_table' FORMAT TSV").rstrip() == ''
-
-       mysql_connection.close()
-
-   def test_sync_tables_structure_between_clickhouse_and_mysql(started_cluster):
-       mysql_connection = get_mysql_conn()
-
-       create_mysql_table(mysql_connection, 'test_sync_column')
-
-       assert node1.query(
-           "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == ''
-
-       time.sleep(3)
-       add_mysql_table_column(mysql_connection, "test_sync_column")
-
-       assert node1.query(
-           "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == 'pid'
-
-       time.sleep(3)
-       drop_mysql_table_column(mysql_connection, "test_sync_column")
-       assert node1.query(
-           "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == ''
-
-       mysql_connection.close()
-
-   def test_insert_select(started_cluster):
-       mysql_connection = get_mysql_conn()
-       create_mysql_table(mysql_connection, 'test_insert_select')
-
-       assert node1.query("SELECT count() FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '0'
-       node1.query("INSERT INTO `clickhouse_mysql`.{}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format('test_insert_select'))
-       assert node1.query("SELECT count() FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '10000'
-       assert node1.query("SELECT sum(money) FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '30000'
-       mysql_connection.close()
-
-   def get_mysql_conn():
-       conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
-       return conn
-
-   def create_mysql_db(conn, name):
-       with conn.cursor() as cursor:
-           cursor.execute(
-               "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'bayonet', '123')
+```
+```sql
+SHOW DATABASES
+```
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+```sql
+SHOW CREATE DATABASE mysql_db
+```
+```text
+┌─statement───────────────────────────────────────────────────────────────────────────┐
+│ CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'bayonet', '123') │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+```sql
+SHOW TABLES FROM mysql_db
+```
+```text
+┌─name─┐
+│ test │
+└──────┘
+```
+```sql
+SELECT * FROM mysql_db.test
+```
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴────────────────┘
+```
+```sql
+INSERT INTO mysql_db.test VALUES (1,2,3,4)
+```
