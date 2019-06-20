@@ -173,7 +173,7 @@ void WriteBufferFromS3::writePart(const String & data)
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << part_uri.toString());
 
         std::ostream & ostr = session->sendRequest(*request);
-//        if (session->peekResponse(response)) // FIXME, shall not go next if not received 100-continue
+        if (session->peekResponse(response))
         {
             // Received 100-continue.
             ostr << data;
@@ -244,7 +244,7 @@ void WriteBufferFromS3::complete()
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << complete_uri.toString());
 
         std::ostream & ostr = session->sendRequest(*request);
-//        if (session->peekResponse(response)) // FIXME, shall not go next if not received 100-continue
+        if (session->peekResponse(response))
         {
             // Received 100-continue.
             ostr << data;
