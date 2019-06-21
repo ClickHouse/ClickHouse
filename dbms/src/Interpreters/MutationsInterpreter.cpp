@@ -69,7 +69,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage).execute().in;
+    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -358,7 +358,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run));
+    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
 
     is_prepared = true;
 }

@@ -10,11 +10,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_XXHASH
 #   include <xxhash.h>
 #endif
 
+#include <Common/config.h>
 #if USE_SSL
 #   include <openssl/md5.h>
 #   include <openssl/sha.h>

@@ -45,12 +45,17 @@ public:
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSize();
+    UInt64 getMaxSourcePartsSizeForMerge();
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSize(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+
+    /** Get maximum total size of parts to do mutation, at current moment of time.
+      * It depends only on amount of free space in disk.
+      */
+    UInt64 getMaxSourcePartSizeForMutation();
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
