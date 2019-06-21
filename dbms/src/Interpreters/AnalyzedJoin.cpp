@@ -123,7 +123,7 @@ void AnalyzedJoin::calculateAvailableJoinedColumns(bool make_nullable)
 
             joined_columns.insert(column_name);
 
-            auto type = make_nullable ? makeNullable(column_type) : column_type;
+            auto type = make_nullable && column_type->canBeInsideNullable() ? makeNullable(column_type) : column_type;
             available_joined_columns.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
         }
     }
