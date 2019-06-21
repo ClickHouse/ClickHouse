@@ -1,8 +1,31 @@
 #MySQL
 
-Manages data on the remote MySQL server.
+Allows to exchange data with the remote MySQL server.
 
-The engine connects to the remote MySQL database, creates the table structure and proxy queries to tables.
+You can connect to some database on the MySQL server and perform `INSERT` and `SELECT` queries with tables.
+
+MySQL database engine cannot perform the following operations with tables:
+
+- Attach/Detach
+- Remove
+- Rename
+- Create
+- Alter
+
+
+## Creating a Database
+
+``` sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', 'database', 'user', 'password')
+```
+
+**Engine Parameters**
+
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 
 ## Data Types Support
@@ -23,58 +46,31 @@ DATE | [Date](../data_types/date.md)
 DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md)
 BINARY | [FixedString](../data_types/fixedstring.md)
 
-All other data types are converted into [String](../data_types/string.md).
+All other MySQL data types are converted into [String](../data_types/string.md).
 
 [Nullable](../data_types/nullable.md) data type is supported.
 
-## Creating a Database
 
-``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
-```
-
-**Engine Parameters**
-
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
-
-## Usage
-
-MySQL database engine doesn't support:
-
-- Attaching/Detaching tables.
-- Removing tables.
-- Renaming tables.
-- Creating tables.
-- Altering tables.
-
-
-## Example
-
+## Examples of Use
 
 Table in MySQL:
 
 ```
-mysql> CREATE TABLE `test`.`test` (
+mysql> CREATE TABLE `mysql_table` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
-    ->   `int_nullable` INT NULL DEFAULT NULL,
     ->   `float` FLOAT NOT NULL,
-    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
 Query OK, 0 rows affected (0,09 sec)
 
-mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
 Query OK, 1 row affected (0,00 sec)
 
-mysql> select * from test;
-+--------+--------------+-------+----------------+
-| int_id | int_nullable | float | float_nullable |
-+--------+--------------+-------+----------------+
-|      1 |         NULL |     2 |           NULL |
-+--------+--------------+-------+----------------+
+mysql> select * from mysql_table;
++--------+-------+
+| int_id | value |
++--------+-------+
+|      1 |     2 |
++--------+-------+
 1 row in set (0,00 sec)
 ```
 
@@ -94,29 +90,30 @@ SHOW DATABASES
 └──────────┘
 ```
 ```sql
-SHOW CREATE DATABASE mysql_db
-```
-```text
-┌─statement───────────────────────────────────────────────────────────────────────────┐
-│ CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'bayonet', '123') │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-```sql
 SHOW TABLES FROM mysql_db
 ```
 ```text
-┌─name─┐
-│ test │
-└──────┘
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
 ```
 ```sql
-SELECT * FROM mysql_db.test
+SELECT * FROM mysql_db.mysql_table
 ```
 ```text
-┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
-│      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
-└────────┴──────────────┴───────┴────────────────┘
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
 ```
 ```sql
-INSERT INTO mysql_db.test VALUES (1,2,3,4)
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
 ```
