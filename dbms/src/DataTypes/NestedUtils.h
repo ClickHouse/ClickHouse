@@ -24,6 +24,8 @@ namespace Nested
 
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);
+
+    bool offsetSubstream(const String & column_name, const String & substream_name);
 }
 
 }

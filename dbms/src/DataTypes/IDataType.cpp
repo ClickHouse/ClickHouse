@@ -129,6 +129,13 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         }
         else if (elem.type == Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (elem.type == Substream::JSONInfo)
+            stream_name += ".info";
+        else if (elem.type == Substream::JSONElements && !elem.tuple_element_name.empty())
+            stream_name += ("%2E" + escapeForFileName(elem.tuple_element_name));
+        else if (elem.type == Substream::JSONMask)
+            stream_name += ((elem.tuple_element_name.empty() ? "" : ("%2E" + escapeForFileName(elem.tuple_element_name))) + ".mask");
+
     }
     return stream_name;
 }

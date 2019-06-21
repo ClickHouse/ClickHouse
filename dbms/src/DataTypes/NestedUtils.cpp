@@ -158,6 +158,16 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 }
 
 
+bool offsetSubstream(const String & column_name, const String & substream_name)
+{
+    static constexpr const size_t prefix_size = 6;
+    static constexpr const char * nested_prefix = ".size0";
+    String nested_table_name = Nested::extractTableName(column_name);
+
+    return nested_table_name != column_name && substream_name.size() > prefix_size + nested_table_name.size() &&
+           0 == memcmp(substream_name.data() + nested_table_name.size(), nested_prefix, prefix_size);
+}
+
 void validateArraySizes(const Block & block)
 {
     /// Nested prefix -> position of first column in block.

@@ -82,8 +82,10 @@ private:
     size_t aio_threshold;
     size_t max_read_buffer_size;
 
-    void addStreams(const String & name, const IDataType & type,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+    const ReadBufferFromFileBase::ProfileCallback profile_callback;
+    clockid_t clock_type;
+
+    MergeTreeReaderStream * getOrCreateStream(const String & name, const IDataType::SubstreamPath & substream);
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,

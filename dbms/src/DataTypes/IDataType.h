@@ -93,6 +93,10 @@ public:
 
             DictionaryKeys,
             DictionaryIndexes,
+
+            JSONInfo,
+            JSONMask,
+            JSONElements,
         };
         Type type;
 
@@ -173,11 +177,8 @@ public:
       *  - in that case, column is serialized till the end.
       */
     virtual void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & /*state*/) const
+        const IColumn & column, size_t offset, size_t limit,
+        SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & /*state*/) const
     {
         if (WriteBuffer * stream = settings.getter(settings.path))
             serializeBinaryBulk(column, *stream, offset, limit);
@@ -185,10 +186,8 @@ public:
 
     /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & /*state*/) const
+        IColumn & column, size_t limit,
+        DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & /*state*/) const
     {
         if (ReadBuffer * stream = settings.getter(settings.path))
             deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
@@ -258,7 +257,7 @@ public:
     void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
     void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    /** Text serialization for putting into the XML format.
+    virtual /** Text serialization for putting into the XML format.
       */
     void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
@@ -516,6 +515,7 @@ struct WhichDataType
     bool isString() const { return idx == TypeIndex::String; }
     bool isFixedString() const { return idx == TypeIndex::FixedString; }
     bool isStringOrFixedString() const { return isString() || isFixedString(); }
+    bool isJSON() const { return idx == TypeIndex::Generics; }
 
     bool isUUID() const { return idx == TypeIndex::UUID; }
     bool isArray() const { return idx == TypeIndex::Array; }

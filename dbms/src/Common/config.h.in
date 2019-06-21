@@ -10,4 +10,7 @@
 #cmakedefine01 USE_CPUINFO
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_UNWIND
+#cmakedefine01 USE_SIMDJSON
+#cmakedefine01 USE_RAPIDJSON
+
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY

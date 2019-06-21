@@ -99,6 +99,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalQuarter, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>>();
+
+    factory.registerFunction<FunctionToSmallestJSON>();
 }
 
 }

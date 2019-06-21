@@ -221,6 +221,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.getType() == Field::Types::String)
             return src;
     }
+    else if (which_type.isJSON())
+    {
+        return src;
+    }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
         if (src.getType() == Field::Types::Array)
