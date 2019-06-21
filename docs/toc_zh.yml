@@ -185,6 +185,7 @@ nav:
     - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
+    - 'User Settings': 'operations/settings/settings_users.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
