@@ -170,6 +170,7 @@ void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNothing(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeSmallestJSON(DataTypeFactory &factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
@@ -192,6 +193,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
     registerDataTypeAggregateFunction(*this);
+    registerDataTypeSmallestJSON(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);

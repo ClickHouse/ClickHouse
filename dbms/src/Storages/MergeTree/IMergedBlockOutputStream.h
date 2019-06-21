@@ -68,12 +68,10 @@ protected:
     };
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
+    using ColumnWithSubstreams = std::map<String, ColumnStreams>;
 
-    void addStreams(const String & path, const String & name, const IDataType & type,
-                    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
-
-
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns,
+        const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -85,52 +83,40 @@ protected:
         WrittenOffsetColumns & offset_columns,
         bool skip_offsets,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        size_t from_mark
+        size_t from_mark,
+        const CompressionCodecPtr & codec, size_t estimated_size
     );
 
     /// Write single granule of one column (rows between 2 marks)
-    size_t writeSingleGranule(
-        const String & name,
-        const IDataType & type,
-        const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        IDataType::SerializeBinaryBulkSettings & serialize_settings,
-        size_t from_row,
-        size_t number_of_rows,
-        bool write_marks);
+    size_t writeSingleGranule(const String &name, const IDataType &type, const IColumn &column,
+                              WrittenOffsetColumns &offset_columns,
+                              IDataType::SerializeBinaryBulkStatePtr &serialization_state,
+                              IDataType::SerializeBinaryBulkSettings &serialize_settings, size_t from_row,
+                              size_t number_of_rows, bool write_marks);
 
     /// Write mark for column
-    void writeSingleMark(
-        const String & name,
-        const IDataType & type,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        size_t number_of_rows,
-        DB::IDataType::SubstreamPath & path);
+    void writeSingleMark(const String & name, WrittenOffsetColumns & wrote_nested_offset, size_t number_of_rows);
 
     /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
 
     /// Write final mark to the end of column
-    void writeFinalMark(
-        const std::string & column_name,
-        const DataTypePtr column_type,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        DB::IDataType::SubstreamPath & path);
+    void writeFinalMark(const std::string & column_name, WrittenOffsetColumns & offset_columns);
 
     void initSkipIndices();
     void calculateAndSerializeSkipIndices(const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
+
+    ColumnStream * fillMissingColumnStream(ColumnStream * column_stream);
+
+    ColumnStream * getOrCreateColumnStream(const String & column_name, const String & stream_name, const CompressionCodecPtr & codec, size_t estimated_size);
+
 protected:
     MergeTreeData & storage;
 
     SerializationStates serialization_states;
     String part_path;
-
-    ColumnStreams column_streams;
+    ColumnWithSubstreams columns_streams;
 
     /// The offset to the first row of the block for which you want to write the index.
     size_t index_offset = 0;

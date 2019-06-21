@@ -349,29 +349,52 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
             /// Check that mark points to current position in file.
             bool marks_eof = false;
-            name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-                {
-                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-
-                    auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
-                    try
-                    {
-                        /// LowCardinality dictionary column is not read monotonically, so marks maybe inconsistent with
-                        /// offset position in file. So we just read data and marks file, but doesn't check marks equality.
-                        bool only_read = !substream_path.empty() && substream_path.back().type == IDataType::Substream::DictionaryKeys;
-                        if (!stream.mrk_hashing_buf.eof())
-                            stream.assertMark(only_read);
-                        else
-                            marks_eof = true;
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage("Cannot read mark " + toString(mark_num) + " at row " + toString(column_size)
-                            + " in file " + stream.mrk_file_path
-                            + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
-                        throw;
-                    }
-                }, settings.path);
+//            name_type.type->enumerateStreams(path, settings.path, [&](const String & stream_name, const IDataType::SubstreamPath & sub_path)
+//            {
+//                auto & stream = streams.try_emplace(
+//                    stream_name, path, stream_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
+//
+//                try
+//                {
+//                    /// LowCardinality dictionary column is not read monotonically, so marks maybe inconsistent with
+//                    /// offset position in file. So we just read data and marks file, but doesn't check marks equality.
+//                    bool only_read = !sub_path.empty() && sub_path.back().type == IDataType::Substream::DictionaryKeys;
+//                    if (!stream.mrk_hashing_buf.eof())
+//                        stream.assertMark(only_read);
+//                    else
+//                        marks_eof = true;
+//                }
+//                catch (Exception & e)
+//                {
+//                    e.addMessage("Cannot read mark " + toString(mark_num) + " at row " + toString(column_size)
+//                                 + " in file " + stream.mrk_file_path
+//                                 + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+//                    throw;
+//                }
+//            });
+//            name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+//                {
+//                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+//
+//                    auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
+//                    try
+//                    {
+//                        /// LowCardinality dictionary column is not read monotonically, so marks maybe inconsistent with
+//                        /// offset position in file. So we just read data and marks file, but doesn't check marks equality.
+//                        bool only_read = !substream_path.empty() && substream_path.back().type == IDataType::Substream::DictionaryKeys;
+//                        if (!stream.mrk_hashing_buf.eof())
+//                            stream.assertMark(only_read);
+//                        else
+//                            marks_eof = true;
+//                    }
+//                    catch (Exception & e)
+//                    {
+//                        e.addMessage("Cannot read mark " + toString(mark_num) + " at row " + toString(column_size)
+//                            + " in file " + stream.mrk_file_path
+//                            + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+//                        throw;
+//                    }
+//                }, settings.path);
 
             size_t rows_after_mark = adaptive_index_granularity.getMarkRows(mark_num);
             ++mark_num;

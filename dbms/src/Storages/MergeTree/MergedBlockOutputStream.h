@@ -73,6 +73,7 @@ private:
     /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
     ColumnsWithTypeAndName last_index_row;
+    size_t total_size{0};
 };
 
 }

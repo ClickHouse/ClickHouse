@@ -21,19 +21,19 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns_)
 {
-    serialization_states.reserve(header.columns());
     WrittenOffsetColumns tmp_offset_columns;
+    serialization_states.reserve(header.columns());
     IDataType::SerializeBinaryBulkSettings settings;
 
     for (const auto & column_name : header.getNames())
     {
-        const auto & col = header.getByName(column_name);
+        const auto & column = header.getByName(column_name);
+        const auto & columns = storage.getColumns();
+        const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
+        settings.getter = createStreamGetter(column.name, already_written_offset_columns, effective_codec, 0, skip_offsets);
 
-        const auto columns = storage.getColumns();
-        addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
         serialization_states.emplace_back(nullptr);
-        settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-        col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
+        column.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
     }
 
     initSkipIndices();
@@ -65,8 +65,10 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)
     {
+        const auto columns = storage.getColumns();
         const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
-        std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
+        const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
+        std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark, effective_codec, 0);
     }
 
     /// Should be written before index offset update, because we calculate,
@@ -94,28 +96,33 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     for (size_t i = 0, size = header.columns(); i < size; ++i)
     {
         auto & column = header.getByPosition(i);
-        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
+        const auto & columns = storage.getColumns();
+        const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
+        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, effective_codec, 0, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
         /// We wrote at least one row
         if (with_final_mark && (index_offset != 0 || current_mark != 0))
-            writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
+            writeFinalMark(column.name, offset_columns);
     }
 
     MergeTreeData::DataPart::Checksums checksums;
 
-    for (auto & column_stream : column_streams)
+    for (const auto & column_streams : columns_streams)
     {
-        column_stream.second->finalize();
-        if (sync)
-            column_stream.second->sync();
+        for (const auto & column_stream : column_streams.second)
+        {
+            column_stream.second->finalize();
+            if (sync)
+                column_stream.second->sync();
 
-        column_stream.second->addToChecksums(checksums);
+            column_stream.second->addToChecksums(checksums);
+        }
     }
 
     finishSkipIndicesSerialization(checksums);
 
-    column_streams.clear();
+    columns_streams.clear();
     serialization_states.clear();
 
     return checksums;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <common/StringRef.h>
 
 
 namespace DB
@@ -11,6 +12,7 @@ namespace DB
   */
 
 std::string escapeForFileName(const std::string & s);
+std::string escapeForFileName(const StringRef & s);
 std::string unescapeForFileName(const std::string & s);
 
 }

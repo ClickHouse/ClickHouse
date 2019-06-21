@@ -35,11 +35,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
 {
     init();
-    for (const auto & it : columns_list)
-    {
-        const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
-    }
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -60,7 +55,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     init();
 
     /// If summary size is more than threshold than we will use AIO
-    size_t total_size = 0;
     if (aio_threshold > 0)
     {
         for (const auto & it : columns_list)
@@ -69,12 +63,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             if (it2 != merged_column_to_size_.end())
                 total_size += it2->second;
         }
-    }
-
-    for (const auto & it : columns_list)
-    {
-        const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
     }
 }
 
@@ -119,12 +107,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         {
             if (!serialization_states.empty())
             {
-                serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
+                const auto columns = storage.getColumns();
+                const auto & effective_codec = columns.getCodecOrDefault(it->name, codec);
+                serialize_settings.getter = createStreamGetter(it->name, offset_columns, effective_codec, total_size, false);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
             if (with_final_mark && rows_count != 0)
-                writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
+                writeFinalMark(it->name, offset_columns);
         }
     }
 
@@ -159,15 +149,18 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         index_stream = nullptr;
     }
 
-    for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+    for (auto & column_streams : columns_streams)
     {
-        it->second->finalize();
-        it->second->addToChecksums(checksums);
+        for (auto & column_stream : column_streams.second)
+        {
+            column_stream.second->finalize();
+            column_stream.second->addToChecksums(checksums);
+        }
     }
 
     finishSkipIndicesSerialization(checksums);
 
-    column_streams.clear();
+    columns_streams.clear();
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -307,7 +300,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
         for (const auto & col : columns_list)
         {
-            settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
+            const auto columns = storage.getColumns();
+            const auto & effective_codec = columns.getCodecOrDefault(col.name, codec);
+            settings.getter = createStreamGetter(col.name, tmp_offset_columns, effective_codec, total_size, false);
             serialization_states.emplace_back(nullptr);
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
         }
@@ -320,6 +315,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     {
         const ColumnWithTypeAndName & column = block.getByName(it->name);
 
+        const auto columns = storage.getColumns();
+        const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
+
         if (permutation)
         {
             auto primary_column_it = primary_key_column_name_to_position.find(it->name);
@@ -327,23 +325,23 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             if (primary_key_column_name_to_position.end() != primary_column_it)
             {
                 const auto & primary_column = *primary_key_columns[primary_column_it->second].column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_mark);
+                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_mark, effective_codec, total_size);
             }
             else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
             {
                 const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
+                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark, effective_codec, total_size);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i], current_mark);
+                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i], current_mark, effective_codec, total_size);
             }
         }
         else
         {
-            std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_mark);
+            std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_mark, effective_codec, total_size);
         }
     }
 
