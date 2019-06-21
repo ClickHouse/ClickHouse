@@ -235,20 +235,20 @@ def test_kafka_json_without_delimiter(kafka_cluster):
             ENGINE = Kafka
             SETTINGS
                 kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'json',
-                kafka_group_name = 'json',
+                kafka_topic_list = 'json1',
+                kafka_group_name = 'json1',
                 kafka_format = 'JSONEachRow';
         ''')
 
     messages = ''
     for i in range(25):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('json', [messages])
+    kafka_produce('json1', [messages])
 
     messages = ''
     for i in range(25, 50):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('json', [messages])
+    kafka_produce('json1', [messages])
 
     result = ''
     for i in range(50):
@@ -290,8 +290,8 @@ def test_kafka_materialized_view(kafka_cluster):
             ENGINE = Kafka
             SETTINGS
                 kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'json',
-                kafka_group_name = 'json',
+                kafka_topic_list = 'json2',
+                kafka_group_name = 'json2',
                 kafka_format = 'JSONEachRow',
                 kafka_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -304,7 +304,7 @@ def test_kafka_materialized_view(kafka_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('json', messages)
+    kafka_produce('json2', messages)
 
     for i in range(20):
         time.sleep(1)
@@ -321,7 +321,7 @@ def test_kafka_materialized_view(kafka_cluster):
 
 def test_kafka_flush_on_big_message(kafka_cluster):
     # Create batchs of messages of size ~100Kb
-    kafka_messages = 10000
+    kafka_messages = 1000
     batch_messages = 1000
     messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(kafka_messages)]
     kafka_produce('flush', messages)
@@ -336,8 +336,7 @@ def test_kafka_flush_on_big_message(kafka_cluster):
                 kafka_topic_list = 'flush',
                 kafka_group_name = 'flush',
                 kafka_format = 'JSONEachRow',
-                kafka_max_block_size = 10,
-                kafka_commit_on_every_batch = 1;
+                kafka_max_block_size = 10;
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
             ORDER BY key;
@@ -372,20 +371,20 @@ def test_kafka_virtual_columns(kafka_cluster):
             ENGINE = Kafka
             SETTINGS
                 kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'json',
-                kafka_group_name = 'json',
+                kafka_topic_list = 'json3',
+                kafka_group_name = 'json3',
                 kafka_format = 'JSONEachRow';
         ''')
 
     messages = ''
     for i in range(25):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('json', [messages])
+    kafka_produce('json3', [messages])
 
     messages = ''
     for i in range(25, 50):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('json', [messages])
+    kafka_produce('json3', [messages])
 
     result = ''
     for i in range(50):
