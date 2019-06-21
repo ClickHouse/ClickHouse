@@ -81,3 +81,6 @@ endif()
 
 add_subdirectory(URL)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_url)
+
+add_subdirectory(array)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
