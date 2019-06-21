@@ -12,7 +12,6 @@
 
 
 #define DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT 2
-#define DEFAULT_S3_MINIMUM_PART_SIZE 100'000'000
 
 namespace DB
 {
@@ -24,10 +23,14 @@ namespace ErrorCodes
 
 
 WriteBufferFromS3::WriteBufferFromS3(
-    const Poco::URI & uri_, const ConnectionTimeouts & timeouts_,
-    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_)
+    const Poco::URI & uri_,
+    size_t minimum_upload_part_size_,
+    const ConnectionTimeouts & timeouts_,
+    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_
+)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , uri {uri_}
+    , minimum_upload_part_size {minimum_upload_part_size_}
     , timeouts {timeouts_}
     , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
@@ -50,7 +53,7 @@ void WriteBufferFromS3::nextImpl()
 
     last_part_size += offset();
 
-    if (last_part_size > DEFAULT_S3_MINIMUM_PART_SIZE)
+    if (last_part_size > minimum_upload_part_size)
     {
         temporary_buffer->finish();
         writePart(buffer_string);

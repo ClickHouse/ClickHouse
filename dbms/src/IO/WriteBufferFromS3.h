@@ -30,6 +30,7 @@ class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::URI uri;
+    size_t minimum_upload_part_size;
     ConnectionTimeouts timeouts;
     Poco::Net::HTTPRequest auth_request;
     String buffer_string;
@@ -41,6 +42,7 @@ private:
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
+        size_t minimum_upload_part_size_,
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
