@@ -199,20 +199,15 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
-
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
-
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
-
-Operations where you may need the extended data exchange enabled:
-
-- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
-
-For all other operations, ClickHouse doesn't apply the setting.
+When performing `INSERT` queries, replace omitted input column values with
+default values of the respective columns. This option only applies to
+[JSONEachRow](../../interfaces/formats.md#jsoneachrow) and
+[CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
+    When this option is enabled, extended table metadata are sent
+from server to client. It consumes additional computing resources on the server
+and can reduce performance.
 
 Possible values:
 

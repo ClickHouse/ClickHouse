@@ -1,5 +1,4 @@
 <test>
-    <name>Distance search performance test</name>
 
     <tags>
         <tag>search</tag>
