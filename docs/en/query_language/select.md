@@ -437,7 +437,7 @@ FROM <left_subquery>
 
 The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md) engine – an array prepared for joining.
 
-#### Supported Types of `JOIN`
+#### Supported Types of `JOIN` {#select-join-types}
 
 - `INNER JOIN` (or `JOIN`)
 - `LEFT JOIN` (or `LEFT OUTER JOIN`)
@@ -469,7 +469,7 @@ Don't mix these syntaxes.
 
 ClickHouse doesn't directly support syntax with commas, so we don't recommend using them. The algorithm tries to rewrite the query in terms of `CROSS JOIN` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts `INNER JOIN` to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
 
-#### Strictness
+#### Strictness {#select-join-strictness}
 
 - `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior for standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.

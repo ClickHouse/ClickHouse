@@ -16,24 +16,24 @@ See the detailed description of [CREATE TABLE](../../query_language/create.md#cr
 
 **Engine Parameters**
 
-- `join_strictness` – `JOIN` strictness.
-- `join_type` – `JOIN` type.
+- `join_strictness` – [JOIN strictness](../../query_language/select.md#select-join-strictness).
+- `join_type` – [JOIN type](../../query_language/select.md#select-join-types).
 - `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
-Set the parameters `join_strictness` and `join_type` without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. For more information about `JOIN` type and strictness, see the `JOIN` clause description.
+Set the parameters `join_strictness` and `join_type` without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If parameters don't match, ClickHouse doesn't throw an exception and may return incorrect data.
 
 ## Table Usage
 
 ### Example
 
-Creating the right-side table:
+Creating the left-side table:
 
 ```sql
 CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
 ```
 
-Creating the left-side `Join` table:
+Creating the right-side `Join` table:
 
 ```sql
 CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
