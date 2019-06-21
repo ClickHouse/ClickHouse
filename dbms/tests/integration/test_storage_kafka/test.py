@@ -388,6 +388,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     for i in range(50):
+        time.sleep(1)
         result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka')
         if kafka_check_result(result, False, 'test_kafka_virtual.reference'):
             break
@@ -410,7 +411,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _topic, _offset FROM test.kafka;
+            SELECT *, _key, _topic, _offset FROM test.kafka;
     ''')
 
     messages = []
