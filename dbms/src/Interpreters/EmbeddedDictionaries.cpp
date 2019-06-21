@@ -4,12 +4,10 @@
 #include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <common/logger_useful.h>
-
 #include <Poco/Util/Application.h>
 
 

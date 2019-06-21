@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/config.h>
 
 
 namespace DB

@@ -1,5 +1,5 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsEmbeddedDictionaries.h>
+#include "FunctionFactory.h"
+#include "FunctionsEmbeddedDictionaries.h"
 
 namespace DB
 {

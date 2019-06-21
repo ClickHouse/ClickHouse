@@ -3,30 +3,25 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
+#include <IO/WriteHelpers.h>
+#include <Common/config.h>
+#include <Common/typeid_cast.h>
 
+#include "config_core.h"
 #if USE_MYSQL
 #include <Dictionaries/Embedded/TechDataHierarchy.h>
 #endif
-
-#include <IO/WriteHelpers.h>
-
-#include <Common/config.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB

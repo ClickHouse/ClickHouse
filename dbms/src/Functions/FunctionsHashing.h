@@ -15,14 +15,13 @@
 #   include <xxhash.h>
 #endif
 
-#include <Common/config.h>
+#include "config_core.h"
 #if USE_SSL
 #   include <openssl/md5.h>
 #   include <openssl/sha.h>
 #endif
 
 #include <Poco/ByteOrder.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -39,7 +38,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 

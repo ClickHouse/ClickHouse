@@ -1,7 +1,7 @@
 #include "MySQLDictionarySource.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
