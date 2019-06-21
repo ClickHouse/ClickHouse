@@ -249,7 +249,8 @@ struct ContextShared
           *  Note that part changes at shutdown won't be logged to part log.
           */
 
-        system_logs->shutdown();
+        if (system_logs)
+            system_logs->shutdown();
 
         /** At this point, some tables may have threads that block our mutex.
           * To shutdown them correctly, we will copy the current list of tables,
