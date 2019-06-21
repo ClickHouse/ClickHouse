@@ -245,12 +245,11 @@ struct ContextShared
             return;
         shutdown_called = true;
 
+        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
+          *  Note that part changes at shutdown won't be logged to part log.
+          */
 
-        /** At this point, system logs will flush accumulated data, then shutdown their threads and no longer write any data.
-        * It will prevent recreation of system tables at shutdown.
-        * Note that part changes at shutdown won't be logged to part log.
-        */
-        system_logs.reset();
+        system_logs->shutdown();
 
         /** At this point, some tables may have threads that block our mutex.
           * To shutdown them correctly, we will copy the current list of tables,
