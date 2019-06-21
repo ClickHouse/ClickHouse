@@ -558,16 +558,38 @@ class ClickHouseInstance:
             encoded_data = base64.b64encode(data)
             self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
 
-    def restart_with_latest_version(self, stop_start_wait_sec=5, callback_onstop=None, signal=15):
+    def get_process_pid(self, process_name):
+        output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])
+        if output:
+            try:
+                pid = int(output.split('\n')[0].strip())
+                return pid
+            except:
+                return None
+        return None
+
+
+    def restart_with_latest_version(self, stop_start_wait_sec=10, callback_onstop=None, signal=15):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
-        time.sleep(stop_start_wait_sec)
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
         if callback_onstop:
             callback_onstop(self)
         self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"], user='root')
         self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"], user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        from helpers.test_tools import assert_eq_with_retry
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
     def get_docker_handle(self):
         return self.docker_client.containers.get(self.docker_id)
