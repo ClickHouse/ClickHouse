@@ -20,7 +20,6 @@ class CSVRowInputStream : public IRowInputStream
 {
 public:
     /** with_names - in the first line the header with column names
-      * with_types - on the next line header with type names
       */
     CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings);
 
@@ -42,18 +41,23 @@ private:
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
 
+    /// Maps indexes of columns in the input file to indexes of table columns
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
 
+    /// Tracks which colums we have read in a single read() call.
+    /// For columns that are never read, it is initialized to false when we
+    /// read the file header, and never changed afterwards.
+    /// For other columns, it is updated on each read() call.
     std::vector<UInt8> read_columns;
-    std::vector<size_t> columns_to_fill_with_default_values;
+
+    /// Whether we have any columns that are not read from file at all,
+    /// and must be always initialized with defaults.
+    bool have_always_default_columns = false;
 
     void addInputColumn(const String & column_name);
-    void setupAllColumnsByTableSchema();
-    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
 
     /// For convenient diagnostics in case of an error.
-
     size_t row_num = 0;
 
     /// How many bytes were read, not counting those that are still in the buffer.

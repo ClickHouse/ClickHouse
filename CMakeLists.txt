@@ -268,15 +268,6 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     endif()
 endif ()
 
-# Check if gperf was installed
-option (USE_GPERF "Use gperf function hash generator tool" ON)
-if (USE_GPERF)
-    find_program(GPERF gperf)
-    if (NOT GPERF)
-        message(FATAL_ERROR "Could not find the program gperf")
-    endif()
-endif()
-
 # Flags for test coverage
 if (TEST_COVERAGE)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DIS_DEBUG")
