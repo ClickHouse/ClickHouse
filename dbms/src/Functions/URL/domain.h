@@ -8,25 +8,10 @@
 namespace DB
 {
 
-static inline bool isUnsafeCharUrl(char c)
+static inline bool isUnsafeOrReversedCharUrl(char c)
 {
     switch (c)
     {
-        case ' ':
-        case '\t':
-        case '<':
-        case '>':
-        case '#':
-        case '%':
-        case '{':
-        case '}':
-        case '|':
-        case '\\':
-        case '^':
-        case '~':
-        case '[':
-        case ']':
-            return true;
     }
     return false;
 }
@@ -44,74 +29,76 @@ static inline bool isCharEndOfUrl(char c)
     return false;
 }
 
-static inline bool isReservedCharUrl(char c)
-{
-    switch (c)
-    {
-        case ';':
-        case '/':
-        case '?':
-        case ':':
-        case '@':
-        case '=':
-        case '&':
-            return true;
-    }
-    return false;
-}
-
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
 
-    Pos slash_pos = find_first_symbols<'/'>(pos, end);
-    if (slash_pos != end)
-    {
-        pos = slash_pos;
-    }
-    else
-    {
-        pos = data;
-    }
+    if (*(end - 1) == '.')
+        return StringRef{};
 
-    if (pos != data)
+    StringRef scheme = getURLScheme(data, size);
+    if (scheme.size != 0)
     {
-        StringRef scheme = getURLScheme(data, size);
         Pos scheme_end = data + scheme.size;
-
-        // Colon must follows after scheme.
-        if (pos - scheme_end != 1 || *scheme_end != ':')
-            return {};
-    }
-
-    // Check with we still have // character from the scheme
-    if (!(end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/'))
-        pos += 2;
-
-    const char * start_of_host = pos;
-    bool has_dot_delimiter = false;
-    for (; pos < end; ++pos)
-    {
-        if (*pos == '@')
-            start_of_host = pos + 1;
-        else if (*pos == '.')
-        {
-            if (pos + 1 == end || isCharEndOfUrl(*(pos + 1)))
-                return StringRef{};
-            has_dot_delimiter = true;
-        }
-        else if (isCharEndOfUrl(*pos))
-            break;
-        else if (isUnsafeCharUrl(*pos) || isReservedCharUrl(*pos))
+        pos = scheme_end + 1;
+        if (*scheme_end != ':' || *pos != '/')
             return StringRef{};
     }
 
-    if (!has_dot_delimiter)
+    if (end - pos > 2 && *pos == '/' && *(pos + 1) == '/')
+        pos += 2;
+
+    auto start_of_host = pos;
+    Pos dot_pos = nullptr;
+    bool exit_loop = false;
+    for (; pos < end && !exit_loop; ++pos)
+    {
+        switch(*pos)
+        {
+        case '.':
+            dot_pos = pos;
+            break;
+        case ':': /// end symbols
+        case '/':
+        case '?':
+        case '#':
+            exit_loop = true;
+            break;
+        case '@':
+            start_of_host = pos;
+            break;
+        case ' ': /// restricted symbols
+        case '\t':
+        case '<':
+        case '>':
+        case '%':
+        case '{':
+        case '}':
+        case '|':
+        case '\\':
+        case '^':
+        case '~':
+        case '[':
+        case ']':
+        case ';':
+        case '=':
+        case '&':
+            return StringRef{};
+        }
+    }
+
+    if (!dot_pos || start_of_host >= pos)
         return StringRef{};
 
-    return (pos == start_of_host) ? StringRef{} : StringRef(start_of_host, pos - start_of_host);
+    /// if end found immediately after dot
+    char after_dot = *(dot_pos + 1);
+    if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
+        return StringRef{};
+
+
+    return StringRef(start_of_host, pos - start_of_host);
 }
 
 template <bool without_www>
