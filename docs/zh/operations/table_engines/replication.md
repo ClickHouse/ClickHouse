@@ -192,7 +192,6 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 使用其他名称创建 MergeTree 表。将具有`ReplicatedMergeTree`表数据的目录中的所有数据移动到新表的数据目录中。然后删除`ReplicatedMergeTree`表并重新启动服务器。
 
 如果你想在不启动服务器的情况下清除 `ReplicatedMergeTree` 表：
-If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
 - 删除元数据目录中的相应 `.sql` 文件（`/var/lib/clickhouse/metadata/`）。
 - 删除 ZooKeeper 中的相应路径（`/path_to_table/replica_name`）。

@@ -1,10 +1,9 @@
 #pragma once
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
-
 #include <capnp/schema-parser.h>
 
 namespace DB
@@ -48,9 +47,9 @@ private:
     struct Action
     {
         enum Type { POP, PUSH, READ };
-        Type type;
-        capnp::StructSchema::Field field = {};
-        BlockPositionList columns = {};
+        Type type{};
+        capnp::StructSchema::Field field{};
+        BlockPositionList columns{};
     };
 
     // Wrapper for classes that could throw in destructor

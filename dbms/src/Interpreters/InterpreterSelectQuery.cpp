@@ -127,7 +127,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
     return expr_list->children.at(0)->getColumnName();
 }
 
-} // namespace
+}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
@@ -1196,7 +1196,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.transform([&](auto & stream)
             {
-                stream->setLimits(limits);
+                if (!options.ignore_limits)
+                    stream->setLimits(limits);
 
                 if (options.to_stage == QueryProcessingStage::Complete)
                     stream->setQuota(quota);

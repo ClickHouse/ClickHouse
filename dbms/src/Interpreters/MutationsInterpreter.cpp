@@ -69,7 +69,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage).execute().in;
+    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -133,14 +133,14 @@ static void validateUpdateColumns(
             for (const auto & col : storage->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
-                    throw Exception("Cannot UPDATE materialized column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
+                    throw Exception("Cannot UPDATE materialized column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
             }
 
-            throw Exception("There is no column `" + column_name + "` in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
 
         if (key_columns.count(column_name))
-            throw Exception("Cannot UPDATE key column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
+            throw Exception("Cannot UPDATE key column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
 
         auto materialized_it = column_to_affected_materialized.find(column_name);
         if (materialized_it != column_to_affected_materialized.end())
@@ -148,8 +148,8 @@ static void validateUpdateColumns(
             for (const String & materialized : materialized_it->second)
             {
                 if (key_columns.count(materialized))
-                    throw Exception("Updated column `" + column_name + "` affects MATERIALIZED column `"
-                        + materialized + "`, which is a key column. Cannot UPDATE it.",
+                    throw Exception("Updated column " + backQuote(column_name) + " affects MATERIALIZED column "
+                        + backQuote(materialized) + ", which is a key column. Cannot UPDATE it.",
                         ErrorCodes::CANNOT_UPDATE_COLUMN);
             }
         }
@@ -358,7 +358,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run));
+    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
 
     is_prepared = true;
 }
