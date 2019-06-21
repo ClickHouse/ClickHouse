@@ -255,7 +255,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 }
 
 
-template <char c>
+template <char c, char symbol = '\\'>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -304,7 +304,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     break;
                 case c:
-                    writeChar('\\', buf);
+                    writeChar(symbol, buf);
                     writeChar(c, buf);
                     break;
                 default:
@@ -353,27 +353,27 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
 }
 
 
-template <char c>
+template <char c, char symbol = '\\'>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     writeChar(c, buf);
-    writeAnyEscapedString<c>(begin, end, buf);
+    writeAnyEscapedString<c, symbol>(begin, end, buf);
     writeChar(c, buf);
 }
 
 
 
-template <char c>
+template <char c, char symbol = '\\'>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(s.data(), s.data() + s.size(), buf);
+    writeAnyQuotedString<c, symbol>(s.data(), s.data() + s.size(), buf);
 }
 
 
-template <char c>
+template <char c, char symbol = '\\'>
 void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(ref.data, ref.data + ref.size, buf);
+    writeAnyQuotedString<c, symbol>(ref.data, ref.data + ref.size, buf);
 }
 
 
@@ -393,10 +393,16 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-/// Outputs a string in backquotes, as an identifier in MySQL.
+/// Outputs a string in backquotes.
 inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
+}
+
+/// Outputs a string in backquotes for MySQL.
+inline void writeMySQLBackQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'`', '`'>(s, buf);
 }
 
 
@@ -428,6 +434,11 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+}
+
+inline void writeProbablyMySQLQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeMySQLBackQuotedString(s_, buf_); });
 }
 
 
