@@ -8,14 +8,73 @@
 namespace DB
 {
 
+static inline bool isUnsafeCharUrl(char c)
+{
+    switch (c)
+    {
+        case ' ':
+        case '\t':
+        case '<':
+        case '>':
+        case '#':
+        case '%':
+        case '{':
+        case '}':
+        case '|':
+        case '\\':
+        case '^':
+        case '~':
+        case '[':
+        case ']':
+            return true;
+    }
+    return false;
+}
+
+static inline bool isCharEndOfUrl(char c)
+{
+    switch (c)
+    {
+        case ':':
+        case '/':
+        case '?':
+        case '#':
+            return true;
+    }
+    return false;
+}
+
+static inline bool isReservedCharUrl(char c)
+{
+    switch (c)
+    {
+        case ';':
+        case '/':
+        case '?':
+        case ':':
+        case '@':
+        case '=':
+        case '&':
+            return true;
+    }
+    return false;
+}
+
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
 
-    if (end == (pos = find_first_symbols<'/'>(pos, end)))
-        return {};
+    Pos slash_pos = find_first_symbols<'/'>(pos, end);
+    if (slash_pos != end)
+    {
+        pos = slash_pos;
+    }
+    else
+    {
+        pos = data;
+    }
 
     if (pos != data)
     {
@@ -27,18 +86,30 @@ inline StringRef getURLHost(const char * data, size_t size)
             return {};
     }
 
-    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-        return {};
-    pos += 2;
+    // Check with we still have // character from the scheme
+    if (!(end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/'))
+        pos += 2;
 
     const char * start_of_host = pos;
+    bool has_dot_delimiter = false;
     for (; pos < end; ++pos)
     {
         if (*pos == '@')
             start_of_host = pos + 1;
-        else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+        else if (*pos == '.')
+        {
+            if (pos + 1 == end || isCharEndOfUrl(*(pos + 1)))
+                return StringRef{};
+            has_dot_delimiter = true;
+        }
+        else if (isCharEndOfUrl(*pos))
             break;
+        else if (isUnsafeCharUrl(*pos) || isReservedCharUrl(*pos))
+            return StringRef{};
     }
+
+    if (!has_dot_delimiter)
+        return StringRef{};
 
     return (pos == start_of_host) ? StringRef{} : StringRef(start_of_host, pos - start_of_host);
 }
