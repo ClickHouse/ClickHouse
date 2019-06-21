@@ -3,7 +3,7 @@
 Creates database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
 ```
 
 ### Clauses
@@ -12,23 +12,20 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE]
 
     If the `db_name` database already exists then:
 
-    - If clause is specified, ClickHouse doesn't creates a new database and doesn't throw an exception.
-    - If clause is not specified, then ClickHouse doesn't creates a new database and throw and exception.
+    - If clause is specified, ClickHouse doesn't create a new database and doesn't throw an exception.
+    - If clause is not specified, then ClickHouse doesn't create a new database and throw and exception.
 
 - `ON CLUSTER`
 
-    ClickHouse creates the `db_name` database on all the servers of a cluster.
+    ClickHouse creates the `db_name` database on all the servers of a specified cluster.
 
 - `ENGINE`
-
-    - [ClickHouse](../database_engines/clickhouse.md)
-
-        This is the default database engine. Should never be specified in the query.
 
     - [MySQL](../database_engines/mysql.md)
 
         Allows to retrieve data from the remote MySQL server.
 
+    By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 

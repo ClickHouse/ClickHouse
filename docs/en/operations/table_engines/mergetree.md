@@ -329,7 +329,7 @@ The table must have the column of the [Date](../../data_types/date.md) or [DateT
 TTL date_time + interval
 ```
 
-You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use the `INTERVAL` operator and [time interval](../../query_language/operators.md#operators-datetime) operators.
+You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
 ```
 TTL date_time + INTERVAL 1 MONTH
@@ -338,19 +338,19 @@ TTL date_time + INTERVAL 15 HOUR
 
 **Column TTL**
 
-When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part were expired, ClickHouse deletes this column from the data part in a filesystem.
+When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part become expired, ClickHouse deletes this column from the data part in a filesystem.
 
 The `TTL` clause cannot be used for key columns.
 
 **Table TTL**
 
-When some data in table is expired, then ClickHouse deletes all the corresponding rows.
+When some data in table expires, ClickHouse deletes all the corresponding rows.
 
-**Deleting of Data**
+**Cleaning up of Data**
 
-Data with expired TTL are removed, when ClickHouse merges data parts.
+Data with expired TTL is removed, when ClickHouse merges data parts.
 
-When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges can reduce the performance.
+When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges consume much resources.
 
 If you perform the `SELECT` query between merges you can get the expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 

@@ -155,7 +155,6 @@ Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.or
 ```sql
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 ```
-
 ```
 ┌─IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)─┐
 │ ('192.168.0.0','192.168.255.255')          │

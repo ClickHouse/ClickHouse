@@ -62,7 +62,7 @@ nav:
     - 'IPv6': 'data_types/domains/ipv6.md'
 
 - 'Database Engines':
-    - 'ClickHouse': 'database_engines/clickhouse.md'
+    - 'Introduction': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
 
 - 'Table Engines':
