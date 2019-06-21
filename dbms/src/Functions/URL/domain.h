@@ -8,27 +8,6 @@
 namespace DB
 {
 
-static inline bool isUnsafeOrReversedCharUrl(char c)
-{
-    switch (c)
-    {
-    }
-    return false;
-}
-
-static inline bool isCharEndOfUrl(char c)
-{
-    switch (c)
-    {
-        case ':':
-        case '/':
-        case '?':
-        case '#':
-            return true;
-    }
-    return false;
-}
-
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
 {
@@ -66,7 +45,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         case '#':
             exit_loop = true;
             break;
-        case '@':
+        case '@': /// myemail@gmail.com
             start_of_host = pos;
             break;
         case ' ': /// restricted symbols
