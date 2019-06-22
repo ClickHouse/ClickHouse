@@ -15,8 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <mysqlxx/Transaction.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
