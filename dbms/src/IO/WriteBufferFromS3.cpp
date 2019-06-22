@@ -12,6 +12,7 @@
 
 
 #define DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT 2
+#define S3_SOFT_MAX_PARTS 10000
 
 namespace DB
 {
@@ -34,7 +35,6 @@ WriteBufferFromS3::WriteBufferFromS3(
     , timeouts {timeouts_}
     , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
-    , part_number {1}
     , last_part_size {0}
 {
     if (!credentials.getUsername().empty())
@@ -69,7 +69,6 @@ void WriteBufferFromS3::finalize()
     if (!buffer_string.empty())
     {
         writePart(buffer_string);
-        ++part_number;
     }
 
     complete();
@@ -154,8 +153,13 @@ void WriteBufferFromS3::writePart(const String & data)
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI part_uri = uri;
-    part_uri.addQueryParameter("partNumber", std::to_string(part_number));
+    part_uri.addQueryParameter("partNumber", std::to_string(part_tags.size() + 1));
     part_uri.addQueryParameter("uploadId", upload_id);
+
+    if (part_tags.size() == S3_SOFT_MAX_PARTS)
+    {
+        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached.");
+    }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
