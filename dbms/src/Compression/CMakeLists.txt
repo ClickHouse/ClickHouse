@@ -16,6 +16,11 @@ if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
     target_include_directories(clickhouse_compression SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
 endif ()
 
+if (USE_MIMALLOC)
+    target_include_directories(clickhouse_compression SYSTEM BEFORE PRIVATE ${MIMALLOC_INCLUDE_DIR})
+    target_link_libraries(clickhouse_compression PRIVATE ${MIMALLOC_LIBRARY})
+endif ()
+
 if(ENABLE_TESTS)
     add_subdirectory(tests)
 endif()

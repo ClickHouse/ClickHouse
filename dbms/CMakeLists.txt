@@ -256,6 +256,10 @@ target_link_libraries (dbms
 
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
+if (USE_MIMALLOC)
+    target_include_directories(dbms SYSTEM BEFORE PUBLIC ${MIMALLOC_INCLUDE_DIR})
+endif()
+
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()

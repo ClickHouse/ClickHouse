@@ -22,6 +22,8 @@
 #include <arm_neon.h>
 #endif
 
+//#include <mimalloc.h>
+
 namespace LZ4
 {
 
@@ -565,6 +567,7 @@ void decompress(
     {
         decompressImpl<8, false>(source, dest, dest_size);
     }
+    //mi_stats_print(nullptr);
 }
 
 

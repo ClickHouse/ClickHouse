@@ -55,7 +55,7 @@
     /// In debug build, use small mmap threshold to reproduce more memory stomping bugs.
     /// Along with ASLR it will hopefully detect more issues than ASan.
     /// The program may fail due to the limit on number of memory mappings.
-    static constexpr size_t MMAP_THRESHOLD = 4096;
+    static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #endif
 
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;

@@ -65,6 +65,7 @@ message (STATUS "Using internal=${USE_INTERNAL_LLVM_LIBRARY} compiler=${USE_EMBE
 set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/src/Interpreters/config_compile.h)
 configure_file (${ClickHouse_SOURCE_DIR}/dbms/src/Interpreters/config_compile.h.in ${CONFIG_COMPILE})
 
+
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()

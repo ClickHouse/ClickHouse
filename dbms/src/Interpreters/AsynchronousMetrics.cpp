@@ -33,6 +33,10 @@
     #include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_MIMALLOC
+    #include <mimalloc.h>
+#endif
+
 
 namespace DB
 {
@@ -242,7 +246,7 @@ void AsynchronousMetrics::update()
     }
 #endif
 
-#if USE_JEMALLOC
+#if 0
     {
     #define FOR_EACH_METRIC(M) \
         M("allocated", size_t) \
@@ -269,6 +273,12 @@ void AsynchronousMetrics::update()
 
     #undef GET_METRIC
     #undef FOR_EACH_METRIC
+    }
+#endif
+
+#if USE_MIMALLOC
+    {
+        mi_stats_print(nullptr);
     }
 #endif
 

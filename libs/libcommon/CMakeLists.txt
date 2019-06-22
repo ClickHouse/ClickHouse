@@ -61,7 +61,11 @@ add_library(common
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
-if (USE_JEMALLOC)
+if (USE_MIMALLOC)
+    message (STATUS "Link mimalloc: ${MIMALLOC_LIBRARY}")
+    set (MALLOC_LIBRARIES ${MIMALLOC_LIBRARY})
+    target_include_directories(common BEFORE PRIVATE ${MIMALLOC_INCLUDE_DIR})
+elseif (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
