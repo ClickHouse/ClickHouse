@@ -353,6 +353,8 @@ add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
+add_subdirectory (arch)
+
 include (cmake/print_include_directories.cmake)
 
 if (GLIBC_COMPATIBILITY)
