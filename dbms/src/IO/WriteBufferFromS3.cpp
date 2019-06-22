@@ -158,7 +158,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
     if (part_tags.size() == S3_SOFT_MAX_PARTS)
     {
-        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached.");
+        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too much parts). Server may not accept this whole upload.");
     }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
