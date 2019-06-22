@@ -255,7 +255,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 }
 
 
-template <char c, char symbol = '\\'>
+template <char c, char escape_symbol = '\\'>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -304,7 +304,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     break;
                 case c:
-                    writeChar(symbol, buf);
+                    writeChar(escape_symbol, buf);
                     writeChar(c, buf);
                     break;
                 default:
@@ -353,27 +353,27 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
 }
 
 
-template <char c, char symbol = '\\'>
+template <char c, char escape_symbol = '\\'>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     writeChar(c, buf);
-    writeAnyEscapedString<c, symbol>(begin, end, buf);
+    writeAnyEscapedString<c, escape_symbol>(begin, end, buf);
     writeChar(c, buf);
 }
 
 
 
-template <char c, char symbol = '\\'>
+template <char c, char escape_symbol = '\\'>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c, symbol>(s.data(), s.data() + s.size(), buf);
+    writeAnyQuotedString<c, escape_symbol>(s.data(), s.data() + s.size(), buf);
 }
 
 
-template <char c, char symbol = '\\'>
+template <char c, char escape_symbol = '\\'>
 void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c, symbol>(ref.data, ref.data + ref.size, buf);
+    writeAnyQuotedString<c, escape_symbol>(ref.data, ref.data + ref.size, buf);
 }
 
 
