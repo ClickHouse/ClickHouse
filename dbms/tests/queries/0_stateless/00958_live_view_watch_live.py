@@ -28,8 +28,14 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(r'0.*1' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client1.expect(r'6.*2' + end_of_block)
+    client2.expect(prompt)
     client2.send('INSERT INTO test.mt VALUES (4),(5),(6)')
     client1.expect(r'21.*3' + end_of_block)
+    client2.expect(prompt)
+    for i in range(1,129):
+       client2.send('INSERT INTO test.mt VALUES (1)')
+       client1.expect(r'%d.*%d' % (21+i, 3+i) + end_of_block)
+       client2.expect(prompt)
     # send Ctrl-C
     os.kill(client1.process.pid, signal.SIGINT)
     client1.expect(prompt)

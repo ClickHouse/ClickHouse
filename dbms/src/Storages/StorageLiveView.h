@@ -17,6 +17,7 @@ limitations under the License. */
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/shared_ptr_helper.h>
@@ -166,10 +167,42 @@ public:
             }
         }
 
+        bool is_block_processed = false;
         BlockInputStreams from;
-        BlocksPtr blocks = std::make_shared<Blocks>();
         BlocksPtrs mergeable_blocks;
         BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
+
+        {
+            Poco::FastMutex::ScopedLock lock(live_view.mutex);
+
+            mergeable_blocks = live_view.getMergeableBlocks();
+            if (!mergeable_blocks || mergeable_blocks->size() >= context.getGlobalContext().getSettingsRef().max_live_view_insert_blocks_before_refresh)
+            {
+                mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
+                BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
+                InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
+                auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
+                    interpreter.execute().in);
+                while (Block this_block = view_mergeable_stream->read())
+                    base_mergeable_blocks->push_back(this_block);
+                mergeable_blocks->push_back(base_mergeable_blocks);
+                live_view.setMergeableBlocks(mergeable_blocks);
+
+                /// Create from streams
+                for (auto & blocks_ : *mergeable_blocks)
+                {
+                    if (blocks_->empty())
+                        continue;
+                    auto sample_block = blocks_->front().cloneEmpty();
+                    BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
+                    from.push_back(std::move(stream));
+                }
+
+                is_block_processed = true;
+            }
+        }
+
+        if (!is_block_processed)
         {
             auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
             BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
@@ -181,51 +214,25 @@ public:
                 select_block.execute().in);
             while (Block this_block = data_mergeable_stream->read())
                 new_mergeable_blocks->push_back(this_block);
-        }
 
-        if (new_mergeable_blocks->empty())
-            return;
+            if (new_mergeable_blocks->empty())
+                return;
 
-        {
-            Poco::FastMutex::ScopedLock lock(live_view.mutex);
-
-            mergeable_blocks = live_view.getMergeableBlocks();
-            if (!mergeable_blocks || mergeable_blocks->size() >= 64)
             {
-                mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
-                BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
-                InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
-                auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-                    interpreter.execute().in);
-                while (Block this_block = view_mergeable_stream->read())
-                    base_mergeable_blocks->push_back(this_block);
-                mergeable_blocks->push_back(base_mergeable_blocks);
-                live_view.setMergeableBlocks(mergeable_blocks);
-            }
+                Poco::FastMutex::ScopedLock lock(live_view.mutex);
 
-            /// Need make new mergeable block structure match the other mergeable blocks
-            if (!mergeable_blocks->front()->empty())
-            {
-                auto sample_block = mergeable_blocks->front()->front();
-                auto sample_new_block = new_mergeable_blocks->front();
-                for (auto col : sample_new_block)
+                mergeable_blocks = live_view.getMergeableBlocks();
+                mergeable_blocks->push_back(new_mergeable_blocks);
+
+                /// Create from streams
+                for (auto & blocks_ : *mergeable_blocks)
                 {
-                    for (auto & new_block : *new_mergeable_blocks)
-                    {
-                        if (!sample_block.has(col.name))
-                            new_block.erase(col.name);
-                    }
+                    if (blocks_->empty())
+                        continue;
+                    auto sample_block = blocks_->front().cloneEmpty();
+                    BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
+                    from.push_back(std::move(stream));
                 }
-            }
-
-            mergeable_blocks->push_back(new_mergeable_blocks);
-
-            /// Create from blocks streams
-            for (auto & blocks_ : *mergeable_blocks)
-            {
-                auto sample_block = mergeable_blocks->front()->front().cloneEmpty();
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-                from.push_back(std::move(stream));
             }
         }
 
@@ -234,18 +241,13 @@ public:
         InterpreterSelectQuery select(live_view.getInnerQuery(), context, proxy_storage, QueryProcessingStage::Complete);
         BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
-        while (Block this_block = data->read())
-        {
-            blocks->push_back(this_block);
-        }
+        /// Squashing is needed here because the view query can generate a lot of blocks
+        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+        /// and two-level aggregation is triggered).
+        data = std::make_shared<SquashingBlockInputStream>(
+            data, context.getGlobalContext().getSettingsRef().min_insert_block_size_rows, context.getGlobalContext().getSettingsRef().min_insert_block_size_bytes);
 
-        if (blocks->empty())
-            return;
-
-        auto sample_block = blocks->front().cloneEmpty();
-        BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
-
-        copyData(*new_data, *output);
+        copyData(*data, *output);
     }
 
 private:
