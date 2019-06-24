@@ -247,17 +247,13 @@ void revTranspose(const char * src, _T * buf, UInt32 num_bits, UInt32 tail = 64)
 }
 
 template <typename _T, typename _MinMaxT = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>>
-void restoreUpperBits(_T * buf, UInt32 num_bits, _T upper_min,
-                      _MinMaxT min [[maybe_unused]], _MinMaxT max [[maybe_unused]], UInt32 tail = 64)
+void restoreUpperBits(_T * buf, _T upper_min, _T upper_max, _T sign_bit, UInt32 tail = 64)
 {
     if constexpr (std::is_signed_v<_T>)
     {
         /// Restore some data as negatives and others as positives
-        if (min < 0 && max >= 0 && num_bits < 64)
+        if (sign_bit)
         {
-            _T sign_bit = 1ull << (num_bits - 1);
-            _T upper_max = UInt64(max) >> num_bits << num_bits;
-
             for (UInt32 col = 0; col < tail; ++col)
             {
                 _T & value = buf[col];
@@ -320,19 +316,24 @@ void findMinMax(const char * src, UInt32 src_size, _T & min, _T & max)
 }
 
 template <typename _T>
-void preprocess(_T * buf)
+void preprocess(_T * buf, _T & prev)
 {
     _T copy[64];
-    memcpy(copy, buf, 64 * sizeof(_T));
-    for (UInt32 i = 1; i < 64; ++i)
-        buf[i] ^= copy[i-1];
+    copy[0] = prev;
+    memcpy(&copy[1], buf, 63 * sizeof(_T));
+    prev = buf[63]; /// save for the next call
+
+    for (UInt32 i = 0; i < 64; ++i)
+        buf[i] ^= copy[i];
 }
 
 template <typename _T>
-void postprocess(_T * buf)
+void postprocess(_T * buf, _T & prev)
 {
+    buf[0] ^= prev;
     for (UInt32 i = 1; i < 64; ++i)
         buf[i] ^= buf[i-1];
+    prev = buf[63];
 }
 
 using Preproc = CompressionCodecT64::Preprocessing;
@@ -369,6 +370,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     if (!num_bits)
         return header_size;
 
+    _T prev{};
     _T buf[mx_size];
     UInt32 src_shift = sizeof(_T) * mx_size;
     UInt32 dst_shift = sizeof(UInt64) * num_bits;
@@ -376,7 +378,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     {
         load<_T>(src, buf, mx_size);
         if constexpr (_preproc == Preproc::DeltaXor)
-            preprocess(buf);
+            preprocess(buf, prev);
         transpose(buf, dst, num_bits);
         src += src_shift;
         dst += dst_shift;
@@ -388,7 +390,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     {
         load<_T>(src, buf, tail);
         if constexpr (_preproc == Preproc::DeltaXor)
-            preprocess(buf);
+            preprocess(buf, prev);
         transpose(buf, dst, num_bits, tail);
         dst_bytes += dst_shift;
     }
@@ -446,20 +448,32 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
         --num_full;
 
     _T upper_min = 0;
+    _T upper_max [[maybe_unused]] = 0;
+    _T sign_bit [[maybe_unused]] = 0;
     if (num_bits < 64)
         upper_min = UInt64(min) >> num_bits << num_bits;
+
+    if constexpr (std::is_signed_v<_T>)
+    {
+        if (min < 0 && max >= 0 && num_bits < 64)
+        {
+            sign_bit = 1ull << (num_bits - 1);
+            upper_max = UInt64(max) >> num_bits << num_bits;
+        }
+    }
+
+    _T prev{};
+    if constexpr (_preproc == Preproc::DeltaXor)
+        prev |= upper_min;
 
     _T buf[mx_size];
     for (UInt32 i = 0; i < num_full; ++i)
     {
         revTranspose(src, buf, num_bits);
         if constexpr (_preproc == Preproc::DeltaXor)
-        {
-            restoreUpperBits(buf, num_bits, upper_min, min, max, 1);
-            postprocess(buf);
-        }
+            postprocess(buf, prev);
         else
-            restoreUpperBits(buf, num_bits, upper_min, min, max);
+            restoreUpperBits(buf, upper_min, upper_max, sign_bit);
         store<_T>(buf, dst, mx_size);
         src += src_shift;
         dst += dst_shift;
@@ -469,12 +483,9 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     {
         revTranspose(src, buf, num_bits, tail);
         if constexpr (_preproc == Preproc::DeltaXor)
-        {
-            restoreUpperBits(buf, num_bits, upper_min, min, max, 1);
-            postprocess(buf);
-        }
+            postprocess(buf, prev);
         else
-            restoreUpperBits(buf, num_bits, upper_min, min, max, tail);
+            restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
         store<_T>(buf, dst, tail);
     }
 }
