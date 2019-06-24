@@ -12,8 +12,15 @@ public:
     static constexpr UInt32 HEADER_SIZE = 1 + 2 * sizeof(UInt64);
     static constexpr UInt32 MAX_COMPRESSED_BLOCK_SIZE = sizeof(UInt64) * 64;
 
-    CompressionCodecT64(TypeIndex type_idx_)
+    enum class Preprocessing
+    {
+        None,
+        DeltaXor
+    };
+
+    CompressionCodecT64(TypeIndex type_idx_, Preprocessing preproc_)
         : type_idx(type_idx_)
+        , preproc(preproc_)
     {}
 
     UInt8 getMethodByte() const override;
@@ -33,6 +40,7 @@ protected:
 
 private:
     TypeIndex type_idx;
+    Preprocessing preproc;
 };
 
 }
