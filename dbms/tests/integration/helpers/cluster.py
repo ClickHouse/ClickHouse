@@ -338,30 +338,32 @@ class ClickHouseCluster:
 
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
+        common_opts = ['up', '-d', '--force-recreate', '--renew-anon-volumes']
+
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess_check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_zookeeper_cmd + common_opts)
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
             self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            subprocess_check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_mysql_cmd+ common_opts)
             self.wait_mysql_to_start(120)
 
         if self.with_postgres and self.base_postgres_cmd:
-            subprocess_check_call(self.base_postgres_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_postgres_cmd+ common_opts)
             self.wait_postgres_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_kafka_cmd+ common_opts)
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
         if self.with_hdfs and self.base_hdfs_cmd:
-            subprocess_check_call(self.base_hdfs_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_hdfs_cmd+ common_opts)
             self.wait_hdfs_to_start(120)
 
         if self.with_mongo and self.base_mongo_cmd:
-            subprocess_check_call(self.base_mongo_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_mongo_cmd+ common_opts)
             self.wait_mongo_to_start(30)
 
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
