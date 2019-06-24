@@ -278,7 +278,7 @@ void AsynchronousMetrics::update()
 
 #if USE_MIMALLOC
     {
-        mi_stats_print(nullptr);
+//        mi_stats_print(nullptr);
     }
 #endif
 
