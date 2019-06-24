@@ -8,6 +8,23 @@
 namespace DB
 {
 
+namespace {
+
+inline StringRef buildFound(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
+{
+    if (!dot_pos || start_of_host >= pos)
+        return StringRef{};
+
+    auto after_dot = *(dot_pos + 1);
+    if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
+        return StringRef{};
+
+
+    return StringRef(start_of_host, pos - start_of_host);
+}
+
+}
+
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
 {
@@ -31,8 +48,7 @@ inline StringRef getURLHost(const char * data, size_t size)
 
     auto start_of_host = pos;
     Pos dot_pos = nullptr;
-    bool exit_loop = false;
-    for (; pos < end && !exit_loop; ++pos)
+    for (; pos < end; ++pos)
     {
         switch(*pos)
         {
@@ -43,8 +59,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         case '/':
         case '?':
         case '#':
-            exit_loop = true;
-            break;
+            return buildFound(pos, dot_pos, start_of_host);
         case '@': /// myemail@gmail.com
             start_of_host = pos;
             break;
@@ -68,16 +83,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         }
     }
 
-    if (!dot_pos || start_of_host >= pos)
-        return StringRef{};
-
-    /// if end found immediately after dot
-    char after_dot = *(dot_pos + 1);
-    if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
-        return StringRef{};
-
-
-    return StringRef(start_of_host, pos - start_of_host);
+    return buildFound(pos, dot_pos, start_of_host);
 }
 
 template <bool without_www>
