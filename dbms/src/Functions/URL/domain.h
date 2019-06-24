@@ -19,7 +19,6 @@ inline StringRef buildFound(const Pos & pos, const Pos & dot_pos, const Pos & st
     if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
         return StringRef{};
 
-
     return StringRef(start_of_host, pos - start_of_host);
 }
 
@@ -34,16 +33,26 @@ inline StringRef getURLHost(const char * data, size_t size)
     if (*(end - 1) == '.')
         return StringRef{};
 
-    StringRef scheme = getURLScheme(data, size);
-    if (scheme.size != 0)
+
+    Pos slash_pos = find_first_symbols<'/'>(pos, end);
+    if (slash_pos != end)
+        pos = slash_pos;
+    else
+        pos = data;
+
+    if (pos != data)
     {
+        StringRef scheme = getURLScheme(data, size);
         Pos scheme_end = data + scheme.size;
-        pos = scheme_end + 1;
-        if (*scheme_end != ':' || *pos != '/')
+        if (pos - scheme_end != 1 || *scheme_end != ':')
+        {
+            std::cerr << "RETURNING HERE\n";
             return StringRef{};
+        }
     }
 
-    if (end - pos > 2 && *pos == '/' && *(pos + 1) == '/')
+    // Check with we still have // character from the scheme
+    if (end - pos > 2 && *(pos) == '/' && *(pos + 1) == '/')
         pos += 2;
 
     auto start_of_host = pos;
@@ -61,7 +70,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         case '#':
             return buildFound(pos, dot_pos, start_of_host);
         case '@': /// myemail@gmail.com
-            start_of_host = pos;
+            start_of_host = pos + 1;
             break;
         case ' ': /// restricted symbols
         case '\t':
