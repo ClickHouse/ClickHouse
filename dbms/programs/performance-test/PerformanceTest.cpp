@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -24,6 +25,7 @@ namespace
 void waitQuery(Connection & connection)
 {
     bool finished = false;
+
     while (true)
     {
         if (!connection.poll(1000000))
@@ -50,12 +52,14 @@ namespace fs = boost::filesystem;
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
     Connection & connection_,
+    const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
     Context & context_,
     const std::vector<size_t> & queries_to_run_)
     : config(config_)
     , connection(connection_)
+    , timeouts(timeouts_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
     , context(context_)
@@ -108,7 +112,7 @@ bool PerformanceTest::checkPreconditions() const
 
             size_t exist = 0;
 
-            connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
 
             while (true)
             {
@@ -188,7 +192,7 @@ void PerformanceTest::prepare() const
     for (const auto & query : test_info.create_and_fill_queries)
     {
         LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }
@@ -200,7 +204,7 @@ void PerformanceTest::finish() const
     for (const auto & query : test_info.drop_queries)
     {
         LOG_INFO(log, "Executing drop query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }

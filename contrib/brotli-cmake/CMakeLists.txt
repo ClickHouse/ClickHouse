@@ -1,5 +1,5 @@
-set(BROTLI_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/brotli/c)
-set(BROTLI_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/brotli/c)
+set(BROTLI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/brotli/c)
+set(BROTLI_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/brotli/c)
 
 set(SRCS
     ${BROTLI_SOURCE_DIR}/dec/bit_reader.c

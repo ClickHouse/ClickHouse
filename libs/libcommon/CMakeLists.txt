@@ -21,6 +21,7 @@ add_library(common
     src/demangle.cpp
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
+    src/argsToConfig.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -107,6 +108,7 @@ endif()
 
 target_link_libraries (common
         PUBLIC
+    ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE

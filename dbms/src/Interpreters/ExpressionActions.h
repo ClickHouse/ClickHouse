@@ -69,7 +69,7 @@ public:
         ADD_ALIASES,
     };
 
-    Type type;
+    Type type{};
 
     /// For ADD/REMOVE/COPY_COLUMN.
     std::string source_name;

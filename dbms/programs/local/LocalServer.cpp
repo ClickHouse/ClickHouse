@@ -34,6 +34,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
+#include <common/argsToConfig.h>
 
 
 namespace DB
@@ -59,11 +60,29 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    // Turn off server logging to stderr
-    if (!config().has("verbose"))
+    /// Load config files if exists
+    if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        const auto config_path = config().getString("config-file", "config.xml");
+        ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+        auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
+        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+
+    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    {
+        buildLoggers(config(), logger());
+    }
+    else
+    {
+        // Turn off server logging to stderr
+        if (!config().has("verbose"))
+        {
+            Poco::Logger::root().setLevel("none");
+            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        }
     }
 }
 
@@ -110,16 +129,6 @@ try
         return Application::EXIT_OK;
     }
 
-    /// Load config files if exists
-    if (config().has("config-file") || Poco::File("config.xml").exists())
-    {
-        const auto config_path = config().getString("config-file", "config.xml");
-        ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
-        auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
-        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-    }
 
     context = std::make_unique<Context>(Context::createGlobal());
     context->setGlobalContext(*context);
@@ -428,6 +437,8 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.log", po::value<std::string>(), "Log file name")
+        ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
         ("version,V", "print version information and exit")
         ;
@@ -481,8 +492,17 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.log"))
+        config().setString("logger.log", options["logger.log"].as<std::string>());
+    if (options.count("logger.level"))
+        config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+
+    std::vector<std::string> arguments;
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+        arguments.emplace_back(argv[arg_num]);
+    argsToConfig(arguments, config(), 100);
 }
 
 void LocalServer::applyCmdOptions()

@@ -7,7 +7,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -35,7 +35,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -63,7 +63,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -91,7 +91,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -122,7 +122,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -153,7 +153,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>
@@ -184,7 +184,7 @@
             <port>9000</port>
             <user>default</user>
             <password></password>
-            <db>test</db>
+            <db>test_00950</db>
             <table>strings</table>
         </clickhouse>
     </source>

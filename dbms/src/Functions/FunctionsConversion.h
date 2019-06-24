@@ -394,10 +394,10 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
-    if constexpr (std::is_integral_v<typename DataType::FieldType>)
-        return tryReadIntText(x, rb);
-    else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
+    else /*if constexpr (std::is_integral_v<typename DataType::FieldType>)*/
+        return tryReadIntText(x, rb);
 }
 
 template <>

@@ -72,10 +72,11 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const std::unordered_map<std::string, std::vector<size_t>> query_indexes_,
-        const ConnectionTimeouts & timeouts)
+        const ConnectionTimeouts & timeouts_)
         : connection(host_, port_, default_database_, user_,
-            password_, timeouts, "performance-test", Protocol::Compression::Enable,
+            password_, "performance-test", Protocol::Compression::Enable,
             secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable)
+        , timeouts(timeouts_)
         , tests_tags(std::move(tests_tags_))
         , tests_names(std::move(tests_names_))
         , tests_names_regexp(std::move(tests_names_regexp_))
@@ -100,7 +101,7 @@ public:
         UInt64 version_minor;
         UInt64 version_patch;
         UInt64 version_revision;
-        connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
+        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
         ss << version_major << "." << version_minor << "." << version_patch;
@@ -115,6 +116,7 @@ public:
 
 private:
     Connection connection;
+    const ConnectionTimeouts & timeouts;
 
     const Strings & tests_tags;
     const Strings & tests_names;
@@ -195,7 +197,7 @@ private:
     {
         PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
+        PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
 
         if (current.checkPreconditions())
         {

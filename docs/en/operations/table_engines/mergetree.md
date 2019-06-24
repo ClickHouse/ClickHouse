@@ -235,6 +235,13 @@ To check whether ClickHouse can use the index when running a query, use the sett
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
+### Use of Index for Partially-Monotonic Primary Keys
+
+Consider, for example, the days of the month. They are the [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) inside one month, but they are not monotonic for a more extended period. This is the partially-monotonic sequence. If a user creates the table with such partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from such a table, ClickHouse analyzes query conditions. If the user wants to get data between two marks of the index and both this marks are within one month, ClickHouse can use the index in this particular case because it can calculate the distance between parameters of query and index marks.
+
+ClickHouse cannot use an index if the values of the primary key on the query parameters range don't represent the monotonic sequence. In this case, ClickHouse uses full scan method.
+
+ClickHouse uses this logic not only for days of month sequences but for any primary key which represents a partially-monotonic sequence.
 
 ### Data Skipping Indices (Experimental)
 
