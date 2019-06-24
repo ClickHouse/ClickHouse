@@ -147,9 +147,9 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         case IdentifierQuotingStyle::BackticksMySQL:
         {
             if (always_quote_identifiers)
-                writeMySQLBackQuotedString(name, out);
+                writeBackQuotedStringMySQL(name, out);
             else
-                writeProbablyMySQLQuotedString(name, out);
+                writeProbablyBackQuotedStringMySQL(name, out);
             break;
         }
     }
