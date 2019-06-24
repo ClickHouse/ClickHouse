@@ -88,8 +88,6 @@ private:
     Stack prepare_stack;
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     TaskQueue task_queue;
-    /// Queue with tasks which have finished execution.
-    FinishedJobsQueue finished_execution_queue;
 
     EventCounter event_counter;
 
@@ -106,17 +104,15 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
-//    struct ExecutorContext
-//    {
+    struct ExecutorContext
+    {
 //        size_t executor_number;
 //        std::atomic<ExecutionState *> next_task_to_execute;
-//        std::atomic<UInt64> current_stream;
-//    };
-//
-//    std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
-//    UInt64 next_stream = 0;
-//
-//    std::vector<ExecutionState *> execution_states_queue;
+        std::atomic_bool is_waiting;
+        std::condition_variable condvar;
+    };
+
+    std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
 
     std::mutex main_executor_mutex;
     std::atomic_bool main_executor_flag;
@@ -140,7 +136,7 @@ public:
 
     const Processors & getProcessors() const { return processors; }
 
-    void cancel() { finished = true; }
+    void cancel();
 
 private:
     /// Graph related methods.
@@ -154,8 +150,6 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue(Stack & stack);
-    void processFinishedExecutionQueue();
-    void processFinishedExecutionQueueSafe();
     bool addProcessorToPrepareQueueIfUpdated(Edge & edge, Stack & stack);
     // void processPrepareQueue();
     // void processAsyncQueue();
@@ -165,10 +159,10 @@ private:
     // bool tryAssignJob(ExecutionState * state);
     // void assignJobs();
 
-    void prepareProcessor(size_t pid, Stack & stack, bool async);
+    bool prepareProcessor(size_t pid, Stack & stack, bool async);
 
     void executeImpl(size_t num_threads);
-    void executeSingleThread(size_t num_threads);
+    void executeSingleThread(size_t thread_num, size_t num_threads);
 
     String dumpPipeline() const;
 };
