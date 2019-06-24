@@ -45,10 +45,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         StringRef scheme = getURLScheme(data, size);
         Pos scheme_end = data + scheme.size;
         if (pos - scheme_end != 1 || *scheme_end != ':')
-        {
-            std::cerr << "RETURNING HERE\n";
             return StringRef{};
-        }
     }
 
     // Check with we still have // character from the scheme
