@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-inline StringRef buildFound(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
+inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
     if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
         return StringRef{};
@@ -62,7 +62,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         case '/':
         case '?':
         case '#':
-            return buildFound(pos, dot_pos, start_of_host);
+            return checkAndReturnHost(pos, dot_pos, start_of_host);
         case '@': /// myemail@gmail.com
             start_of_host = pos + 1;
             break;
@@ -86,7 +86,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         }
     }
 
-    return buildFound(pos, dot_pos, start_of_host);
+    return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 
 template <bool without_www>
