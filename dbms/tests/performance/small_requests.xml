@@ -1,5 +1,4 @@
 <test>
-  <name>small_requests</name>
   <type>loop</type>
 
     <stop_conditions>
@@ -17,9 +16,6 @@
       <bytes_per_second/>
     </main_metric>
 
-    <metrics>
-      <rows_per_second/>
-    </metrics>
 
     <query>
         WITH

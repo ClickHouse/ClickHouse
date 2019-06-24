@@ -1,6 +1,7 @@
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/Arena.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 
@@ -46,6 +47,9 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         {
             // simple aggregate function
             SimpleAggregateDescription desc{simple_aggr->getFunction(), i};
+            if (desc.function->allocatesMemoryInArena())
+                allocatesMemoryInArena = true;
+
             columns_to_simple_aggregate.emplace_back(std::move(desc));
         }
         else
@@ -134,6 +138,9 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             for (auto & desc : columns_to_simple_aggregate)
                 desc.createState();
 
+            if (allocatesMemoryInArena)
+                arena = std::make_unique<Arena>();
+
             ++merged_rows;
         }
 
@@ -169,7 +176,7 @@ void AggregatingSortedBlockInputStream::addRow(SortCursor & cursor)
     for (auto & desc : columns_to_simple_aggregate)
     {
         auto & col = cursor->all_columns[desc.column_number];
-        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, arena.get());
     }
 }
 

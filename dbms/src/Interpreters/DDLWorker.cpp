@@ -200,16 +200,16 @@ static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
 
 static bool isSupportedAlterType(int type)
 {
-    static const std::unordered_set<int> supported_alter_types{
-        ASTAlterCommand::ADD_COLUMN,
-        ASTAlterCommand::DROP_COLUMN,
-        ASTAlterCommand::MODIFY_COLUMN,
-        ASTAlterCommand::DROP_PARTITION,
-        ASTAlterCommand::DELETE,
-        ASTAlterCommand::UPDATE,
+    static const std::unordered_set<int> unsupported_alter_types{
+        ASTAlterCommand::ATTACH_PARTITION,
+        ASTAlterCommand::REPLACE_PARTITION,
+        ASTAlterCommand::FETCH_PARTITION,
+        ASTAlterCommand::FREEZE_PARTITION,
+        ASTAlterCommand::FREEZE_ALL,
+        ASTAlterCommand::NO_TYPE,
     };
 
-    return supported_alter_types.count(type) != 0;
+    return unsupported_alter_types.count(type) == 0;
 }
 
 
@@ -970,6 +970,10 @@ void DDLWorker::runMainThread()
                         std::this_thread::sleep_for(5s);
                     }
                 }
+            }
+            else if (e.code == Coordination::ZNONODE)
+            {
+                LOG_ERROR(log, "ZooKeeper error: " << getCurrentExceptionMessage(true));
             }
             else
             {

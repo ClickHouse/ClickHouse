@@ -307,15 +307,15 @@ size_t max_block_size;
 
 **2.** 对于函数（方法）的名称，请使用以小写字母开头的驼峰标识。
 
-    ```cpp
-    std::string getName() const override { return "Memory"; }
-    ```
+```cpp
+std::string getName() const override { return "Memory"; }
+```
 
 **3.** 对于类（结构）的名称，使用以大写字母开头的驼峰标识。接口名称用I前缀。
 
-    ```cpp
-    class StorageMemory : public IStorage
-    ```
+```cpp
+class StorageMemory : public IStorage
+```
 
 **4.** `using` 的命名方式与类相同，或者以__t`命名。
 

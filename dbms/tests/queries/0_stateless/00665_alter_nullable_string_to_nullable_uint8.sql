@@ -1,12 +1,12 @@
-DROP TABLE IF EXISTS alter;
-CREATE TABLE alter (`boolean_false` Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE IF EXISTS alter_00665;
+CREATE TABLE alter_00665 (`boolean_false` Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO alter (`boolean_false`) VALUES (NULL), (''), ('123');
-SELECT * FROM alter;
-SELECT * FROM alter ORDER BY boolean_false NULLS LAST;
+INSERT INTO alter_00665 (`boolean_false`) VALUES (NULL), (''), ('123');
+SELECT * FROM alter_00665;
+SELECT * FROM alter_00665 ORDER BY boolean_false NULLS LAST;
 
-ALTER TABLE alter MODIFY COLUMN `boolean_false` Nullable(UInt8);
-SELECT * FROM alter;
-SELECT * FROM alter ORDER BY boolean_false NULLS LAST;
+ALTER TABLE alter_00665 MODIFY COLUMN `boolean_false` Nullable(UInt8);
+SELECT * FROM alter_00665;
+SELECT * FROM alter_00665 ORDER BY boolean_false NULLS LAST;
 
-DROP TABLE alter;
+DROP TABLE alter_00665;

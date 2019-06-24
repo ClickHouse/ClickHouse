@@ -500,7 +500,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!isNumber(type) && !isDecimal(type))
+            if (!isNumber(type))
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -588,7 +588,7 @@ public:
     {
         const DataTypePtr & type_x = arguments[0];
 
-        if (!(isNumber(type_x) || isDecimal(type_x)))
+        if (!isNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName()
                             + " of first argument of function " + getName()
                             + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -601,7 +601,7 @@ public:
 
         const auto type_arr_nested = type_arr->getNestedType();
 
-        if (!(isNumber(type_arr_nested) || isDecimal(type_arr_nested)))
+        if (!isNumber(type_arr_nested))
         {
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

@@ -18,7 +18,7 @@
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
 #include <Interpreters/AggregateDescription.h>

@@ -66,7 +66,7 @@
 \N	\N	\N
 2	7	2
 5	1	5
-9	\N	\N
+9	\N	9
 42	42	\N
 \N	6	\N
 \N	\N	\N
@@ -100,6 +100,28 @@
 42
 \N
 \N
+----- if -----
+a	1	UInt8
+b	1	UInt8
+c	0	UInt8
+\N	0	UInt8
+a	\N	Nullable(UInt8)
+b	\N	Nullable(UInt8)
+c	0	Nullable(UInt8)
+\N	0	Nullable(UInt8)
+----- case when -----
+a	1	UInt8
+b	1	UInt8
+c	0	UInt8
+\N	0	UInt8
+a	\N	Nullable(UInt8)
+b	\N	Nullable(UInt8)
+c	0	Nullable(UInt8)
+\N	0	Nullable(UInt8)
+a	1	Nullable(UInt8)
+b	1	Nullable(UInt8)
+c	\N	Nullable(UInt8)
+\N	\N	Nullable(UInt8)
 ----- multiIf -----
 \N
 2

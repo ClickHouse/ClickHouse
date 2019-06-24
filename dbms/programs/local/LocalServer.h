@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 #include <memory>
+#include <loggers/Loggers.h>
 
 
 namespace DB
@@ -13,7 +14,7 @@ class Context;
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public Poco::Util::Application
+class LocalServer : public Poco::Util::Application, public Loggers
 {
 public:
     LocalServer();

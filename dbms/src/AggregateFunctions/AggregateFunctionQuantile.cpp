@@ -43,8 +43,12 @@ template <typename Value, bool FloatReturn> using FuncQuantilesTDigestWeighted =
 template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
 {
-    return std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>>;
+    return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
 }
 
 
@@ -66,9 +70,9 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 
     if constexpr (supportDecimal<Function>())
     {
-        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, true>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, true>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, true>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, false>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_type, params);
     }
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,

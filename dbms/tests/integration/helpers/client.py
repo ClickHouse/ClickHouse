@@ -107,6 +107,6 @@ class CommandRequest:
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode == 0):
-            raise QueryRuntimeException('Client expected to be failed but was succeeded! stdout: {}'.format(stdout))
+            raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout))
 
         return stderr

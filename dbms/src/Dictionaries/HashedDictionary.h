@@ -5,6 +5,7 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <Common/HashTable/HashMap.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"
@@ -45,9 +46,9 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<HashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<HashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -210,18 +211,14 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-    template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsNumber(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
-
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
         const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
+    bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);
 
-    void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
+    bool setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
