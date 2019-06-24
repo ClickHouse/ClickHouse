@@ -1877,7 +1877,7 @@ This release contains bug fixes for the previous release 1.1.54276:
   - cleanup_delay_period sets how often to start cleanup to remove outdated data.
   - replicated_can_become_leader can prevent a replica from becoming the leader (and assigning merges).
 * Accelerated cleanup to remove outdated data from ZooKeeper.
-* Multiple improvements and fixes for clustered DDL queries. Of particular interest is the new setting distributed_ddl_task_timeout, which limits the time to wait for a response from the servers in the cluster.
+* Multiple improvements and fixes for clustered DDL queries. Of particular interest is the new setting distributed_ddl_task_timeout, which limits the time to wait for a response from the servers in the cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode.
 * Improved display of stack traces in the server logs.
 * Added the "none" value for the compression method.
 * You can use multiple dictionaries_config sections in config.xml.

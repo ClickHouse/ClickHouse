@@ -2181,35 +2181,33 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
+            UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
                 settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
+            UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
-            if (max_source_parts_size > 0)
+            FutureMergedMutatedPart future_merged_part;
+            if (max_source_parts_size_for_merge > 0 &&
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
-                FutureMergedMutatedPart future_merged_part;
-                if (merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size, merge_pred))
+                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
+            }
+            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
+            {
+                /// Choose a part to mutate.
+                DataPartsVector data_parts = getDataPartsVector();
+                for (const auto & part : data_parts)
                 {
-                    success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
-                }
-                else if (queue.countMutations() > 0)
-                {
-                    /// Choose a part to mutate.
+                    if (part->bytes_on_disk > max_source_part_size_for_mutation)
+                        continue;
 
-                    DataPartsVector data_parts = getDataPartsVector();
-                    for (const auto & part : data_parts)
+                    std::optional<Int64> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
+                    if (!desired_mutation_version)
+                        continue;
+
+                    if (createLogEntryToMutatePart(*part, *desired_mutation_version))
                     {
-                        if (part->bytes_on_disk > max_source_parts_size)
-                            continue;
-
-                        std::optional<Int64> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
-                        if (!desired_mutation_version)
-                            continue;
-
-                        if (createLogEntryToMutatePart(*part, *desired_mutation_version))
-                        {
-                            success = true;
-                            break;
-                        }
+                        success = true;
+                        break;
                     }
                 }
             }

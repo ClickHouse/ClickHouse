@@ -193,7 +193,6 @@ BufferPtr StorageKafka::createBuffer()
 {
     // Create a consumer and subscribe to topics
     auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-    consumer->subscribe(topics);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
@@ -352,7 +351,7 @@ bool StorageKafka::streamToViews()
     if (block_size == 0)
         block_size = settings.max_block_size.value;
 
-    // Execute the query
+    // Create a stream for each consumer and join them in a union stream
     InterpreterInsertQuery interpreter{insert, global_context};
     auto block_io = interpreter.execute();
 
