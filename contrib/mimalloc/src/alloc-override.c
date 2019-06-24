@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 
 #if !defined(MI_IN_ALLOC_C)
@@ -128,9 +128,14 @@ size_t malloc_usable_size(void *p)       MI_FORWARD1(mi_usable_size,p)
 void   cfree(void* p)                    MI_FORWARD0(mi_free, p)
 
 int posix_memalign(void** p, size_t alignment, size_t size) {
-  if (alignment % sizeof(void*) != 0) { *p = NULL; return EINVAL; };
-  *p = mi_malloc_aligned(size, alignment);
-  return (*p == NULL ? ENOMEM : 0);
+  // TODO: the spec says we should return EINVAL also if alignment is not a power of 2.
+  // The spec also dictates we should not modify `*p` on an error. (issue#27)
+  // <http://man7.org/linux/man-pages/man3/posix_memalign.3.html>
+  if (alignment % sizeof(void*) != 0) return EINVAL;  // no `p==NULL` check as it is declared as non-null
+  void* q = mi_malloc_aligned(size, alignment);
+  if (q==NULL && size != 0) return ENOMEM;
+  *p = q;
+  return 0;
 }
 
 void* memalign(size_t alignment, size_t size) {
@@ -152,11 +157,13 @@ void* aligned_alloc(size_t alignment, size_t size) {
   return mi_malloc_aligned(size, alignment);
 }
 
+/*
 void* reallocarray( void* p, size_t count, size_t size ) {  // BSD
   void* newp = mi_reallocn(p,count,size);
   if (newp==NULL) errno = ENOMEM;
   return newp;
 }
+*/
 
 #if defined(__GLIBC__) && defined(__linux__)
   // forward __libc interface (needed for redhat linux)

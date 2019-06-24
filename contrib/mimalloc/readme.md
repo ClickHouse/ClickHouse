@@ -33,7 +33,7 @@ Notable aspects of the design include:
   due to free list sharding) the memory is marked to the OS as unused ("reset" or "purged")
   reducing (real) memory pressure and fragmentation, especially in long running
   programs.
-- __secure__: _mimalloc_ can be build in secure mode, adding guard pages,
+- __secure__: _mimalloc_ can be built in secure mode, adding guard pages,
   randomized allocation, encrypted free lists, etc. to protect against various
   heap vulnerabilities. The performance penalty is only around 3% on average
   over our benchmarks.
@@ -47,8 +47,8 @@ Notable aspects of the design include:
   and usually uses less memory (up to 25% more in the worst case). A nice property
   is that it does consistently well over a wide range of benchmarks.
 
-You can read more on the design of _mimalloc_ in the [technical report](https://www.microsoft.com/en-us/research/publication/mimalloc-free-list-sharding-in-action)
-which also has detailed benchmark results.   
+The [documentation](https://microsoft.github.io/mimalloc) gives a full overview of the API.
+You can read more on the design of _mimalloc_ in the [technical report](https://www.microsoft.com/en-us/research/publication/mimalloc-free-list-sharding-in-action) which also has detailed benchmark results.   
 
 Enjoy!  
 
@@ -376,21 +376,21 @@ how the design of _tbb_ avoids the false cache line sharing.
 
 
 - \[2] P. Larson and M. Krishnan. _Memory allocation for long-running server applications_. In ISMM, Vancouver, B.C., Canada, 1998.
-      [pdf](http://citeseemi.ist.psu.edu/viewdoc/download;jsessionid=5F0BFB4F57832AEB6C11BF8257271088?doi=10.1.1.45.1947&rep=rep1&type=pdf)
+      [pdf](http://citeseer.ist.psu.edu/viewdoc/download;jsessionid=5F0BFB4F57832AEB6C11BF8257271088?doi=10.1.1.45.1947&rep=rep1&type=pdf)
 
 - \[3] D. Grunwald, B. Zorn, and R. Henderson.
   _Improving the cache locality of memory allocation_. In R. Cartwright, editor,
   Proceedings of the Conference on Programming Language Design and Implementation, pages 177–186, New York, NY, USA, June 1993.
-  [pdf](http://citeseemi.ist.psu.edu/viewdoc/download?doi=10.1.1.43.6621&rep=rep1&type=pdf)
+  [pdf](http://citeseer.ist.psu.edu/viewdoc/download?doi=10.1.1.43.6621&rep=rep1&type=pdf)
 
 - \[4] J. Barnes and P. Hut. _A hierarchical O(n*log(n)) force-calculation algorithm_. Nature, 324:446-449, 1986.
 
 - \[5] C. Lever, and D. Boreham. _Malloc() Performance in a Multithreaded Linux Environment._
   In USENIX Annual Technical Conference, Freenix Session. San Diego, CA. Jun. 2000.
-  Available at <https://​github.​com/​kuszmaul/​SuperMalloc/​tree/​master/​tests>
+  Available at <https://github.com/kuszmaul/SuperMalloc/tree/master/tests>
 
 - \[6] Timothy Crundal. _Reducing Active-False Sharing in TCMalloc._
-   2016. <http://​courses.​cecs.​anu.​edu.​au/​courses/​CSPROJECTS/​16S1/​Reports/​Timothy*​Crundal*​Report.​pdf>. CS16S1 project at the Australian National University.
+   2016. <http://courses.cecs.anu.edu.au/courses/CSPROJECTS/16S1/Reports/Timothy_Crundal_Report.pdf>. CS16S1 project at the Australian National University.
 
 - \[7] Alexey Kukanov, and Michael J Voss.
    _The Foundations for Scalable Multi-Core Software in Intel Threading Building Blocks._

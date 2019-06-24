@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "mimalloc.h"
 #include "mimalloc-internal.h"
@@ -337,7 +337,7 @@ void* _mi_realloc_zero(void* p, size_t newsize, bool zero) {
       memset((uint8_t*)newp + start, 0, newsize - start);
     }
     memcpy(newp, p, (newsize > size ? size : newsize));
-    mi_free(p); // only free if succesfull
+    mi_free(p); // only free if successful
   }
   return newp;
 }
@@ -405,6 +405,7 @@ char* mi_strndup(const char* s, size_t n) mi_attr_noexcept {
 #define PATH_MAX MAX_PATH
 #endif
 #include <windows.h>
+#include <errno.h>
 char* mi_heap_realpath(mi_heap_t* heap, const char* fname, char* resolved_name) mi_attr_noexcept {
   // todo: use GetFullPathNameW to allow longer file names
   char buf[PATH_MAX];

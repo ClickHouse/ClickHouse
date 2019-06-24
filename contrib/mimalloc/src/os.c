@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE   // ensure mmap flags are defined
@@ -66,9 +66,9 @@ size_t _mi_os_page_size() {
 }
 
 
-static void mi_munmap(void* addr, size_t size)
+static bool mi_munmap(void* addr, size_t size)
 {
-  if (addr == NULL || size == 0) return;
+  if (addr == NULL || size == 0) return true;
   bool err = false;
 #if defined(_WIN32)
   err = (VirtualFree(addr, 0, MEM_RELEASE) == 0);
@@ -78,6 +78,10 @@ static void mi_munmap(void* addr, size_t size)
   if (err) {
     #pragma warning(suppress:4996)
     _mi_warning_message("munmap failed: %s, addr 0x%8li, size %lu\n", strerror(errno), (size_t)addr, size);
+    return false;
+  }
+  else {
+    return true;
   }
 }
 
@@ -126,7 +130,7 @@ static void* mi_os_page_align_region(void* addr, size_t size, size_t* newsize) {
   if (diff <= 0) return NULL;
 
   mi_assert_internal((size_t)diff <= size);
-  if (newsize != NULL) *newsize = (size_t)diff;  
+  if (newsize != NULL) *newsize = (size_t)diff;
   return start;
 }
 
@@ -177,7 +181,7 @@ static  bool mi_os_protectx(void* addr, size_t size, bool protect) {
   BOOL ok = VirtualProtect(start,csize,protect ? PAGE_NOACCESS : PAGE_READWRITE,&oldprotect);
   err = (ok ? 0 : -1);
 #else
-  err = mprotect(start,csize,protect ? PROT_NONE : (PROT_READ|PROT_WRITE));  
+  err = mprotect(start,csize,protect ? PROT_NONE : (PROT_READ|PROT_WRITE));
 #endif
   if (err != 0) {
     _mi_warning_message("mprotect error: start: 0x%8p, csize: 0x%8zux, errno: %i\n", start, csize, errno);
@@ -191,6 +195,26 @@ bool _mi_os_protect(void* addr, size_t size) {
 
 bool _mi_os_unprotect(void* addr, size_t size) {
   return mi_os_protectx(addr, size, false);
+}
+
+bool _mi_os_shrink(void* p, size_t oldsize, size_t newsize) {
+  // page align conservatively within the range
+  mi_assert_internal(oldsize > newsize && p != NULL);
+  if (oldsize < newsize || p==NULL) return false;
+  if (oldsize == newsize) return true;
+
+  // oldsize and newsize should be page aligned or we cannot shrink precisely
+  void* addr = (uint8_t*)p + newsize;
+  size_t size = 0;
+  void* start = mi_os_page_align_region(addr, oldsize - newsize, &size);
+  if (size==0 || start != addr) return false;
+
+  #ifdef _WIN32
+  // we cannot shrink on windows
+  return false;
+  #else
+  return mi_munmap( start, size );
+  #endif
 }
 
 /* -----------------------------------------------------------
@@ -269,7 +293,7 @@ void* _mi_os_alloc_aligned(size_t size, size_t alignment, mi_os_tld_t* tld)
   // on BSD, use the aligned mmap api
   size_t n = _mi_bsr(alignment);
   if ((size_t)1 << n == alignment && n >= 12) {  // alignment is a power of 2 and >= 4096
-    p = mi_mmap(suggest, size, MAP_ALIGNED(n));     // use the freeBSD aligned flags
+    p = mi_mmap(suggest, size, MAP_ALIGNED(n), tld->stats);     // use the NetBSD/freeBSD aligned flags
   }
 #endif
   if (p==NULL && (tld->mmap_next_probable % alignment) == 0) {
@@ -280,7 +304,7 @@ void* _mi_os_alloc_aligned(size_t size, size_t alignment, mi_os_tld_t* tld)
     if (((uintptr_t)p % alignment) == 0) mi_stat_increase(tld->stats->mmap_right_align, 1);
   }
   //fprintf(stderr, "segment address guess: %s, p=%lxu, guess:%lxu\n", (p != NULL && (uintptr_t)p % alignment ==0 ? "correct" : "incorrect"), (uintptr_t)p, next_probable);
-  
+
   if (p==NULL || ((uintptr_t)p % alignment) != 0) {
     // if `p` is not yet aligned after all, free the block and use a slower
     // but guaranteed way to allocate an aligned block
@@ -321,7 +345,7 @@ void* _mi_os_alloc_aligned(size_t size, size_t alignment, mi_os_tld_t* tld)
 // For now, we disable it on windows as VirtualFree must
 // be called on the original allocation and cannot be called
 // for individual fragments.
-#if !defined(_WIN32) || (MI_INTPTR_SIZE<8)
+#if defined(_WIN32) || (MI_INTPTR_SIZE<8)
 
 static void* os_pool_alloc(size_t size, size_t alignment, mi_os_tld_t* tld) {
   UNUSED(size);

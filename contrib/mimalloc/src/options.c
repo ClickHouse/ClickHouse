@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "mimalloc.h"
 #include "mimalloc-internal.h"

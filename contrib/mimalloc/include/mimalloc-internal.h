@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #pragma once
 #ifndef __MIMALLOC_INTERNAL_H
@@ -25,13 +25,14 @@ void       _mi_verbose_message(const char* fmt, ...);
 extern mi_stats_t       _mi_stats_main;
 extern const mi_page_t  _mi_page_empty;
 bool       _mi_is_main_thread();
-uintptr_t  _mi_ptr_cookie(const void* p); 
+uintptr_t  _mi_ptr_cookie(const void* p);
 uintptr_t  _mi_random_shuffle(uintptr_t x);
 uintptr_t  _mi_random_init(uintptr_t seed /* can be zero */);
 
 // "os.c"
 bool       _mi_os_reset(void* p, size_t size);
 void*      _mi_os_alloc(size_t size, mi_stats_t* stats);
+bool       _mi_os_shrink(void* p, size_t oldsize, size_t newsize);
 void       _mi_os_free(void* p, size_t size, mi_stats_t* stats);
 bool       _mi_os_protect(void* addr, size_t size);
 bool       _mi_os_unprotect(void* addr, size_t size);
@@ -138,7 +139,6 @@ static inline size_t _mi_wsize_from_size(size_t size) {
   return (size + sizeof(uintptr_t) - 1) / sizeof(uintptr_t);
 }
 
-//extern mi_decl_thread mi_heap_t* _mi_backing_heap;  // thread local heap
 extern const mi_heap_t _mi_heap_empty;  // read-only empty heap, initial value of the thread local default heap
 extern mi_heap_t _mi_heap_main;         // statically allocated main backing heap
 extern bool _mi_process_is_initialized;
@@ -292,7 +292,8 @@ static inline uintptr_t _mi_thread_id() mi_attr_noexcept {
   // Windows: works on Intel and ARM in both 32- and 64-bit
   return (uintptr_t)NtCurrentTeb();
 }
-#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#elif (defined(__GNUC__) || defined(__clang__)) && \
+      (defined(__x86_64__) || defined(__i386__) || defined(__arm__) || defined(__aarch64__))
 // TLS register on x86 is in the FS or GS register
 // see: https://akkadia.org/drepper/tls.pdf
 static inline uintptr_t _mi_thread_id() mi_attr_noexcept {
@@ -301,15 +302,19 @@ static inline uintptr_t _mi_thread_id() mi_attr_noexcept {
   __asm__("movl %%gs:0, %0" : "=r" (tid) : : );  // 32-bit always uses GS
   #elif defined(__MACH__)
   __asm__("movq %%gs:0, %0" : "=r" (tid) : : );  // x86_64 MacOSX uses GS
-  #else
+  #elif defined(__x86_64__)
   __asm__("movq %%fs:0, %0" : "=r" (tid) : : );  // x86_64 Linux, BSD uses FS
+  #elif defined(__arm__)
+  asm volatile ("mrc p15, 0, %0, c13, c0, 3" : "=r" (tid));
+  #elif defined(__aarch64__)
+  asm volatile ("mrs %0, tpidr_el0" : "=r" (tid));
   #endif
   return tid;
 }
 #else
 // otherwise use standard C
 static inline uintptr_t _mi_thread_id() mi_attr_noexcept {
-  return (uintptr_t)&_mi_backing_heap;
+  return (uintptr_t)&_mi_heap_default;
 }
 #endif
 

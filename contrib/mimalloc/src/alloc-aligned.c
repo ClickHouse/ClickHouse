@@ -2,7 +2,7 @@
 Copyright (c) 2018, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
-"license.txt" at the root of this distribution.
+"LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 
 #include "mimalloc.h"
@@ -103,7 +103,7 @@ static void* mi_realloc_zero_aligned_at(void* p, size_t newsize, size_t alignmen
         memset((uint8_t*)newp + start, 0, newsize - start);
       }
       memcpy(newp, p, (newsize > size ? size : newsize));
-      mi_free(p); // only free if succesfull
+      mi_free(p); // only free if successful
     }
     return newp;
   }
