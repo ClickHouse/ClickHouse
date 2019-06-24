@@ -163,7 +163,7 @@ CodecTestParam makeParam(Args && ... args)
     }
 
     return CodecTestParam{std::move(data), sizeof(T),
-                (boost::format("%1% %2%") % data.size() % " predefined values").str()};
+                (boost::format("%1% %2%") % (sizeof(T) * std::size(vals)) % " predefined values").str()};
 }
 
 template <typename T, size_t Begin = 1, size_t End = 10000, typename Generator>
