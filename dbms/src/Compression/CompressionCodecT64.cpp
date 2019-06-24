@@ -520,7 +520,7 @@ bool supportPreproc(Preproc preproc, TypeIndex type_id)
 
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    if (!supportPreproc(preproc, type_idx))
+    if (!supportPreproc(preproc, baseType(type_idx)))
         throw Exception("Connot compress with T64: preprocessing for type is not supported", ErrorCodes::CANNOT_COMPRESS);
 
     UInt8 cookie = static_cast<UInt8>(type_idx) | (static_cast<UInt8>(preproc) << 7);
@@ -564,7 +564,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     auto saved_preproc = static_cast<Preproc>(cookie >> 7);
     auto saved_type_id = static_cast<TypeIndex>(cookie & 0x7F);
 
-    if (!supportPreproc(saved_preproc, saved_type_id))
+    if (!supportPreproc(saved_preproc, baseType(saved_type_id)))
         throw Exception("Connot decompress with T64: preprocessing for type is not supported", ErrorCodes::CANNOT_DECOMPRESS);
 
     switch (baseType(saved_type_id))
