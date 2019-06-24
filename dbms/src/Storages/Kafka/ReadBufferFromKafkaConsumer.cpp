@@ -4,6 +4,17 @@ namespace DB
 {
 
 using namespace std::chrono_literals;
+ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
+    ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_)
+    : ReadBuffer(nullptr, 0)
+    , consumer(consumer_)
+    , log(log_)
+    , batch_size(max_batch_size)
+    , poll_timeout(poll_timeout_)
+    , intermediate_commit(intermediate_commit_)
+    , current(messages.begin())
+{
+}
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
@@ -50,6 +61,9 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         consumer->subscribe(topics);
         consumer->poll(5s);
         consumer->resume();
+
+        // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+        //        see https://github.com/edenhill/librdkafka/issues/2077
     }
 
     stalled = false;
@@ -61,7 +75,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     consumer->unsubscribe();
 }
 
-/// Try to commit messages implicitly after we processed the previous batch.
+/// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
