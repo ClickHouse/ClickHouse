@@ -199,7 +199,7 @@ void clear(_T * buf)
 
 
 /// UIntX[64] -> UInt64[N] transposed matrix, N <= X
-template <typename _T>
+template <typename _T, bool _full = false>
 void transpose(const _T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt32 full_bytes = num_bits / 8;
@@ -209,9 +209,21 @@ void transpose(const _T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     for (UInt32 col = 0; col < tail; ++col)
         transposeBytes(src[col], mx, col);
 
-    UInt32 full_size = sizeof(UInt64) * (num_bits - part_bits);
-    memcpy(dst, mx, full_size);
-    dst += full_size;
+    if constexpr (_full)
+    {
+        UInt64 res[8];
+        for (UInt32 byte = 0; byte < full_bytes; ++byte)
+        {
+            transpose64x8(&mx[byte * 8], res, 8);
+            memcpy(dst, res, 8 * sizeof(UInt64));
+        }
+    }
+    else
+    {
+        UInt32 full_size = sizeof(UInt64) * (num_bits - part_bits);
+        memcpy(dst, mx, full_size);
+        dst += full_size;
+    }
 
     /// transpose only partially filled last byte
     if (part_bits)
@@ -224,7 +236,7 @@ void transpose(const _T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 }
 
 /// UInt64[N] transposed matrix -> UIntX[64]
-template <typename _T>
+template <typename _T, bool _full = false>
 void revTranspose(const char * src, _T * buf, UInt32 num_bits, UInt32 tail = 64)
 {
     UInt64 mx[64] = {};
@@ -233,6 +245,17 @@ void revTranspose(const char * src, _T * buf, UInt32 num_bits, UInt32 tail = 64)
     UInt32 full_bytes = num_bits / 8;
     UInt32 part_bits = num_bits % 8;
     UInt64 * partial = &mx[full_bytes * 8];
+
+    if constexpr (_full)
+    {
+        UInt64 res[8];
+        for (UInt32 byte = 0; byte < full_bytes; ++byte)
+        {
+            UInt64 * line = &mx[byte * 8];
+            revTranspose64x8(line, res, 8);
+            memcpy(line, res, 8 * sizeof(UInt64));
+        }
+    }
 
     if (part_bits)
     {
@@ -315,30 +338,10 @@ void findMinMax(const char * src, UInt32 src_size, _T & min, _T & max)
     }
 }
 
-template <typename _T>
-void preprocess(_T * buf, _T & prev)
-{
-    _T copy[64];
-    copy[0] = prev;
-    memcpy(&copy[1], buf, 63 * sizeof(_T));
-    prev = buf[63]; /// save for the next call
 
-    for (UInt32 i = 0; i < 64; ++i)
-        buf[i] ^= copy[i];
-}
+using Variant = CompressionCodecT64::Variant;
 
-template <typename _T>
-void postprocess(_T * buf, _T & prev)
-{
-    buf[0] ^= prev;
-    for (UInt32 i = 1; i < 64; ++i)
-        buf[i] ^= buf[i-1];
-    prev = buf[63];
-}
-
-using Preproc = CompressionCodecT64::Preprocessing;
-
-template <typename _T, Preproc _preproc>
+template <typename _T, bool _full>
 UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 {
     using MinMaxType = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>;
@@ -370,16 +373,13 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     if (!num_bits)
         return header_size;
 
-    _T prev{};
     _T buf[mx_size];
     UInt32 src_shift = sizeof(_T) * mx_size;
     UInt32 dst_shift = sizeof(UInt64) * num_bits;
     for (UInt32 i = 0; i < num_full; ++i)
     {
         load<_T>(src, buf, mx_size);
-        if constexpr (_preproc == Preproc::DeltaXor)
-            preprocess(buf, prev);
-        transpose(buf, dst, num_bits);
+        transpose<_T, _full>(buf, dst, num_bits);
         src += src_shift;
         dst += dst_shift;
     }
@@ -389,16 +389,14 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     if (tail)
     {
         load<_T>(src, buf, tail);
-        if constexpr (_preproc == Preproc::DeltaXor)
-            preprocess(buf, prev);
-        transpose(buf, dst, num_bits, tail);
+        transpose<_T, _full>(buf, dst, num_bits, tail);
         dst_bytes += dst_shift;
     }
 
     return header_size + dst_bytes;
 }
 
-template <typename _T, Preproc _preproc>
+template <typename _T, bool _full>
 void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size)
 {
     using MinMaxType = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>;
@@ -462,18 +460,11 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
         }
     }
 
-    _T prev{};
-    if constexpr (_preproc == Preproc::DeltaXor)
-        prev |= upper_min;
-
     _T buf[mx_size];
     for (UInt32 i = 0; i < num_full; ++i)
     {
-        revTranspose(src, buf, num_bits);
-        if constexpr (_preproc == Preproc::DeltaXor)
-            postprocess(buf, prev);
-        else
-            restoreUpperBits(buf, upper_min, upper_max, sign_bit);
+        revTranspose<_T, _full>(src, buf, num_bits);
+        restoreUpperBits(buf, upper_min, upper_max, sign_bit);
         store<_T>(buf, dst, mx_size);
         src += src_shift;
         dst += dst_shift;
@@ -481,38 +472,27 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
 
     if (tail)
     {
-        revTranspose(src, buf, num_bits, tail);
-        if constexpr (_preproc == Preproc::DeltaXor)
-            postprocess(buf, prev);
-        else
-            restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
+        revTranspose<_T, _full>(src, buf, num_bits, tail);
+        restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
         store<_T>(buf, dst, tail);
     }
 }
 
-template<typename _T>
-UInt32 compressData(const char * src, UInt32 src_size, char * dst, Preproc preproc)
+template <typename _T>
+UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant variant)
 {
-    if (preproc == Preproc::DeltaXor)
-            return compressData<_T, Preproc::DeltaXor>(src, src_size, dst);
-    return compressData<_T, Preproc::None>(src, src_size, dst);
+    if (variant == Variant::Bit)
+        return compressData<_T, true>(src, src_size, dst);
+    return compressData<_T, false>(src, src_size, dst);
 }
 
 template <typename _T>
-void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 uncompressed_size, Preproc preproc)
+void decompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size, Variant variant)
 {
-    if (preproc == Preproc::DeltaXor)
-        return decompressData<_T, Preproc::DeltaXor>(src, bytes_size, dst, uncompressed_size);
-    return decompressData<_T, Preproc::None>(src, bytes_size, dst, uncompressed_size);
-}
-
-bool supportPreproc(Preproc preproc, TypeIndex type_id)
-{
-    return preproc == Preproc::None ||
-        type_id == TypeIndex::UInt8 ||
-        type_id == TypeIndex::UInt16 ||
-        type_id == TypeIndex::UInt32 ||
-        type_id == TypeIndex::UInt64;
+    if (variant == Variant::Bit)
+        decompressData<_T, true>(src, src_size, dst, uncompressed_size);
+    else
+        decompressData<_T, false>(src, src_size, dst, uncompressed_size);
 }
 
 }
@@ -520,31 +500,28 @@ bool supportPreproc(Preproc preproc, TypeIndex type_id)
 
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    if (!supportPreproc(preproc, baseType(type_idx)))
-        throw Exception("Connot compress with T64: preprocessing for type is not supported", ErrorCodes::CANNOT_COMPRESS);
-
-    UInt8 cookie = static_cast<UInt8>(type_idx) | (static_cast<UInt8>(preproc) << 7);
+    UInt8 cookie = static_cast<UInt8>(type_idx) | (static_cast<UInt8>(variant) << 7);
     memcpy(dst, &cookie, 1);
     dst += 1;
 
     switch (baseType(type_idx))
     {
         case TypeIndex::Int8:
-            return 1 + compressData<Int8>(src, src_size, dst, preproc);
+            return 1 + compressData<Int8>(src, src_size, dst, variant);
         case TypeIndex::Int16:
-            return 1 + compressData<Int16>(src, src_size, dst, preproc);
+            return 1 + compressData<Int16>(src, src_size, dst, variant);
         case TypeIndex::Int32:
-            return 1 + compressData<Int32>(src, src_size, dst, preproc);
+            return 1 + compressData<Int32>(src, src_size, dst, variant);
         case TypeIndex::Int64:
-            return 1 + compressData<Int64>(src, src_size, dst, preproc);
+            return 1 + compressData<Int64>(src, src_size, dst, variant);
         case TypeIndex::UInt8:
-            return 1 + compressData<UInt8>(src, src_size, dst, preproc);
+            return 1 + compressData<UInt8>(src, src_size, dst, variant);
         case TypeIndex::UInt16:
-            return 1 + compressData<UInt16>(src, src_size, dst, preproc);
+            return 1 + compressData<UInt16>(src, src_size, dst, variant);
         case TypeIndex::UInt32:
-            return 1 + compressData<UInt32>(src, src_size, dst, preproc);
+            return 1 + compressData<UInt32>(src, src_size, dst, variant);
         case TypeIndex::UInt64:
-            return 1 + compressData<UInt64>(src, src_size, dst, preproc);
+            return 1 + compressData<UInt64>(src, src_size, dst, variant);
         default:
             break;
     }
@@ -561,30 +538,27 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     src += 1;
     src_size -= 1;
 
-    auto saved_preproc = static_cast<Preproc>(cookie >> 7);
+    auto saved_variant = static_cast<Variant>(cookie >> 7);
     auto saved_type_id = static_cast<TypeIndex>(cookie & 0x7F);
-
-    if (!supportPreproc(saved_preproc, baseType(saved_type_id)))
-        throw Exception("Connot decompress with T64: preprocessing for type is not supported", ErrorCodes::CANNOT_DECOMPRESS);
 
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_preproc);
+            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
         default:
             break;
     }
@@ -611,7 +585,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, DataTypePtr type) -> CompressionCodecPtr
     {
-        Preproc preproc = Preproc::None;
+        Variant variant = Variant::Byte;
 
         if (arguments && !arguments->children.empty())
         {
@@ -622,12 +596,14 @@ void registerCodecT64(CompressionCodecFactory & factory)
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("Wrong preprocessing for T64. Expected: 'DeltaXor' or short forms 'dx')",
+                throw Exception("Wrong modification for T64. Expected: 'bit', 'byte')",
                                 ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             String name = literal->value.safeGet<String>();
 
-            if (name == "dx" || name == "DeltaXor")
-                preproc = Preproc::DeltaXor;
+            if (name == "byte")
+                variant = Variant::Byte;
+            if (name == "bit")
+                variant = Variant::Bit;
             else
                 throw Exception("Unknown preprocessing method for T64: " + name, ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
@@ -635,7 +611,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
             throw Exception("T64 codec is not supported for specified type", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-        return std::make_shared<CompressionCodecT64>(type_idx, preproc);
+        return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 
     factory.registerCompressionCodecWithType("T64", codecId(), reg_func);
