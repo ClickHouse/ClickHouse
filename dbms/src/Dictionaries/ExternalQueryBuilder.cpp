@@ -53,6 +53,10 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
         case IdentifierQuotingStyle::DoubleQuotes:
             writeDoubleQuotedString(s, out);
             break;
+
+        case IdentifierQuotingStyle::BackticksMySQL:
+            writeMySQLBackQuotedString(s, out);
+            break;
     }
 }
 
