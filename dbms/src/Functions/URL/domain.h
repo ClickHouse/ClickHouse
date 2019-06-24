@@ -8,11 +8,12 @@
 namespace DB
 {
 
-namespace {
+namespace
+{
 
 inline StringRef buildFound(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
-    if (!dot_pos || start_of_host >= pos)
+    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
         return StringRef{};
 
     auto after_dot = *(dot_pos + 1);
@@ -29,10 +30,6 @@ inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
-
-    if (*(end - 1) == '.')
-        return StringRef{};
-
 
     Pos slash_pos = find_first_symbols<'/'>(pos, end);
     if (slash_pos != end)
@@ -56,7 +53,7 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos dot_pos = nullptr;
     for (; pos < end; ++pos)
     {
-        switch(*pos)
+        switch (*pos)
         {
         case '.':
             dot_pos = pos;
