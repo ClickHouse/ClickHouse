@@ -84,7 +84,7 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}')
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
@@ -98,7 +98,7 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 ```
 
 </details>
@@ -120,7 +120,8 @@ CREATE TABLE table_name
 
 `{layer}-{shard}`  — идентификатор шарда. В данном примере он состоит из двух частей, так как на кластере Яндекс.Метрики используется двухуровневое шардирование. Для большинства задач, оставьте только подстановку {shard}, которая будет раскрываться в идентификатор шарда.
 
-`hits` - имя узла для таблицы в ZooKeeper. Разумно делать его таким же, как имя таблицы. Оно указывается явно, так как, в отличие от имени таблицы, оно не меняется после запроса RENAME.
+`table_name` - имя узла для таблицы в ZooKeeper. Разумно делать его таким же, как имя таблицы. Оно указывается явно, так как, в отличие от имени таблицы, оно не меняется после запроса RENAME.  
+*Подсказка*: можно также указать имя базы данных перед `table_name`, например `db_name.table_name`
 
 Имя реплики  — то, что идентифицирует разные реплики одной и той же таблицы. Можно использовать для него имя сервера, как показано в примере. Впрочем, достаточно, чтобы имя было уникально лишь в пределах каждого шарда.
 

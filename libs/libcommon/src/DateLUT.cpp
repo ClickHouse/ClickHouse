@@ -32,6 +32,11 @@ std::string determineDefaultTimeZone()
     fs::path tz_file_path;
     std::string error_prefix;
     const char * tz_env_var = std::getenv("TZ");
+
+    /// In recent tzdata packages some files now are symlinks and canonical path resolution
+    /// may give wrong timezone names - store the name as it is, if possible.
+    std::string tz_name;
+
     if (tz_env_var)
     {
         error_prefix = std::string("Could not determine time zone from TZ variable value: `") + tz_env_var + "': ";
@@ -40,11 +45,12 @@ std::string determineDefaultTimeZone()
             ++tz_env_var;
 
         tz_file_path = tz_env_var;
+        tz_name = tz_env_var;
     }
     else
     {
         error_prefix = "Could not determine local time zone: ";
-        tz_file_path = "/etc/localtime";
+        tz_file_path = "/etc/localtime"; /// FIXME: in case of no TZ use the immediate linked file as tz name.
     }
 
     try
@@ -56,7 +62,7 @@ std::string determineDefaultTimeZone()
         /// then the relative path is the time zone id.
         fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
         if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-            return relative_path.string();
+            return tz_name.empty() ? relative_path.string() : tz_name;
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied and
         /// try to find the file with exact same contents in the database.

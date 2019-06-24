@@ -66,7 +66,7 @@ public:
 
     bool isModified() const override;
 
-    std::unique_ptr<IExternalLoadable> clone() const override;
+    std::shared_ptr<const IExternalLoadable> clone() const override;
 
     std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
     std::exception_ptr getCreationException() const override { return creation_exception; }

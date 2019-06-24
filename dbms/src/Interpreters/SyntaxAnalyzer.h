@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Aliases.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 

@@ -1,6 +1,8 @@
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include "MergeTreeDataMergerMutator.h"
+
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
@@ -25,12 +27,9 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
-#include <Common/localBackup.h>
 #include <Common/createHardLink.h>
-
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
-
 #include <cmath>
 #include <numeric>
 #include <iomanip>
@@ -127,16 +126,16 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, co
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize()
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge()
 {
     size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxSourcePartsSize(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+    return getMaxSourcePartsSizeForMerge(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
 }
 
 
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_t pool_used)
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used)
 {
     if (pool_used > pool_size)
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
@@ -153,6 +152,12 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
     return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+}
+
+
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
+{
+    return static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 
@@ -494,17 +499,17 @@ public:
 
     void operator() (const Progress & value)
     {
-        ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.bytes);
+        ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.read_bytes);
         if (stage.is_first)
-            ProfileEvents::increment(ProfileEvents::MergedRows, value.rows);
+            ProfileEvents::increment(ProfileEvents::MergedRows, value.read_rows);
         updateWatch();
 
-        merge_entry->bytes_read_uncompressed += value.bytes;
+        merge_entry->bytes_read_uncompressed += value.read_bytes;
         if (stage.is_first)
-            merge_entry->rows_read += value.rows;
+            merge_entry->rows_read += value.read_rows;
 
-        stage.total_rows += value.total_rows;
-        stage.rows_read += value.rows;
+        stage.total_rows += value.total_rows_to_read;
+        stage.rows_read += value.read_rows;
         if (stage.total_rows > 0)
         {
             merge_entry->progress.store(

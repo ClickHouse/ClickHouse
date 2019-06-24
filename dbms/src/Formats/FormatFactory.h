@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
-#include <functional>
-#include <unordered_map>
-#include <ext/singleton.h>
 #include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <ext/singleton.h>
+
+#include <functional>
+#include <memory>
+#include <unordered_map>
 
 
 namespace DB
@@ -17,13 +19,6 @@ struct FormatSettings;
 class ReadBuffer;
 class WriteBuffer;
 
-class IBlockInputStream;
-class IBlockOutputStream;
-
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
-
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
   */
@@ -35,6 +30,7 @@ private:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        UInt64 rows_portion_size,
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
@@ -49,7 +45,7 @@ private:
 
 public:
     BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size) const;
+        const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size = 0) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;

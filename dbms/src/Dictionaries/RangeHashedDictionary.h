@@ -42,9 +42,9 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<RangeHashedDictionary>(dictionary_name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<RangeHashedDictionary>(dictionary_name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }

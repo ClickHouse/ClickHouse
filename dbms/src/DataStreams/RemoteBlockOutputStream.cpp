@@ -6,6 +6,7 @@
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -18,13 +19,16 @@ namespace ErrorCodes
 }
 
 
-RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_)
+RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
+                                                 const ConnectionTimeouts & timeouts,
+                                                 const String & query_,
+                                                 const Settings * settings_)
     : connection(connection_), query(query_), settings(settings_)
 {
     /** Send query and receive "header", that describe table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(query, "", QueryProcessingStage::Complete, settings, nullptr);
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, settings, nullptr);
 
     while (true)
     {

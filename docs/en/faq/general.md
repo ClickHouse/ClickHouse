@@ -11,5 +11,14 @@ Distributed sorting is one of the main causes of reduced performance when runnin
 
 Most MapReduce implementations allow you to execute arbitrary code on a cluster. But a declarative query language is better suited to OLAP in order to run experiments quickly. For example, Hadoop has Hive and Pig. Also consider Cloudera Impala or Shark (outdated) for Spark, as well as Spark SQL, Presto, and Apache Drill. Performance when running such tasks is highly sub-optimal compared to specialized systems, but relatively high latency makes it unrealistic to use these systems as the backend for a web interface.
 
+## What If I Have a Problem with Encodings When Using Oracle Through ODBC? {#oracle-odbc-encodings}
+
+If you use Oracle through the ODBC driver as a source of external dictionaries, you need to set the correct value for the `NLS_LANG` environment variable in `/etc/default/clickhouse`. For more information, see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+
+**Example**
+
+```
+NLS_LANG=RUSSIAN_RUSSIA.UTF8
+```
 
 [Original article](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->

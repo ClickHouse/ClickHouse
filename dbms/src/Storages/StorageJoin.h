@@ -43,7 +43,7 @@ public:
 
 private:
     Block sample_block;
-    const Names & key_names;
+    const Names key_names;
     bool use_nulls;
     SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...

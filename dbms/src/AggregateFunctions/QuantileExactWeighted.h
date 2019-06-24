@@ -20,12 +20,22 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExactWeighted
 {
+    struct Int128Hash
+    {
+        size_t operator()(Int128 x) const
+        {
+            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+        }
+    };
+
     using Weight = UInt64;
+    using UnderlyingType = typename NativeType<Value>::Type;
+    using Hasher = std::conditional_t<std::is_same_v<Value, Decimal128>, Int128Hash, HashCRC32<UnderlyingType>>;
 
     /// When creating, the hash table must be small.
     using Map = HashMap<
-        Value, Weight,
-        HashCRC32<Value>,
+        UnderlyingType, Weight,
+        Hasher,
         HashTableGrower<4>,
         HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>
     >;
@@ -39,7 +49,7 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
-    void add(const Value & x, const Weight & weight)
+    void add(const Value & x, Weight weight)
     {
         if (!isNaN(x))
             map[x] += weight;

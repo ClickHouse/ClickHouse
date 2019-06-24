@@ -1,5 +1,4 @@
 <test>
-    <name>general_purpose_hashes</name>
     <type>once</type>
 
     <stop_conditions>
@@ -7,7 +6,7 @@
             <total_time_ms>10000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>3000</average_speed_not_changing_for_ms>
+            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -32,6 +31,7 @@
                <value>hiveHash</value>
                <value>xxHash32</value>
                <value>xxHash64</value>
+               <value>CRC32</value>
            </values>
         </substitution>
         <substitution>
@@ -51,5 +51,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT ignore({gp_hash_func}({string})) FROM system.{table} LIMIT 10000000</query>
+    <query>SELECT ignore({gp_hash_func}({string})) FROM system.{table}</query>
 </test>

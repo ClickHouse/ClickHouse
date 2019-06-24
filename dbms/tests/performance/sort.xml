@@ -1,6 +1,4 @@
 <test>
-    <name>sort</name>
-
     <type>loop</type>
 
     <stop_conditions>

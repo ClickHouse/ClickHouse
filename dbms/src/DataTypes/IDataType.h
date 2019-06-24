@@ -575,10 +575,24 @@ inline bool isInteger(const T & data_type)
 }
 
 template <typename T>
+inline bool isFloat(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isFloat();
+}
+
+template <typename T>
+inline bool isNativeNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeInt() || which.isNativeUInt() || which.isFloat();
+}
+
+template <typename T>
 inline bool isNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal();
 }
 
 template <typename T>

@@ -4,7 +4,7 @@
 #include <Poco/URI.h>
 
 #if USE_HDFS
-#include <hdfs/hdfs.h> // Y_IGNORE
+#include <hdfs/hdfs.h>
 
 namespace DB
 {

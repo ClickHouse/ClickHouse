@@ -172,7 +172,7 @@ SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY 
 Q5. 查询2007年各航空公司延误超过10分钟以上的百分比
 
 ```sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -198,13 +198,13 @@ ORDER BY c3 DESC;
 更好的查询版本：
 
 ```sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q6. 同上一个查询一致,只是查询范围扩大到2000年到2008年
 
 ```sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -230,7 +230,7 @@ ORDER BY c3 DESC;
 更好的查询版本：
 
 ```sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q7. 每年航班延误超过10分钟的百分比
@@ -241,7 +241,7 @@ FROM
 (
     select
         Year,
-        count(*)*1000 as c1
+        count(*)*100 as c1
     from ontime
     WHERE DepDelay>10
     GROUP BY Year

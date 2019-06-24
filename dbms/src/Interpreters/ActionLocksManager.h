@@ -1,14 +1,16 @@
 #pragma once
+
 #include <Core/Types.h>
+#include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
-#include <unordered_map>
+
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
 {
 
-class IStorage;
 class Context;
 
 /// Holds ActionLocks for tables

@@ -821,7 +821,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    if (isNumber(type))
+    if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
         TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
