@@ -21,10 +21,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
-    size_t rows = block.rows();
-    if (!rows)
-        return;
-
     if (!initialized)
     {
         column_streams.clear();
@@ -46,6 +42,10 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
         initialized = true;
     }
+
+    size_t rows = block.rows();
+    if (!rows)
+        return;
 
     size_t new_index_offset = 0;
     size_t new_current_mark = 0;
