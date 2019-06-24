@@ -31,7 +31,7 @@ String backQuoteMySQL(const String & x)
     String res(x.size(), '\0');
     {
         WriteBufferFromString wb(res);
-        writeMySQLBackQuotedString(x, wb);
+        writeBackQuotedStringMySQL(x, wb);
     }
     return res;
 }

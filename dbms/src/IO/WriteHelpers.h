@@ -410,7 +410,7 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 }
 
 /// Outputs a string in backquotes for MySQL.
-inline void writeMySQLBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
 {
     writeChar('`', buf);
     writeAnyEscapedString<'`', true>(s.data(), s.data() + s.size(), buf);
@@ -448,9 +448,9 @@ inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
     writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyMySQLQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeMySQLBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 
