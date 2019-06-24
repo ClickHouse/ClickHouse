@@ -257,7 +257,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
  *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
- *      and use quote_character to escape quote_character. such as: 'hello''word'
+ *      and use quote_character to escape quote_character. such as: 'hello''world'
  *   - otherwise use backslash to escape list of special characters and quote_character
  */
 template <char quote_character, bool escape_quote_with_quote = false>
