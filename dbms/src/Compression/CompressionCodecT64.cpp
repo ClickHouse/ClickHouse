@@ -247,7 +247,7 @@ void revTranspose(const char * src, _T * buf, UInt32 num_bits, UInt32 tail = 64)
 }
 
 template <typename _T, typename _MinMaxT = std::conditional_t<std::is_signed_v<_T>, Int64, UInt64>>
-void restoreUpperBits(_T * buf, _T upper_min, _T upper_max, _T sign_bit, UInt32 tail = 64)
+void restoreUpperBits(_T * buf, _T upper_min, _T upper_max [[maybe_unused]], _T sign_bit [[maybe_unused]], UInt32 tail = 64)
 {
     if constexpr (std::is_signed_v<_T>)
     {
