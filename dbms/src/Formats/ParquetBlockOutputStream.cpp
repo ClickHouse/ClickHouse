@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PARQUET
 #    include "ParquetBlockOutputStream.h"
 
@@ -23,8 +23,6 @@
 #    include <parquet/arrow/writer.h>
 #    include <parquet/exception.h>
 #    include <parquet/util/memory.h>
-
-#    include <Core/iostream_debug_helpers.h> // REMOVE ME
 
 namespace DB
 {

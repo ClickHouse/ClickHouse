@@ -65,6 +65,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
+#include <common/argsToConfig.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -203,7 +204,6 @@ private:
 
     ConnectionParameters connection_parameters;
 
-
     void initialize(Poco::Util::Application & self)
     {
         Poco::Util::Application::initialize(self);
@@ -336,7 +336,7 @@ private:
         DateLUT::instance();
         if (!context.getSettingsRef().use_client_time_zone)
         {
-            const auto & time_zone = connection->getServerTimezone();
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
             if (!time_zone.empty())
             {
                 try
@@ -520,7 +520,6 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
-            connection_parameters.timeouts,
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -536,11 +535,14 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        connection->getServerVersion(connection_parameters.timeouts,
+                                     server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -751,7 +753,7 @@ private:
                 }
 
                 if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
-                    connection->forceConnected();
+                    connection->forceConnected(connection_parameters.timeouts);
 
                 if (got_exception && !ignore_error)
                 {
@@ -827,7 +829,7 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            connection->forceConnected();
+            connection->forceConnected(connection_parameters.timeouts);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
             if (insert && !insert->select)
@@ -898,7 +900,7 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -916,7 +918,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1063,7 +1065,7 @@ private:
         bool cancelled = false;
 
         // TODO: get the poll_interval from commandline.
-        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
         constexpr size_t default_poll_interval = 1000000; /// in microseconds
         constexpr size_t min_poll_interval = 5000; /// in microseconds
         const size_t poll_interval
@@ -1549,7 +1551,7 @@ public:
           *   where possible args are file, name, format, structure, types.
           * Split these groups before processing.
           */
-        using Arguments = std::vector<const char *>;
+        using Arguments = std::vector<std::string>;
 
         Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
@@ -1671,8 +1673,7 @@ public:
             ("types", po::value<std::string>(), "types")
         ;
         /// Parse main commandline options.
-        po::parsed_options parsed = po::command_line_parser(
-            common_arguments.size(), common_arguments.data()).options(main_description).run();
+        po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -1705,8 +1706,7 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed_tables = po::command_line_parser(
-                external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
+            po::parsed_options parsed_tables = po::command_line_parser(external_tables_arguments[i]).options(external_description).run();
             po::variables_map external_options;
             po::store(parsed_tables, external_options);
 
@@ -1802,6 +1802,9 @@ public:
         }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+
+        argsToConfig(common_arguments, config(), 100);
+
     }
 };
 

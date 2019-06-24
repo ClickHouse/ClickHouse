@@ -4,7 +4,7 @@
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
-#include <Common/config.h>
+#include "config_functions.h"
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>

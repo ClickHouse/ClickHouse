@@ -1,8 +1,7 @@
+configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-
-add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions .)
-
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
@@ -26,7 +25,8 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
 endif()
 
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
+target_include_directories(clickhouse_functions PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
 if (CONSISTENT_HASHING_INCLUDE_DIR)
     target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
@@ -77,3 +77,12 @@ endif()
 if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
+
+add_subdirectory(GatherUtils)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
+
+add_subdirectory(URL)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_url)
+
+add_subdirectory(array)
+target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)

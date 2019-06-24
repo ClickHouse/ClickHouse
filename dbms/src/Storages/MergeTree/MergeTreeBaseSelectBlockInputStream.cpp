@@ -73,14 +73,14 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
     if (task->size_predictor)
         task->size_predictor->startBlock();
 
-    const auto current_max_block_size_rows = max_block_size_rows;
-    const auto current_preferred_block_size_bytes = preferred_block_size_bytes;
-    const auto current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
-    const auto & index_granularity = task->data_part->index_granularity;
+    const UInt64 current_max_block_size_rows = max_block_size_rows;
+    const UInt64 current_preferred_block_size_bytes = preferred_block_size_bytes;
+    const UInt64 current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
+    const MergeTreeIndexGranularity & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
     auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
-        index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
+        &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
         if (!current_task.size_predictor)

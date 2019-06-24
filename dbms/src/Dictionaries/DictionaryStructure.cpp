@@ -37,7 +37,7 @@ namespace
         return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
     }
 
-} // namespace
+}
 
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
