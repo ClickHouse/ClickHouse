@@ -9,7 +9,7 @@ endif ()
 
 install (PROGRAMS clickhouse-test clickhouse-test-server DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 install (
-    DIRECTORY queries performance
+    DIRECTORY queries performance config
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse-test
     USE_SOURCE_PERMISSIONS
     COMPONENT clickhouse
@@ -21,7 +21,7 @@ install (FILES server-test.xml DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-ser
 install (FILES client-test.xml DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse)
 
 if (ENABLE_TESTS)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR})
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${ClickHouse_BINARY_DIR})
 
     # maybe add --no-long ?
     # if you want disable some tests: env TEST_OPT0='--skip compile'

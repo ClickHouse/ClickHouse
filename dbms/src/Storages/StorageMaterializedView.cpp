@@ -11,6 +11,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/StorageFactory.h>
 
@@ -366,6 +368,11 @@ void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partitio
         return;
 
     target_table->checkPartitionCanBeDropped(partition);
+}
+
+ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
+{
+    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

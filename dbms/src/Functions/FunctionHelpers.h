@@ -12,6 +12,8 @@
 namespace DB
 {
 
+class IFunction;
+
 /// Methods, that helps dispatching over real column types.
 
 template <typename Type>
@@ -64,7 +66,6 @@ bool checkColumnConst(const IColumn * column)
     return checkAndGetColumnConst<Type>(column);
 }
 
-
 /// Returns non-nullptr if column is ColumnConst with ColumnString or ColumnFixedString inside.
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column);
 
@@ -93,5 +94,11 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
+
+/// Checks argument type at specified index with predicate.
+/// throws if there is no argument at specified index or if predicate returns false.
+void validateArgumentType(const IFunction & func, const DataTypes & arguments,
+        size_t argument_index, bool (* validator_func)(const IDataType &),
+        const char * expected_type_description);
 
 }

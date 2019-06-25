@@ -6,7 +6,7 @@
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataTypes/getLeastSupertype.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
@@ -116,6 +116,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
     size_t num_columns = common_header.columns();
 
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
+    {
         if (headers[query_num].columns() != num_columns)
             throw Exception("Different number of columns in UNION ALL elements:\n"
                             + common_header.dumpNames()
@@ -123,40 +124,16 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
                             + headers[query_num].dumpNames() + "\n",
                             ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 
-    for (size_t column_num = 0; column_num < num_columns; ++column_num)
-    {
-        auto & result_elem = common_header.getByPosition(column_num);
-
-        /// Determine common type.
-
-        DataTypes types(num_selects);
-        for (size_t query_num = 0; query_num < num_selects; ++query_num)
-            types[query_num] = headers[query_num].getByPosition(column_num).type;
-
-        result_elem.type = getLeastSupertype(types);
-
-        /// If there are different constness or different values of constants, the result must be non-constant.
-
-        if (auto * res_col_const = typeid_cast<const ColumnConst *>(result_elem.column.get()))
+        for (size_t column_num = 0; column_num < num_columns; ++column_num)
         {
-            bool need_materialize = false;
-            for (size_t query_num = 1; query_num < num_selects; ++query_num)
-            {
-                const auto & source_elem = headers[query_num].getByPosition(column_num);
-                auto * source_col_const = typeid_cast<const ColumnConst *>(source_elem.column.get());
+            std::vector<const ColumnWithTypeAndName *> columns;
+            columns.reserve(num_selects);
+            for (size_t i = 0; i < num_selects; ++i)
+                columns.push_back(&headers[i].getByPosition(column_num));
 
-                if (!source_col_const || res_col_const->getField() != source_col_const->getField())
-                {
-                    need_materialize = true;
-                    break;
-                }
-            }
-
-            if (need_materialize)
-                result_elem.column = result_elem.type->createColumn();
+            ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
+            result_elem = getLeastSuperColumn(columns);
         }
-
-        /// BTW, result column names are from first SELECT.
     }
 
     return common_header;

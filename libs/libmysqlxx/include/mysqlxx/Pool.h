@@ -110,6 +110,8 @@ public:
                 return "pool is null";
         }
 
+        void disconnect();
+
         friend class Pool;
 
     private:

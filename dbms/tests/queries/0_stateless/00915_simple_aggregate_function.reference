@@ -40,4 +40,5 @@ SimpleAggregateFunction(sum, Float64)
 8	16
 9	18
 1	1	2	2.2.2.2
+10	2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222	20	20.20.20.20
 SimpleAggregateFunction(anyLast, Nullable(String))	SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))	SimpleAggregateFunction(anyLast, IPv4)

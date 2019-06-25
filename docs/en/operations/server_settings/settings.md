@@ -83,7 +83,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -101,7 +101,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -666,13 +666,13 @@ Path to the file that contains:
 
 ## zookeeper {#server-settings_zookeeper}
 
-Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter section contains the following parameters:
+This section contains the following parameters:
 
-- `node` — ZooKeeper endpoint. You can set a few endpoints.
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
     For example:
 
@@ -683,11 +683,11 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout` — Maximum timeout for client session in milliseconds.
-- `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
-- `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -702,6 +702,7 @@ This parameter section contains the following parameters:
         <port>2181</port>
     </node>
     <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
     <!-- Optional. Chroot suffix. Should exist. -->
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->

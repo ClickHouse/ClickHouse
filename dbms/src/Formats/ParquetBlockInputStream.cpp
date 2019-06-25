@@ -1,5 +1,4 @@
-#include <Common/config.h>
-
+#include "config_formats.h"
 #if USE_PARQUET
 #    include "ParquetBlockInputStream.h"
 
@@ -475,7 +474,8 @@ void registerInputFormatParquet(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const Context & context,
-           size_t /*max_block_size */,
+           UInt64 /* max_block_size */,
+           UInt64 /* rows_portion_size */,
            const FormatSettings & /* settings */) { return std::make_shared<ParquetBlockInputStream>(buf, sample, context); });
 }
 

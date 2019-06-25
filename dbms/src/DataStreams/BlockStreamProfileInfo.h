@@ -1,8 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <Common/Stopwatch.h>
 #include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Common/Stopwatch.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -10,7 +12,6 @@ namespace DB
 class Block;
 class ReadBuffer;
 class WriteBuffer;
-class IBlockInputStream;
 
 /// Information for profiling. See IBlockInputStream.h
 struct BlockStreamProfileInfo

@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_core.h"
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-
 #include <set>
 #include <optional>
 

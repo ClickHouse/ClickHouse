@@ -62,13 +62,13 @@ public:
         if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isNumber(arguments[1]))
+        if (!isNativeNumber(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName()
                     + " of second argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (number_of_arguments == 3 && !isNumber(arguments[2]))
+        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
             throw Exception("Illegal type " + arguments[2]->getName()
                     + " of second argument of function "
                     + getName(),
