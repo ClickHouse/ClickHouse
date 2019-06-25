@@ -1,5 +1,5 @@
+#include "config_functions.h"
 #if USE_H3
-
 #include <array>
 #include <math.h>
 #include <Columns/ColumnConst.h>
