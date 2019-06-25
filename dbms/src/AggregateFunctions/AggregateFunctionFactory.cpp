@@ -77,6 +77,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.", ErrorCodes::LOGICAL_ERROR);
 
         DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
+        Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function;
 
@@ -84,7 +85,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         /// Combinator will check if nested_function was created.
         if (name == "count" || std::none_of(argument_types.begin(), argument_types.end(),
             [](const auto & type) { return type->onlyNull(); }))
-            nested_function = getImpl(name, nested_types, parameters, recursion_level);
+            nested_function = getImpl(name, nested_types, nested_parameters, recursion_level);
 
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
@@ -126,7 +127,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);
-        AggregateFunctionPtr nested_function = get(nested_name, nested_types, parameters, recursion_level + 1);
+        Array nested_parameters = combinator->transformParameters(parameters);
+
+        AggregateFunctionPtr nested_function = get(nested_name, nested_types, nested_parameters, recursion_level + 1);
+
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 

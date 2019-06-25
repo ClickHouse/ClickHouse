@@ -1,16 +1,19 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionArrayMapped.h>
+#include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 
 
 namespace DB
 {
 
-struct ArrayFirstIndexImpl
+/** arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
+  * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).
+  */
+struct ArrayCountImpl
 {
-    static bool needBoolean() { return false; }
-    static bool needExpression() { return true; }
+    static bool needBoolean() { return true; }
+    static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
@@ -20,7 +23,7 @@ struct ArrayFirstIndexImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        auto column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
+        const ColumnUInt8 * column_filter = typeid_cast<const ColumnUInt8 *>(&*mapped);
 
         if (!column_filter)
         {
@@ -31,14 +34,14 @@ struct ArrayFirstIndexImpl
 
             if (column_filter_const->getValue<UInt8>())
             {
-                const auto & offsets = array.getOffsets();
+                const IColumn::Offsets & offsets = array.getOffsets();
                 auto out_column = ColumnUInt32::create(offsets.size());
-                auto & out_index = out_column->getData();
+                ColumnUInt32::Container & out_counts = out_column->getData();
 
-                size_t pos{};
+                size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
                 {
-                    out_index[i] = offsets[i] - pos > 0;
+                    out_counts[i] = offsets[i] - pos;
                     pos = offsets[i];
                 }
 
@@ -48,39 +51,35 @@ struct ArrayFirstIndexImpl
                 return DataTypeUInt32().createColumnConst(array.size(), 0u);
         }
 
-        const auto & filter = column_filter->getData();
-        const auto & offsets = array.getOffsets();
+        const IColumn::Filter & filter = column_filter->getData();
+        const IColumn::Offsets & offsets = array.getOffsets();
         auto out_column = ColumnUInt32::create(offsets.size());
-        auto & out_index = out_column->getData();
+        ColumnUInt32::Container & out_counts = out_column->getData();
 
-        size_t pos{};
+        size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            UInt32 index{};
-            for (size_t idx{1}; pos < offsets[i]; ++pos, ++idx)
+            size_t count = 0;
+            for (; pos < offsets[i]; ++pos)
             {
                 if (filter[pos])
-                {
-                    index = idx;
-                    pos = offsets[i];
-                    break;
-                }
+                    ++count;
             }
-
-            out_index[i] = index;
+            out_counts[i] = count;
         }
 
         return out_column;
     }
 };
 
-struct NameArrayFirstIndex { static constexpr auto name = "arrayFirstIndex"; };
-using FunctionArrayFirstIndex = FunctionArrayMapped<ArrayFirstIndexImpl, NameArrayFirstIndex>;
+struct NameArrayCount { static constexpr auto name = "arrayCount"; };
+using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
 
-void registerFunctionArrayFirstIndex(FunctionFactory & factory)
+void registerFunctionArrayCount(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionArrayFirstIndex>();
+    factory.registerFunction<FunctionArrayCount>();
 }
 
 }
+
 
