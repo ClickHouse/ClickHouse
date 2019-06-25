@@ -7,8 +7,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
-#include <Common/config.h>
-
+#include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
 

@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
