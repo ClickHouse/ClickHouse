@@ -211,6 +211,8 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
     return from_row + number_of_rows;
 }
 
+/// column must not be empty. (column.size() !== 0)
+
 std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
     const String & name,
     const IDataType & type,

@@ -43,6 +43,10 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         initialized = true;
     }
 
+    size_t rows = block.rows();
+    if (!rows)
+        return;
+
     size_t new_index_offset = 0;
     size_t new_current_mark = 0;
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
