@@ -32,22 +32,18 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos end = data + size;
 
     Pos slash_pos = find_first_symbols<'/'>(pos, end);
-    if (slash_pos != end)
-        pos = slash_pos;
+    if (slash_pos < end - 1 && *(slash_pos + 1) == '/')
+        pos = slash_pos + 2;
     else
         pos = data;
 
     if (pos != data)
     {
-        StringRef scheme = getURLScheme(data, size);
+        StringRef scheme = getURLScheme(data, end - pos);
         Pos scheme_end = data + scheme.size;
-        if (pos - scheme_end != 1 || *scheme_end != ':')
+        if (scheme.size && (pos - scheme_end != 3 || *scheme_end != ':'))
             return StringRef{};
     }
-
-    // Check with we still have // character from the scheme
-    if (end - pos > 2 && *(pos) == '/' && *(pos + 1) == '/')
-        pos += 2;
 
     auto start_of_host = pos;
     Pos dot_pos = nullptr;
