@@ -39,7 +39,7 @@ inline StringRef getURLHost(const char * data, size_t size)
 
     if (pos != data)
     {
-        StringRef scheme = getURLScheme(data, end - pos);
+        StringRef scheme = getURLScheme(data, pos - data - 2);
         Pos scheme_end = data + scheme.size;
         if (scheme.size && (pos - scheme_end != 3 || *scheme_end != ':'))
             return StringRef{};
