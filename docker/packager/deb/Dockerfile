@@ -9,6 +9,7 @@ RUN apt-get --allow-unauthenticated update -y \
             cmake \
             ccache \
             curl \
+            libtool \
             software-properties-common
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
@@ -68,6 +69,8 @@ RUN apt-get --allow-unauthenticated update -y \
             odbcinst \
             tzdata \
             gperf
+
+RUN git clone https://github.com/uber/h3 && cd h3 && cmake . && make && make install && cd .. && rm -rf h3
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
