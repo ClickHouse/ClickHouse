@@ -48,4 +48,4 @@ $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
 
-#$CLICKHOUSE_CLIENT --query="DROP TABLE test.minmax_idx"
+$CLICKHOUSE_CLIENT --query="DROP TABLE test.minmax_idx"
