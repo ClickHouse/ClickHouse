@@ -91,9 +91,10 @@ TypeIndex typeIdx(const DataTypePtr & data_type)
     return TypeIndex::Nothing;
 }
 
-void transpose64x8(const UInt64 * src, UInt64 * dst, UInt32)
+void transpose64x8(UInt64 * src_dst)
 {
-    auto * src8 = reinterpret_cast<const UInt8 *>(src);
+    auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
+    UInt64 dst[8] = {};
 
     for (UInt32 i = 0; i < 64; ++i)
     {
@@ -107,23 +108,27 @@ void transpose64x8(const UInt64 * src, UInt64 * dst, UInt32)
         dst[6] |= ((value >> 6) & 0x1) << i;
         dst[7] |= ((value >> 7) & 0x1) << i;
     }
+
+    memcpy(src_dst, dst, 8 * sizeof(UInt64));
 }
 
-void revTranspose64x8(const UInt64 * src, UInt64 * dst, UInt32)
+void revTranspose64x8(UInt64 * src_dst)
 {
-    auto * dst8 = reinterpret_cast<UInt8 *>(dst);
+    UInt8 dst8[64];
 
     for (UInt32 i = 0; i < 64; ++i)
     {
-        dst8[i] = ((src[0] >> i) & 0x1)
-            | (((src[1] >> i) & 0x1) << 1)
-            | (((src[2] >> i) & 0x1) << 2)
-            | (((src[3] >> i) & 0x1) << 3)
-            | (((src[4] >> i) & 0x1) << 4)
-            | (((src[5] >> i) & 0x1) << 5)
-            | (((src[6] >> i) & 0x1) << 6)
-            | (((src[7] >> i) & 0x1) << 7);
+        dst8[i] = ((src_dst[0] >> i) & 0x1)
+            | (((src_dst[1] >> i) & 0x1) << 1)
+            | (((src_dst[2] >> i) & 0x1) << 2)
+            | (((src_dst[3] >> i) & 0x1) << 3)
+            | (((src_dst[4] >> i) & 0x1) << 4)
+            | (((src_dst[5] >> i) & 0x1) << 5)
+            | (((src_dst[6] >> i) & 0x1) << 6)
+            | (((src_dst[7] >> i) & 0x1) << 7);
     }
+
+    memcpy(src_dst, dst8, 8 * sizeof(UInt64));
 }
 
 template <typename _T>
@@ -211,27 +216,21 @@ void transpose(const _T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 
     if constexpr (_full)
     {
-        UInt64 res[8];
-        for (UInt32 byte = 0; byte < full_bytes; ++byte)
-        {
-            transpose64x8(&mx[byte * 8], res, 8);
-            memcpy(dst, res, 8 * sizeof(UInt64));
-        }
+        UInt64 * mx_line = mx;
+        for (UInt32 byte = 0; byte < full_bytes; ++byte, mx_line += 8)
+            transpose64x8(mx_line);
     }
-    else
-    {
-        UInt32 full_size = sizeof(UInt64) * (num_bits - part_bits);
-        memcpy(dst, mx, full_size);
-        dst += full_size;
-    }
+
+    UInt32 full_size = sizeof(UInt64) * (num_bits - part_bits);
+    memcpy(dst, mx, full_size);
+    dst += full_size;
 
     /// transpose only partially filled last byte
     if (part_bits)
     {
-        UInt64 * partial = &mx[full_bytes * 8];
-        UInt64 res[8] = {};
-        transpose64x8(partial, res, part_bits);
-        memcpy(dst, res, part_bits * sizeof(UInt64));
+        UInt64 * mx_line = &mx[full_bytes * 8];
+        transpose64x8(mx_line);
+        memcpy(dst, mx_line, part_bits * sizeof(UInt64));
     }
 }
 
@@ -244,24 +243,18 @@ void revTranspose(const char * src, _T * buf, UInt32 num_bits, UInt32 tail = 64)
 
     UInt32 full_bytes = num_bits / 8;
     UInt32 part_bits = num_bits % 8;
-    UInt64 * partial = &mx[full_bytes * 8];
 
     if constexpr (_full)
     {
-        UInt64 res[8];
-        for (UInt32 byte = 0; byte < full_bytes; ++byte)
-        {
-            UInt64 * line = &mx[byte * 8];
-            revTranspose64x8(line, res, 8);
-            memcpy(line, res, 8 * sizeof(UInt64));
-        }
+        UInt64 * mx_line = mx;
+        for (UInt32 byte = 0; byte < full_bytes; ++byte, mx_line += 8)
+            revTranspose64x8(mx_line);
     }
 
     if (part_bits)
     {
-        UInt64 res[8] = {};
-        revTranspose64x8(partial, res, part_bits);
-        memcpy(partial, res, 8 * sizeof(UInt64));
+        UInt64 * mx_line = &mx[full_bytes * 8];
+        revTranspose64x8(mx_line);
     }
 
     clear(buf);
@@ -292,10 +285,7 @@ void restoreUpperBits(_T * buf, _T upper_min, _T upper_max [[maybe_unused]], _T 
     }
 
     for (UInt32 col = 0; col < tail; ++col)
-    {
-        _T & value = buf[col];
-        value |= upper_min;
-    }
+        buf[col] |= upper_min;
 }
 
 
