@@ -14,9 +14,7 @@ namespace ErrorCodes
 }
 
 template <typename Key>
-class AggregateFunctionResample final : public IAggregateFunctionHelper<
-    AggregateFunctionResample<Key>
->
+class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
 private:
     const size_t MAX_ELEMENTS = 4096;
@@ -40,27 +38,22 @@ public:
         Key end,
         size_t step,
         const DataTypes & arguments,
-        const Array & params
-    ) :
-        IAggregateFunctionHelper<
-            AggregateFunctionResample<Key>
-        > {arguments, params},
-        nested_function {nested_function},
-        last_col {arguments.size() - 1},
-        begin {begin},
-        end {end},
-        step {step},
-        total {0},
-        aod {nested_function->alignOfData()},
-        sod {(nested_function->sizeOfData() + aod - 1) / aod * aod}
+        const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
+        , nested_function{nested_function}
+        , last_col{arguments.size() - 1}
+        , begin{begin}
+        , end{end}
+        , step{step}
+        , total{0}
+        , aod{nested_function->alignOfData()}
+        , sod{(nested_function->sizeOfData() + aod - 1) / aod * aod}
     {
         // notice: argument types has been checked before
         if (step == 0)
-            throw Exception(
-                "The step given in function "
+            throw Exception("The step given in function "
                     + getName() + " should not be zero",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            );
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (end < begin)
             total = 0;
@@ -68,11 +61,9 @@ public:
             total = (end - begin + step - 1) / step;
 
         if (total > MAX_ELEMENTS)
-            throw Exception(
-                "The range given in function "
+            throw Exception("The range given in function "
                     + getName() + " contains too many elements",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            );
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     String getName() const override
@@ -126,8 +117,7 @@ public:
         AggregateDataPtr place,
         const IColumn ** columns,
         size_t row_num,
-        Arena * arena
-    ) const override
+        Arena * arena) const override
     {
         Key key;
 
@@ -147,8 +137,7 @@ public:
     void merge(
         AggregateDataPtr place,
         ConstAggregateDataPtr rhs,
-        Arena * arena
-    ) const override
+        Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * sod, rhs + i * sod, arena);
@@ -156,8 +145,7 @@ public:
 
     void serialize(
         ConstAggregateDataPtr place,
-        WriteBuffer & buf
-    ) const override
+        WriteBuffer & buf) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->serialize(place + i * sod, buf);
@@ -166,8 +154,7 @@ public:
     void deserialize(
         AggregateDataPtr place,
         ReadBuffer & buf,
-        Arena * arena
-    ) const override
+        Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->deserialize(place + i * sod, buf, arena);
@@ -175,20 +162,15 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(
-            nested_function->getReturnType()
-        );
+        return std::make_shared<DataTypeArray>(nested_function->getReturnType());
     }
 
     void insertResultInto(
         ConstAggregateDataPtr place,
-        IColumn & to
-    ) const override
+        IColumn & to) const override
     {
         auto & col = static_cast<ColumnArray &>(to);
-        auto & col_offsets = static_cast<ColumnArray::ColumnOffsets &>(
-            col.getOffsetsColumn()
-        );
+        auto & col_offsets = static_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
             nested_function->insertResultInto(place + i * sod, col.getData());
