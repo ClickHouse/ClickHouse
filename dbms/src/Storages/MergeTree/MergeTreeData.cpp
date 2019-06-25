@@ -2492,7 +2492,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (fields_count)
     {
         ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data, partition_ast.fields_str.size);
+        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
@@ -2502,7 +2502,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         RowReadExtension unused;
         if (!input_stream.read(columns, unused))
             throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
+                "Could not parse partition value: `" + partition_ast.fields_str + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
