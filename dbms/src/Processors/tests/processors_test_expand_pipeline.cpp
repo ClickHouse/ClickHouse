@@ -248,7 +248,7 @@ struct measure
 int main(int, char **)
 try
 {
-    auto execute = [](String msg, size_t num, ThreadPool * pool)
+    auto execute = [](String msg, size_t num, size_t num_threads)
     {
         std::cerr << msg << "\n";
 
@@ -262,7 +262,7 @@ try
         std::vector<ProcessorPtr> processors = {source, expanding, sink};
 
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
 
         WriteBufferFromOStream out(std::cout);
         printPipeline(executor.getProcessors(), out);
@@ -270,8 +270,8 @@ try
 
     ThreadPool pool(4, 4, 10);
 
-    auto time_single = measure<>::execution(execute, "Single thread", 10, nullptr);
-    auto time_mt = measure<>::execution(execute, "Multiple threads", 10, &pool);
+    auto time_single = measure<>::execution(execute, "Single thread", 10, 1);
+    auto time_mt = measure<>::execution(execute, "Multiple threads", 10, 4);
 
     std::cout << "Single Thread time: " << time_single << " ms.\n";
     std::cout << "Multiple Threads time:" << time_mt << " ms.\n";

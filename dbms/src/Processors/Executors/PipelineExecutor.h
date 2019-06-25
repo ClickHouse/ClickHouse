@@ -136,7 +136,12 @@ public:
 
     const Processors & getProcessors() const { return processors; }
 
-    void cancel();
+    void finish();
+    void cancel()
+    {
+        cancelled = true;
+        finish();
+    }
 
 private:
     /// Graph related methods.

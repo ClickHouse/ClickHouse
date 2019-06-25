@@ -1,6 +1,6 @@
 #include <Formats/FormatFactory.h>
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <Processors/Formats/Impl/ProtobufBlockOutputFormat.h>
@@ -67,7 +67,7 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProtobuf(FormatFactory &) {}
+    void registerOutputFormatProcessorProtobuf(FormatFactory &) {}
 }
 
 #endif
