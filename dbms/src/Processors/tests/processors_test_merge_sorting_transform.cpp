@@ -124,7 +124,7 @@ try
         UInt64 limit,
         size_t max_bytes_before_remerge,
         size_t max_bytes_before_external_sort,
-        ThreadPool * pool)
+        size_t num_threads)
     {
         std::cerr << "------------------------\n";
         std::cerr << msg << "\n";
@@ -141,17 +141,15 @@ try
 
         std::vector<ProcessorPtr> processors = {source, transform, sink};
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
 
         WriteBufferFromOStream out(std::cout);
         printPipeline(executor.getProcessors(), out);
     };
 
-    ThreadPool pool(4, 4, 10);
-    std::vector<ThreadPool *> pools = {nullptr, &pool};
     std::map<std::string, Int64> times;
 
-    for (auto cur_pool : pools)
+    for (size_t num_threads : {1, 4})
     {
         {
             UInt64 source_block_size = 100;
@@ -160,7 +158,7 @@ try
             UInt64 limit = 0;
             size_t max_bytes_before_remerge = 10000000;
             size_t max_bytes_before_external_sort = 10000000;
-            std::string msg = cur_pool ? "multiple threads" : "single thread";
+            std::string msg = num_threads > 1 ? "multiple threads" : "single thread";
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                     ", no remerge and external sorts.";
 
@@ -171,7 +169,7 @@ try
                                         limit,
                                         max_bytes_before_remerge,
                                         max_bytes_before_external_sort,
-                                        cur_pool);
+                                        num_threads);
 
             times[msg] = time;
         }
@@ -183,7 +181,7 @@ try
             UInt64 limit = 2048;
             size_t max_bytes_before_remerge = sizeof(UInt64) * source_block_size * 4;
             size_t max_bytes_before_external_sort = 10000000;
-            std::string msg = cur_pool ? "multiple threads" : "single thread";
+            std::string msg = num_threads > 1 ? "multiple threads" : "single thread";
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                    ", with remerge, no external sorts.";
 
@@ -194,7 +192,7 @@ try
                                               limit,
                                               max_bytes_before_remerge,
                                               max_bytes_before_external_sort,
-                                              cur_pool);
+                                              num_threads);
 
             times[msg] = time;
         }
@@ -206,7 +204,7 @@ try
             UInt64 limit = 0;
             size_t max_bytes_before_remerge = 0;
             size_t max_bytes_before_external_sort = sizeof(UInt64) * source_block_size * 4;
-            std::string msg = cur_pool ? "multiple threads" : "single thread";
+            std::string msg = num_threads > 1 ? "multiple threads" : "single thread";
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                    ", no remerge, with external sorts.";
 
@@ -217,7 +215,7 @@ try
                                               limit,
                                               max_bytes_before_remerge,
                                               max_bytes_before_external_sort,
-                                              cur_pool);
+                                              num_threads);
 
             times[msg] = time;
         }

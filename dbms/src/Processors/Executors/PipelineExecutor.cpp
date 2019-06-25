@@ -457,7 +457,7 @@ void PipelineExecutor::doExpandPipeline(Stack & stack)
 //    assignJobs();
 //}
 
-void PipelineExecutor::cancel()
+void PipelineExecutor::finish()
 {
     finished = true;
     finish_condvar.notify_one();
@@ -524,7 +524,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         catch (...)
         {
             graph[pid].execution_state->exception = std::current_exception();
-            cancel();
+            finish();
         }
 
         return false;
@@ -557,7 +557,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             ++num_waiting_threads;
 
             if (num_waiting_threads == num_threads && num_waited_tasks == num_tasks_to_wait)
-                cancel();
+                finish();
 
             executor_contexts[thread_num]->is_waiting = true;
             executor_contexts[thread_num]->condvar.wait(lock, [&]() { return finished || num_waited_tasks < num_tasks_to_wait; });
@@ -645,7 +645,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             }
 
             if (state->exception)
-                cancel();
+                finish();
 
             if (finished)
                 break;

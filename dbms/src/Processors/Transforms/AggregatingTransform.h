@@ -3,6 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {

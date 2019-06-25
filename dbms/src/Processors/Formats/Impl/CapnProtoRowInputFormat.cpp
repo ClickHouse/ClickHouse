@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <IO/ReadBuffer.h>

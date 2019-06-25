@@ -125,7 +125,7 @@ struct measure
 int main(int, char **)
 try
 {
-    auto execute_chain = [](ThreadPool * pool)
+    auto execute_chain = [](size_t num_threads)
     {
         std::cerr << "---------------------\n";
 
@@ -147,14 +147,11 @@ try
 //        printPipeline(processors, out);
 
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
     };
 
-
-    ThreadPool pool(4, 4, 10);
-
-    auto time_single = measure<>::execution(execute_chain, nullptr);
-    auto time_mt = measure<>::execution(execute_chain, &pool);
+    auto time_single = measure<>::execution(execute_chain, 1);
+    auto time_mt = measure<>::execution(execute_chain, 4);
 
     std::cout << "Single Thread time: " << time_single << " ms.\n";
     std::cout << "Multiple Threads time: " << time_mt << " ms.\n";

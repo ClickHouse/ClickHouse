@@ -132,7 +132,7 @@ struct measure
 int main(int, char **)
 try
 {
-    auto execute_chain = [](String msg, size_t start1, size_t start2, size_t start3, ThreadPool * pool)
+    auto execute_chain = [](String msg, size_t start1, size_t start2, size_t start3, size_t num_threads)
     {
         std::cerr << msg << "\n";
 
@@ -177,19 +177,17 @@ try
 //        printPipeline(processors, out);
 
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
     };
 
-    ThreadPool pool(4, 4, 10);
+    auto even_time_single = measure<>::execution(execute_chain, "Even distribution single thread", 0, 1, 2, 1);
+    auto even_time_mt = measure<>::execution(execute_chain, "Even distribution multiple threads", 0, 1, 2, 4);
 
-    auto even_time_single = measure<>::execution(execute_chain, "Even distribution single thread", 0, 1, 2, nullptr);
-    auto even_time_mt = measure<>::execution(execute_chain, "Even distribution multiple threads", 0, 1, 2, &pool);
+    auto half_time_single = measure<>::execution(execute_chain, "Half distribution single thread", 0, 31, 62, 1);
+    auto half_time_mt = measure<>::execution(execute_chain, "Half distribution multiple threads", 0, 31, 62, 4);
 
-    auto half_time_single = measure<>::execution(execute_chain, "Half distribution single thread", 0, 31, 62, nullptr);
-    auto half_time_mt = measure<>::execution(execute_chain, "Half distribution multiple threads", 0, 31, 62, &pool);
-
-    auto ordered_time_single = measure<>::execution(execute_chain, "Ordered distribution single thread", 0, 61, 122, nullptr);
-    auto ordered_time_mt = measure<>::execution(execute_chain, "Ordered distribution multiple threads", 0, 61, 122, &pool);
+    auto ordered_time_single = measure<>::execution(execute_chain, "Ordered distribution single thread", 0, 61, 122, 1);
+    auto ordered_time_mt = measure<>::execution(execute_chain, "Ordered distribution multiple threads", 0, 61, 122, 4);
 
     std::cout << "Single Thread [0:60:3] [1:60:3] [2:60:3] time: " << even_time_single << " ms.\n";
     std::cout << "Multiple Threads [0:60:3] [1:60:3] [2:60:3] time:" << even_time_mt << " ms.\n";

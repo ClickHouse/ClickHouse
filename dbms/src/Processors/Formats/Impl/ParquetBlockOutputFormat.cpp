@@ -1,4 +1,5 @@
-#include <Common/config.h>
+#include "config_formats.h"
+
 #if USE_PARQUET
 #    include "ParquetBlockOutputFormat.h"
 

@@ -188,7 +188,7 @@ try
 
     auto cur_path = Poco::Path().absolute().toString();
 
-    auto execute_one_stream = [&](String msg, ThreadPool * pool, bool two_level, bool external)
+    auto execute_one_stream = [&](String msg, size_t num_threads, bool two_level, bool external)
     {
         std::cerr << '\n' << msg << "\n";
 
@@ -260,11 +260,11 @@ try
 //        printPipeline(processors, out);
 
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
         sink->checkAllRead();
     };
 
-    auto execute_mult_streams = [&](String msg, ThreadPool * pool, bool two_level, bool external)
+    auto execute_mult_streams = [&](String msg, size_t num_threads, bool two_level, bool external)
     {
         std::cerr << '\n' << msg << "\n";
 
@@ -348,15 +348,14 @@ try
 //        printPipeline(processors, out);
 
         PipelineExecutor executor(processors);
-        executor.execute(pool);
+        executor.execute(num_threads);
         sink->checkAllRead();
     };
 
-    ThreadPool pool(4, 4, 10);
     std::vector<String> messages;
     std::vector<Int64> times;
 
-    auto exec = [&](auto func, String msg, ThreadPool * cur_pool, bool two_level, bool external)
+    auto exec = [&](auto func, String msg, size_t num_threads, bool two_level, bool external)
     {
         msg += ", two_level = " + toString(two_level) + ", external = " + toString(external);
         Int64 time = 0;
@@ -366,7 +365,7 @@ try
             ThreadStatus cur_status;
 
             CurrentThread::attachToIfDetached(thread_group);
-            time = measure<>::execution(func, msg, cur_pool, two_level, external);
+            time = measure<>::execution(func, msg, num_threads, two_level, external);
         };
 
         std::thread thread(wrapper);
@@ -376,23 +375,25 @@ try
         times.emplace_back(time);
     };
 
-    exec(execute_one_stream, "One stream, single thread", nullptr, false, false);
-    exec(execute_one_stream, "One stream, multiple threads", &pool, false, false);
+    size_t num_threads = 4;
 
-    exec(execute_mult_streams, "Multiple streams, single thread", nullptr, false, false);
-    exec(execute_mult_streams, "Multiple streams, multiple threads", &pool, false, false);
+    exec(execute_one_stream, "One stream, single thread", 1, false, false);
+    exec(execute_one_stream, "One stream, multiple threads", num_threads, false, false);
 
-    exec(execute_one_stream, "One stream, single thread", nullptr, true, false);
-    exec(execute_one_stream, "One stream, multiple threads", &pool, true, false);
+    exec(execute_mult_streams, "Multiple streams, single thread", 1, false, false);
+    exec(execute_mult_streams, "Multiple streams, multiple threads", num_threads, false, false);
 
-    exec(execute_mult_streams, "Multiple streams, single thread", nullptr, true, false);
-    exec(execute_mult_streams, "Multiple streams, multiple threads", &pool, true, false);
+    exec(execute_one_stream, "One stream, single thread", 1, true, false);
+    exec(execute_one_stream, "One stream, multiple threads", num_threads, true, false);
 
-    exec(execute_one_stream, "One stream, single thread", nullptr, true, true);
-    exec(execute_one_stream, "One stream, multiple threads", &pool, true, true);
+    exec(execute_mult_streams, "Multiple streams, single thread", 1, true, false);
+    exec(execute_mult_streams, "Multiple streams, multiple threads", num_threads, true, false);
 
-    exec(execute_mult_streams, "Multiple streams, single thread", nullptr, true, true);
-    exec(execute_mult_streams, "Multiple streams, multiple threads", &pool, true, true);
+    exec(execute_one_stream, "One stream, single thread", 1, true, true);
+    exec(execute_one_stream, "One stream, multiple threads", num_threads, true, true);
+
+    exec(execute_mult_streams, "Multiple streams, single thread", 1, true, true);
+    exec(execute_mult_streams, "Multiple streams, multiple threads", num_threads, true, true);
 
     for (size_t i = 0; i < messages.size(); ++i)
         std::cout << messages[i] << " time: " << times[i] << " ms.\n";

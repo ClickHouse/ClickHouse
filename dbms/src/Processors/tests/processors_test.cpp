@@ -219,7 +219,7 @@ try
     PipelineExecutor executor(processors);
     /// SequentialPipelineExecutor executor({sink});
 
-    executor.execute();
+    executor.execute(1);
 
     return 0;
 }
