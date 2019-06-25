@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
 #include "config_core.h"
+#include "config_functions.h"
 
 namespace DB
 {
