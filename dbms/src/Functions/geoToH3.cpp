@@ -110,7 +110,6 @@ public:
         {
             const auto col_vec_lat = static_cast<const ColumnVector<Float64> *>(col_lat);
             const auto col_vec_lon = static_cast<const ColumnVector<Float64> *>(col_lon);
-            const auto col_vec_res = static_cast<const ColumnVector<UInt8> *>(col_res);
 
             auto dst = ColumnVector<UInt64>::create();
             auto & dst_data = dst->getData();
@@ -122,6 +121,7 @@ public:
                 const double lon = col_vec_lon->getData()[row];
                 if (!is_const_resulution)
                 {
+                    const auto col_vec_res = static_cast<const ColumnVector<UInt8> *>(col_res);
                     resolution = col_vec_res->getData()[row];
                 }
 
