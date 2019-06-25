@@ -79,6 +79,8 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     }
 
     size_t rows = block.rows();
+    if (!rows)
+        return;
 
     {
         /// Creating block for update
