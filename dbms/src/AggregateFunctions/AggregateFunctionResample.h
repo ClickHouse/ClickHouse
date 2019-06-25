@@ -27,7 +27,7 @@ private:
 
     Key begin;
     Key end;
-    Key step;
+    size_t step;
 
     size_t total;
     size_t aod;
@@ -38,7 +38,7 @@ public:
         AggregateFunctionPtr nested_function,
         Key begin,
         Key end,
-        Key step,
+        size_t step,
         const DataTypes & arguments,
         const Array & params
     ) :
@@ -50,11 +50,7 @@ public:
         begin {begin},
         end {end},
         step {step},
-        total {
-            static_cast<size_t>(
-                (end - begin + step - (step >= 0 ? 1 : -1)) / step
-            )
-        },
+        total {0},
         aod {nested_function->alignOfData()},
         sod {(nested_function->sizeOfData() + aod - 1) / aod * aod}
     {
@@ -66,18 +62,17 @@ public:
                 ErrorCodes::BAD_ARGUMENTS
             );
 
+        if (end < begin)
+            total = 0;
+        else
+            total = (end - begin + step - 1) / step;
+
         if (total > MAX_ELEMENTS)
             throw Exception(
                 "The range given in function "
                     + getName() + " contains too many elements",
                 ErrorCodes::BAD_ARGUMENTS
             );
-
-        if ((step > 0 && end < begin) || (step < 0 && end > begin))
-        {
-            end = begin;
-            total = 0;
-        }
     }
 
     String getName() const override
@@ -141,10 +136,7 @@ public:
         else
             key = columns[last_col]->getUInt(row_num);
 
-        if (step > 0 && (key < begin || key >= end))
-            return;
-
-        if (step < 0 && (key > begin || key <= end))
+        if (key < begin || key >= end)
             return;
 
         size_t pos = (key - begin) / step;

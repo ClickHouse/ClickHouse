@@ -59,6 +59,7 @@ public:
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
             UInt64 end = params[params.size() - 2].safeGet<UInt64>();
+
             UInt64 step = params[params.size() - 1].safeGet<UInt64>();
 
             return std::make_shared<AggregateFunctionResample<UInt64>>(
@@ -73,15 +74,15 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin, end, step;
+            Int64 begin, end;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))
                 begin = params[params.size() - 3].safeGet<UInt64>();
             if (!params[params.size() - 2].tryGet<Int64>(end))
                 end = params[params.size() - 2].safeGet<UInt64>();
-            if (!params[params.size() - 1].tryGet<Int64>(step))
-                step = params[params.size() - 1].safeGet<UInt64>();
+
+            UInt64 step = params[params.size() - 1].safeGet<UInt64>();
 
             return std::make_shared<AggregateFunctionResample<Int64>>(
                 nested_function,
@@ -95,7 +96,7 @@ public:
 
         throw Exception(
             "Illegal types of argument for aggregate function " + getName()
-                + ", the last three parameters and the last argument should be native Ints or UInts",
+                + ", the type of the last argument should be native integer or integer-like",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
         );
     }
