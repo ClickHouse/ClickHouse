@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 template <typename Key>
@@ -59,7 +59,7 @@ public:
             throw Exception(
                 "The step given in function "
                     + getName() + " should not be zero",
-                ErrorCodes::BAD_ARGUMENTS
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND
             );
 
         if (end < begin)
@@ -71,7 +71,7 @@ public:
             throw Exception(
                 "The range given in function "
                     + getName() + " contains too many elements",
-                ErrorCodes::BAD_ARGUMENTS
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND
             );
     }
 
