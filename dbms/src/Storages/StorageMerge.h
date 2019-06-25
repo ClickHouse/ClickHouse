@@ -65,6 +65,8 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
+    DatabaseIteratorPtr getDatabaseIterator(const Context & context) const;
+
 protected:
     StorageMerge(
         const std::string & name_,
@@ -84,6 +86,8 @@ protected:
 
     void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
                                 BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage);
+
+    bool isVirtualColumn(const String & column_name) const override;
 };
 
 }

@@ -4,7 +4,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -17,7 +17,7 @@
 #endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h> // Y_IGNORE
+    #include <gperftools/malloc_extension.h>
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer

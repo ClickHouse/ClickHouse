@@ -36,7 +36,7 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-                "Attempt to write empty set index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty set index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 

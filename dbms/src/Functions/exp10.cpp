@@ -1,6 +1,8 @@
 #include <Functions/FunctionMathUnaryFloat64.h>
 #include <Functions/FunctionFactory.h>
-#include <common/preciseExp10.h>
+#if !USE_VECTORCLASS
+#   include <common/preciseExp10.h>
+#endif
 
 namespace DB
 {

@@ -158,6 +158,26 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
+            /// We store exception messages in session data.
+            /// Poco HTTPSession also stores exception, but it can be removed at any time.
+            const auto & sessionData = session->sessionData();
+            if (!sessionData.empty())
+            {
+                auto msg = Poco::AnyCast<std::string>(sessionData);
+                if (!msg.empty())
+                {
+                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
+                    /// Host can change IP
+                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                    if (ip != session->getHost())
+                    {
+                        session->reset();
+                        session->setHost(ip);
+                        session->attachSessionData({});
+                    }
+                }
+            }
+
             setTimeouts(*session, timeouts);
 
             return session;

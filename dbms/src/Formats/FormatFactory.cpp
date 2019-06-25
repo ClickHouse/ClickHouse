@@ -41,6 +41,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
+    format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
@@ -71,7 +72,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -80,7 +81,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     const Settings & settings = context.getSettingsRef();
     FormatSettings format_settings = getInputFormatSetting(settings);
 
-    return input_getter(buf, sample, context, max_block_size, format_settings);
+    return input_getter(buf, sample, context, max_block_size, rows_portion_size, format_settings);
 }
 
 
@@ -220,6 +221,7 @@ void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
+void registerOutputFormatMySQLWire(FormatFactory & factory);
 
 void registerOutputFormatProcessorPretty(FormatFactory & factory);
 void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
@@ -259,6 +261,8 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+
+    registerOutputFormatMySQLWire(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);

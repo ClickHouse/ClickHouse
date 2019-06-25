@@ -699,6 +699,10 @@ std::string serialize(Polygon && polygon)
     return result;
 }
 
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out);
+
+void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
+
 
 } /// GeoUtils
 

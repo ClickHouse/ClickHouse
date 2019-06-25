@@ -55,6 +55,7 @@ struct AnalyzedJoin
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
+    bool with_using = true;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     JoinedColumnsList columns_from_joined_table;
@@ -74,6 +75,7 @@ struct AnalyzedJoin
 
     void calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names);
     void calculateAvailableJoinedColumns(bool make_nullable);
+    size_t rightKeyInclusion(const String & name) const;
 };
 
 struct ASTTableExpression;

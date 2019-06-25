@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 void PrettySpaceBlockOutputStream::write(const Block & block)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
@@ -25,12 +24,6 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
     Widths max_widths;
     Widths name_widths;
     calculateWidths(block, widths, max_widths, name_widths, format_settings);
-
-    /// Do not align on too long values.
-    if (terminal_width > 80)
-        for (size_t i = 0; i < columns; ++i)
-            if (max_widths[i] > terminal_width / 2)
-                max_widths[i] = terminal_width / 2;
 
     /// Names
     for (size_t i = 0; i < columns; ++i)

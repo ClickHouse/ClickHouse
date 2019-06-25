@@ -179,3 +179,92 @@ function gen_dockerfiles {
     VERSION_STRING="$1"
     ls -1 docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='$VERSION_STRING'/'
 }
+
+function make_rpm {
+    get_version
+    VERSION_STRING+=$VERSION_POSTFIX
+    VERSION=$VERSION_STRING
+    PACKAGE_DIR=../
+
+    function deb_unpack {
+        rm -rf $PACKAGE-$VERSION
+        alien --verbose --generate --to-rpm --scripts ${PACKAGE_DIR}${PACKAGE}_${VERSION}_${ARCH}.deb
+        cd $PACKAGE-$VERSION
+        mv ${PACKAGE}-$VERSION-2.spec ${PACKAGE}-$VERSION-2.spec.tmp
+        cat ${PACKAGE}-$VERSION-2.spec.tmp \
+            | grep -vF '%dir "/"' \
+            | grep -vF '%dir "/usr/"' \
+            | grep -vF '%dir "/usr/bin/"' \
+            | grep -vF '%dir "/usr/lib/"' \
+            | grep -vF '%dir "/usr/lib/debug/"' \
+            | grep -vF '%dir "/usr/lib/.build-id/"' \
+            | grep -vF '%dir "/usr/share/"' \
+            | grep -vF '%dir "/usr/share/doc/"' \
+            | grep -vF '%dir "/lib/"' \
+            | grep -vF '%dir "/lib/systemd/"' \
+            | grep -vF '%dir "/lib/systemd/system/"' \
+            | grep -vF '%dir "/etc/"' \
+            | grep -vF '%dir "/etc/security/"' \
+            | grep -vF '%dir "/etc/security/limits.d/"' \
+            | grep -vF '%dir "/etc/init.d/"' \
+            | grep -vF '%dir "/etc/cron.d/"' \
+            | grep -vF '%dir "/etc/systemd/system/"' \
+            | grep -vF '%dir "/etc/systemd/"' \
+            > ${PACKAGE}-$VERSION-2.spec
+    }
+
+    function rpm_pack {
+        rpmbuild --buildroot="$CUR_DIR/${PACKAGE}-$VERSION" -bb --target ${TARGET} "${PACKAGE}-$VERSION-2.spec"
+        cd $CUR_DIR
+    }
+
+    function unpack_pack {
+        deb_unpack
+        rpm_pack
+    }
+
+    PACKAGE=clickhouse-server
+    ARCH=all
+    TARGET=noarch
+    unpack_pack
+
+    PACKAGE=clickhouse-client
+    ARCH=all
+    TARGET=noarch
+    unpack_pack
+
+    PACKAGE=clickhouse-test
+    ARCH=all
+    TARGET=noarch
+    deb_unpack
+    mv ${PACKAGE}-$VERSION-2.spec ${PACKAGE}-$VERSION-2.spec_tmp
+    echo "Requires: python2" >> ${PACKAGE}-$VERSION-2.spec
+    #echo "Requires: python2-termcolor" >> ${PACKAGE}-$VERSION-2.spec
+    cat ${PACKAGE}-$VERSION-2.spec_tmp >> ${PACKAGE}-$VERSION-2.spec
+    rpm_pack
+
+    PACKAGE=clickhouse-common-static
+    ARCH=amd64
+    TARGET=x86_64
+    unpack_pack
+
+    PACKAGE=clickhouse-common-static-dbg
+    ARCH=amd64
+    TARGET=x86_64
+    unpack_pack
+
+    mv clickhouse-*-${VERSION_STRING}-2.*.rpm ${PACKAGE_DIR}
+}
+
+function make_tgz {
+    get_version
+    VERSION_STRING+=$VERSION_POSTFIX
+    VERSION=$VERSION_STRING
+    PACKAGE_DIR=../
+
+    for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
+        alien --verbose --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION}_*.deb
+    done
+
+    mv clickhouse-*-${VERSION_STRING}.tgz ${PACKAGE_DIR}
+}
