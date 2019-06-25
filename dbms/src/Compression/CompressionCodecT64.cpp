@@ -592,10 +592,10 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
             if (name == "byte")
                 variant = Variant::Byte;
-            if (name == "bit")
+            else if (name == "bit")
                 variant = Variant::Bit;
             else
-                throw Exception("Unknown preprocessing method for T64: " + name, ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception("Wrong modification for T64: " + name, ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
 
         auto type_idx = typeIdx(type);

@@ -26,7 +26,7 @@ public:
     UInt8 getMethodByte() const override;
     String getCodecDesc() const override
     {
-        return String("T64(") + ((variant == Variant::Byte) ? "byte" : "bit") + ")";
+        return String("T64(\'") + ((variant == Variant::Byte) ? "byte" : "bit") + "\')";
     }
 
     void useInfoAboutType(DataTypePtr data_type) override;
