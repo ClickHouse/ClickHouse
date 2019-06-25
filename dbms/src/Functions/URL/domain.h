@@ -3,6 +3,7 @@
 #include "protocol.h"
 #include <common/find_symbols.h>
 #include <cstring>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -31,22 +32,51 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    Pos slash_pos = find_first_symbols<'/'>(pos, end);
-    if (slash_pos < end - 1 && *(slash_pos + 1) == '/')
-        pos = slash_pos + 2;
-    else
-        pos = data;
-
-    if (pos != data)
+    if (*pos == '/' && *(pos + 1) == '/')
+        pos += 2;
+    else if (isAlphaASCII(*pos)) /// Slightly modified getURLScheme
     {
-        StringRef scheme = getURLScheme(data, pos - data - 2);
-        Pos scheme_end = data + scheme.size;
-        if (scheme.size && (pos - scheme_end != 3 || *scheme_end != ':'))
-            return StringRef{};
+        for (++pos; pos < end; ++pos)
+        {
+            if (!isAlphaNumericASCII(*pos))
+            {
+                switch(*pos)
+                {
+                case '.':
+                case '-':
+                case '+':
+                    break;
+                case ' ': /// restricted symbols
+                case '\t':
+                case '<':
+                case '>':
+                case '%':
+                case '{':
+                case '}':
+                case '|':
+                case '\\':
+                case '^':
+                case '~':
+                case '[':
+                case ']':
+                case ';':
+                case '=':
+                case '&':
+                    return StringRef{};
+                default:
+                    goto exit_loop;
+                }
+            }
+        }
+ exit_loop:;
+        if (end - pos > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
+            pos += 3;
+        else
+            pos = data;
     }
 
-    auto start_of_host = pos;
     Pos dot_pos = nullptr;
+    auto start_of_host = pos;
     for (; pos < end; ++pos)
     {
         switch (*pos)
