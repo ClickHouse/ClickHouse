@@ -42,7 +42,10 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
+
+#if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
+#endif
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -86,7 +89,10 @@ void registerFunctions()
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
     registerFunctionTransform(factory);
+
+#if USE_H3
     registerFunctionGeoToH3(factory);
+#endif
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
