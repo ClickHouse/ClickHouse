@@ -12,8 +12,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class AggregateFunctionCombinatorResample final : public
-    IAggregateFunctionCombinator
+class AggregateFunctionCombinatorResample final : public IAggregateFunctionCombinator
 {
 public:
     String getName() const override
@@ -24,11 +23,9 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                "Incorrect number of arguments for aggregate function with "
+            throw Exception("Incorrect number of arguments for aggregate function with "
                     + getName() + " suffix",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            );
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
@@ -36,11 +33,9 @@ public:
     Array transformParameters(const Array & params) const override
     {
         if (params.size() < 3)
-            throw Exception(
-                "Incorrect number of parameters for aggregate function with "
+            throw Exception("Incorrect number of parameters for aggregate function with "
                     + getName() + " suffix",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            );
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return Array(params.begin(), params.end() - 3);
     }
@@ -48,12 +43,9 @@ public:
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
-        const Array & params
-    ) const override
+        const Array & params) const override
     {
-        WhichDataType which {
-            arguments.back()
-        };
+        WhichDataType which{arguments.back()};
 
         if (which.isNativeUInt() || which.isDateOrDateTime())
         {
@@ -68,8 +60,7 @@ public:
                 end,
                 step,
                 arguments,
-                params
-            );
+                params);
         }
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
@@ -90,25 +81,19 @@ public:
                 end,
                 step,
                 arguments,
-                params
-            );
+                params);
         }
 
         throw Exception(
             "Illegal types of argument for aggregate function " + getName()
                 + ", the type of the last argument should be native integer or integer-like",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        );
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
-void registerAggregateFunctionCombinatorResample(
-    AggregateFunctionCombinatorFactory & factory
-)
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(
-        std::make_shared<AggregateFunctionCombinatorResample>()
-    );
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
 }
 
 }
