@@ -165,6 +165,11 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
+Empty unquoted input values are replaced with default values for the respective
+columns, if
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+is enabled.
+
 `NULL` is formatted as `\N`.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
@@ -758,7 +763,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop, you can use `HDFS` table engines.
+To exchange data with the Hadoop, you can use `HDFS` table engine.
 
 ## Format Schema {#formatschema}
 
