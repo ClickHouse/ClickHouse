@@ -40,7 +40,7 @@ inline StringRef getURLHost(const char * data, size_t size)
         {
             if (!isAlphaNumericASCII(*pos))
             {
-                switch(*pos)
+                switch (*pos)
                 {
                 case '.':
                 case '-':
@@ -68,8 +68,7 @@ inline StringRef getURLHost(const char * data, size_t size)
                 }
             }
         }
- exit_loop:;
-        if (end - pos > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
+exit_loop: if (end - pos > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
             pos += 3;
         else
             pos = data;
