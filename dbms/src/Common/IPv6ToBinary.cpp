@@ -1,5 +1,6 @@
 #include "IPv6ToBinary.h"
 #include <Poco/Net/IPAddress.h>
+#include <cstring>
 
 
 namespace DB

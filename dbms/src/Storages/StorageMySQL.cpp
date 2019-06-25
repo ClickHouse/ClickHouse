@@ -26,6 +26,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+String backQuoteMySQL(const String & x)
+{
+    String res(x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeBackQuotedStringMySQL(x, wb);
+    }
+    return res;
+}
 
 StorageMySQL::StorageMySQL(const std::string & name,
     mysqlxx::Pool && pool,
@@ -57,7 +66,7 @@ BlockInputStreams StorageMySQL::read(
 {
     check(column_names);
     String query = transformQueryForExternalDatabase(
-        *query_info.query, getColumns().getOrdinary(), IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
+        *query_info.query, getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & column_name : column_names)
@@ -111,7 +120,7 @@ public:
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
-        sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
+        sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.global_context);
@@ -163,7 +172,7 @@ public:
         {
             if (it != block.begin())
                 out << ", ";
-            out << backQuoteIfNeed(it->name);
+            out << backQuoteMySQL(it->name);
         }
         return out.str();
     }
