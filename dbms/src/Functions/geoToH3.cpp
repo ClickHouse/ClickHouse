@@ -12,7 +12,10 @@
 
 
 extern "C" {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation"
 #include <h3api.h>
+#pragma clang diagnostic pop
 }
 
 namespace DB
