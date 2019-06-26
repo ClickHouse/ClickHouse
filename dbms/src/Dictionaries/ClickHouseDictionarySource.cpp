@@ -30,10 +30,8 @@ static ConnectionPoolWithFailoverPtr createPool(
     bool secure,
     const std::string & db,
     const std::string & user,
-    const std::string & password,
-    const Context & context)
+    const std::string & password)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(context.getSettingsRef());
     ConnectionPoolPtrs pools;
     pools.emplace_back(std::make_shared<ConnectionPool>(
         MAX_CONNECTIONS,
@@ -42,7 +40,6 @@ static ConnectionPoolWithFailoverPtr createPool(
         db,
         user,
         password,
-        timeouts,
         "ClickHouseDictionarySource",
         Protocol::Compression::Enable,
         secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
@@ -72,7 +69,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , sample_block{sample_block}
     , context(context_)
     , is_local{isLocalAddress({host, port}, context.getTCPPort())}
-    , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)}
+    , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
@@ -98,7 +95,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , sample_block{other.sample_block}
     , context(other.context)
     , is_local{other.is_local}
-    , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)}
+    , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{other.load_all_query}
 {
 }
@@ -179,6 +176,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 {
     if (is_local)
         return executeQuery(query, context, true).in;
+
     return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
 }
 

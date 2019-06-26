@@ -7,8 +7,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
-#include <Common/config.h>
-
+#include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
 
@@ -69,7 +68,7 @@ public:
         ADD_ALIASES,
     };
 
-    Type type;
+    Type type{};
 
     /// For ADD/REMOVE/COPY_COLUMN.
     std::string source_name;

@@ -1,5 +1,4 @@
 <test>
-    <name>date_parsing</name>
     <type>loop</type>
 
     <stop_conditions>

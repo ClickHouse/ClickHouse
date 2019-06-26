@@ -1,5 +1,5 @@
+# docker build -t yandex/clickhouse-integration-test .
 FROM ubuntu:18.04
-# yandex/clickhouse-integration-test
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata python llvm-6.0 llvm-6.0-dev libreadline-dev libicu-dev bsdutils \

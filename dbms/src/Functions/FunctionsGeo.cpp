@@ -335,7 +335,7 @@ public:
         const IColumn * longitude = block.getByPosition(arguments[0]).column.get();
         const IColumn * latitude = block.getByPosition(arguments[1]).column.get();
 
-        const UInt64 precision_value = std::min(GEOHASH_MAX_TEXT_LENGTH,
+        const UInt64 precision_value = std::min<UInt64>(GEOHASH_MAX_TEXT_LENGTH,
                 arguments.size() == 3 ? block.getByPosition(arguments[2]).column->get64(0) : GEOHASH_MAX_TEXT_LENGTH);
 
         ColumnPtr & res_column = block.getByPosition(result).column;

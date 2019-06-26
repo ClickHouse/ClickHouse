@@ -1,3 +1,5 @@
+#include "StorageSystemParts.h"
+
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/System/StorageSystemParts.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -38,6 +39,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"data_version",                               std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
+        {"is_frozen",                                  std::make_shared<DataTypeUInt8>()},
 
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
@@ -96,6 +98,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         columns[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
         columns[i++]->insert(part->getIndexSizeInBytes());
         columns[i++]->insert(part->getIndexSizeInAllocatedBytes());
+        columns[i++]->insert(part->is_frozen);
 
         columns[i++]->insert(info.database);
         columns[i++]->insert(info.table);

@@ -53,10 +53,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments.size())
+        if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
+        const auto * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -66,19 +66,21 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!arguments.size())
+        if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const ColumnConst * column_with_states
-                = typeid_cast<const ColumnConst *>(&*block.getByPosition(arguments[0]).column);
+        const auto * model = block.getByPosition(arguments[0]).column.get();
 
+        if (const auto * column_with_states = typeid_cast<const ColumnConst *>(model))
+            model = column_with_states->getDataColumnPtr().get();
 
-        if (!column_with_states)
+        const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
+
+        if (!agg_function)
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column =
-                typeid_cast<const ColumnAggregateFunction *>(&*column_with_states->getDataColumnPtr())->predictValues(block, arguments, context);
+        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
     }
 
     const Context & context;
