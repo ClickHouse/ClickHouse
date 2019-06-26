@@ -12,7 +12,7 @@
 
 
 extern "C" {
-#include <h3Index.h>
+#include <h3api.h>
 }
 
 namespace DB
@@ -126,7 +126,8 @@ public:
                 }
 
                 GeoCoord coord;
-                setGeoDegs(&coord, lat, lon);
+                coord.lat = H3_EXPORT(degsToRads)(lat);
+                coord.lon = H3_EXPORT(degsToRads)(lon);
 
                 H3Index hindex = H3_EXPORT(geoToH3)(&coord, resolution);
 
@@ -144,7 +145,8 @@ public:
             const double lon = col_const_lon->getValue<Float64>();
 
             GeoCoord coord;
-            setGeoDegs(&coord, lat, lon);
+            coord.lat = H3_EXPORT(degsToRads)(lat);
+            coord.lon = H3_EXPORT(degsToRads)(lon);
             H3Index hindex = H3_EXPORT(geoToH3)(&coord, resolution);
 
             block.getByPosition(result).column = DataTypeUInt64().createColumnConst(size, hindex);

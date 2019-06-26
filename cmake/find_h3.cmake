@@ -7,7 +7,7 @@ if (USE_INTERNAL_H3_LIBRARY)
     set (H3_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib/include)
 else ()
     find_library (H3_LIBRARY h3)
-    find_path (H3_INCLUDE_DIR NAMES geoCoord.h PATHS ${H3_INCLUDE_PATHS})
+    find_path (H3_INCLUDE_DIR NAMES h3api.h PATHS ${H3_INCLUDE_PATHS})
 endif ()
 
 if (H3_LIBRARY AND H3_INCLUDE_DIR)
