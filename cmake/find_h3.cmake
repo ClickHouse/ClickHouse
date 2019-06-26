@@ -1,5 +1,7 @@
 option (USE_INTERNAL_H3_LIBRARY "Set to FALSE to use system h3 library instead of bundled" ${NOT_UNBUNDLED})
 
+set (H3_INCLUDE_PATHS /usr/local/include/h3)
+
 if (USE_INTERNAL_H3_LIBRARY)
     set (H3_LIBRARY h3)
     set (H3_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib/include)
