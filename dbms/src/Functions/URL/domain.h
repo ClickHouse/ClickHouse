@@ -4,13 +4,15 @@
 #include <common/find_symbols.h>
 #include <cstring>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <Common/StringSearcher.h>
 
 namespace DB
 {
 
 namespace
 {
+
+const ASCIICaseSensitiveStringSearcher SCHEME_SEARCHER{"://", 3};
 
 inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
@@ -33,45 +35,15 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos end = data + size;
 
     if (*pos == '/' && *(pos + 1) == '/')
-        pos += 2;
-    else if (isAlphaASCII(*pos)) /// Slightly modified getURLScheme
     {
-        for (++pos; pos < end; ++pos)
-        {
-            if (!isAlphaNumericASCII(*pos))
-            {
-                switch (*pos)
-                {
-                case '.':
-                case '-':
-                case '+':
-                    break;
-                case ' ': /// restricted symbols
-                case '\t':
-                case '<':
-                case '>':
-                case '%':
-                case '{':
-                case '}':
-                case '|':
-                case '\\':
-                case '^':
-                case '~':
-                case '[':
-                case ']':
-                case ';':
-                case '=':
-                case '&':
-                    return StringRef{};
-                default:
-                    goto exit_loop;
-                }
-            }
-        }
-exit_loop: if (end - pos > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
-            pos += 3;
-        else
-            pos = data;
+        pos += 2;
+    }
+    else
+    {
+        size_t max_scheme_size = std::min(size, 16UL);
+        Pos scheme_end = reinterpret_cast<Pos>(SCHEME_SEARCHER.search(reinterpret_cast<const UInt8 *>(data), max_scheme_size));
+        if (scheme_end != data + max_scheme_size)
+            pos = scheme_end + 3;
     }
 
     Pos dot_pos = nullptr;
@@ -91,7 +63,7 @@ exit_loop: if (end - pos > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) =
         case '@': /// myemail@gmail.com
             start_of_host = pos + 1;
             break;
-        case ' ': /// restricted symbols
+        case ' ': /// restricted symbols in whole URL
         case '\t':
         case '<':
         case '>':
