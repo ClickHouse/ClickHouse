@@ -101,6 +101,8 @@ Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for b
 Greater values stands for better compression and higher CPU usage.
 - `Delta(delta_bytes)` - compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
 Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
+- `DoubleDelta` - stores delta of deltas in compact binary form, compressing values down to 1 bit (in the best case). Best compression rates are achieved on monotonic sequences with constant stride, e.g. time samples. Can be used against any fixed-width type. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix instead of 4-bit prefix.
+- `Gorilla` - stores (parts of) xored values in compact binary form, compressing values down to 1 bit (in the best case). Best compression rate is achieved when neighbouring values are binary equal. Basic use case - floating point data that do not change rapidly. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types.
 
 Syntax example:
 ```
