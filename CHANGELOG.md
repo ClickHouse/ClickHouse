@@ -35,7 +35,7 @@
 * Add new setting new setting `kafka_commit_every_batch` to regulate Kafka committing policy. 
 It allows to set commit mode: after every batch of messages is handled, or after the whole block is written to the storage. It's a trade-off between losing some messages or reading them twice in some extreme situations. [#5308](https://github.com/yandex/ClickHouse/pull/5308) ([Ivan](https://github.com/abyss7))
 * Make `windowFunnel` support other Unsigned Integer Types. [#5320](https://github.com/yandex/ClickHouse/pull/5320) ([sundyli](https://github.com/sundy-li))
-* Allow to shadow virtual column '_table' in Merge engine. [#5325](https://github.com/yandex/ClickHouse/pull/5325) ([Ivan](https://github.com/abyss7))
+* Allow to shadow virtual column `_table` in Merge engine. [#5325](https://github.com/yandex/ClickHouse/pull/5325) ([Ivan](https://github.com/abyss7))
 * Make `sequenceMatch` aggregate functions support other unsigned Integer types [#5339](https://github.com/yandex/ClickHouse/pull/5339) ([sundyli](https://github.com/sundy-li))
 * Better error messages if checksum mismatch is most likely caused by hardware failures. [#5355](https://github.com/yandex/ClickHouse/pull/5355) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Check that underlying tables support sampling for `StorageMerge` [#5366](https://github.com/yandex/ClickHouse/pull/5366) ([Ivan](https://github.com/abyss7))
