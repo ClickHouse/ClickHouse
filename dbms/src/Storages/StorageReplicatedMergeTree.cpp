@@ -3042,8 +3042,9 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             if (!selected)
             {
-                LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
-                return handle_noop(disable_reason);
+                String message = "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason)
+                LOG_INFO(log, message);
+                return handle_noop(message);
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
