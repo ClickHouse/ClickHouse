@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
-#include "config_core.h"
 
 namespace DB
 {
@@ -41,10 +40,6 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 
-#if USE_ICU
-void registerFunctionConvertCharset(FunctionFactory &);
-#endif
-
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
@@ -82,10 +77,6 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
-
-#if USE_ICU
-    registerFunctionConvertCharset(factory);
-#endif
 }
 
 }
