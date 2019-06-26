@@ -5,6 +5,10 @@
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
 
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
+#   include <sys/endian.h>
+#endif
+
 namespace DB
 {
 
