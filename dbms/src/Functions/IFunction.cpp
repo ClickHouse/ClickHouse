@@ -111,10 +111,10 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
     if (src->onlyNull())
         return src;
-    else if (src->isColumnNullable())
+    else if (auto * nullable = getNullableColumn(*src))
     {
-        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
     }
 
     for (const auto & arg : args)
@@ -130,9 +130,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
         if (elem.column->isColumnConst())
             continue;
 
-        if (elem.column->isColumnNullable())
+        if (auto * nullable = getNullableColumn(*elem.column))
         {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
+            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
             if (!result_null_map_column)
             {
                 result_null_map_column = null_map_column;

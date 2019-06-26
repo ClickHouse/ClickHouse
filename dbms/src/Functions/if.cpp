@@ -660,7 +660,6 @@ private:
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
-        bool cond_is_nullable = arg_cond.column->isColumnNullable();
 
         if (cond_is_null)
         {
@@ -668,11 +667,11 @@ private:
             return true;
         }
 
-        if (cond_is_nullable)
+        if (auto * nullable = getNullableColumn(*arg_cond.column))
         {
             Block temporary_block
             {
-                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
+                { nullable->getNestedColumnPtr(), removeNullable(arg_cond.type), arg_cond.name },
                 block.getByPosition(arguments[1]),
                 block.getByPosition(arguments[2]),
                 block.getByPosition(result)
@@ -703,8 +702,8 @@ private:
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
-        if (column->isColumnNullable())
-            return static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
+        if (auto * nullable = getNullableColumn(*column))
+            return nullable->getNestedColumnPtr();
 
         return column;
     }
@@ -715,8 +714,8 @@ private:
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
-        bool then_is_nullable = typeid_cast<const ColumnNullable *>(arg_then.column.get());
-        bool else_is_nullable = typeid_cast<const ColumnNullable *>(arg_else.column.get());
+        auto * then_is_nullable = getNullableColumn(*arg_then.column);
+        auto * else_is_nullable = getNullableColumn(*arg_else.column);
 
         if (!then_is_nullable && !else_is_nullable)
             return false;
@@ -731,14 +730,14 @@ private:
                 arg_cond,
                 {
                     then_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumnPtr()
+                        ? then_is_nullable->getNullMapColumnPtr()
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumnPtr()
+                        ? else_is_nullable->getNullMapColumnPtr()
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
@@ -818,7 +817,7 @@ private:
                 {
                     auto arg_else_column = arg_else.column;
                     auto result_column = (*std::move(arg_else_column)).mutate();
-                    static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    getNullableColumnRef(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else
@@ -860,7 +859,7 @@ private:
                 {
                     auto arg_then_column = arg_then.column;
                     auto result_column = (*std::move(arg_then_column)).mutate();
-                    static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    getNullableColumnRef(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else

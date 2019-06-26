@@ -544,7 +544,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (auto nullable_keys = typeid_cast<const ColumnNullable *>(keys.get()))
+    if (auto * nullable_keys = getNullableColumn(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();

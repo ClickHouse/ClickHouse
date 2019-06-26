@@ -3,7 +3,6 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
