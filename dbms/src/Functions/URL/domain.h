@@ -40,10 +40,43 @@ inline StringRef getURLHost(const char * data, size_t size)
     }
     else
     {
-        size_t max_scheme_size = std::min(size, 16UL);
-        Pos scheme_end = reinterpret_cast<Pos>(SCHEME_SEARCHER.search(reinterpret_cast<const UInt8 *>(data), max_scheme_size));
-        if (scheme_end != data + max_scheme_size)
-            pos = scheme_end + 3;
+        Pos scheme_end = data + std::min(size, 16UL);
+        for (++pos; pos < scheme_end; ++pos)
+        {
+            if (!isAlphaNumericASCII(*pos))
+            {
+                switch (*pos)
+                {
+                case '.':
+                case '-':
+                case '+':
+                    break;
+                case ' ': /// restricted symbols
+                case '\t':
+                case '<':
+                case '>':
+                case '%':
+                case '{':
+                case '}':
+                case '|':
+                case '\\':
+                case '^':
+                case '~':
+                case '[':
+                case ']':
+                case ';':
+                case '=':
+                case '&':
+                    return StringRef{};
+                default:
+                    goto exloop;
+                }
+            }
+        }
+exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
+            pos += 3;
+        else
+            pos = data;
     }
 
     Pos dot_pos = nullptr;

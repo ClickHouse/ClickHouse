@@ -12,7 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Gets the domain. Cut scheme by substring '://'. Size of cutted scheme is less than 16 bytes. Scheme correctness is not checked.
+Gets the domain. Cut scheme with size less than 16 bytes.
 
 ### domainWithoutWWW
 
