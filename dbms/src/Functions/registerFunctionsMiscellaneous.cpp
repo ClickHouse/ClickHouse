@@ -45,6 +45,7 @@ void registerFunctionJoinGet(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -90,6 +91,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionFilesystem(factory);
     registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);
+    registerFunctionTransform(factory);
 }
 
 }
