@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 
 
@@ -144,5 +145,21 @@ private:
 
 
 ColumnPtr makeNullable(const ColumnPtr & column);
+
+inline const ColumnNullable * getNullableColumn(const IColumn & column)
+{
+    const IColumn * ptr = &column;
+    if (auto * const_column = typeid_cast<const ColumnConst *>(ptr))
+        ptr = &const_column->getDataColumn();
+
+    return typeid_cast<const ColumnNullable *>(ptr);
+}
+
+inline ColumnNullable & getNullableColumnRef(IColumn & column)
+{
+    if (auto * const_column = typeid_cast<ColumnConst *>(&column))
+        return static_cast<ColumnNullable &>(const_column->getDataColumn());
+    return static_cast<ColumnNullable &>(column);
+}
 
 }

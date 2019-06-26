@@ -289,8 +289,8 @@ void Join::setSampleBlock(const Block & block)
         }
 
         /// We will join only keys, where all components are not NULL.
-        if (key_columns[i]->isColumnNullable())
-            key_columns[i] = &static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn();
+        if (auto * nullable = getNullableColumn(*key_columns[i]))
+            key_columns[i] = &nullable->getNestedColumn();
     }
 
     if (strictness == ASTTableJoin::Strictness::Asof)
@@ -1426,8 +1426,8 @@ private:
             if (changes_bitmap[i])
             {
                 ColumnPtr column = std::move(columns[i]);
-                if (column->isColumnNullable())
-                    column = static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
+                if (auto * nullable = getNullableColumn(*column))
+                    column = nullable->getNestedColumnPtr();
                 else
                     column = makeNullable(column);
 

@@ -310,7 +310,7 @@ struct AggregationMethodKeysFixed
             /// If we have a nullable column, get its nested column and its null map.
             if (has_nullable_keys && key_columns[i]->isColumnNullable())
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+                ColumnNullable & nullable_col = getNullableColumnRef(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
                 null_map = static_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
             }

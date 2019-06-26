@@ -73,10 +73,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (col->isColumnNullable())
+        if (auto * nullable = getNullableColumn(*col))
         {
-            const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-            nested_key_columns.push_back(&nullable_col.getNestedColumn());
+            nested_key_columns.push_back(&nullable->getNestedColumn());
             has_nullable_key = true;
         }
         else

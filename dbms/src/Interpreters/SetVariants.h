@@ -78,11 +78,10 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (col->isColumnNullable())
+            if (auto * nullable = getNullableColumn(*col))
             {
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(&nullable_col.getNestedColumn());
-                null_maps.push_back(&nullable_col.getNullMapColumn());
+                actual_columns.push_back(&nullable->getNestedColumn());
+                null_maps.push_back(&nullable->getNullMapColumn());
             }
             else
             {

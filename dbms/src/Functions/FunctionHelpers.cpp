@@ -64,18 +64,14 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
             {
                 res.insert({nullptr, nested_type, col.name});
             }
-            else if (col.column->isColumnNullable())
+            else if (auto * nullable = getNullableColumn(*col.column))
             {
-                const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
+                const auto & nested_col = nullable->getNestedColumnPtr();
 
-                res.insert({nested_col, nested_type, col.name});
-            }
-            else if (col.column->isColumnConst())
-            {
-                const auto & nested_col = static_cast<const ColumnNullable &>(
-                    static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
-
-                res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                if (col.column->isColumnConst())
+                    res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
+                else
+                    res.insert({nested_col, nested_type, col.name});
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
