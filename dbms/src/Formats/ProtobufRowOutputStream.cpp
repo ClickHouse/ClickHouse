@@ -1,6 +1,6 @@
 #include <Formats/FormatFactory.h>
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include "ProtobufRowOutputStream.h"

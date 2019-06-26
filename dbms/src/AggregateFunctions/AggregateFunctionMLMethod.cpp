@@ -46,11 +46,11 @@ namespace
         /// Such default parameters were picked because they did good on some tests,
         /// though it still requires to fit parameters to achieve better result
         auto learning_rate = Float64(0.01);
-        auto l2_reg_coef = Float64(0.01);
-        UInt32 batch_size = 1;
+        auto l2_reg_coef = Float64(0.1);
+        UInt32 batch_size = 15;
 
-        std::shared_ptr<IWeightsUpdater> weights_updater = std::make_shared<StochasticGradientDescent>();
-        std::shared_ptr<IGradientComputer> gradient_computer;
+        std::string weights_updater_name = "SGD";
+        std::unique_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
         {
@@ -66,31 +66,19 @@ namespace
         }
         if (parameters.size() > 3)
         {
-            if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'SGD\'")
-            {
-                weights_updater = std::make_shared<StochasticGradientDescent>();
-            }
-            else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Momentum\'")
-            {
-                weights_updater = std::make_shared<Momentum>();
-            }
-            else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Nesterov\'")
-            {
-                weights_updater = std::make_shared<Nesterov>();
-            }
-            else
-            {
-                throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
+            weights_updater_name = parameters[3].safeGet<String>();
+            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov")
+                throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         if (std::is_same<Method, FuncLinearRegression>::value)
         {
-            gradient_computer = std::make_shared<LinearRegression>();
+            gradient_computer = std::make_unique<LinearRegression>();
         }
         else if (std::is_same<Method, FuncLogisticRegression>::value)
         {
-            gradient_computer = std::make_shared<LogisticRegression>();
+            gradient_computer = std::make_unique<LogisticRegression>();
         }
         else
         {
@@ -99,21 +87,20 @@ namespace
 
         return std::make_shared<Method>(
             argument_types.size() - 1,
-            gradient_computer,
-            weights_updater,
+            std::move(gradient_computer),
+            weights_updater_name,
             learning_rate,
             l2_reg_coef,
             batch_size,
             argument_types,
             parameters);
     }
-
 }
 
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("linearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
-    factory.registerFunction("logisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
+    factory.registerFunction("stochasticLinearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
+    factory.registerFunction("stochasticLogisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
 }
 
 LinearModelData::LinearModelData(
@@ -146,9 +133,14 @@ void LinearModelData::update_state()
 }
 
 void LinearModelData::predict(
-    ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const
+    ColumnVector<Float64>::Container & container,
+    Block & block,
+    size_t offset,
+    size_t limit,
+    const ColumnNumbers & arguments,
+    const Context & context) const
 {
-    gradient_computer->predict(container, block, arguments, weights, bias, context);
+    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -165,7 +157,6 @@ void LinearModelData::returnWeights(IColumn & to) const
             = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
     val_to.reserve(old_size + size);
-
     for (size_t i = 0; i + 1 < size; ++i)
         val_to.push_back(weights[i]);
 
@@ -215,7 +206,8 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
 void LinearModelData::add(const IColumn ** columns, size_t row_num)
 {
     /// first column stores target; features start from (columns + 1)
-    const auto target = (*columns[0])[row_num].get<Float64>();
+    Float64 target = (*columns[0]).getFloat64(row_num);
+
     /// Here we have columns + 1 as first column corresponds to target value, and others - to features
     weights_updater->add_to_batch(
         gradient_batch, *gradient_computer, weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
@@ -357,42 +349,38 @@ void IWeightsUpdater::add_to_batch(
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
     Block & block,
+    size_t offset,
+    size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & context) const
+    const Context & /*context*/) const
 {
     size_t rows_num = block.rows();
-    std::vector<Float64> results(rows_num, bias);
+
+    if (offset > rows_num || offset + limit > rows_num)
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+
         if (!isNativeNumber(cur_col.type))
-        {
             throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
-        }
 
-        /// If column type is already Float64 then castColumn simply returns it
-        auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
-        auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+        auto & features_column = cur_col.column;
 
-        if (!features_column)
-        {
-            throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
-        }
-
-        for (size_t row_num = 0; row_num != rows_num; ++row_num)
-        {
-            results[row_num] += weights[i - 1] * features_column->getElement(row_num);
-        }
+        for (size_t row_num = 0; row_num < limit; ++row_num)
+            results[row_num] += weights[i - 1] * features_column->getFloat64(offset + row_num);
     }
 
-    container.reserve(rows_num);
-    for (size_t row_num = 0; row_num != rows_num; ++row_num)
-    {
+    container.reserve(container.size() + limit);
+    for (size_t row_num = 0; row_num < limit; ++row_num)
         container.emplace_back(1 / (1 + exp(-results[row_num])));
-    }
 }
 
 void LogisticRegression::compute(
@@ -408,7 +396,7 @@ void LogisticRegression::compute(
     Float64 derivative = bias;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i])[row_num].get<Float64>();
+        auto value = (*columns[i]).getFloat64(row_num);
         derivative += weights[i] * value;
     }
     derivative *= target;
@@ -417,18 +405,20 @@ void LogisticRegression::compute(
     batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i])[row_num].get<Float64>();
-        batch_gradient[i] += learning_rate * target * value / (derivative + 1) - 2 * l2_reg_coef * weights[i];
+        auto value = (*columns[i]).getFloat64(row_num);
+        batch_gradient[i] += learning_rate * target * value / (derivative + 1) - 2 * learning_rate * l2_reg_coef * weights[i];
     }
 }
 
 void LinearRegression::predict(
     ColumnVector<Float64>::Container & container,
     Block & block,
+    size_t offset,
+    size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
     Float64 bias,
-    const Context & context) const
+    const Context & /*context*/) const
 {
     if (weights.size() + 1 != arguments.size())
     {
@@ -436,36 +426,33 @@ void LinearRegression::predict(
     }
 
     size_t rows_num = block.rows();
-    std::vector<Float64> results(rows_num, bias);
+
+    if (offset > rows_num || offset + limit > rows_num)
+        throw Exception("Invalid offset and limit for LogisticRegression::predict. "
+                        "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                        " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<Float64> results(limit, bias);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-        if (!isNativeNumber(cur_col.type))
-        {
-            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
-        }
 
-        /// If column type is already Float64 then castColumn simply returns it
-        auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
-        auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+        if (!isNativeNumber(cur_col.type))
+            throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
+
+        auto features_column = cur_col.column;
 
         if (!features_column)
-        {
             throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
-        }
 
-        for (size_t row_num = 0; row_num != rows_num; ++row_num)
-        {
-            results[row_num] += weights[i - 1] * features_column->getElement(row_num);
-        }
+        for (size_t row_num = 0; row_num < limit; ++row_num)
+            results[row_num] += weights[i - 1] * features_column->getFloat64(row_num + offset);
     }
 
-    container.reserve(rows_num);
-    for (size_t row_num = 0; row_num != rows_num; ++row_num)
-    {
+    container.reserve(container.size() + limit);
+    for (size_t row_num = 0; row_num < limit; ++row_num)
         container.emplace_back(results[row_num]);
-    }
 }
 
 void LinearRegression::compute(
@@ -481,7 +468,7 @@ void LinearRegression::compute(
     Float64 derivative = (target - bias);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i])[row_num].get<Float64>();
+        auto value = (*columns[i]).getFloat64(row_num);
         derivative -= weights[i] * value;
     }
     derivative *= (2 * learning_rate);
@@ -489,8 +476,8 @@ void LinearRegression::compute(
     batch_gradient[weights.size()] += derivative;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i])[row_num].get<Float64>();
-        batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
+        auto value = (*columns[i]).getFloat64(row_num);
+        batch_gradient[i] += derivative * value - 2 * learning_rate * l2_reg_coef * weights[i];
     }
 }
 

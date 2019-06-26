@@ -10,18 +10,18 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_XXHASH
-#   include <xxhash.h> // Y_IGNORE
+#   include <xxhash.h>
 #endif
 
+#include "config_core.h"
 #if USE_SSL
 #   include <openssl/md5.h>
 #   include <openssl/sha.h>
 #endif
 
 #include <Poco/ByteOrder.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -38,7 +38,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 

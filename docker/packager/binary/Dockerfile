@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:18.04
 
 RUN apt-get --allow-unauthenticated update -y \
@@ -44,7 +45,8 @@ RUN apt-get update -y \
             ninja-build \
             gperf \
             git \
-            tzdata
+            tzdata \
+            gperf
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

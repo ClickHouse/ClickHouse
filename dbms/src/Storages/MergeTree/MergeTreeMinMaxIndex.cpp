@@ -27,7 +27,7 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-                "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < index.columns.size(); ++i)
     {

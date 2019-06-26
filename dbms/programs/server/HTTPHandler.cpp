@@ -312,11 +312,13 @@ void HTTPHandler::processQuery(
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Zlib;
         }
+#if USE_BROTLI
         else if (http_response_compression_methods == "br")
         {
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Brotli;
         }
+#endif
     }
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is

@@ -1,5 +1,4 @@
 <test>
-    <name>test_hits</name>
     <type>loop</type>
 
     <stop_conditions>

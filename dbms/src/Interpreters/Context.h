@@ -10,9 +10,8 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -284,8 +283,6 @@ public:
     ExternalDictionaries & getExternalDictionaries();
     ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
-    void tryCreateExternalDictionaries() const;
-    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -499,8 +496,6 @@ private:
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
-    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

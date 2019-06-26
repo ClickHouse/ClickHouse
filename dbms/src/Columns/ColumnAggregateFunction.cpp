@@ -92,13 +92,21 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     auto ML_function = func.get();
     if (ML_function)
     {
-        size_t row_num = 0;
-        for (auto val : data)
+        if (data.size() == 1)
         {
-            ML_function->predictValues(val, *res, block, arguments, context);
-            ++row_num;
+            /// Case for const column. Predict using single model.
+            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
         }
-
+        else
+        {
+            /// Case for non-constant column. Use different aggregate function for each row.
+            size_t row_num = 0;
+            for (auto val : data)
+            {
+                ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
+                ++row_num;
+            }
+        }
     }
     else
     {

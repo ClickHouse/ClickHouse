@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:18.04
 
 RUN apt-get --allow-unauthenticated update -y \
@@ -65,7 +66,8 @@ RUN apt-get --allow-unauthenticated update -y \
             libjemalloc-dev \
             unixodbc-dev \
             odbcinst \
-            tzdata
+            tzdata \
+            gperf
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

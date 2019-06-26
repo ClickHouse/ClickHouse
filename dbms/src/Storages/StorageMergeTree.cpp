@@ -1,30 +1,24 @@
-#include <Databases/IDatabase.h>
+#include "StorageMergeTree.h"
 
+#include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
-#include <Common/localBackup.h>
-
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-
 #include <optional>
 
 
@@ -519,7 +513,7 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
             if (max_source_parts_size > 0)
                 selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
             else if (out_disable_reason)

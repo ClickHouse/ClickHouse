@@ -15,7 +15,6 @@
 88cdc31ded355e7572d68d8cde525d3a  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/p.bin
 9e688c58a5487b8eaf69c9e1005ad0bf  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/primary.idx
 b01e3d4df40467db3f1c2d029f59f6a2  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/checksums.txt
-b026324c6904b2a9cb4b88d6d61c81d1  shadow/increment.txt
 cfcb770c3ecd0990dcceb1bde129e6c6  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/p.bin
 e2af3bef1fd129aea73a890ede1e7a30  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/k.bin
 e6654eba9e88b001280d3bdd21ccc417  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/checksums.txt
@@ -36,7 +35,6 @@ e6654eba9e88b001280d3bdd21ccc417  shadow/1/data/test/partition_428/19700102_1970
 88cdc31ded355e7572d68d8cde525d3a  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/p.bin
 9e688c58a5487b8eaf69c9e1005ad0bf  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/primary.idx
 b01e3d4df40467db3f1c2d029f59f6a2  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/checksums.txt
-b026324c6904b2a9cb4b88d6d61c81d1  shadow/increment.txt
 cfcb770c3ecd0990dcceb1bde129e6c6  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/p.bin
 e2af3bef1fd129aea73a890ede1e7a30  shadow/1/data/test/partition_428/19700201_19700201_1_1_0/k.bin
 e6654eba9e88b001280d3bdd21ccc417  shadow/1/data/test/partition_428/19700102_19700102_2_2_0/checksums.txt

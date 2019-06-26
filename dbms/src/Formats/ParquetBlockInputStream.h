@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PARQUET
 #    include <DataStreams/IBlockInputStream.h>
-//#    include <parquet/file_reader.h>
-//#    include <parquet/arrow/reader.h>
-//#    include <arrow/buffer.h>
 
 
 namespace parquet { namespace arrow { class FileReader; } }

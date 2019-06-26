@@ -23,6 +23,7 @@ add_library (common
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
     src/Sleep.cpp
+    src/argsToConfig.cpp
 
     include/common/Backtrace.h
     include/common/Types.h
@@ -121,6 +122,7 @@ endif()
 
 target_link_libraries (common
         PUBLIC
+    ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE

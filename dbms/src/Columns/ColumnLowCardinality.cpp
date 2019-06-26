@@ -349,7 +349,7 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 
     auto counter = ColumnUInt64::create(dict_size, 0);
     idx.countKeys(counter->getData());
-    return std::move(counter);
+    return counter;
 }
 
 

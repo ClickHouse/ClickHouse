@@ -24,7 +24,7 @@
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#include <llvm/IR/IRBuilder.h>
 #pragma GCC diagnostic pop
 #endif
 
@@ -354,27 +354,27 @@ template <bool V, typename T> struct Case : std::bool_constant<V> { using type =
 template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
 
 template <typename DataType> constexpr bool IsIntegral = false;
-template <> constexpr bool IsIntegral<DataTypeUInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt64> = true;
-template <> constexpr bool IsIntegral<DataTypeInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
-template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
-template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
 template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 

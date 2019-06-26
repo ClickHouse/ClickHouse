@@ -11,17 +11,25 @@ CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
-OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
+OS=${OS=`lsb_release -is 2>/dev/null ||:`}
+if [ -z "$OS" ]; then
+    test -f /etc/os-release && . /etc/os-release && OS=$ID
+fi
+OS=${OS=`uname -s ||:`}
 
-. /usr/share/debconf/confmodule
+test -f /usr/share/debconf/confmodule && . /usr/share/debconf/confmodule
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
-if [ "$1" = configure ]; then
+if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ]; then
+    is_rh=1
+fi
+
+if [ "$1" = configure ] || [ -n "$is_rh" ]; then
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
         # if old rc.d service present - remove it
-        if [ -x "/etc/init.d/clickhouse-server" ]; then
-            update-rc.d clickhouse-server remove
+        if [ -x "/etc/init.d/clickhouse-server" ] && [ -x "/usr/sbin/update-rc.d" ]; then
+            /usr/sbin/update-rc.d clickhouse-server remove
             echo "ClickHouse init script has migrated to systemd. Please manually stop old server and restart the service: sudo killall clickhouse-server && sleep 5 && sudo service clickhouse-server restart"
         fi
 
@@ -30,17 +38,17 @@ if [ "$1" = configure ]; then
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
-            if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
-                echo # TODO
+            if [ -x "/usr/sbin/update-rc.d" ]; then
+                /usr/sbin/update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
             else
-                update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+                echo # TODO [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]
             fi
         fi
     fi
 
     # Make sure the administrative user exists
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
+        if [ -n "$is_rh" ]; then
             adduser --system --no-create-home --home /nonexistent \
                 --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
         else
@@ -123,14 +131,16 @@ Please fix this and reinstall this package." >&2
         rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
 
-    db_get clickhouse-server/default-password
-    defaultpassword="$RET"
-    if [ -n "$defaultpassword" ]; then
-        echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-    fi
+    if [ -f /usr/share/debconf/confmodule ]; then
+        db_get clickhouse-server/default-password
+        defaultpassword="$RET"
+        if [ -n "$defaultpassword" ]; then
+            echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+        fi
 
-    # everything went well, so now let's reset the password
-    db_set clickhouse-server/default-password ""
-    # ... done with debconf here
-    db_stop
+        # everything went well, so now let's reset the password
+        db_set clickhouse-server/default-password ""
+        # ... done with debconf here
+        db_stop
+    fi
 fi

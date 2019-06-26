@@ -1,3 +1,65 @@
+## ClickHouse release 19.7.3.9, 2019-05-30
+
+### New Features
+* Allow to limit the range of a setting that can be specified by user.
+  These constraints can be set up in user settings profile.
+[#4931](https://github.com/yandex/ClickHouse/pull/4931) ([Vitaly
+Baranov](https://github.com/vitlibar))
+* Add a second version of the function `groupUniqArray` with an optional
+  `max_size` parameter that limits the size of the resulting array. This
+behavior is similar to `groupArray(max_size)(x)` function.
+[#5026](https://github.com/yandex/ClickHouse/pull/5026) ([Guillaume
+Tassery](https://github.com/YiuRULE))
+* For TSVWithNames/CSVWithNames input file formats, column order can now be
+  determined from file header. This is controlled by
+`input_format_with_names_use_header` parameter.
+[#5081](https://github.com/yandex/ClickHouse/pull/5081)
+([Alexander](https://github.com/Akazz))
+
+### Bug Fixes
+* Crash with uncompressed_cache + JOIN during merge (#5197)
+[#5133](https://github.com/yandex/ClickHouse/pull/5133) ([Danila
+Kutenin](https://github.com/danlark1))
+* Segmentation fault on a clickhouse-client query to system tables. #5066
+[#5127](https://github.com/yandex/ClickHouse/pull/5127)
+([Ivan](https://github.com/abyss7))
+* Data loss on heavy load via KafkaEngine (#4736)
+[#5080](https://github.com/yandex/ClickHouse/pull/5080)
+([Ivan](https://github.com/abyss7))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Performance Improvements
+* Use radix sort for sorting by single numeric column in `ORDER BY` without
+  `LIMIT`. [#5106](https://github.com/yandex/ClickHouse/pull/5106),
+[#4439](https://github.com/yandex/ClickHouse/pull/4439)
+([Evgenii Pravda](https://github.com/kvinty),
+[alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Documentation
+* Translate documentation for some table engines to Chinese.
+  [#5107](https://github.com/yandex/ClickHouse/pull/5107),
+[#5094](https://github.com/yandex/ClickHouse/pull/5094),
+[#5087](https://github.com/yandex/ClickHouse/pull/5087)
+([张风啸](https://github.com/AlexZFX)),
+[#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
+lee](https://github.com/neverlee))
+ 
+### Build/Testing/Packaging Improvements
+* Print UTF-8 characters properly in `clickhouse-test`.
+  [#5084](https://github.com/yandex/ClickHouse/pull/5084)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Add command line parameter for clickhouse-client to always load suggestion
+  data. [#5102](https://github.com/yandex/ClickHouse/pull/5102)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Resolve some of PVS-Studio warnings.
+  [#5082](https://github.com/yandex/ClickHouse/pull/5082)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Update LZ4 [#5040](https://github.com/yandex/ClickHouse/pull/5040) ([Danila
+  Kutenin](https://github.com/danlark1))
+* Add gperf to build requirements for upcoming pull request #5030.
+  [#5110](https://github.com/yandex/ClickHouse/pull/5110)
+([proller](https://github.com/proller))
+
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
 ### New Features
@@ -29,6 +91,7 @@
 * Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
 * Partially fix distributed_product_mode = local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix potentially wrong result for `SELECT DISTINCT` with `JOIN` [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Build/Testing/Packaging Improvements
 * Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
@@ -1814,7 +1877,7 @@ This release contains bug fixes for the previous release 1.1.54276:
   - cleanup_delay_period sets how often to start cleanup to remove outdated data.
   - replicated_can_become_leader can prevent a replica from becoming the leader (and assigning merges).
 * Accelerated cleanup to remove outdated data from ZooKeeper.
-* Multiple improvements and fixes for clustered DDL queries. Of particular interest is the new setting distributed_ddl_task_timeout, which limits the time to wait for a response from the servers in the cluster.
+* Multiple improvements and fixes for clustered DDL queries. Of particular interest is the new setting distributed_ddl_task_timeout, which limits the time to wait for a response from the servers in the cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode.
 * Improved display of stack traces in the server logs.
 * Added the "none" value for the compression method.
 * You can use multiple dictionaries_config sections in config.xml.
