@@ -16,7 +16,7 @@ namespace DB
 class PipelineExecutor
 {
 private:
-    Processors processors;
+    Processors & processors;
 
     struct Edge
     {
@@ -82,42 +82,27 @@ private:
 
     using Stack = std::stack<UInt64>;
     using TaskQueue = boost::lockfree::queue<ExecutionState *>;
-    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
 
-    /// Queue of processes which we want to call prepare. Is used only in main thread.
-    Stack prepare_stack;
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     TaskQueue task_queue;
+    static constexpr size_t min_task_queue_size = 8192;
+    size_t task_queue_reserved_size = 0;
 
-    EventCounter event_counter;
-
-    std::atomic<UInt64> num_waited_tasks;
-    std::atomic<UInt64> num_tasks_to_wait;
+    std::atomic<UInt64> num_task_queue_pulls;
+    std::atomic<UInt64> num_task_queue_pushes;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
-
-    std::vector<std::thread> threads;
-
-    std::mutex task_mutex;
-    std::condition_variable task_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
     struct ExecutorContext
     {
-//        size_t executor_number;
-//        std::atomic<ExecutionState *> next_task_to_execute;
         std::atomic_bool is_waiting;
         std::condition_variable condvar;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
-
-    std::mutex main_executor_mutex;
-    std::atomic_bool main_executor_flag;
-    /// std::atomic_bool background_executor_flag;
-    std::condition_variable main_executor_condvar;
 
     std::atomic<size_t> num_waiting_threads;
     std::condition_variable finish_condvar;
@@ -129,7 +114,7 @@ private:
     size_t num_waiting_threads_to_expand_pipeline = 0;
 
 public:
-    explicit PipelineExecutor(Processors processors);
+    explicit PipelineExecutor(Processors & processors);
     void execute(size_t num_threads);
 
     String getName() const { return "PipelineExecutor"; }
@@ -144,27 +129,21 @@ public:
     }
 
 private:
-    /// Graph related methods.
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
     ProcessorsMap processors_map;
 
+    /// Graph related methods.
     bool addEdges(UInt64 node);
     void buildGraph();
     void expandPipeline(Stack & stack, UInt64 pid);
-    void doExpandPipeline(Stack & stack);
 
     /// Pipeline execution related methods.
-    void addChildlessProcessorsToQueue(Stack & stack);
-    bool addProcessorToPrepareQueueIfUpdated(Edge & edge, Stack & stack);
-    // void processPrepareQueue();
-    // void processAsyncQueue();
-
-    void addJob(ExecutionState * execution_state);
-    void addAsyncJob(UInt64 pid);
-    // bool tryAssignJob(ExecutionState * state);
-    // void assignJobs();
-
+    void addChildlessProcessorsToStack(Stack & stack);
+    bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
+    static void addJob(ExecutionState * execution_state);
+    // TODO: void addAsyncJob(UInt64 pid);
     bool prepareProcessor(size_t pid, Stack & stack, bool async);
+    void doExpandPipeline(Stack & stack);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);
