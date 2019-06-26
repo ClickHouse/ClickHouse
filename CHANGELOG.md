@@ -104,7 +104,7 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Fix bug when parts were removed only from FS without dropping them from Zookeeper. [#5520](https://github.com/yandex/ClickHouse/pull/5520) ([alesapin](https://github.com/alesapin))
 * Fix segmentation fault in `bitmapHasAny` function. [#5528](https://github.com/yandex/ClickHouse/pull/5528) ([Zhichang Yu](https://github.com/yuzhichang))
 * Fixed error when replication connection pool doesn't retry to resolve host, even when DNS cache was dropped. [#5534](https://github.com/yandex/ClickHouse/pull/5534) ([alesapin](https://github.com/alesapin))
-* Fixed `DROP INDEX IF EXISTS` query. Now `ALTER TABLE ... DROP INDEX IF EXISTS ...` query dowsn'` raise an exception if provided index does not exist. [#5524](https://github.com/yandex/ClickHouse/pull/5524) ([Gleb Novikov](https://github.com/NanoBjorn))
+* Fixed `DROP INDEX IF EXISTS` query. Now `ALTER TABLE ... DROP INDEX IF EXISTS ...` query doesn't raise an exception if provided index does not exist. [#5524](https://github.com/yandex/ClickHouse/pull/5524) ([Gleb Novikov](https://github.com/NanoBjorn))
 * Fix union all supertype column. There were cases with inconsistent data and column types of resulting columns. [#5503](https://github.com/yandex/ClickHouse/pull/5503) ([Artem Zuikov](https://github.com/4ertus2))
 * Skip ZNONODE during DDL query processing. Before if another node removes the znode in task_queue, the one that
 did not process it, but already get list of children, will terminated the DDLWorker thread. [#5489](https://github.com/yandex/ClickHouse/pull/5489) ([Azat Khuzhin](https://github.com/azat))
