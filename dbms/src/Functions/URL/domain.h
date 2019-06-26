@@ -4,15 +4,12 @@
 #include <common/find_symbols.h>
 #include <cstring>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/StringSearcher.h>
 
 namespace DB
 {
 
 namespace
 {
-
-const ASCIICaseSensitiveStringSearcher SCHEME_SEARCHER{"://", 3};
 
 inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
