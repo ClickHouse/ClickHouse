@@ -3042,9 +3042,12 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             if (!selected)
             {
-                String message = "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason)
-                LOG_INFO(log, message);
-                return handle_noop(message);
+                std::stringstream message;
+                message << "Cannot select parts for optimization";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                LOG_INFO(log, message.rdbuf());
+                return handle_noop(message.str());
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
