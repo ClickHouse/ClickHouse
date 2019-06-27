@@ -3,6 +3,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -453,13 +454,20 @@ void ColumnNullable::checkConsistency() const
 
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
-    if (column->isColumnNullable())
+    if (checkColumn<ColumnNullable>(*column))
         return column;
 
     if (column->isColumnConst())
         return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+bool isNullable(const IColumn & column)
+{
+    if (auto * column_const = checkAndGetColumn<ColumnConst>(column))
+        return checkColumn<ColumnNullable>(column_const->getDataColumn());
+    return checkColumn<ColumnNullable>(column);
 }
 
 }

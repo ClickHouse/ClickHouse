@@ -667,7 +667,7 @@ private:
             return true;
         }
 
-        if (auto * nullable = getNullableColumn(*arg_cond.column))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*arg_cond.column))
         {
             Block temporary_block
             {
@@ -693,7 +693,7 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        if (column->isColumnNullable())
+        if (checkColumn<ColumnNullable>(*column))
             return column;
 
         return ColumnNullable::create(
@@ -702,7 +702,7 @@ private:
 
     static ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
-        if (auto * nullable = getNullableColumn(*column))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
             return nullable->getNestedColumnPtr();
 
         return column;
@@ -714,8 +714,8 @@ private:
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
-        auto * then_is_nullable = getNullableColumn(*arg_then.column);
-        auto * else_is_nullable = getNullableColumn(*arg_else.column);
+        auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_then.column);
+        auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(*arg_else.column);
 
         if (!then_is_nullable && !else_is_nullable)
             return false;
@@ -813,11 +813,11 @@ private:
         {
             if (cond_col)
             {
-                if (arg_else.column->isColumnNullable())
+                if (checkColumn<ColumnNullable>(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
                     auto result_column = (*std::move(arg_else_column)).mutate();
-                    getNullableColumnRef(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else
@@ -855,11 +855,11 @@ private:
                 for (size_t i = 0; i < size; ++i)
                     negated_null_map_data[i] = !null_map_data[i];
 
-                if (arg_then.column->isColumnNullable())
+                if (checkColumn<ColumnNullable>(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
                     auto result_column = (*std::move(arg_then_column)).mutate();
-                    getNullableColumnRef(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else

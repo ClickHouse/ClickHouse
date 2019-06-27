@@ -73,7 +73,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         if (negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
-            getNullableColumnRef(*mutable_column).applyNegatedNullMap(negative_null_map);
+            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
     }
@@ -289,7 +289,7 @@ void Join::setSampleBlock(const Block & block)
         }
 
         /// We will join only keys, where all components are not NULL.
-        if (auto * nullable = getNullableColumn(*key_columns[i]))
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
             key_columns[i] = &nullable->getNestedColumn();
     }
 
@@ -1411,7 +1411,7 @@ private:
 
             const auto & dst = out_block.getByPosition(key_pos).column;
             const auto & src = sample_block_with_keys.getByPosition(i).column;
-            if (dst->isColumnNullable() != src->isColumnNullable())
+            if (checkColumn<ColumnNullable>(*dst) != checkColumn<ColumnNullable>(*src))
                 nullability_changes.insert(key_pos);
         }
 
@@ -1426,7 +1426,7 @@ private:
             if (changes_bitmap[i])
             {
                 ColumnPtr column = std::move(columns[i]);
-                if (auto * nullable = getNullableColumn(*column))
+                if (auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
                     column = nullable->getNestedColumnPtr();
                 else
                     column = makeNullable(column);

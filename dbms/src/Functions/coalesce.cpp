@@ -150,8 +150,12 @@ public:
         ColumnPtr res = std::move(temp_block.getByPosition(result).column);
 
         /// if last argument is not nullable, result should be also not nullable
-        if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
-            res = getNullableColumn(*res)->getNestedColumnPtr();
+        if (!isNullable(*block.getByPosition(multi_if_args.back()).column) && isNullable(*res))
+        {
+            if (auto * column_const = checkAndGetColumn<ColumnConst>(*res))
+                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
+            res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
+        }
 
         block.getByPosition(result).column = std::move(res);
     }

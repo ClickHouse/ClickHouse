@@ -910,18 +910,17 @@ public:
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
         const ColumnNullable * nullable = nullptr;
-        if (col_array && !col_array->getData().isColumnConst())
-            nullable = getNullableColumn(col_array->getData());
+        if (col_array)
+            nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
 
         auto & arg_column = block.getByPosition(arguments[1]).column;
 
         const ColumnNullable * arg_nullable = nullptr;
-        if (!arg_column->isColumnConst())
-            arg_nullable = getNullableColumn(*arg_column);
+        arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
 
         if (!nullable && !arg_nullable)
         {
-            /// Simple case: no or constant nullable values passeded.
+            /// Simple case: no nullable values passeded.
             perform(block, arguments, result);
         }
         else

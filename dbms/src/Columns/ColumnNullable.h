@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 
 
@@ -101,7 +100,6 @@ public:
         return false;
     }
 
-    bool isColumnNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
@@ -145,21 +143,6 @@ private:
 
 
 ColumnPtr makeNullable(const ColumnPtr & column);
-
-inline const ColumnNullable * getNullableColumn(const IColumn & column)
-{
-    const IColumn * ptr = &column;
-    if (auto * const_column = typeid_cast<const ColumnConst *>(ptr))
-        ptr = &const_column->getDataColumn();
-
-    return typeid_cast<const ColumnNullable *>(ptr);
-}
-
-inline ColumnNullable & getNullableColumnRef(IColumn & column)
-{
-    if (auto * const_column = typeid_cast<ColumnConst *>(&column))
-        return static_cast<ColumnNullable &>(const_column->getDataColumn());
-    return static_cast<ColumnNullable &>(column);
-}
+bool isNullable(const IColumn & column);
 
 }
