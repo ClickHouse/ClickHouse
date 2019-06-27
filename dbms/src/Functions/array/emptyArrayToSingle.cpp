@@ -392,13 +392,13 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     const IColumn * inner_col;
     IColumn * inner_res_col;
 
-    auto nullable_col = getNullableColumn(src_data);
+    auto nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
     if (nullable_col)
     {
         inner_col = &nullable_col->getNestedColumn();
         src_null_map = &nullable_col->getNullMapData();
 
-        auto & nullable_res_col = getNullableColumnRef(res_data);
+        auto & nullable_res_col = static_cast<ColumnNullable &>(res_data);
         inner_res_col = &nullable_res_col.getNestedColumn();
         res_null_map = &nullable_res_col.getNullMapData();
     }

@@ -154,7 +154,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (auto * nullable_col = getNullableColumn(*data_columns[i]))
+        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
