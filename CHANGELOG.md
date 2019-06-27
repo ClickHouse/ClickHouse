@@ -6,19 +6,19 @@
 * Added `LIMIT n, m BY` or `LIMIT m OFFSET n BY` syntax to set offset of n for LIMIT BY clause. [#5138](https://github.com/yandex/ClickHouse/pull/5138) ([Anton Popov](https://github.com/CurtizJ))
 * Added new data type `SimpleAggregateFunction`, which allows to have columns with light aggregation in an `AggregatingMergeTree`. This can only be used with simple functions like `any`, `anyLast`, `sum`, `min`, `max`. [#4629](https://github.com/yandex/ClickHouse/pull/4629) ([Boris Granveaud](https://github.com/bgranvea))
 * Added support for non-constant arguments in function `ngramDistance` [#5198](https://github.com/yandex/ClickHouse/pull/5198) ([Danila Kutenin](https://github.com/danlark1))
-* Add statistics functions to compute `skewness` and `kurtosis`. [#5200](https://github.com/yandex/ClickHouse/pull/5200) ([hcz](https://github.com/hczhcz))
+* Added functions `skewPop`, `skewSamp`, `kurtPop` and `kurtSamp` to compute for sequence skewness, sample skewness, kurtosis and sample kurtosis respectively. [#5200](https://github.com/yandex/ClickHouse/pull/5200) ([hcz](https://github.com/hczhcz))
 * Support rename operation for `MaterializeView` storage. [#5209](https://github.com/yandex/ClickHouse/pull/5209) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Added server which allows connecting to ClickHouse using MySQL client. [#4715](https://github.com/yandex/ClickHouse/pull/4715) ([Yuriy Baranov](https://github.com/yurriy))
 * Add `toDecimal*OrZero` and `toDecimal*OrNull` functions. [#5291](https://github.com/yandex/ClickHouse/pull/5291) ([Artem Zuikov](https://github.com/4ertus2))
 * Support Decimal types in functions: `quantile`, `quantiles`, `median`, `quantileExactWeighted`, `quantilesExactWeighted`, medianExactWeighted. [#5304](https://github.com/yandex/ClickHouse/pull/5304) ([Artem Zuikov](https://github.com/4ertus2))
-* Added `toValidUTF8` function. [#5322](https://github.com/yandex/ClickHouse/pull/5322) ([Danila Kutenin](https://github.com/danlark1))
-* Added `format` function. [#5330](https://github.com/yandex/ClickHouse/pull/5330) ([Danila Kutenin](https://github.com/danlark1))
+* Added `toValidUTF8` function, which replaces all invalid UTF-8 characters by replacement character � (U+FFFD). [#5322](https://github.com/yandex/ClickHouse/pull/5322) ([Danila Kutenin](https://github.com/danlark1))
+* Added `format` function. Formatting constant pattern (simplified Python format pattern) with the strings listed in the arguments. [#5330](https://github.com/yandex/ClickHouse/pull/5330) ([Danila Kutenin](https://github.com/danlark1))
 * Added `system.detached_parts` table containing information about detached parts of `MergeTree` tables. [#5353](https://github.com/yandex/ClickHouse/pull/5353) ([akuzm](https://github.com/akuzm))
 * Added `ngramSearch` function to calculate the non-symmetric difference between needle and haystack. [#5418](https://github.com/yandex/ClickHouse/pull/5418)[#5422](https://github.com/yandex/ClickHouse/pull/5422)  ([Danila Kutenin](https://github.com/danlark1))
 * Implementation of basic machine learning methods (stochastic linear regression and logistic regression) using aggregate functions interface. Has different strategies for updating model weights (simple gradient descent, momentum method, Nesterov method). Also supports mini-batches of custom size. [#4943](https://github.com/yandex/ClickHouse/pull/4943) ([Quid37](https://github.com/Quid37))
 * Implementation of `geohashEncode` and `geohashDecode` functions. [#5003](https://github.com/yandex/ClickHouse/pull/5003) ([Vasily Nemkov](https://github.com/Enmk))
-* Added AggregateFunction `TSgroupSum` for time series [#4542](https://github.com/yandex/ClickHouse/pull/4542) ([Yangkuan Liu](https://github.com/LiuYangkuan))
-* Functions for calculate the lower range and an higher range for an IP using a CIDR, both for `IPv4` and `IPv6`. [#5095](https://github.com/yandex/ClickHouse/pull/5095) ([Guillaume Tassery](https://github.com/YiuRULE))
+* Added aggregate function `timeSeriesGroupSum`, which can aggregate different time series that sample timestamp not alignment. It will use linear interpolation between two sample timestamp and then sum time-series together. Added aggregate function `timeSeriesGroupRateSum`, which calculates the rate of time-series and then sum rates together. [#4542](https://github.com/yandex/ClickHouse/pull/4542) ([Yangkuan Liu](https://github.com/LiuYangkuan))
+* Added functions `IPv4CIDRtoIPv4Range` and `IPv6CIDRtoIPv6Range` to calculate the lower and higher bounds for an IP in the subnet using a CIDR. [#5095](https://github.com/yandex/ClickHouse/pull/5095) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Add a X-ClickHouse-Summary header when we send a query using HTTP with enabled setting `send_progress_in_http_headers`. Return the usual information of X-ClickHouse-Progress, with additional information like how many rows and bytes were inserted in the query. [#5116](https://github.com/yandex/ClickHouse/pull/5116) ([Guillaume Tassery](https://github.com/YiuRULE))
 
 ### Improvements
@@ -32,7 +32,7 @@
 * Batched version of RowRefList for ALL JOINS. [#5267](https://github.com/yandex/ClickHouse/pull/5267) ([Artem Zuikov](https://github.com/4ertus2))
 * clickhouse-server: more informative listen error messages. [#5268](https://github.com/yandex/ClickHouse/pull/5268) ([proller](https://github.com/proller))
 * Support dictionaries in clickhouse-copier for functions in `<sharding_key>` [#5270](https://github.com/yandex/ClickHouse/pull/5270) ([proller](https://github.com/proller))
-* Add new setting new setting `kafka_commit_every_batch` to regulate Kafka committing policy. 
+* Add new setting `kafka_commit_every_batch` to regulate Kafka committing policy. 
 It allows to set commit mode: after every batch of messages is handled, or after the whole block is written to the storage. It's a trade-off between losing some messages or reading them twice in some extreme situations. [#5308](https://github.com/yandex/ClickHouse/pull/5308) ([Ivan](https://github.com/abyss7))
 * Make `windowFunnel` support other Unsigned Integer Types. [#5320](https://github.com/yandex/ClickHouse/pull/5320) ([sundyli](https://github.com/sundy-li))
 * Allow to shadow virtual column `_table` in Merge engine. [#5325](https://github.com/yandex/ClickHouse/pull/5325) ([Ivan](https://github.com/abyss7))
@@ -43,12 +43,11 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Improvements of MySQL Wire Protocol. Changed name of format to MySQLWire. Using RAII for calling RSA_free. Disabling SSL if context cannot be created. [#5419](https://github.com/yandex/ClickHouse/pull/5419) ([Yuriy Baranov](https://github.com/yurriy))
 * clickhouse-client: allow to run with unaccessable history file (read-only, no disk space, file is directory, ...). [#5431](https://github.com/yandex/ClickHouse/pull/5431) ([proller](https://github.com/proller))
 * Respect query settings in asynchronous INSERTs into Distributed tables. [#4936](https://github.com/yandex/ClickHouse/pull/4936) ([TCeason](https://github.com/TCeason))
-* Renamed function names `leastSqr` to `simpleLinearRegression`, `LinearRegression` to `linearRegression`, `LogisticRegression` to `logisticRegression`. [#5391](https://github.com/yandex/ClickHouse/pull/5391) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Renamed functions `leastSqr` to `simpleLinearRegression`, `LinearRegression` to `linearRegression`, `LogisticRegression` to `logisticRegression`. [#5391](https://github.com/yandex/ClickHouse/pull/5391) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
 ### Performance Improvements
 * Paralellize processing of parts in alter modify query. [#4639](https://github.com/yandex/ClickHouse/pull/4639) ([Ivan Kush](https://github.com/IvanKush))
-* For regular expressions that have a small prefix, we won't extract any word and will be using matching all the time, let's use optimization instead if it exists. [#5191](https://github.com/yandex/ClickHouse/pull/5191) ([Danila Kutenin](https://github.com/danlark1))
-* Remove prefix condition in OptimizedRegularExpression and remain only maximum substring one. [#5193](https://github.com/yandex/ClickHouse/pull/5193) ([Danila Kutenin](https://github.com/danlark1))
+* Optimizations in regular expressions extraction. [#5193](https://github.com/yandex/ClickHouse/pull/5193) [#5191](https://github.com/yandex/ClickHouse/pull/5191) ([Danila Kutenin](https://github.com/danlark1))
 * Do not add right join key column to join result if it's used only in join on section. [#5260](https://github.com/yandex/ClickHouse/pull/5260) ([Artem Zuikov](https://github.com/4ertus2))
 * Freeze the Kafka buffer after first empty response. It avoids multiple invokations of `ReadBuffer::next()` for empty result in some row-parsing streams. [#5283](https://github.com/yandex/ClickHouse/pull/5283) ([Ivan](https://github.com/abyss7))
 * `concat` function optimization for multiple arguments. [#5357](https://github.com/yandex/ClickHouse/pull/5357) ([Danila Kutenin](https://github.com/danlark1))
@@ -63,20 +62,20 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Fix SimpleAggregateFunction for String longer than MAX_SMALL_STRING_SIZE [#5311](https://github.com/yandex/ClickHouse/pull/5311) ([Azat Khuzhin](https://github.com/azat))
 * Fix error for `Decimal` to `Nullable(Decimal)` conversion in IN. Support other Decimal to Decimal conversions (including different scales). [#5350](https://github.com/yandex/ClickHouse/pull/5350) ([Artem Zuikov](https://github.com/4ertus2))
 * Fixed FPU clobbering in simdjson library that lead to wrong calculation of `uniqHLL` and `uniqCombined` aggregate function and math functions such as `log`. [#5354](https://github.com/yandex/ClickHouse/pull/5354) ([alexey-milovidov](https://github.com/alexey-milovidov))
-*  [#5435](https://github.com/yandex/ClickHouse/pull/5435) ([Vitaly Baranov](https://github.com/vitlibar))
-* Fix retention function. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
+* Fixed handling mixed const/nonconst cases in JSON functions. [#5435](https://github.com/yandex/ClickHouse/pull/5435) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fix `retention` function. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
 * Fix result type for `quantileExact` with Decimals. [#5304](https://github.com/yandex/ClickHouse/pull/5304) ([Artem Zuikov](https://github.com/4ertus2)) 
 
 ### Documentation
 *  Translate documentation for `CollapsingMergeTree` to chinese. [#5168](https://github.com/yandex/ClickHouse/pull/5168) ([张风啸](https://github.com/AlexZFX))
-* Translate  some documentation about table engines to chinese. 
+* Translate some documentation about table engines to chinese. 
     [#5134](https://github.com/yandex/ClickHouse/pull/5134)
     [#5328](https://github.com/yandex/ClickHouse/pull/5328)
     ([never lee](https://github.com/neverlee))
     
 
 ### Build/Testing/Packaging Improvements
-* Fix some some sanitizer reports that show probable use-after-free.[#5139](https://github.com/yandex/ClickHouse/pull/5139) [#5143](https://github.com/yandex/ClickHouse/pull/5143) [#5393](https://github.com/yandex/ClickHouse/pull/5393) ([Ivan](https://github.com/abyss7))
+* Fix some sanitizer reports that show probable use-after-free.[#5139](https://github.com/yandex/ClickHouse/pull/5139) [#5143](https://github.com/yandex/ClickHouse/pull/5143) [#5393](https://github.com/yandex/ClickHouse/pull/5393) ([Ivan](https://github.com/abyss7))
 * Move performance tests out of separate directories for convenience. [#5158](https://github.com/yandex/ClickHouse/pull/5158) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix incorrect performance tests. [#5255](https://github.com/yandex/ClickHouse/pull/5255) ([alesapin](https://github.com/alesapin))
 * Added a tool to calculate checksums caused by bit flips to debug hardware issues. [#5334](https://github.com/yandex/ClickHouse/pull/5334) ([alexey-milovidov](https://github.com/alexey-milovidov))
@@ -90,15 +89,15 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Added bitmap related functions `bitmapHasAny` and `bitmapHasAll` analogous to `hasAny` and `hasAll` functions for arrays. [#5279](https://github.com/yandex/ClickHouse/pull/5279) ([Sergi Vladykin](https://github.com/svladykin))
 
 ### Bug Fixes
-* Fix segfault on min_max INDEX with Null value. [#5246](https://github.com/yandex/ClickHouse/pull/5246) ([Nikita Vasilev](https://github.com/nikvas0))
-* Mark all input columns in LIMIT BY as required output. It fixes 'Not found column' error in some distruibutd queries. [#5407](https://github.com/yandex/ClickHouse/pull/5407) ([Constantin S. Pan](https://github.com/kvap))
-* Fix "Column '0' already exists" in SELECT .. PREWHERE on column with DEFAULT [#5397](https://github.com/yandex/ClickHouse/pull/5397) ([proller](https://github.com/proller))
+* Fix segfault on `minmax` INDEX with Null value. [#5246](https://github.com/yandex/ClickHouse/pull/5246) ([Nikita Vasilev](https://github.com/nikvas0))
+* Mark all input columns in LIMIT BY as required output. It fixes 'Not found column' error in some distributed queries. [#5407](https://github.com/yandex/ClickHouse/pull/5407) ([Constantin S. Pan](https://github.com/kvap))
+* Fix "Column '0' already exists" error in `SELECT .. PREWHERE` on column with DEFAULT [#5397](https://github.com/yandex/ClickHouse/pull/5397) ([proller](https://github.com/proller))
 * Fix `ALTER MODIFY TTL` query on `ReplicatedMergeTree`. [#5539](https://github.com/yandex/ClickHouse/pull/5539/commits) ([Anton Popov](https://github.com/CurtizJ))
 * Don't crash the server when Kafka consumers have failed to start. [#5285](https://github.com/yandex/ClickHouse/pull/5285) ([Ivan](https://github.com/abyss7))
 * Fixed bitmap functions produce wrong result. [#5359](https://github.com/yandex/ClickHouse/pull/5359) ([Andy Yang](https://github.com/andyyzh))
 * Fix element_count for hashed dictionary (do not include duplicates) [#5440](https://github.com/yandex/ClickHouse/pull/5440) ([Azat Khuzhin](https://github.com/azat))
-* Use contents of environment variable TZ as the name for timezone [#5443](https://github.com/yandex/ClickHouse/pull/5443) ([Ivan](https://github.com/abyss7))
-* Do not try to convert integers in dictGetT functions. Throw an exception instead. [#5446](https://github.com/yandex/ClickHouse/pull/5446) ([Artem Zuikov](https://github.com/4ertus2))
+* Use contents of environment variable TZ as the name for timezone. It helps to correctly detect default timezone in some cases.[#5443](https://github.com/yandex/ClickHouse/pull/5443) ([Ivan](https://github.com/abyss7))
+* Do not try to convert integers in `dictGetT` functions, because it doesn't work correctly. Throw an exception instead. [#5446](https://github.com/yandex/ClickHouse/pull/5446) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix settings in ExternalData HTTP request. [#5455](https://github.com/yandex/ClickHouse/pull/5455) ([Danila
   Kutenin](https://github.com/danlark1))
 * Fix bug when parts were removed only from FS without dropping them from Zookeeper. [#5520](https://github.com/yandex/ClickHouse/pull/5520) ([alesapin](https://github.com/alesapin))
@@ -106,8 +105,8 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Fixed error when replication connection pool doesn't retry to resolve host, even when DNS cache was dropped. [#5534](https://github.com/yandex/ClickHouse/pull/5534) ([alesapin](https://github.com/alesapin))
 * Fixed `DROP INDEX IF EXISTS` query. Now `ALTER TABLE ... DROP INDEX IF EXISTS ...` query doesn't raise an exception if provided index does not exist. [#5524](https://github.com/yandex/ClickHouse/pull/5524) ([Gleb Novikov](https://github.com/NanoBjorn))
 * Fix union all supertype column. There were cases with inconsistent data and column types of resulting columns. [#5503](https://github.com/yandex/ClickHouse/pull/5503) ([Artem Zuikov](https://github.com/4ertus2))
-* Skip ZNONODE during DDL query processing. Before if another node removes the znode in task_queue, the one that
-did not process it, but already get list of children, will terminated the DDLWorker thread. [#5489](https://github.com/yandex/ClickHouse/pull/5489) ([Azat Khuzhin](https://github.com/azat))
+* Skip ZNONODE during DDL query processing. Before if another node removes the znode in task queue, the one that
+did not process it, but already get list of children, will terminate the DDLWorker thread. [#5489](https://github.com/yandex/ClickHouse/pull/5489) ([Azat Khuzhin](https://github.com/azat))
 * Fix INSERT into Distributed() table with MATERIALIZED column. [#5429](https://github.com/yandex/ClickHouse/pull/5429) ([Azat Khuzhin](https://github.com/azat))
 
 ## ClickHouse release 19.7.3.9, 2019-05-30
@@ -180,7 +179,7 @@ lee](https://github.com/neverlee))
 * Allow quoted decimals in CSV. [#5284](https://github.com/yandex/ClickHouse/pull/5284) ([Artem Zuikov](https://github.com/4ertus2) 
 * Disallow conversion from float Inf/NaN into Decimals (throw exception). [#5282](https://github.com/yandex/ClickHouse/pull/5282) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix data race in rename query. [#5247](https://github.com/yandex/ClickHouse/pull/5247) ([Winter Zhang](https://github.com/zhang2014))
-* Temporarily disable LFAlloc. Usage of LFAlloc might lead to a lot of MAP_FAILED in allocating UncompressedCache and in a result query crashes at high loaded servers. [cfdba93](https://github.com/yandex/ClickHouse/commitcfdba938ce22f16efeec504f7f90206a515b1280)([Danila Kutenin](https://github.com/danlark1))
+* Temporarily disable LFAlloc. Usage of LFAlloc might lead to a lot of MAP_FAILED in allocating UncompressedCache and in a result to crashes of queries at high loaded servers. [cfdba93](https://github.com/yandex/ClickHouse/commit/cfdba938ce22f16efeec504f7f90206a515b1280)([Danila Kutenin](https://github.com/danlark1))
 
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
