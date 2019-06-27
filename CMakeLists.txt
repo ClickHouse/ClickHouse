@@ -237,6 +237,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
         # FIXME: glibc-compatibility may be non-static in some builds!
         set (DEFAULT_LIBS "${DEFAULT_LIBS} ${ClickHouse_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
 
+        # glibc-compatibility library relies to fixed version of libc headers (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
         include_directories (SYSTEM ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
     endif ()
 
