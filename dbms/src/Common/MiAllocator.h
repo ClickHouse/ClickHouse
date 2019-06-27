@@ -11,6 +11,12 @@
 
 namespace DB
 {
+
+/*
+ * This is a different allocator that is based on mimalloc (Microsoft malloc).
+ * It can be used separately from main allocator to catch heap corruptions and vulnerabilities (for example, for caches).
+ * We use MI_SECURE mode in mimalloc to achieve such behaviour.
+ */
 struct MiAllocator
 {
 
