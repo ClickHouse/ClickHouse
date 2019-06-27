@@ -213,7 +213,7 @@ private:
                                         + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-                if (column.column->isColumnConst())
+                if (isColumnConst(*column.column))
                 {
                     const auto & column_const = static_cast<const ColumnConst &>(*column.column);
                     if (isString(column.type))

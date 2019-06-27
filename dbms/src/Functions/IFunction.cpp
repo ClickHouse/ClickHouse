@@ -127,7 +127,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
         if (elem.column->onlyNull())
             return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
 
-        if (elem.column->isColumnConst())
+        if (isColumnConst(*elem.column))
             continue;
 
         if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
@@ -204,7 +204,7 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 {
     for (auto arg : args)
-        if (!block.getByPosition(arg).column->isColumnConst())
+        if (!isColumnConst(*block.getByPosition(arg).column))
             return false;
     return true;
 }
@@ -217,7 +217,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
 
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
-        if (arg_num < args.size() && !block.getByPosition(args[arg_num]).column->isColumnConst())
+        if (arg_num < args.size() && !isColumnConst(*block.getByPosition(args[arg_num]).column))
             throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
@@ -583,7 +583,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
         for (ColumnWithTypeAndName & arg : args_without_low_cardinality)
         {
-            bool is_const = arg.column && arg.column->isColumnConst();
+            bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
                 arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 

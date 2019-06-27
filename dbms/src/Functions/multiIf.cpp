@@ -141,7 +141,7 @@ public:
                 if (cond_col.column->onlyNull())
                     continue;
 
-                if (cond_col.column->isColumnConst())
+                if (isColumnConst(*cond_col.column))
                 {
                     Field value = typeid_cast<const ColumnConst &>(*cond_col.column).getField();
                     if (value.isNull())
@@ -171,7 +171,7 @@ public:
                 instruction.source = converted_columns_holder.back().get();
             }
 
-            if (instruction.source && instruction.source->isColumnConst())
+            if (instruction.source && isColumnConst(*instruction.source))
                 instruction.source_is_constant = true;
 
             instructions.emplace_back(std::move(instruction));

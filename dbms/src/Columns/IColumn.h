@@ -297,9 +297,6 @@ public:
 
     /// Various properties on behaviour of column type.
 
-    /// Column stores a constant value. It's true only for ColumnConst wrapper.
-    virtual bool isColumnConst() const { return false; }
-
     /// It's a special kind of column, that contain single value, but is not a ColumnConst.
     virtual bool isDummy() const { return false; }
 
@@ -431,5 +428,7 @@ bool checkColumn(const IColumn * column)
 {
     return checkAndGetColumn<Type>(column);
 }
+
+bool isColumnConst(const IColumn & column); /// defined in ColumnConst.cpp
 
 }

@@ -23,7 +23,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
         return;
     }
 
-    if (column.isColumnConst())
+    if (isColumnConst(column))
     {
         const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
         ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();

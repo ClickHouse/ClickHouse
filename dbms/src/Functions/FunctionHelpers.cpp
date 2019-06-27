@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
-    if (!column->isColumnConst())
+    if (!isColumnConst(*column))
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
