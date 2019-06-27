@@ -383,8 +383,6 @@ void PipelineExecutor::finish()
     bool expected = false;
     if (finished.compare_exchange_strong(expected, true))
     {
-        finish_condvar.notify_one();
-
         for (auto & context : executor_contexts)
             context->condvar.notify_one();
     }
