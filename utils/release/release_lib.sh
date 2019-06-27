@@ -1,4 +1,5 @@
 set +e
+# set -x
 
 function gen_version_string {
     if [ -n "$TEST" ]; then
@@ -181,9 +182,8 @@ function gen_dockerfiles {
 }
 
 function make_rpm {
-    get_version
-    [ -z "$VERSION_STRING" ] && get_version
-    VERSION_FULL=${VERSION_STRING}${VERSION_POSTFIX}
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
     PACKAGE_DIR=${PACKAGE_DIR=../}
 
     function deb_unpack {
@@ -257,8 +257,8 @@ function make_rpm {
 }
 
 function make_tgz {
-    [ -z "$VERSION_STRING" ] && get_version
-    VERSION_FULL="${VERSION_STRING}${VERSION_POSTFIX}"
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
     PACKAGE_DIR=${PACKAGE_DIR=../}
 
     for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
