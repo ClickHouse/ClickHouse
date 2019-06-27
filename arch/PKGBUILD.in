@@ -7,7 +7,7 @@ url='https://clickhouse.yandex/'
 license=('Apache')
 
 package() {
-    # This code was requisited from kmeow@ https://aur.archlinux.org/packages/clickhouse/ .
+    # This code was requisited from kmeaw@ https://aur.archlinux.org/packages/clickhouse/ .
     SRC=${ClickHouse_SOURCE_DIR}
     BIN=${ClickHouse_BINARY_DIR}
     mkdir -p $pkgdir/etc/clickhouse-server/ $pkgdir/etc/clickhouse-client/
