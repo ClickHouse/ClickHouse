@@ -23,7 +23,5 @@ package() {
     if ! pacman -Q clang | grep '^clang 7'; then
         compiler=""
     fi
-    sed -e 's:/opt/clickhouse:/var/lib/clickhouse:g' -i $pkgdir/etc/clickhouse-server/config.xml
-    sed -e '/listen_host/s%::<%::1<%' -i $pkgdir/etc/clickhouse-server/config.xml
     cp $SRC/debian/clickhouse-server.service $pkgdir/usr/lib/systemd/system
 } 
