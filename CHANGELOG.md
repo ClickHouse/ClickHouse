@@ -1,7 +1,7 @@
 ## ClickHouse release 19.8.3.8, 2019-06-11
 
 ### New Features
-* Added several functions for extracting values from JSON (`jsonHas`, `jsonExtractString`, `jsonExtractInt`...) [#5124](https://github.com/yandex/ClickHouse/pull/5124). ([Vitaly Baranov](https://github.com/vitlibar))
+* Added functions to work with JSON [#4686](https://github.com/yandex/ClickHouse/pull/4686) ([hcz](https://github.com/hczhcz)) [#5124](https://github.com/yandex/ClickHouse/pull/5124). ([Vitaly Baranov](https://github.com/vitlibar))
 * Add a function basename, with a similar behaviour to a basename function, which exists in a lot of languages (`os.path.basename` in python, `basename` in PHP, etc...). Work with both an UNIX-like path or a Windows path. [#5136](https://github.com/yandex/ClickHouse/pull/5136) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Added `LIMIT n, m BY` or `LIMIT m OFFSET n BY` syntax to set offset of n for LIMIT BY clause. [#5138](https://github.com/yandex/ClickHouse/pull/5138) ([Anton Popov](https://github.com/CurtizJ))
 * Added new data type `SimpleAggregateFunction`, which allows to have columns with light aggregation in an `AggregatingMergeTree`. This can only be used with simple functions like `any`, `anyLast`, `sum`, `min`, `max`. [#4629](https://github.com/yandex/ClickHouse/pull/4629) ([Boris Granveaud](https://github.com/bgranvea))
