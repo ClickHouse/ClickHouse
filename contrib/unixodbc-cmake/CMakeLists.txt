@@ -1,5 +1,5 @@
-set(ODBC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/unixodbc)
-set(ODBC_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/unixodbc)
+set(ODBC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/unixodbc)
+set(ODBC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/unixodbc)
 
 
 set(SRCS

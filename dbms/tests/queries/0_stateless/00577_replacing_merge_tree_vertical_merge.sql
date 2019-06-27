@@ -5,4 +5,4 @@ insert into tab_00577 values ('2018-01-01', 0, 0);
 select * from tab_00577 order by version;
 OPTIMIZE TABLE tab_00577;
 select * from tab_00577;
-
+drop table tab_00577;

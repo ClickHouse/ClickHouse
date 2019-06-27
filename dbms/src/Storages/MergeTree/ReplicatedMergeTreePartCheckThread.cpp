@@ -259,7 +259,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 storage.removePartAndEnqueueFetch(part_name);
 
                 /// Delete part locally.
-                storage.forgetPartAndMoveToDetached(part, "broken_");
+                storage.forgetPartAndMoveToDetached(part, "broken");
             }
         }
         else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
@@ -270,7 +270,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
-            storage.forgetPartAndMoveToDetached(part, "unexpected_");
+            storage.forgetPartAndMoveToDetached(part, "unexpected");
         }
         else
         {

@@ -11,6 +11,7 @@ Build-Depends: debhelper (>= 9),
                libicu-dev,
                libreadline-dev,
                gperf,
+               python,
                tzdata
 Standards-Version: 3.9.8
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#include <Core/Block.h>
+
+#include "config_core.h"
 #if USE_MYSQL
 
 #    include <common/LocalDateTime.h>
@@ -80,6 +82,7 @@ private:
     LocalDateTime last_modification;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
+    const bool close_connection;
 };
 
 }

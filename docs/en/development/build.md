@@ -67,7 +67,7 @@ export CXX=g++-7
 ## Install Required Libraries from Packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev
+sudo apt-get install libicu-dev libreadline-dev gperf
 ```
 
 ## Checkout ClickHouse Sources

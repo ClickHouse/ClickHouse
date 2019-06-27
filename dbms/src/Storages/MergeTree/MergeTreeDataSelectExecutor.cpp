@@ -910,10 +910,15 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (marks_count == 0)
         return res;
 
+    bool has_final_mark = part->index_granularity.hasFinalMark();
+
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
-        res.push_back(MarkRange(0, marks_count));
+        if (has_final_mark)
+            res.push_back(MarkRange(0, marks_count - 1));
+        else
+            res.push_back(MarkRange(0, marks_count));
     }
     else
     {
@@ -940,18 +945,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             ranges_stack.pop_back();
 
             bool may_be_true;
-            if (range.end == marks_count)
+            if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
-                {
                     index[i]->get(range.begin, index_left[i]);
-                }
 
                 may_be_true = key_condition.mayBeTrueAfter(
                     used_key_size, index_left.data(), data.primary_key_data_types);
             }
             else
             {
+                if (has_final_mark && range.end == marks_count)
+                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
                     index[i]->get(range.begin, index_left[i]);
@@ -999,7 +1005,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 {
     if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
     {
-        LOG_DEBUG(log, "File for index `" << index->name << "` does not exist. Skipping it.");
+        LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
         return ranges;
     }
 
@@ -1010,9 +1016,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     size_t granules_dropped = 0;
 
+    size_t marks_count = part->getMarksCount();
+    size_t final_mark = part->index_granularity.hasFinalMark();
+    size_t index_marks_count = (marks_count - final_mark + index->granularity - 1) / index->granularity;
+
     MergeTreeIndexReader reader(
             index, part,
-            ((part->getMarksCount() + index->granularity - 1) / index->granularity),
+            index_marks_count,
             ranges);
 
     MarkRanges res;
@@ -1054,7 +1064,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index `" << index->name << "` has dropped " << granules_dropped << " granules.");
+    LOG_DEBUG(log, "Index " << backQuote(index->name) << " has dropped " << granules_dropped << " granules.");
 
     return res;
 }

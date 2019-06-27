@@ -23,7 +23,7 @@ static void deserializeFromString(const DataTypeCustomSimpleTextSerialization & 
     domain.deserializeText(column, istr, settings);
 }
 
-} // namespace
+}
 
 namespace DB
 {
@@ -85,4 +85,4 @@ void DataTypeCustomSimpleTextSerialization::serializeTextXML(const IColumn & col
     writeXMLString(serializeToString(*this, column, row_num, settings), ostr);
 }
 
-} // namespace DB
+}

@@ -19,38 +19,30 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
-/** Y_IGNORE marker means that this header is not analyzed by Arcadia build system.
-  * "Arcadia" is the name of internal Yandex source code repository.
-  * ClickHouse have limited support for build in Arcadia
-  * (ClickHouse source code is used in another Yandex products as a library).
-  * Some libraries are not enabled when build inside Arcadia is used,
-  *  that what does Y_IGNORE indicate.
-  */
-
-#include <llvm/Analysis/TargetTransformInfo.h> // Y_IGNORE
-#include <llvm/Config/llvm-config.h> // Y_IGNORE
-#include <llvm/IR/BasicBlock.h> // Y_IGNORE
-#include <llvm/IR/DataLayout.h> // Y_IGNORE
-#include <llvm/IR/DerivedTypes.h> // Y_IGNORE
-#include <llvm/IR/Function.h> // Y_IGNORE
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
-#include <llvm/IR/LLVMContext.h> // Y_IGNORE
-#include <llvm/IR/Mangler.h> // Y_IGNORE
-#include <llvm/IR/Module.h> // Y_IGNORE
-#include <llvm/IR/Type.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/ExecutionEngine.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/JITSymbol.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/SectionMemoryManager.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h> // Y_IGNORE
-#include <llvm/Target/TargetMachine.h> // Y_IGNORE
-#include <llvm/MC/SubtargetFeature.h> // Y_IGNORE
-#include <llvm/Support/DynamicLibrary.h> // Y_IGNORE
-#include <llvm/Support/Host.h> // Y_IGNORE
-#include <llvm/Support/TargetRegistry.h> // Y_IGNORE
-#include <llvm/Support/TargetSelect.h> // Y_IGNORE
-#include <llvm/Transforms/IPO/PassManagerBuilder.h> // Y_IGNORE
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Config/llvm-config.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Mangler.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITSymbol.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/DynamicLibrary.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
 

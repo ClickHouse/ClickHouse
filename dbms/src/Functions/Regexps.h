@@ -11,10 +11,11 @@
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Exception.h>
 #include <common/StringRef.h>
 
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_HYPERSCAN
 #    if __has_include(<hs/hs.h>)
 #        include <hs/hs.h>

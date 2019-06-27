@@ -1,5 +1,4 @@
 <test>
-    <name>cryptographic_hashes</name>
     <type>once</type>
 
     <stop_conditions>
@@ -46,5 +45,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT ignore({crypto_hash_func}({string})) FROM system.{table} LIMIT 10000000</query>
+    <query>SELECT ignore({crypto_hash_func}({string})) FROM system.{table}</query>
 </test>

@@ -144,6 +144,14 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
                 writeProbablyDoubleQuotedString(name, out);
             break;
         }
+        case IdentifierQuotingStyle::BackticksMySQL:
+        {
+            if (always_quote_identifiers)
+                writeBackQuotedStringMySQL(name, out);
+            else
+                writeProbablyBackQuotedStringMySQL(name, out);
+            break;
+        }
     }
 
     out.next();

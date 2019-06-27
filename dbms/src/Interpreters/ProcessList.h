@@ -1,25 +1,28 @@
 #pragma once
 
-#include <map>
+
+#include <Core/Defines.h>
+#include <DataStreams/BlockIO.h>
+#include <IO/Progress.h>
+#include <Interpreters/CancellationCode.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/QueryPriorities.h>
+#include <Storages/IStorage_fwd.h>
+#include <Poco/Condition.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
+
+#include <condition_variable>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
-#include <unordered_map>
 #include <shared_mutex>
-#include <Poco/Condition.h>
-#include <Core/Defines.h>
-#include <IO/Progress.h>
-#include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Throttler.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/QueryPriorities.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/CancellationCode.h>
-#include <DataStreams/BlockIO.h>
+#include <unordered_map>
 
 
 namespace CurrentMetrics
@@ -30,9 +33,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
 class Context;
 struct Settings;
 class IAST;

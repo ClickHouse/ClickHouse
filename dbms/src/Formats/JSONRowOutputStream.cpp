@@ -220,10 +220,10 @@ void JSONRowOutputStream::writeStatistics()
     writeText(watch.elapsedSeconds(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"rows_read\": ", *ostr);
-    writeText(progress.rows.load(), *ostr);
+    writeText(progress.read_rows.load(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"bytes_read\": ", *ostr);
-    writeText(progress.bytes.load(), *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
     writeChar('\n', *ostr);
 
     writeCString("\t}", *ostr);

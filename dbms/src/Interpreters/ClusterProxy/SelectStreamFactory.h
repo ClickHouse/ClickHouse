@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
 #include <Core/QueryProcessingStage.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {

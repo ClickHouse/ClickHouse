@@ -12,7 +12,7 @@
 #define ENABLE_SHAREDPTR_DEBUG 0
 #define ENABLE_LZ4_EXT 1
 #define ENABLE_SSL 1
-//#define ENABLE_SASL 1
+#define ENABLE_SASL 1
 #define MKL_APP_NAME "librdkafka"
 #define MKL_APP_DESC_ONELINE "The Apache Kafka C/C++ library"
 // distro
@@ -62,7 +62,7 @@
 // libssl
 #define WITH_SSL 1
 // WITH_SASL_SCRAM
-//#define WITH_SASL_SCRAM 1
+#define WITH_SASL_SCRAM 1
 // crc32chw
 #if !defined(__PPC__)
 #define WITH_CRC32C_HW 1

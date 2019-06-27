@@ -51,6 +51,8 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
 
+    ActionLock getActionLock(StorageActionBlockType type) override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,

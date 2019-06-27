@@ -51,6 +51,8 @@ public:
     bool getBool(size_t n) const override { return isNullAt(n) ? 0 : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     StringRef getDataAt(size_t n) const override;
+
+    /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
