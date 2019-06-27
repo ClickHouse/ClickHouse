@@ -67,7 +67,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Details of Implementation
 
-- Reads can be parallel, but not writes
+- Multiple SELECT queries can be performed concurrently, but INSERT queries will wait each other.
 - Not supported:
   - `ALTER`
   - `SELECT ... SAMPLE`
