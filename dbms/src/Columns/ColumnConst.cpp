@@ -102,4 +102,9 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
         res[i] = i;
 }
 
+bool isColumnConst(const IColumn & column)
+{
+    return checkColumn<ColumnConst>(column);
+}
+
 }

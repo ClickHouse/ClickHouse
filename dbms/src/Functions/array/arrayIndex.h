@@ -751,7 +751,7 @@ private:
         Array arr = col_array->getValue<Array>();
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
-        if (item_arg->isColumnConst())
+        if (isColumnConst(*item_arg))
         {
             typename IndexConv::ResultType current = 0;
             const auto & value = (*item_arg)[0];
@@ -848,7 +848,7 @@ private:
         if (item_arg.onlyNull())
             ArrayIndexGenericNullImpl<IndexConv>::vector(col_nested, col_array->getOffsets(),
                 col_res->getData(), null_map_data);
-        else if (item_arg.isColumnConst())
+        else if (isColumnConst(item_arg))
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
                 static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);

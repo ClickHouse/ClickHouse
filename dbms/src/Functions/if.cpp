@@ -605,8 +605,8 @@ private:
         MutableColumnPtr result_column = common_type->createColumn();
         result_column->reserve(input_rows_count);
 
-        bool then_is_const = col_then->isColumnConst();
-        bool else_is_const = col_else->isColumnConst();
+        bool then_is_const = isColumnConst(*col_then);
+        bool else_is_const = isColumnConst(*col_else);
 
         const auto & cond_array = cond_col->getData();
 

@@ -836,7 +836,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     if (executeTuple(block, arguments, result, input_rows_count))
     {
     }
-    else if (!block.getByPosition(arguments[1]).column->isColumnConst())
+    else if (!isColumnConst(*block.getByPosition(arguments[1]).column))
     {
         if (!(executeArgument<UInt8>(block, arguments, result, builder, input_rows_count)
             || executeArgument<UInt16>(block, arguments, result, builder, input_rows_count)
