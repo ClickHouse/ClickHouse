@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/ASTAlterQuery.h>
+#include <Storages/IStorage_fwd.h>
+
 #include <optional>
 #include <unordered_map>
 
@@ -8,7 +10,6 @@
 namespace DB
 {
 
-class IStorage;
 class Context;
 class WriteBuffer;
 class ReadBuffer;

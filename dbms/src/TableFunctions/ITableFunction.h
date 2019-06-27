@@ -1,18 +1,16 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
-#include <string>
 #include <memory>
+#include <string>
 
 
 namespace DB
 {
 
 class Context;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
 
 /** Interface for table functions.
   *

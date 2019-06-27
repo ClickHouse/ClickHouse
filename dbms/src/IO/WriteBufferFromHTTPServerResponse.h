@@ -14,6 +14,7 @@
 #include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/config.h>
 
 
 namespace Poco
@@ -61,7 +62,9 @@ private:
 
     std::optional<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+#if USE_BROTLI
     std::optional<BrotliWriteBuffer> brotli_buf;
+#endif
 
     WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
@@ -79,6 +82,11 @@ private:
     /// This method send headers, if this was not done already,
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
+
+    // Used for write the header X-ClickHouse-Progress
+    void writeHeaderProgress();
+    // Used for write the header X-ClickHouse-Summary
+    void writeHeaderSummary();
 
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();

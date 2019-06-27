@@ -2,15 +2,16 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Types.h>
-#include <Interpreters/ClientInfo.h>
 #include <Core/Settings.h>
+#include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
-
+#include "config_core.h"
+#include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -65,14 +66,7 @@ struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
 class DDLWorker;
-class IStorage;
 class ITableFunction;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
-class IBlockInputStream;
-class IBlockOutputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
@@ -287,8 +281,6 @@ public:
     ExternalDictionaries & getExternalDictionaries();
     ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
-    void tryCreateExternalDictionaries() const;
-    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -484,6 +476,10 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
+    /// MySQL wire protocol state.
+    size_t sequence_id = 0;
+    uint32_t client_capabilities = 0;
+    size_t max_packet_size = 0;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
@@ -494,8 +490,6 @@ private:
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
-    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

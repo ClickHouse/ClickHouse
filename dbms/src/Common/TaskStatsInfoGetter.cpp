@@ -90,12 +90,17 @@ struct NetlinkMessage
         const char * request_buf = reinterpret_cast<const char *>(this);
         ssize_t request_size = header.nlmsg_len;
 
-        ::sockaddr_nl nladdr{};
+        union
+        {
+            ::sockaddr_nl nladdr{};
+            ::sockaddr sockaddr;
+        };
+
         nladdr.nl_family = AF_NETLINK;
 
         while (true)
         {
-            ssize_t bytes_sent = ::sendto(fd, request_buf, request_size, 0, reinterpret_cast<const ::sockaddr *>(&nladdr), sizeof(nladdr));
+            ssize_t bytes_sent = ::sendto(fd, request_buf, request_size, 0, &sockaddr, sizeof(nladdr));
 
             if (bytes_sent <= 0)
             {
@@ -236,10 +241,14 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
         throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    ::sockaddr_nl addr{};
+    union
+    {
+        ::sockaddr_nl addr{};
+        ::sockaddr sockaddr;
+    };
     addr.nl_family = AF_NETLINK;
 
-    if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
+    if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
         throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
     taskstats_family_id = getFamilyId(netlink_socket_fd);

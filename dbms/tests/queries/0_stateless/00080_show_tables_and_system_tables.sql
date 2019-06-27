@@ -30,5 +30,5 @@ CREATE DATABASE test_DatabaseDictionary ENGINE = Dictionary;
 
 SELECT sum(ignore(*, metadata_modification_time, engine_full, create_table_query)) FROM system.tables;
 
-DROP DATABASE test_DatabaseDictionary;
+DROP DATABASE test_DatabaseDictionary; -- { serverError 48 }
 DROP DATABASE test_DatabaseMemory;

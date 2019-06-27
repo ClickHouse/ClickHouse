@@ -20,6 +20,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -74,9 +75,9 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -254,34 +255,6 @@ private:
     void createAttributes();
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
-
-    template <typename OutputType, typename DefaultGetter>
-    void
-    getItemsNumber(Attribute & attribute, const Columns & key_columns, PaddedPODArray<OutputType> & out, DefaultGetter && get_default) const
-    {
-        if (false)
-        {
-        }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) \
-        getItemsNumberImpl<TYPE, OutputType>(attribute, key_columns, out, std::forward<DefaultGetter>(get_default));
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-#undef DISPATCH
-        else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-    }
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
