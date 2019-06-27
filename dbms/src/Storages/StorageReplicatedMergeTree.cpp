@@ -3958,8 +3958,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     /// there is no sense to send query to leader, because he will receive it from own DDLWorker
     if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        LOG_DEBUG(log, "Not leader replica received query from DDLWorker, skipping it.");
-        return;
+        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
     }
 
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
