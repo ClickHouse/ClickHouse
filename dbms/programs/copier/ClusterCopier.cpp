@@ -741,8 +741,10 @@ public:
     {
         auto zookeeper = context.getZooKeeper();
 
-        task_description_watch_callback = [this] (const Coordination::WatchResponse &)
+        task_description_watch_callback = [this] (const Coordination::WatchResponse & response)
         {
+            if (response.error != Coordination::ZOK)
+                return;
             UInt64 version = ++task_descprtion_version;
             LOG_DEBUG(log, "Task description should be updated, local version " << version);
         };
