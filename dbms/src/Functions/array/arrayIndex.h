@@ -907,22 +907,21 @@ public:
         /// (they are vectors of Fields, which may represent the NULL value),
         /// they do not require any preprocessing
 
-        /// Check if the 1st function argument is a non-constant array of nullable
-        /// values.
-        bool is_nullable;
-
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
-        if (col_array)
-            is_nullable = col_array->getData().isColumnNullable();
-        else
-            is_nullable = false;
 
-        /// Check nullability of the 2nd function argument.
-        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isColumnNullable();
+        const ColumnNullable * nullable = nullptr;
+        if (col_array && !col_array->getData().isColumnConst())
+            nullable = getNullableColumn(col_array->getData());
 
-        if (!is_nullable && !is_arg_nullable)
+        auto & arg_column = block.getByPosition(arguments[1]).column;
+
+        const ColumnNullable * arg_nullable = nullptr;
+        if (!arg_column->isColumnConst())
+            arg_nullable = getNullableColumn(*arg_column);
+
+        if (!nullable && !arg_nullable)
         {
-            /// Simple case: no nullable value is passed.
+            /// Simple case: no or constant nullable values passeded.
             perform(block, arguments, result);
         }
         else
@@ -955,10 +954,9 @@ public:
                 }
             };
 
-            if (is_nullable)
+            if (nullable)
             {
-                const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
-                const auto & nested_col = nullable_col.getNestedColumnPtr();
+                const auto & nested_col = nullable->getNestedColumnPtr();
 
                 auto & data = source_block.getByPosition(0);
                 data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
@@ -967,7 +965,7 @@ public:
                         *static_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType());
 
                 auto & null_map = source_block.getByPosition(2);
-                null_map.column = nullable_col.getNullMapColumnPtr();
+                null_map.column = nullable->getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
@@ -976,17 +974,14 @@ public:
                 data = block.getByPosition(arguments[0]);
             }
 
-            if (is_arg_nullable)
+            if (arg_nullable)
             {
-                const auto & col = block.getByPosition(arguments[1]).column;
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-
                 auto & arg = source_block.getByPosition(1);
-                arg.column = nullable_col.getNestedColumnPtr();
+                arg.column = arg_nullable->getNestedColumnPtr();
                 arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(3);
-                null_map.column = nullable_col.getNullMapColumnPtr();
+                null_map.column = arg_nullable->getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
