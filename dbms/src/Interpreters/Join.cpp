@@ -73,7 +73,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         if (negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
-            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+            getNullableColumnRef(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
     }
