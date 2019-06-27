@@ -108,8 +108,8 @@ private:
         }
 
         Node(Node && other) noexcept
-            : processor(other.processor), status(ExecStatus::New)
-            , need_to_be_prepared(false), execution_state(std::move(other.execution_state))
+            : processor(other.processor), status(other.status.load())
+            , need_to_be_prepared(other.need_to_be_prepared.load()), execution_state(std::move(other.execution_state))
         {
         }
     };
@@ -127,14 +127,33 @@ private:
     static constexpr size_t min_task_queue_size = 8192;
     size_t task_queue_reserved_size = 0;
 
-    /// Monotonically increased counters for task_queue. Helps to check if there is any reason to pull form queue.
-    std::atomic<UInt64> num_task_queue_pulls;  /// incremented after successful task_queue.pull
-    std::atomic<UInt64> num_task_queue_pushes;  /// incremented before task_queue.push
+    /// This counter stores number of active threads and number of tasks in different parts of 64-bit value.
+    /// It is needed to atomically check that execution is finished (when value is zero).
+    std::atomic<uint64_t> num_tasks_and_active_threads;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
+
+    /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
+    std::atomic<size_t> num_waiting_threads;
+
+    /// Things to stop execution to expand pipeline.
+    struct ExpandPipelineTask
+    {
+        ExecutionState * node_to_expand;
+        Stack * stack;
+        size_t num_waiting_threads = 0;
+        std::mutex mutex;
+        std::condition_variable condvar;
+
+        ExpandPipelineTask(ExecutionState * node_to_expand_, Stack * stack_)
+            : node_to_expand(node_to_expand_), stack(stack_) {}
+    };
+
+    std::atomic<size_t> num_processing_executors;
+    std::atomic<ExpandPipelineTask *> expand_pipeline_task;
 
     /// Context for each thread.
     struct ExecutorContext
@@ -143,19 +162,12 @@ private:
         std::atomic_bool is_waiting;
         /// Wait this condvar when no tasks to prepare or execute.
         std::condition_variable condvar;
+        /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
+        /// This can be solved by using atomic shard ptr.
+        std::list<ExpandPipelineTask> task_list;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
-
-    /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
-    std::atomic<size_t> num_waiting_threads;
-
-    /// Things to stop execution to expand pipeline.
-    std::atomic<size_t> num_preparing_threads;
-    std::atomic<ExecutionState *> node_to_expand;
-    std::mutex mutex_to_expand_pipeline;
-    std::condition_variable condvar_to_expand_pipeline;
-    size_t num_waiting_threads_to_expand_pipeline = 0;
 
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
@@ -171,8 +183,8 @@ private:
     bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
-    bool prepareProcessor(size_t pid, Stack & stack, bool async);
-    void doExpandPipeline(Stack & stack);
+    bool prepareProcessor(size_t pid, Stack & stack, size_t thread_number, bool async);
+    void doExpandPipeline(ExpandPipelineTask * task);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);
