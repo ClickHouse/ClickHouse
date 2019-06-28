@@ -335,7 +335,7 @@ include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
-include (cmake/find_lfalloc.cmake)
+include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
 find_contrib_lib(cityhash)
