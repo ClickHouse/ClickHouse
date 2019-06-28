@@ -4,7 +4,7 @@ endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include/mimalloc.h")
     message (WARNING "submodule contrib/mimalloc is missing. to fix try run: \n git submodule update --init --recursive")
-    return ()
+    return()
 endif ()
 
 if (ENABLE_MIMALLOC)
