@@ -12,13 +12,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// flatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
-class FunctionFlatten : public IFunction
+/// arrayFlatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
+class ArrayFlatten : public IFunction
 {
 public:
-    static constexpr auto name = "flatten";
+    static constexpr auto name = "arrayFlatten";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFlatten>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<ArrayFlatten>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -80,7 +80,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
         const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
         if (!src_col)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " in argument of function 'flatten'",
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " in argument of function 'arrayFlatten'",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn::Offsets & src_offsets = src_col->getOffsets();
@@ -118,9 +118,10 @@ private:
 };
 
 
-void registerFunctionFlatten(FunctionFactory & factory)
+void registerFunctionArrayFlatten(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionFlatten>();
+    factory.registerFunction<ArrayFlatten>();
+    factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::CaseInsensitive);
 }
 
 }
