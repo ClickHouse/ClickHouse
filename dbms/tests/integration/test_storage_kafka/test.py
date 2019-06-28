@@ -401,7 +401,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key, _topic, _offset FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset FROM test.kafka;
     ''')
 
     messages = []
