@@ -16,6 +16,8 @@ set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
+include (cmake/arch.cmake)
+
 option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
@@ -31,7 +33,7 @@ else()
     message(STATUS "IPO/LTO not enabled.")
 endif()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if (COMPILER_GCC)
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
         message (FATAL_ERROR "GCC version must be at least 7. For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
@@ -81,7 +83,6 @@ endif ()
 
 include (cmake/sanitize.cmake)
 
-include (cmake/arch.cmake)
 
 if (CMAKE_GENERATOR STREQUAL "Ninja")
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
@@ -102,13 +103,12 @@ if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-stdlib=libc++'
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
-option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
@@ -134,7 +134,7 @@ string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
 find_program (GOLD_PATH NAMES "gold")
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH AND NOT LINKER_NAME)
+if (COMPILER_CLANG AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
 elseif (GOLD_PATH)
     set (LINKER_NAME "gold")
@@ -168,7 +168,7 @@ if (ARCH_NATIVE)
 endif ()
 
 # Special options for better optimized code with clang
-#if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+#if (COMPILER_CLANG)
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 #endif ()
 
@@ -183,6 +183,14 @@ else ()
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
+option(WITH_COVERAGE "Build with coverage." 0)
+if(WITH_COVERAGE AND COMPILER_CLANG)
+   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+endif()
+if(WITH_COVERAGE AND COMPILER_GCC)
+   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
+endif()
+
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
 #set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_ADD}")
@@ -193,7 +201,6 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 #set (CMAKE_C_FLAGS_RELEASE               "${CMAKE_C_FLAGS_RELEASE} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
-
 
 include (cmake/use_libcxx.cmake)
 include (cmake/find_unwind.cmake)
@@ -274,7 +281,6 @@ if (DEFAULT_LIBS)
     set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 endif ()
 
-
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
@@ -290,11 +296,6 @@ if (USE_INCLUDE_WHAT_YOU_USE)
         message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
     endif()
 endif ()
-
-# Flags for test coverage
-if (TEST_COVERAGE)
-    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DIS_DEBUG")
-endif (TEST_COVERAGE)
 
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
@@ -358,7 +359,7 @@ include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
-include (cmake/find_lfalloc.cmake)
+include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
 find_contrib_lib(cityhash)
