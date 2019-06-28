@@ -143,7 +143,7 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     for (const auto & range : granule->parallelogram)
         if (range.left.isNull() || range.right.isNull())
             return true;
-    return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
+    return condition.checkInParallelogram(granule->parallelogram, index.data_types).can_be_true;
 }
 
 

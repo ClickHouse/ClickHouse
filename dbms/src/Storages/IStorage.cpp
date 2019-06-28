@@ -157,7 +157,7 @@ void IStorage::check(const Names & column_names) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + name + " in table. There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))

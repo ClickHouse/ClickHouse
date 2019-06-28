@@ -67,7 +67,9 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc-dev \
             odbcinst \
             tzdata \
-            gperf
+            gperf \
+            alien
+
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
