@@ -3,7 +3,8 @@ if (OS_LINUX AND NOT SANITIZE AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT ARCH_PPC6
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include/mimalloc.h")
-   message (WARNING "submodule contrib/mimalloc is missing. to fix try run: \n git submodule update --init --recursive")
+    message (WARNING "submodule contrib/mimalloc is missing. to fix try run: \n git submodule update --init --recursive")
+    return()
 endif ()
 
 if (ENABLE_MIMALLOC)
