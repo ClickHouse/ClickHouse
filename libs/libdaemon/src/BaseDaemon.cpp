@@ -15,6 +15,7 @@
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
+#include <common/Backtrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
@@ -44,13 +45,6 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/config_version.h>
 #include <common/argsToConfig.h>
-
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#else
-    using unw_context_t = int;
-#endif
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
@@ -122,7 +116,7 @@ static void call_default_signal_handler(int sig)
 
 
 using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(ThreadNumber);
+static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(Backtrace) + sizeof(ThreadNumber);
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -159,18 +153,13 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
-    unw_context_t unw_context;
-
-#if USE_UNWIND
-    unw_getcontext(&unw_context);
-#else
-    unw_context = 0;
-#endif
+    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    const Backtrace backtrace(signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
-    DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
-    DB::writePODBinary(unw_context, out);
+    DB::writePODBinary(signal_context, out);
+    DB::writePODBinary(backtrace, out);
     DB::writeBinary(getThreadNumber(), out);
 
     out.next();
@@ -180,30 +169,6 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     call_default_signal_handler(sig);
 }
-
-
-#if USE_UNWIND
-size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, unw_context_t & context)
-{
-    unw_cursor_t cursor;
-
-    if (unw_init_local(&cursor, &context) < 0)
-        return 0;
-
-    size_t i = 0;
-    for (; i < max_frames; ++i)
-    {
-        unw_word_t ip;
-        unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        out_frames[i] = reinterpret_cast<void*>(ip);
-
-        if (!unw_step(&cursor))
-            break;
-    }
-
-    return i;
-}
-#endif
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -267,15 +232,15 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
-                unw_context_t unw_context;
+                Backtrace backtrace(NoCapture{});
                 ThreadNumber thread_num;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
-                DB::readPODBinary(unw_context, in);
+                DB::readPODBinary(backtrace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, unw_context, thread_num);
+                onFault(sig, info, context, backtrace, thread_num);
             }
         }
     }
@@ -290,224 +255,14 @@ private:
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, unw_context_t & unw_context, ThreadNumber thread_num) const
+    void onFault(int sig, siginfo_t & info, ucontext_t & context, const Backtrace & backtrace, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        void * caller_address = nullptr;
-
-#if defined(__x86_64__)
-        /// Get the address at the time the signal was raised from the RIP (x86-64)
-        #if defined(__FreeBSD__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-        #elif defined(__APPLE__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
-        #else
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
-        auto err_mask = context.uc_mcontext.gregs[REG_ERR];
-        #endif
-#elif defined(__aarch64__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
-#endif
-
-        switch (sig)
-        {
-            case SIGSEGV:
-            {
-                /// Print info about address and reason.
-                if (nullptr == info.si_addr)
-                    LOG_ERROR(log, "Address: NULL pointer.");
-                else
-                    LOG_ERROR(log, "Address: " << info.si_addr);
-
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
-                if ((err_mask & 0x02))
-                    LOG_ERROR(log, "Access: write.");
-                else
-                    LOG_ERROR(log, "Access: read.");
-#endif
-
-                switch (info.si_code)
-                {
-                    case SEGV_ACCERR:
-                        LOG_ERROR(log, "Attempted access has violated the permissions assigned to the memory area.");
-                        break;
-                    case SEGV_MAPERR:
-                        LOG_ERROR(log, "Address not mapped to object.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGBUS:
-            {
-                switch (info.si_code)
-                {
-                    case BUS_ADRALN:
-                        LOG_ERROR(log, "Invalid address alignment.");
-                        break;
-                    case BUS_ADRERR:
-                        LOG_ERROR(log, "Non-existant physical address.");
-                        break;
-                    case BUS_OBJERR:
-                        LOG_ERROR(log, "Object specific hardware error.");
-                        break;
-
-                    // Linux specific
-#if defined(BUS_MCEERR_AR)
-                    case BUS_MCEERR_AR:
-                        LOG_ERROR(log, "Hardware memory error: action required.");
-                        break;
-#endif
-#if defined(BUS_MCEERR_AO)
-                    case BUS_MCEERR_AO:
-                        LOG_ERROR(log, "Hardware memory error: action optional.");
-                        break;
-#endif
-
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGILL:
-            {
-                switch (info.si_code)
-                {
-                    case ILL_ILLOPC:
-                        LOG_ERROR(log, "Illegal opcode.");
-                        break;
-                    case ILL_ILLOPN:
-                        LOG_ERROR(log, "Illegal operand.");
-                        break;
-                    case ILL_ILLADR:
-                        LOG_ERROR(log, "Illegal addressing mode.");
-                        break;
-                    case ILL_ILLTRP:
-                        LOG_ERROR(log, "Illegal trap.");
-                        break;
-                    case ILL_PRVOPC:
-                        LOG_ERROR(log, "Privileged opcode.");
-                        break;
-                    case ILL_PRVREG:
-                        LOG_ERROR(log, "Privileged register.");
-                        break;
-                    case ILL_COPROC:
-                        LOG_ERROR(log, "Coprocessor error.");
-                        break;
-                    case ILL_BADSTK:
-                        LOG_ERROR(log, "Internal stack error.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGFPE:
-            {
-                switch (info.si_code)
-                {
-                    case FPE_INTDIV:
-                        LOG_ERROR(log, "Integer divide by zero.");
-                        break;
-                    case FPE_INTOVF:
-                        LOG_ERROR(log, "Integer overflow.");
-                        break;
-                    case FPE_FLTDIV:
-                        LOG_ERROR(log, "Floating point divide by zero.");
-                        break;
-                    case FPE_FLTOVF:
-                        LOG_ERROR(log, "Floating point overflow.");
-                        break;
-                    case FPE_FLTUND:
-                        LOG_ERROR(log, "Floating point underflow.");
-                        break;
-                    case FPE_FLTRES:
-                        LOG_ERROR(log, "Floating point inexact result.");
-                        break;
-                    case FPE_FLTINV:
-                        LOG_ERROR(log, "Floating point invalid operation.");
-                        break;
-                    case FPE_FLTSUB:
-                        LOG_ERROR(log, "Subscript out of range.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-        }
-
-        static const int max_frames = 50;
-        void * frames[max_frames];
-
-#if USE_UNWIND
-        int frames_size = backtraceLibUnwind(frames, max_frames, unw_context);
-
-        if (frames_size)
-        {
-#else
-        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
-        /// So at least print the function where the signal happened.
-        if (caller_address)
-        {
-            frames[0] = caller_address;
-            int frames_size = 1;
-#endif
-
-            char ** symbols = backtrace_symbols(frames, frames_size);
-
-            if (!symbols)
-            {
-                if (caller_address)
-                    LOG_ERROR(log, "Caller address: " << caller_address);
-            }
-            else
-            {
-                for (int i = 0; i < frames_size; ++i)
-                {
-                    /// Perform demangling of names. Name is in parentheses, before '+' character.
-
-                    char * name_start = nullptr;
-                    char * name_end = nullptr;
-                    char * demangled_name = nullptr;
-                    int status = 0;
-
-                    if (nullptr != (name_start = strchr(symbols[i], '('))
-                        && nullptr != (name_end = strchr(name_start, '+')))
-                    {
-                        ++name_start;
-                        *name_end = '\0';
-                        demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
-                        *name_end = '+';
-                    }
-
-                    std::stringstream res;
-
-                    res << i << ". ";
-
-                    if (nullptr != demangled_name && 0 == status)
-                    {
-                        res.write(symbols[i], name_start - symbols[i]);
-                        res << demangled_name << name_end;
-                    }
-                    else
-                        res << symbols[i];
-
-                    LOG_ERROR(log, res.rdbuf());
-                }
-            }
-        }
+        LOG_ERROR(log, signalToErrorMessage(sig, info, context));
+        LOG_ERROR(log, backtrace.toString());
     }
 };
 

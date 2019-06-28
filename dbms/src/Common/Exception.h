@@ -6,7 +6,7 @@
 
 #include <Poco/Exception.h>
 
-#include <Common/StackTrace.h>
+#include <common/Backtrace.h>
 
 namespace Poco { class Logger; }
 
@@ -39,10 +39,10 @@ public:
     /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }
 
-    const StackTrace & getStackTrace() const { return trace; }
+    const Backtrace & getStackTrace() const { return trace; }
 
 private:
-    StackTrace trace;
+    Backtrace trace;
 
     const char * className() const throw() override { return "DB::Exception"; }
 };
