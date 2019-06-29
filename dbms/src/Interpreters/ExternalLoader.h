@@ -108,7 +108,6 @@ public:
     void enablePeriodicUpdates(bool enable, const ExternalLoaderUpdateSettings & settings = {});
 
     /// Returns the names of all the objects in the configuration (loaded or not).
-    std::vector<String> getNames() const;
     size_t getNumberOfNames() const;
 
     /// Returns the status of the object.

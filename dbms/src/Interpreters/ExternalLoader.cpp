@@ -343,19 +343,6 @@ public:
         enable_async_loading = enable;
     }
 
-    /// Returns the names of all the objects in the configuration (loaded or not).
-    std::vector<String> getNames() const
-    {
-        std::lock_guard lock{mutex};
-        std::vector<String> all_names;
-        for (const auto & name_and_info : infos)
-        {
-            const String & name = name_and_info.first;
-            all_names.emplace_back(name);
-        }
-        return all_names;
-    }
-
     size_t getNumberOfNames() const
     {
         std::lock_guard lock{mutex};
@@ -1006,11 +993,6 @@ void ExternalLoader::enableAsyncLoading(bool enable)
 void ExternalLoader::enablePeriodicUpdates(bool enable_, const ExternalLoaderUpdateSettings & settings_)
 {
     periodic_updater->enable(enable_, settings_);
-}
-
-std::vector<String> ExternalLoader::getNames() const
-{
-    return loading_dispatcher->getNames();
 }
 
 size_t ExternalLoader::getNumberOfNames() const
