@@ -19,12 +19,6 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     /// We will compare formatting result with previously formatted nodes.
     std::stringstream temporary_buffer;
     FormatSettings temporary_settings(temporary_buffer, settings);
-
-    /// If there is an alias, then parentheses are required around the entire expression, including the alias.
-    /// Because a record of the form `0 AS x + 0` is syntactically invalid.
-    if (frame.need_parens && !alias.empty())
-        temporary_buffer << '(';
-
     formatImplWithoutAlias(temporary_settings, state, frame);
 
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
@@ -35,6 +29,11 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     }
     else
     {
+        /// If there is an alias, then parentheses are required around the entire expression, including the alias.
+        /// Because a record of the form `0 AS x + 0` is syntactically invalid.
+        if (frame.need_parens && !alias.empty())
+            settings.ostr << '(';
+
         settings.ostr << temporary_buffer.rdbuf();
 
         if (!alias.empty())
