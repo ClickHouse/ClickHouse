@@ -68,9 +68,8 @@ struct AggregateFunctionTimeSeriesGroupSumData
         }
     };
 
-    static constexpr size_t bytes_on_stack = 128;
     typedef std::map<UInt64, Points> Series;
-    typedef PODArray<DataPoint, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>> AggSeries;
+    typedef PODArrayWithStackMemory<DataPoint, 128> AggSeries;
     Series ss;
     AggSeries result;
 

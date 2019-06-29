@@ -91,8 +91,7 @@ struct ExtractBool
 
 struct ExtractRaw
 {
-    static constexpr size_t bytes_on_stack = 64;
-    using ExpectChars = PODArray<char, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using ExpectChars = PODArrayWithStackMemory<char, 64>;
 
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
     {
