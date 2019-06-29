@@ -67,7 +67,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     while (source < source_end)
     {
         accumulator += unalignedLoad<T>(source);
-        unalignedStore(dest, accumulator);
+        unalignedStore<T>(dest, accumulator);
 
         source += sizeof(T);
         dest += sizeof(T);
