@@ -41,9 +41,6 @@ target_link_libraries (compact_array PRIVATE clickhouse_common_io ${Boost_FILESY
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
 
-add_executable (shell_command_test shell_command_test.cpp)
-target_link_libraries (shell_command_test PRIVATE clickhouse_common_io)
-
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE clickhouse_compression clickhouse_common_io)
 
@@ -52,18 +49,6 @@ target_link_libraries (pod_array PRIVATE clickhouse_common_io)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
-
-add_executable (thread_pool thread_pool.cpp)
-target_link_libraries (thread_pool PRIVATE clickhouse_common_io)
-
-add_executable (thread_pool_2 thread_pool_2.cpp)
-target_link_libraries (thread_pool_2 PRIVATE clickhouse_common_io)
-
-add_executable (thread_pool_3 thread_pool_3.cpp)
-target_link_libraries (thread_pool_3 PRIVATE clickhouse_common_io)
-
-add_executable (thread_pool_schedule_exception thread_pool_schedule_exception.cpp)
-target_link_libraries (thread_pool_schedule_exception PRIVATE clickhouse_common_io)
 
 add_executable (multi_version multi_version.cpp)
 target_link_libraries (multi_version PRIVATE clickhouse_common_io)
