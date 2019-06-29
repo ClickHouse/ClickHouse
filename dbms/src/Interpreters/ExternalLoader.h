@@ -107,9 +107,6 @@ public:
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable, const ExternalLoaderUpdateSettings & settings = {});
 
-    /// Returns the names of all the objects in the configuration (loaded or not).
-    size_t getNumberOfNames() const;
-
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
@@ -131,6 +128,9 @@ public:
     Loadables getCurrentlyLoadedObjects() const;
     Loadables getCurrentlyLoadedObjects(const FilterByNameFunction & filter_by_name) const;
     size_t getNumberOfCurrentlyLoadedObjects() const;
+
+    /// Returns true if any object was loaded.
+    bool hasCurrentlyLoadedObjects() const;
 
     static constexpr Duration NO_TIMEOUT = Duration::max();
 
