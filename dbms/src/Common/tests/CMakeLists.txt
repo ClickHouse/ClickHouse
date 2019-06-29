@@ -62,6 +62,9 @@ target_link_libraries (thread_pool_2 PRIVATE clickhouse_common_io)
 add_executable (thread_pool_3 thread_pool_3.cpp)
 target_link_libraries (thread_pool_3 PRIVATE clickhouse_common_io)
 
+add_executable (thread_pool_schedule_exception thread_pool_schedule_exception.cpp)
+target_link_libraries (thread_pool_schedule_exception PRIVATE clickhouse_common_io)
+
 add_executable (multi_version multi_version.cpp)
 target_link_libraries (multi_version PRIVATE clickhouse_common_io)
 add_check(multi_version)
