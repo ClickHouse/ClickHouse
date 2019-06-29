@@ -24,6 +24,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
+| [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
@@ -702,6 +703,54 @@ message MessageType {
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+## Parquet {#data-format-parquet}
+
+[Apache Parquet](http://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
+
+### Соответствие типов данных
+
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../data_types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+
+| Тип данных Parquet (`INSERT`) | Тип данных ClickHouse | Тип данных Parquet (`SELECT`) |
+| -------------------- | ------------------ | ---- |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
+| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
+| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
+| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
+| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
+| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
+| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
+| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
+| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
+| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
+| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
+| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
+
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+
+Неподдержанные типы данных Parquet: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствущих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+
+### Inserting and Selecting Data
+
+Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
+
+```
+cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```
+
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
+
+```
+clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```
+
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц `HDFS` и `URL`.
 
 ## Схема формата {#formatschema}
 

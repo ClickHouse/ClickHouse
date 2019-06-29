@@ -165,6 +165,11 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
+Empty unquoted input values are replaced with default values for the respective
+columns, if
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+is enabled.
+
 `NULL` is formatted as `\N`.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
@@ -714,13 +719,13 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) is a columnar storage format available to any project in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
 ### Data Types Matching
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
-| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`) |
 | -------------------- | ------------------ | ---- |
 | `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
 | `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
@@ -758,8 +763,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Also look at the `HDFS` and `URL` storage engines to process data from the remote servers.
-
+To exchange data with the Hadoop, you can use `HDFS` table engine.
 
 ## Format Schema {#formatschema}
 

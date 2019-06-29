@@ -10,9 +10,8 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

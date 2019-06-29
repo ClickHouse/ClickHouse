@@ -1,7 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
-#include <Common/config.h>
-
 
 namespace DB
 {
@@ -41,11 +39,6 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
-void registerFunctionTransform(FunctionFactory &);
-
-#if USE_ICU
-void registerFunctionConvertCharset(FunctionFactory &);
-#endif
 
 void registerFunctions()
 {
@@ -84,11 +77,6 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
-    registerFunctionTransform(factory);
-
-#if USE_ICU
-    registerFunctionConvertCharset(factory);
-#endif
 }
 
 }

@@ -57,11 +57,11 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>()},
 
-        { "thread_numbers", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()) },
-        { "ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-        { "Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        {"thread_numbers", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
+        {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     };
 }
 

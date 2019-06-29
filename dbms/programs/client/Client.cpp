@@ -208,7 +208,6 @@ private:
 
     ConnectionParameters connection_parameters;
 
-
     void initialize(Poco::Util::Application & self)
     {
         Poco::Util::Application::initialize(self);
@@ -341,7 +340,7 @@ private:
         DateLUT::instance();
         if (!context.getSettingsRef().use_client_time_zone)
         {
-            const auto & time_zone = connection->getServerTimezone();
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
             if (!time_zone.empty())
             {
                 try
@@ -525,7 +524,6 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
-            connection_parameters.timeouts,
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -541,11 +539,14 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        connection->getServerVersion(connection_parameters.timeouts,
+                                     server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -756,7 +757,7 @@ private:
                 }
 
                 if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
-                    connection->forceConnected();
+                    connection->forceConnected(connection_parameters.timeouts);
 
                 if (got_exception && !ignore_error)
                 {
@@ -831,7 +832,7 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            connection->forceConnected();
+            connection->forceConnected(connection_parameters.timeouts);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
             if (insert && !insert->select)
@@ -909,7 +910,7 @@ private:
         /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
         query = serializeAST(*parsed_query);
 
-        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -927,7 +928,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1074,7 +1075,7 @@ private:
         bool cancelled = false;
 
         // TODO: get the poll_interval from commandline.
-        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
         constexpr size_t default_poll_interval = 1000000; /// in microseconds
         constexpr size_t min_poll_interval = 5000; /// in microseconds
         const size_t poll_interval
