@@ -518,7 +518,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     RangesInDataParts parts_with_ranges;
 
-    std::vector<std::pair<MergeTreeIndexPtr, IndexConditionPtr>> useful_indices;
+    std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
     for (const auto & index : data.skip_indices)
     {
         auto condition = index->createIndexCondition(query_info, context);
@@ -998,7 +998,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index,
-    IndexConditionPtr condition,
+    MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings) const

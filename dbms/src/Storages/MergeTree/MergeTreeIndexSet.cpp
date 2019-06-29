@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexSet.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -21,18 +21,18 @@ namespace ErrorCodes
 const Field UNKNOWN_FIELD(3u);
 
 
-MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
+MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index)
     : IMergeTreeIndexGranule()
     , index(index)
     , block(index.header.cloneEmpty()) {}
 
-MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(
-    const MergeTreeSetSkippingIndex & index, MutableColumns && mutable_columns)
+MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
+    const MergeTreeIndexSet & index, MutableColumns && mutable_columns)
     : IMergeTreeIndexGranule()
     , index(index)
     , block(index.header.cloneWithColumns(std::move(mutable_columns))) {}
 
-void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
@@ -64,7 +64,7 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 {
     block.clear();
 
@@ -94,7 +94,7 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeSetIndexAggregator::MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index)
+MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index)
     : index(index), columns(index.header.cloneEmptyColumns())
 {
     ColumnRawPtrs column_ptrs;
@@ -111,7 +111,7 @@ MergeTreeSetIndexAggregator::MergeTreeSetIndexAggregator(const MergeTreeSetSkipp
     columns = index.header.cloneEmptyColumns();
 }
 
-void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -164,7 +164,7 @@ void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size
 }
 
 template <typename Method>
-bool MergeTreeSetIndexAggregator::buildFilter(
+bool MergeTreeIndexAggregatorSet::buildFilter(
     Method & method,
     const ColumnRawPtrs & column_ptrs,
     IColumn::Filter & filter,
@@ -190,9 +190,9 @@ bool MergeTreeSetIndexAggregator::buildFilter(
     return has_new_data;
 }
 
-MergeTreeIndexGranulePtr MergeTreeSetIndexAggregator::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeSetIndexGranule>(index, std::move(columns));
+    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index, std::move(columns));
 
     switch (data.type)
     {
@@ -212,11 +212,11 @@ MergeTreeIndexGranulePtr MergeTreeSetIndexAggregator::getGranuleAndReset()
 }
 
 
-SetIndexCondition::SetIndexCondition(
+MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
-        const MergeTreeSetSkippingIndex &index)
-        : IIndexCondition(), index(index)
+        const MergeTreeIndexSet &index)
+        : IMergeTreeIndexCondition(), index(index)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
@@ -253,14 +253,14 @@ SetIndexCondition::SetIndexCondition(
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
 
-bool SetIndexCondition::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
 {
     return useless;
 }
 
-bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    auto granule = std::dynamic_pointer_cast<MergeTreeSetIndexGranule>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSet>(idx_granule);
     if (!granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
@@ -294,7 +294,7 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
     return false;
 }
 
-void SetIndexCondition::traverseAST(ASTPtr & node) const
+void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node))
     {
@@ -309,7 +309,7 @@ void SetIndexCondition::traverseAST(ASTPtr & node) const
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 
-bool SetIndexCondition::atomFromAST(ASTPtr & node) const
+bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
 {
     /// Function, literal or column
 
@@ -340,7 +340,7 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
     return false;
 }
 
-bool SetIndexCondition::operatorFromAST(ASTPtr & node) const
+bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     auto * func = node->as<ASTFunction>();
@@ -416,7 +416,7 @@ static bool checkAtomName(const String & name)
     return atoms.find(name) != atoms.end();
 }
 
-bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
+bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
     if (const auto * func = node->as<ASTFunction>())
     {
@@ -446,23 +446,23 @@ bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
 }
 
 
-MergeTreeIndexGranulePtr MergeTreeSetSkippingIndex::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeSetIndexGranule>(*this);
+    return std::make_shared<MergeTreeIndexGranuleSet>(*this);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeSetSkippingIndex::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeSetIndexAggregator>(*this);
+    return std::make_shared<MergeTreeIndexAggregatorSet>(*this);
 }
 
-IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<SetIndexCondition>(query, context, *this);
+    return std::make_shared<MergeTreeIndexConditionSet>(query, context, *this);
 };
 
-bool MergeTreeSetSkippingIndex::mayBenefitFromIndexForIn(const ASTPtr &) const
+bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
 {
     return false;
 }
@@ -506,7 +506,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         header.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
     }
 
-    return std::make_unique<MergeTreeSetSkippingIndex>(
+    return std::make_unique<MergeTreeIndexSet>(
         node->name, std::move(unique_expr), columns, data_types, header, node->granularity, max_rows);
 }
 
