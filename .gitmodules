@@ -85,3 +85,6 @@
 [submodule "contrib/rapidjson"]
 	path = contrib/rapidjson
 	url = https://github.com/Tencent/rapidjson
+[submodule "contrib/mimalloc"]
+	path = contrib/mimalloc
+	url = https://github.com/ClickHouse-Extras/mimalloc

@@ -55,11 +55,9 @@ public:
 
     PoolWithFailoverBase(
             NestedPools nested_pools_,
-            size_t max_tries_,
             time_t decrease_error_period_,
             Logger * log_)
         : nested_pools(std::move(nested_pools_))
-        , max_tries(max_tries_)
         , decrease_error_period(decrease_error_period_)
         , shared_pool_states(nested_pools.size())
         , log(log_)
@@ -108,7 +106,7 @@ public:
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
     std::vector<TryResult> getMany(
-            size_t min_entries, size_t max_entries,
+            size_t min_entries, size_t max_entries, size_t max_tries,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority = GetPriorityFunc(),
             bool fallback_to_stale_replicas = true);
@@ -125,8 +123,6 @@ protected:
 
     NestedPools nested_pools;
 
-    const size_t max_tries;
-
     const time_t decrease_error_period;
 
     std::mutex pool_states_mutex;
@@ -141,7 +137,7 @@ template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<TryResult> results = getMany(1, 1, try_get_entry, get_priority);
+    std::vector<TryResult> results = getMany(1, 1, 1, try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
@@ -152,7 +148,7 @@ PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, co
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
-        size_t min_entries, size_t max_entries,
+        size_t min_entries, size_t max_entries, size_t max_tries,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority,
         bool fallback_to_stale_replicas)
@@ -192,7 +188,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     size_t up_to_date_count = 0;
     size_t failed_pools_count = 0;
 
-    /// At exit update shared error counts with error counts occured during this call.
+    /// At exit update shared error counts with error counts occurred during this call.
     SCOPE_EXIT(
     {
         std::lock_guard lock(pool_states_mutex);

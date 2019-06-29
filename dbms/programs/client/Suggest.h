@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnString.h>
 #include <Client/Connection.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -42,7 +43,7 @@ private:
         "KILL", "QUERY", "SYNC", "ASYNC", "TEST", "BETWEEN", "TRUNCATE"
     };
 
-    /// Words are fetched asynchonously.
+    /// Words are fetched asynchronously.
     std::thread loading_thread;
     std::atomic<bool> ready{false};
 
@@ -71,7 +72,7 @@ private:
         return word;
     }
 
-    void loadImpl(Connection & connection, size_t suggestion_limit)
+    void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
     {
         std::stringstream query;
         query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
@@ -104,12 +105,12 @@ private:
 
         query << ") WHERE notEmpty(res)";
 
-        fetch(connection, query.str());
+        fetch(connection, timeouts, query.str());
     }
 
-    void fetch(Connection & connection, const std::string & query)
+    void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
     {
-        connection.sendQuery(query);
+        connection.sendQuery(timeouts, query);
 
         while (true)
         {
@@ -175,12 +176,11 @@ public:
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
-                    connection_parameters.timeouts,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
 
-                loadImpl(connection, suggestion_limit);
+                loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
             }
             catch (...)
             {

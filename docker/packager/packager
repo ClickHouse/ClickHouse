@@ -103,7 +103,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Copying binary back")
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs):
     result = []
     cmake_flags = ['$CMAKE_FLAGS']
 
@@ -138,6 +138,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
     elif cache == "distcc":
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
+
+    if alien_pkgs:
+        result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
 
     if unbundled:
         cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0')
@@ -176,6 +179,7 @@ if __name__ == "__main__":
     parser.add_argument("--version")
     parser.add_argument("--author", default="clickhouse")
     parser.add_argument("--official", action="store_true")
+    parser.add_argument("--alien-pkgs", nargs='+', default=[])
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -188,6 +192,9 @@ if __name__ == "__main__":
     else:
         ch_root = args.clickhouse_repo_path
 
+    if args.alien_pkgs and not args.package_type == "deb":
+        raise Exception("Can add alien packages only in deb build")
+
     dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
     if args.package_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
@@ -195,7 +202,7 @@ if __name__ == "__main__":
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
-        args.version, args.author, args.official)
+        args.version, args.author, args.official, args.alien_pkgs)
     if args.package_type != "freebsd":
         run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
     else:

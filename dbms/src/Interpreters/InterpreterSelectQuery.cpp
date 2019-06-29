@@ -1196,7 +1196,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.transform([&](auto & stream)
             {
-                stream->setLimits(limits);
+                if (!options.ignore_limits)
+                    stream->setLimits(limits);
 
                 if (options.to_stage == QueryProcessingStage::Complete)
                     stream->setQuota(quota);
