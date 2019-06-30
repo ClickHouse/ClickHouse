@@ -1846,6 +1846,25 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 }
 
 
+bool Context::hasQueryParameters() const
+{
+    return !query_parameters.empty();
+}
+
+
+const NameToNameMap & Context::getQueryParameters() const
+{
+    return query_parameters;
+}
+
+
+void Context::setQueryParameter(const String & name, const String & value)
+{
+    if (!query_parameters.emplace(name, value).second)
+        throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
 #if USE_EMBEDDED_COMPILER
 
 std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
