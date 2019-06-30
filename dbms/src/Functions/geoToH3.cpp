@@ -173,7 +173,7 @@ public:
 
 void registerFunctionGeoToH3(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionGeoToH3>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionGeoToH3>();
 }
 
 }
