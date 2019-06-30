@@ -261,7 +261,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
                               other.method,
                               other.db,
                               other.collection,
-			                  other.uri,
+                              other.uri,
                               other.sample_block}
 {
 }
