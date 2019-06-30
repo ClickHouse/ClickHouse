@@ -281,6 +281,7 @@ struct ContextShared
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
 
+        system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries.reset();
         external_models.reset();
