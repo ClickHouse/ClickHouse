@@ -196,6 +196,7 @@ static std::string getDB(const std::string & uri)
 }
     
 
+/** uri can be specified as an alternative to 'host', 'port' and, possibly, 'db'. */
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct,
     const std::string & host,
