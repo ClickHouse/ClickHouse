@@ -129,19 +129,19 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
                     if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]
                         {
-                        running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                        if (running_query == user_process_list->second.queries.end())
-                            return true;
-                        running_query->second->is_killed.store(true, std::memory_order_relaxed);
-                        return false;
+                            running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                            if (running_query == user_process_list->second.queries.end())
+                                return true;
+                            running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                            return false;
                         }))
-                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and cant be stopped",
+                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
                  }
             }
         }
 
-        // Check other users running query with our query_id
+        /// Check other users running query with our query_id
         for (const auto & user_process_list : user_to_queries)
         {
             if (user_process_list.first == client_info.current_user)
