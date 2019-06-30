@@ -15,7 +15,7 @@ void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeoToH3(FunctionFactory &);
 #endif
 
-void registerFunctionsArithmetic(FunctionFactory & factory)
+void registerFunctionsGeo(FunctionFactory & factory)
 {
     registerFunctionGreatCircleDistance(factory);
     registerFunctionPointInEllipses(factory);
