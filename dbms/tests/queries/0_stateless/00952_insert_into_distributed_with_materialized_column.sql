@@ -10,3 +10,6 @@ INSERT INTO distributed_00952 VALUES ('2018-08-01');
 SELECT * FROM distributed_00952;
 SELECT * FROM local_00952;
 SELECT date, value FROM local_00952;
+
+DROP TABLE distributed_00952;
+DROP TABLE local_00952;

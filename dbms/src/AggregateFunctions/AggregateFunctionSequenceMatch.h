@@ -47,8 +47,7 @@ struct AggregateFunctionSequenceMatchData final
     using Comparator = ComparePairFirst<std::less>;
 
     bool sorted = true;
-    static constexpr size_t bytes_in_arena = 64;
-    PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> events_list;
+    PODArrayWithStackMemory<TimestampEvents, 64> events_list;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -203,8 +202,7 @@ private:
         PatternAction(const PatternActionType type, const std::uint64_t extra = 0) : type{type}, extra{extra} {}
     };
 
-    static constexpr size_t bytes_on_stack = 64;
-    using PatternActions = PODArray<PatternAction, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
 
     Derived & derived() { return static_cast<Derived &>(*this); }
 

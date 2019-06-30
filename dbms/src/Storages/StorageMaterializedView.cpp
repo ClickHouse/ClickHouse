@@ -370,6 +370,11 @@ void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partitio
     target_table->checkPartitionCanBeDropped(partition);
 }
 
+ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
+{
+    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
+}
+
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)

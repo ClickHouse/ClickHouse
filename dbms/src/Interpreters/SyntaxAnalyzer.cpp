@@ -474,6 +474,14 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
+
+[[noreturn]] static void throwSyntaxException(const String & msg)
+{
+    throw Exception("Invalid expression for JOIN ON. " + msg + " Supported syntax: JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) "
+            "[AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+};
+
+
 /// Parse JOIN ON expression and collect ASTs for joined columns.
 void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTTableJoin & table_join)
 {
@@ -526,13 +534,6 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
                             + " are from different tables.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
         return table_belonging;
-    };
-
-    const auto supported_syntax = " Supported syntax: JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) "
-                                  "[AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]";
-    auto throwSyntaxException = [&](const String & msg)
-    {
-        throw Exception("Invalid expression for JOIN ON. " + msg + supported_syntax, ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
     };
 
     /// For equal expression find out corresponding table for each part, translate qualified names and add asts to join keys.

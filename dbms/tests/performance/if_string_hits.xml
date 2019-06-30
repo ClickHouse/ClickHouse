@@ -1,5 +1,4 @@
 <test>
-    <name>if_string_hits</name>
     <type>loop</type>
 
     <stop_conditions>

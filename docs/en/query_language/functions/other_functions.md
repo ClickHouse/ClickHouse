@@ -645,9 +645,11 @@ Takes the states of the aggregate function and returns a column with values, are
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
 So, result of function depends on partition of data to blocks and on order of data in block.
 
-## joinGet('join_storage_table_name', 'get_column', join_key)
+## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Get data from a table of type Join using the specified join key.
+Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+
+Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
 Evaluate external model.

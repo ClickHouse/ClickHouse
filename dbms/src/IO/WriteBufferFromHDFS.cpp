@@ -92,6 +92,14 @@ void WriteBufferFromHDFS::sync()
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

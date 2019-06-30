@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
 #include <Core/Block.h>
+#include "config_core.h"
 #if USE_POCO_MONGODB
 
 #    include "DictionaryStructure.h"

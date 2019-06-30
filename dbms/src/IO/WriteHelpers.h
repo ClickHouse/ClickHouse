@@ -255,14 +255,19 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 }
 
 
-template <char c>
+/** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
+ *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
+ *      and use quote_character to escape quote_character. such as: 'hello''world'
+ *   - otherwise use backslash to escape list of special characters and quote_character
+ */
+template <char quote_character, bool escape_quote_with_quote = false>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
     {
         /// On purpose we will escape more characters than minimally necessary.
-        const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', c>(pos, end);
+        const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', quote_character>(pos, end);
 
         if (next_pos == end)
         {
@@ -303,10 +308,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
-                case c:
-                    writeChar('\\', buf);
-                    writeChar(c, buf);
+                case quote_character:
+                {
+                    if constexpr (escape_quote_with_quote)
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 default:
                     writeChar(*pos, buf);
             }
@@ -353,27 +363,27 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
 }
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
-    writeChar(c, buf);
-    writeAnyEscapedString<c>(begin, end, buf);
-    writeChar(c, buf);
+    writeChar(quote_character, buf);
+    writeAnyEscapedString<quote_character>(begin, end, buf);
+    writeChar(quote_character, buf);
 }
 
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(s.data(), s.data() + s.size(), buf);
+    writeAnyQuotedString<quote_character>(s.data(), s.data() + s.size(), buf);
 }
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(ref.data, ref.data + ref.size, buf);
+    writeAnyQuotedString<quote_character>(ref.data, ref.data + ref.size, buf);
 }
 
 
@@ -393,10 +403,18 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-/// Outputs a string in backquotes, as an identifier in MySQL.
+/// Outputs a string in backquotes.
 inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
+}
+
+/// Outputs a string in backquotes for MySQL.
+inline void writeBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+{
+    writeChar('`', buf);
+    writeAnyEscapedString<'`', true>(s.data(), s.data() + s.size(), buf);
+    writeChar('`', buf);
 }
 
 
@@ -428,6 +446,11 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+}
+
+inline void writeProbablyBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 
