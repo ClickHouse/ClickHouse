@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
+#include <Storages/IStorage.h>
 
 #include <atomic>
 #include <chrono>
@@ -54,12 +55,22 @@ private:
     /// Returns true and sets current_task if entry parsed and the check is passed
     bool initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
-
     void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
 
-    void processTaskAlter(
+    /// Check that query should be executed on leader replica only
+    bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage) const;
+
+    /// Check that shard has consistent config with table
+    void checkShardConfig(const String & table, const DDLTask & taks, StoragePtr storage) const;
+
+    /// Executes query only on leader replica in case of replicated table.
+    /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
+    /// Most of these queries can be executed on non-leader replica, but actually they still send
+    /// query via RemoteBlockOutputStream to leader, so to avoid such "2-phase" query execution we
+    /// execute query directly on leader.
+    bool tryExecuteQueryOnLeaderReplica(
         DDLTask & task,
-        const ASTAlterQuery * ast_alter,
+        StoragePtr storage,
         const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper);

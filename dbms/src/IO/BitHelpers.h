@@ -5,6 +5,15 @@
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
 
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
+#   include <sys/endian.h>
+#elif defined(__APPLE__)
+#   include <libkern/OSByteOrder.h>
+
+#   define htobe64(x) OSSwapHostToBigInt64(x)
+#   define be64toh(x) OSSwapBigToHostInt64(x)
+#endif
+
 namespace DB
 {
 

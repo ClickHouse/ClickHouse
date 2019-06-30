@@ -90,7 +90,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     const char * source_end = source + source_size;
 
     const UInt32 items_count = source_size / sizeof(T);
-    unalignedStore(dest, items_count);
+    unalignedStore<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
     T prev_value{};
@@ -99,7 +99,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source < source_end)
     {
         prev_value = unalignedLoad<T>(source);
-        unalignedStore(dest, prev_value);
+        unalignedStore<T>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -109,7 +109,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     {
         const T curr_value = unalignedLoad<T>(source);
         prev_delta = static_cast<DeltaType>(curr_value - prev_value);
-        unalignedStore(dest, prev_delta);
+        unalignedStore<T>(dest, prev_delta);
 
         source += sizeof(curr_value);
         dest += sizeof(prev_delta);
@@ -164,7 +164,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source < source_end)
     {
         prev_value = unalignedLoad<T>(source);
-        unalignedStore(dest, prev_value);
+        unalignedStore<T>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -174,7 +174,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     {
         prev_delta = unalignedLoad<DeltaType>(source);
         prev_value = static_cast<T>(prev_value + prev_delta);
-        unalignedStore(dest, prev_value);
+        unalignedStore<T>(dest, prev_value);
 
         source += sizeof(prev_delta);
         dest += sizeof(prev_value);
@@ -209,7 +209,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         // else if first bit is zero, no need to read more data.
 
         const T curr_value = static_cast<T>(prev_value + prev_delta + double_delta);
-        unalignedStore(dest, curr_value);
+        unalignedStore<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_delta = curr_value - prev_value;
