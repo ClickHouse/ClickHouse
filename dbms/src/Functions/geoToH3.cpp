@@ -127,8 +127,8 @@ public:
 
             for (const auto row : ext::range(0, size))
             {
-                const double lat = col_vec_lat->getData()[row];
-                const double lon = col_vec_lon->getData()[row];
+                const double lon = col_vec_lat->getData()[row];
+                const double lat = col_vec_lon->getData()[row];
                 if (!is_const_resulution)
                 {
                     const auto col_vec_res = static_cast<const ColumnVector<UInt8> *>(col_res);
