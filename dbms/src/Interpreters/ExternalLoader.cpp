@@ -1038,6 +1038,11 @@ size_t ExternalLoader::getNumberOfCurrentlyLoadedObjects() const
     return loading_dispatcher->getNumberOfCurrentlyLoadedObjects();
 }
 
+void ExternalLoader::load(const String & name) const
+{
+    loading_dispatcher->load(name);
+}
+
 void ExternalLoader::load(const String & name, LoadablePtr & loaded_object, Duration timeout) const
 {
     loading_dispatcher->load(name, loaded_object, timeout);
@@ -1058,6 +1063,11 @@ void ExternalLoader::loadStrict(const String & name, LoadResult & load_result) c
     loading_dispatcher->loadStrict(name, load_result);
 }
 
+void ExternalLoader::load(const FilterByNameFunction & filter_by_name) const
+{
+    loading_dispatcher->load(filter_by_name);
+}
+
 void ExternalLoader::load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout) const
 {
     if (filter_by_name)
@@ -1072,6 +1082,11 @@ void ExternalLoader::load(const FilterByNameFunction & filter_by_name, LoadResul
         loading_dispatcher->load(filter_by_name, load_results, timeout);
     else
         loading_dispatcher->load(load_results, timeout);
+}
+
+void ExternalLoader::load() const
+{
+    loading_dispatcher->load();
 }
 
 void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
