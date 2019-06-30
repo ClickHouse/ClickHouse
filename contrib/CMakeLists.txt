@@ -106,6 +106,10 @@ if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
+if (USE_INTERNAL_H3_LIBRARY)
+    add_subdirectory(h3)
+endif ()
+
 if (USE_INTERNAL_SSL_LIBRARY)
     if (NOT MAKE_STATIC_LIBRARIES)
         set (BUILD_SHARED 1)
