@@ -343,25 +343,6 @@ public:
         enable_async_loading = enable;
     }
 
-    /// Returns the names of all the objects in the configuration (loaded or not).
-    std::vector<String> getNames() const
-    {
-        std::lock_guard lock{mutex};
-        std::vector<String> all_names;
-        for (const auto & name_and_info : infos)
-        {
-            const String & name = name_and_info.first;
-            all_names.emplace_back(name);
-        }
-        return all_names;
-    }
-
-    size_t getNumberOfNames() const
-    {
-        std::lock_guard lock{mutex};
-        return infos.size();
-    }
-
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
@@ -417,6 +398,15 @@ public:
                 ++count;
         }
         return count;
+    }
+
+    bool hasCurrentlyLoadedObjects() const
+    {
+        std::lock_guard lock{mutex};
+        for (auto & [name, info] : infos)
+            if (info.loaded())
+                return true;
+        return false;
     }
 
     /// Starts loading of a specified object.
@@ -1008,14 +998,9 @@ void ExternalLoader::enablePeriodicUpdates(bool enable_, const ExternalLoaderUpd
     periodic_updater->enable(enable_, settings_);
 }
 
-std::vector<String> ExternalLoader::getNames() const
+bool ExternalLoader::hasCurrentlyLoadedObjects() const
 {
-    return loading_dispatcher->getNames();
-}
-
-size_t ExternalLoader::getNumberOfNames() const
-{
-    return loading_dispatcher->getNumberOfNames();
+    return loading_dispatcher->hasCurrentlyLoadedObjects();
 }
 
 ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) const

@@ -86,7 +86,7 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context, con
 
 bool DatabaseDictionary::empty(const Context & context) const
 {
-    return context.getExternalDictionaries().getNumberOfNames() == 0;
+    return !context.getExternalDictionaries().hasCurrentlyLoadedObjects();
 }
 
 StoragePtr DatabaseDictionary::detachTable(const String & /*table_name*/)
