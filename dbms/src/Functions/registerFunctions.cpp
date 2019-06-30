@@ -1,6 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
 
+#include "config_core.h"
+#include "config_functions.h"
+
 namespace DB
 {
 /** These functions are defined in a separate translation units.
@@ -40,6 +43,10 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 
+#if USE_H3
+void registerFunctionGeoToH3(FunctionFactory &);
+#endif
+
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
@@ -77,6 +84,10 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
+
+#if USE_H3
+    registerFunctionGeoToH3(factory);
+#endif
 }
 
 }
