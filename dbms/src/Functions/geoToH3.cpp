@@ -111,10 +111,10 @@ public:
             }
         }
 
-
         const auto col_lat = block.getByPosition(arguments[0]).column.get();
         const auto col_lon = block.getByPosition(arguments[1]).column.get();
         const auto col_res = block.getByPosition(arguments[2]).column.get();
+
         if (const_cnt == 0)
         {
             const auto col_vec_lat = static_cast<const ColumnVector<Float64> *>(col_lat);

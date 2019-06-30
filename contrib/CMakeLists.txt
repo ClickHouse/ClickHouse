@@ -107,7 +107,7 @@ if (USE_INTERNAL_CPUID_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_H3_LIBRARY)
-    add_subdirectory(h3)
+    add_subdirectory(h3-cmake)
 endif ()
 
 if (USE_INTERNAL_SSL_LIBRARY)
