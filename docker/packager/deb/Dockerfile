@@ -71,8 +71,5 @@ RUN apt-get --allow-unauthenticated update -y \
             gperf \
             alien
 
-
-RUN git clone https://github.com/uber/h3 && cd h3 && cmake . && make && make install && cd .. && rm -rf h3
-
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
