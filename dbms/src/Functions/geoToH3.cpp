@@ -11,7 +11,8 @@
 #include <ext/range.h>
 
 
-extern "C" {
+extern "C"
+{
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
