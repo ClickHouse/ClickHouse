@@ -1,11 +1,18 @@
 #include <Common/ThreadPool.h>
 
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+    #pragma clang diagnostic ignored "-Wundef"
+#endif
+#include <gtest/gtest.h>
+
 /** Reproduces bug in ThreadPool.
   * It get stuck if we call 'wait' many times from many other threads simultaneously.
   */
 
 
-int main(int, char **)
+TEST(ThreadPool, ConcurrentWait)
 {
     auto worker = []
     {
@@ -29,6 +36,4 @@ int main(int, char **)
         waiting_pool.schedule([&pool]{ pool.wait(); });
 
     waiting_pool.wait();
-
-    return 0;
 }
