@@ -9,7 +9,6 @@ RUN apt-get --allow-unauthenticated update -y \
             cmake \
             ccache \
             curl \
-            libtool \
             software-properties-common
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
