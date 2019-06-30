@@ -42,7 +42,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #    include <Poco/MongoDB/ObjectId.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 #    include <Poco/Version.h>
-#    include "Poco/URI.h"
+#    include <Poco/URI.h>
 
 // only after poco
 // naming conflict:
@@ -67,10 +67,9 @@ namespace ErrorCodes
 static const UInt64 max_block_size = 8192;
 
 
-#    if POCO_VERSION < 0x01070800
+#if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
-static void
-authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+static void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
 {
     Poco::MongoDB::Database db(database);
 
@@ -165,36 +164,37 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
         }
     }
 }
-#    endif
+#endif
     
-auto  getConnection(const std::string & host,UInt16 port,const std::string & uri)
+static auto getConnection(const std::string & host, UInt16 port, const std::string & uri)
 {   
-    if(uri.empty()){
-       //cout << "Getting connection with IP:PORT format.";
-       auto conn= std::make_shared<Poco::MongoDB::Connection>(host, port);
-       return conn;
+    if (uri.empty())
+    {
+        return std::make_shared<Poco::MongoDB::Connection>(host, port);
     }
-    else {
-       //cout << "Getting connection with URI format.";
-       Poco::MongoDB::Connection::SocketFactory SF;
-       auto conn= std::make_shared<Poco::MongoDB::Connection>(uri,SF);
-       return conn;
+    else
+    {
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        return std::make_shared<Poco::MongoDB::Connection>(uri, socket_factory);
     }
-    
 }
 
-std::string getDB(const std::string & tempuri){
-  if(tempuri.empty()){
-      return tempuri;
-  }
-  else {
-      Poco::URI theURI(tempuri);
-      std::string databaseName = theURI.getPath();
-      if (!databaseName.empty() && databaseName[0] == '/') databaseName.erase(0, 1);
-      if (databaseName.empty()) databaseName = "admin";
-      return databaseName;
-  }
+static std::string getDB(const std::string & uri)
+{
+    if (uri.empty())
+    {
+        return uri;
+    }
+    else
+    {
+        Poco::URI poco_uri(uri);
+        std::string database_name = poco_uri.getPath();
+        if (!database_name.empty() && database_name[0] == '/')
+            database_name.erase(0, 1);
+        return database_name;
+    }
 }
+    
 
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct,
@@ -217,20 +217,19 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , collection{collection}
     , uri{uri}
     , sample_block{sample_block}
-    /*, connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}*/
-    , connection{getConnection(host,port,uri)}
+    , connection{getConnection(host, port, uri)}
 {
-      if (uri.empty())
-      {
-  #    if POCO_VERSION >= 0x01070800
-           Poco::MongoDB::Database poco_db(db);
-           if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-              throw Exception("Cannot authenticate in MongoDB, incorrect user "+user+" or password "+password, ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-  #    else
+    if (uri.empty())
+    {
+#if POCO_VERSION >= 0x01070800
+        Poco::MongoDB::Database poco_db(db);
+        if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
+            throw Exception("Cannot authenticate in MongoDB, incorrect user " + user + " or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+#else
         Poco::MongoDB::Database poco_db();
         poco_db.authenticate(*connection, db, user, password);
-  #    endif
-      }
+#endif
+    }
 }
 
 MongoDBDictionarySource::MongoDBDictionarySource(
@@ -245,9 +244,9 @@ MongoDBDictionarySource::MongoDBDictionarySource(
           config.getString(config_prefix + ".user", ""),
           config.getString(config_prefix + ".password", ""),
           config.getString(config_prefix + ".method", ""),
-          config.getString(config_prefix + ".db", getDB(config.getString(config_prefix + ".uri",""))),
+          config.getString(config_prefix + ".db", getDB(config.getString(config_prefix + ".uri", ""))),
           config.getString(config_prefix + ".collection"),
-	      config.getString(config_prefix + ".uri",""),
+	      config.getString(config_prefix + ".uri", ""),
           sample_block)
 {
 }
