@@ -122,6 +122,7 @@ nav:
     - 'Функции по работе с массивами': 'query_language/functions/array_functions.md'
     - 'Функции разбиения и слияния строк и массивов': 'query_language/functions/splitting_merging_functions.md'
     - 'Битовые функции': 'query_language/functions/bit_functions.md'
+    - 'Функции для битмапов': 'query_language/functions/bitmap_functions.md'
     - 'Функции хэширования': 'query_language/functions/hash_functions.md'
     - 'Функции генерации псевдослучайных чисел': 'query_language/functions/random_functions.md'
     - 'Функции для работы с UUID': 'query_language/functions/uuid_functions.md'

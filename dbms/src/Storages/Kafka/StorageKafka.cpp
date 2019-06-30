@@ -94,25 +94,25 @@ BlockInputStreams StorageKafka::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
-    unsigned num_streams)
+    QueryProcessingStage::Enum /* processed_stage */,
+    size_t /* max_block_size */,
+    unsigned /* num_streams */)
 {
     check(column_names);
 
     if (num_created_consumers == 0)
         return BlockInputStreams();
 
-    const size_t stream_count = std::min(size_t(num_streams), num_created_consumers);
-
+    /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     BlockInputStreams streams;
-    streams.reserve(stream_count);
+    streams.reserve(num_created_consumers);
 
     // Claim as many consumers as requested, but don't block
-    for (size_t i = 0; i < stream_count; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        // Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        // TODO That leads to awful performance.
+        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+        /// TODO: probably that leads to awful performance.
+        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
         streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, schema_name, 1));
     }
 
@@ -209,9 +209,8 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
 
 BufferPtr StorageKafka::createBuffer()
 {
-    // Create a consumer and subscribe to topics
+    // Create a consumer.
     auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-    consumer->subscribe(topics);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();

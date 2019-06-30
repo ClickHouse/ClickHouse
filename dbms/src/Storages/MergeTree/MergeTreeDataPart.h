@@ -274,7 +274,7 @@ struct MergeTreeDataPart
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column) const;
+    bool hasColumnFiles(const String & column, const IDataType & type) const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

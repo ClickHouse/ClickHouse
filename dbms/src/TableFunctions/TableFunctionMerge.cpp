@@ -27,23 +27,16 @@ namespace ErrorCodes
 static NamesAndTypesList chooseColumns(const String & source_database, const String & table_name_regexp_, const Context & context)
 {
     OptimizedRegularExpression table_name_regexp(table_name_regexp_);
+    auto table_name_match = [&](const String & table_name) { return table_name_regexp.match(table_name); };
 
     StoragePtr any_table;
 
     {
         auto database = context.getDatabase(source_database);
-        auto iterator = database->getIterator(context);
+        auto iterator = database->getIterator(context, table_name_match);
 
-        while (iterator->isValid())
-        {
-            if (table_name_regexp.match(iterator->name()))
-            {
-                any_table = iterator->table();
-                break;
-            }
-
-            iterator->next();
-        }
+        if (iterator->isValid())
+            any_table = iterator->table();
     }
 
     if (!any_table)

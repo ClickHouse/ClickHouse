@@ -242,6 +242,8 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         {
             if (!job.stream)
             {
+                const Settings & settings = context.getSettingsRef();
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
                 {
                     /// Skip replica_index in case of internal replication
@@ -249,7 +251,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto connections = shard_info.pool->getMany(&context.getSettingsRef(), PoolMode::GET_ONE);
+                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
                     if (connections.empty() || connections.front().isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
@@ -263,7 +265,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                     if (!connection_pool)
                         throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = connection_pool->get(&context.getSettingsRef());
+                    job.connection_entry = connection_pool->get(timeouts, &settings);
                     if (job.connection_entry.isNull())
                         throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
                 }
@@ -271,7 +273,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, query_string, &context.getSettingsRef());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings);
                 job.stream->writePrefix();
             }
 

@@ -1,5 +1,5 @@
-#include <Functions/GatherUtils/Selectors.h>
-#include <Functions/GatherUtils/Algorithms.h>
+#include "Selectors.h"
+#include "Algorithms.h"
 
 namespace DB::GatherUtils
 {
