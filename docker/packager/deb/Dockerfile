@@ -68,7 +68,9 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc-dev \
             odbcinst \
             tzdata \
-            gperf
+            gperf \
+            alien
+
 
 RUN git clone https://github.com/uber/h3 && cd h3 && cmake . && make && make install && cd .. && rm -rf h3
 

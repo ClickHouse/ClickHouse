@@ -130,5 +130,7 @@ override_dh_auto_install:
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
 
+#TODO: faster packing of non-release builds: ifdef RELEASE_COMPATIBLE
 override_dh_builddeb:
 	dh_builddeb -- -Z gzip # Older systems don't have "xz", so use "gzip" instead.
+#TODO: endif
