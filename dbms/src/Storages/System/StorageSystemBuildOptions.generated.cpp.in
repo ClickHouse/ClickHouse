@@ -40,6 +40,7 @@ const char * auto_config_build[]
     "USE_MIMALLOC", "@USE_MIMALLOC@",
     "USE_UNWIND", "@USE_UNWIND@",
     "USE_ICU", "@USE_ICU@",
+    "USE_H3", "@USE_H3@",
     "USE_MYSQL", "@USE_MYSQL@",
     "USE_RE2_ST", "@USE_RE2_ST@",
     "USE_VECTORCLASS", "@USE_VECTORCLASS@",
