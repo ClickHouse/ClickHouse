@@ -21,7 +21,7 @@ SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n)\
 1
 SELECT \n    id, \n    subquery\nFROM \n(\n    SELECT \n        1 AS id, \n        CAST(1, \'UInt8\') AS subquery\n    WHERE subquery = 1\n)\nWHERE subquery = 1
 1	1
-SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        toUInt64(sum(id) AS b) AS a, \n        b\n    FROM test_00597\n    HAVING (toUInt64(b) AS a) = 3\n)\nWHERE a = 3
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        toUInt64(sum(id) AS b) AS a, \n        b\n    FROM test_00597\n    HAVING a = 3\n)\nWHERE a = 3
 3	3
 SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        name, \n        value, \n        min(id) AS id\n    FROM test_00597\n    GROUP BY \n        date, \n        name, \n        value\n    HAVING id = 1\n)\nWHERE id = 1
 2000-01-01	1	test string 1	1
