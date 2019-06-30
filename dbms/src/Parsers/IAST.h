@@ -180,7 +180,7 @@ public:
         std::set<std::tuple<
             const IAST * /* SELECT query node */,
             std::string /* alias */,
-            std::string /* printed content */>> printed_asts_with_alias;
+            Hash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
