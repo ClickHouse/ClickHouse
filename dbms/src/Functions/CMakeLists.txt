@@ -18,7 +18,6 @@ target_link_libraries(clickhouse_functions
         ${FARMHASH_LIBRARIES}
         ${METROHASH_LIBRARIES}
         murmurhash
-        m
         ${BASE64_LIBRARY}
 )
 
