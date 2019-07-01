@@ -1,5 +1,5 @@
 #include "DNSResolver.h"
-#include <Common/SimpleCache.h>
+#include <common/SimpleCache.h>
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <Poco/Net/DNS.h>
