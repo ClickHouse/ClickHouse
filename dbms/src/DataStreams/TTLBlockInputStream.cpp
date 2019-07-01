@@ -26,6 +26,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     , date_lut(DateLUT::instance())
 {
     children.push_back(input_);
+    header = children.at(0)->getHeader();
 
     const auto & column_defaults = storage.getColumns().getDefaults();
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -57,11 +58,6 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
-
-Block TTLBlockInputStream::getHeader() const
-{
-    return children.at(0)->getHeader();
-}
 
 Block TTLBlockInputStream::readImpl()
 {
@@ -108,11 +104,13 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
     const auto & current = block.getByName(storage.ttl_table_entry.result_column);
     const IColumn * ttl_column = current.column.get();
 
+    const auto & column_names = header.getNames();
     MutableColumns result_columns;
-    result_columns.reserve(getHeader().columns());
-    for (const auto & name : storage.getColumns().getNamesOfPhysical())
+    result_columns.reserve(column_names.size());
+
+    for (auto it = column_names.begin(); it != column_names.end(); ++it)
     {
-        auto & column_with_type = block.getByName(name);
+        auto & column_with_type = block.getByName(*it);
         const IColumn * values_column = column_with_type.column.get();
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
@@ -125,13 +123,13 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
                 new_ttl_infos.table_ttl.update(cur_ttl);
                 result_column->insertFrom(*values_column, i);
             }
-            else
+            else if (it == column_names.begin())
                 ++rows_removed;
         }
         result_columns.emplace_back(std::move(result_column));
     }
 
-    block = getHeader().cloneWithColumns(std::move(result_columns));
+    block = header.cloneWithColumns(std::move(result_columns));
 }
 
 void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
