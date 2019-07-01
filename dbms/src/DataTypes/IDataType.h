@@ -222,76 +222,60 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
-    /** Text serialization with escaping but without quoting.
-      */
-    virtual void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    virtual void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization as a literal that may be inserted into a query.
-      */
-    virtual void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    virtual void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for the CSV format.
-      */
-    virtual void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for displaying on a terminal or saving into a text file, and the like.
-      * Without escaping or quoting.
-      */
-    virtual void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    /** Text serialization intended for using in JSON format.
-      */
-    virtual void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for putting into the XML format.
-      */
-    virtual void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-
     /** Serialize to a protobuf. */
     virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
     virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
-protected:
-    virtual String doGetName() const;
-
     /** Text serialization with escaping but without quoting.
       */
-public: // used somewhere in arcadia
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-protected:
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for the CSV format.
       */
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+
+    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
+      */
+    void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
-      * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for putting into the XML format.
       */
+    void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
+protected:
+    virtual String doGetName() const;
+
+    /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
+
+    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
     {
         serializeText(column, row_num, ostr, settings);
@@ -471,7 +455,6 @@ private:
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
-    const IDataTypeCustomTextSerialization * getCustomTextSerialization() const { return custom_text_serialization.get(); }
 };
 
 

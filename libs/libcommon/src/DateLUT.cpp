@@ -13,12 +13,12 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 {
     std::ifstream stream(path);
     if (!stream)
-        throw Poco::Exception("Error while opening file: `" + path + "'.");
+        throw Poco::Exception("Error while opening file: '" + path + "'.");
     Poco::SHA1Engine digest_engine;
     Poco::DigestInputStream digest_stream(digest_engine, stream);
     digest_stream.ignore(std::numeric_limits<std::streamsize>::max());
     if (!stream.eof())
-        throw Poco::Exception("Error while reading file: `" + path + "'.");
+        throw Poco::Exception("Error while reading file: '" + path + "'.");
     return digest_engine.digest();
 }
 
@@ -39,7 +39,7 @@ std::string determineDefaultTimeZone()
 
     if (tz_env_var)
     {
-        error_prefix = std::string("Could not determine time zone from TZ variable value: `") + tz_env_var + "': ";
+        error_prefix = std::string("Could not determine time zone from TZ variable value: '") + tz_env_var + "': ";
 
         if (*tz_env_var == ':')
             ++tz_env_var;
