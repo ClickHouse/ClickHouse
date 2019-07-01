@@ -647,9 +647,9 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
 
-Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
 Evaluate external model.
