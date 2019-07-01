@@ -65,6 +65,11 @@ if(USE_XXHASH)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
 endif()
 
+if (USE_H3)
+    target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
+endif()
+
 if(USE_HYPERSCAN)
     target_link_libraries(clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})

@@ -3,10 +3,27 @@
 #include "protocol.h"
 #include <common/find_symbols.h>
 #include <cstring>
-
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
+
+namespace
+{
+
+inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
+{
+    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
+        return StringRef{};
+
+    auto after_dot = *(dot_pos + 1);
+    if (after_dot == ':' || after_dot == '/' || after_dot == '?' || after_dot == '#')
+        return StringRef{};
+
+    return StringRef(start_of_host, pos - start_of_host);
+}
+
+}
 
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
@@ -14,33 +31,89 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (end == (pos = find_first_symbols<'/'>(pos, end)))
-        return {};
-
-    if (pos != data)
+    if (*pos == '/' && *(pos + 1) == '/')
     {
-        StringRef scheme = getURLScheme(data, size);
-        Pos scheme_end = data + scheme.size;
-
-        // Colon must follows after scheme.
-        if (pos - scheme_end != 1 || *scheme_end != ':')
-            return {};
+        pos += 2;
+    }
+    else
+    {
+        Pos scheme_end = data + std::min(size, 16UL);
+        for (++pos; pos < scheme_end; ++pos)
+        {
+            if (!isAlphaNumericASCII(*pos))
+            {
+                switch (*pos)
+                {
+                case '.':
+                case '-':
+                case '+':
+                    break;
+                case ' ': /// restricted symbols
+                case '\t':
+                case '<':
+                case '>':
+                case '%':
+                case '{':
+                case '}':
+                case '|':
+                case '\\':
+                case '^':
+                case '~':
+                case '[':
+                case ']':
+                case ';':
+                case '=':
+                case '&':
+                    return StringRef{};
+                default:
+                    goto exloop;
+                }
+            }
+        }
+exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos + 2) == '/')
+            pos += 3;
+        else
+            pos = data;
     }
 
-    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-        return {};
-    pos += 2;
-
-    const char * start_of_host = pos;
+    Pos dot_pos = nullptr;
+    auto start_of_host = pos;
     for (; pos < end; ++pos)
     {
-        if (*pos == '@')
-            start_of_host = pos + 1;
-        else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+        switch (*pos)
+        {
+        case '.':
+            dot_pos = pos;
             break;
+        case ':': /// end symbols
+        case '/':
+        case '?':
+        case '#':
+            return checkAndReturnHost(pos, dot_pos, start_of_host);
+        case '@': /// myemail@gmail.com
+            start_of_host = pos + 1;
+            break;
+        case ' ': /// restricted symbols in whole URL
+        case '\t':
+        case '<':
+        case '>':
+        case '%':
+        case '{':
+        case '}':
+        case '|':
+        case '\\':
+        case '^':
+        case '~':
+        case '[':
+        case ']':
+        case ';':
+        case '=':
+        case '&':
+            return StringRef{};
+        }
     }
 
-    return (pos == start_of_host) ? StringRef{} : StringRef(start_of_host, pos - start_of_host);
+    return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 
 template <bool without_www>
