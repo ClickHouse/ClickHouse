@@ -57,6 +57,8 @@ public:
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
     UInt64 getUInt(size_t n) const override { return getDictionary().getUInt(getIndexes().getUInt(n)); }
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
+    Float64 getFloat64(size_t n) const override { return getDictionary().getInt(getIndexes().getFloat64(n)); }
+    bool getBool(size_t n) const override { return getDictionary().getInt(getIndexes().getBool(n)); }
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
