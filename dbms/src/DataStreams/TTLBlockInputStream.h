@@ -21,7 +21,7 @@ public:
 
     String getName() const override { return "TTLBlockInputStream"; }
 
-    Block getHeader() const override;
+    Block getHeader() const override { return header; };
 
 protected:
     Block readImpl() override;
@@ -47,6 +47,8 @@ private:
 
     std::unordered_map<String, String> defaults_result_column;
     ExpressionActionsPtr defaults_expression;
+
+    Block header;
 private:
     /// Removes values with expired ttl and computes new min_ttl and empty_columns for part
     void removeValuesWithExpiredColumnTTL(Block & block);
