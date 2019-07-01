@@ -21,15 +21,15 @@ public:
 
 private:
     /// Enables SSL, if client requested.
-    MySQLProtocol::HandshakeResponse finishHandshake();
+    void finishHandshake(MySQLProtocol::HandshakeResponse &);
 
-    void comQuery(const String & payload);
+    void comQuery(MySQLProtocol::Vector && payload);
 
-    void comFieldList(const String & payload);
+    void comFieldList(MySQLProtocol::Vector && payload);
 
     void comPing();
 
-    void comInitDB(const String & payload);
+    void comInitDB(MySQLProtocol::Vector && payload);
 
     static String generateScramble();
 

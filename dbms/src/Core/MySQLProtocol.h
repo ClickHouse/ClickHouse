@@ -1,12 +1,17 @@
 #pragma once
 
+#include <Common/MemoryTracker.h>
+#include <Common/PODArray.h>
 #include <Core/Types.h>
 #include <IO/copyData.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <random>
@@ -116,6 +121,27 @@ enum ColumnType
 };
 
 
+// For tracking memory of packets with String fields.
+class PacketMemoryTracker
+{
+    Int64 allocated = 0;
+public:
+    void alloc(Int64 size)
+    {
+        CurrentMemoryTracker::alloc(allocated);
+        allocated = size;
+    }
+
+    ~PacketMemoryTracker()
+    {
+        CurrentMemoryTracker::free(allocated);
+    }
+};
+
+
+using Vector = PODArray<char>;
+
+
 class ProtocolError : public DB::Exception
 {
 public:
@@ -126,7 +152,7 @@ public:
 class WritePacket
 {
 public:
-    virtual String getPayload() const = 0;
+    virtual void writePayload(WriteBuffer & buffer) const = 0;
 
     virtual ~WritePacket() = default;
 };
@@ -136,8 +162,8 @@ class ReadPacket
 {
 public:
     ReadPacket() = default;
-    ReadPacket(const ReadPacket &) = default;
-    virtual void readPayload(String payload) = 0;
+    ReadPacket(ReadPacket &&) = default;
+    virtual void readPayload(Vector && payload) = 0;
 
     virtual ~ReadPacket() = default;
 };
@@ -170,9 +196,10 @@ public:
     {
     }
 
-    String receivePacketPayload()
+  Vector receivePacketPayload()
     {
-        WriteBufferFromOwnString buf;
+        Vector result;
+        WriteBufferFromVector<Vector> buf(result);
 
         size_t payload_length = 0;
         size_t packet_sequence_id = 0;
@@ -202,23 +229,26 @@ public:
             copyData(*in, static_cast<WriteBuffer &>(buf), payload_length);
         } while (payload_length == max_packet_size);
 
-        return std::move(buf.str());
+        return result;
     }
 
     void receivePacket(ReadPacket & packet)
     {
-        packet.readPayload(receivePacketPayload());
+        auto payload = receivePacketPayload();
+        packet.readPayload(std::move(payload));
     }
 
     template<class T>
     void sendPacket(const T & packet, bool flush = false)
     {
         static_assert(std::is_base_of<WritePacket, T>());
-        String payload = packet.getPayload();
+        Vector payload;
+        WriteBufferFromVector buffer(payload);
+        packet.writePayload(buffer);
         size_t pos = 0;
         do
         {
-            size_t payload_length = std::min(payload.length() - pos, max_packet_size);
+            size_t payload_length = std::min(payload.size() - pos, max_packet_size);
 
             out->write(reinterpret_cast<const char *>(&payload_length), 3);
             out->write(reinterpret_cast<const char *>(&sequence_id), 1);
@@ -226,7 +256,7 @@ public:
 
             pos += payload_length;
             sequence_id++;
-        } while (pos < payload.length());
+        } while (pos < payload.size());
 
         if (flush)
             out->next();
@@ -235,19 +265,28 @@ public:
     /// Sets sequence-id to 0. Must be called before each command phase.
     void resetSequenceId();
 
-private:
     /// Converts packet to text. Is used for debug output.
-    static String packetToText(String payload);
+    static String packetToText(const Vector & payload);
 };
 
 
-uint64_t readLengthEncodedNumber(std::istringstream & ss);
+uint64_t readLengthEncodedNumber(ReadBuffer & ss);
 
-String writeLengthEncodedNumber(uint64_t x);
+void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
 
-void writeLengthEncodedString(String & payload, const String & s);
+template <class T>
+void writeLengthEncodedString(const T & s, WriteBuffer & buffer)
+{
+    writeLengthEncodedNumber(s.size(), buffer);
+    buffer.write(s.data(), s.size());
+}
 
-void writeNulTerminatedString(String & payload, const String & s);
+template <class T>
+void writeNulTerminatedString(const T & s, WriteBuffer & buffer)
+{
+    buffer.write(s.data(), s.size());
+    buffer.write(0);
+}
 
 
 class Handshake : public WritePacket
@@ -267,27 +306,25 @@ public:
         , capability_flags(capability_flags)
         , character_set(CharacterSet::utf8_general_ci)
         , status_flags(0)
-        , auth_plugin_data(auth_plugin_data)
+        , auth_plugin_data(std::move(auth_plugin_data))
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, protocol_version);
-        writeNulTerminatedString(result, server_version);
-        result.append(reinterpret_cast<const char *>(&connection_id), 4);
-        writeNulTerminatedString(result, auth_plugin_data.substr(0, AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(reinterpret_cast<const char *>(&capability_flags), 2);
-        result.append(reinterpret_cast<const char *>(&character_set), 1);
-        result.append(reinterpret_cast<const char *>(&status_flags), 2);
-        result.append((reinterpret_cast<const char *>(&capability_flags)) + 2, 2);
-        result.append(1, auth_plugin_data.size());
-        result.append(10, 0x0);
-        result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(Authentication::SHA256);
-        result.append(1, 0x0);
-        return result;
+        buffer.write(static_cast<char>(protocol_version));
+        writeNulTerminatedString(server_version, buffer);
+        buffer.write(reinterpret_cast<const char *>(&connection_id), 4);
+        writeNulTerminatedString(auth_plugin_data.substr(0, AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
+        buffer.write(reinterpret_cast<const char *>(&capability_flags), 2);
+        buffer.write(reinterpret_cast<const char *>(&character_set), 1);
+        buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
+        buffer.write((reinterpret_cast<const char *>(&capability_flags)) + 2, 2);
+        buffer.write(static_cast<char>(auth_plugin_data.size()));
+        writeChar(0x0, 10, buffer);
+        writeString(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
+        writeString(Authentication::SHA256, buffer);
+        writeChar(0x0, 1, buffer);
     }
 };
 
@@ -298,67 +335,68 @@ public:
     uint32_t max_packet_size;
     uint8_t character_set;
 
-    void readPayload(String s) override
+    void readPayload(Vector && s) override
     {
-        std::istringstream ss(s);
-        ss.readsome(reinterpret_cast<char *>(&capability_flags), 4);
-        ss.readsome(reinterpret_cast<char *>(&max_packet_size), 4);
-        ss.readsome(reinterpret_cast<char *>(&character_set), 1);
+        ReadBufferFromMemory buffer(s.data(), s.size());
+        buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
+        buffer.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
+        buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
     }
 };
 
 class HandshakeResponse : public ReadPacket
 {
 public:
-    uint32_t capability_flags;
-    uint32_t max_packet_size;
-    uint8_t character_set;
+    uint32_t capability_flags = 0;
+    uint32_t max_packet_size = 0;
+    uint8_t character_set = 0;
     String username;
     String auth_response;
     String database;
     String auth_plugin_name;
+    PacketMemoryTracker tracker;
 
     HandshakeResponse() = default;
 
-    HandshakeResponse(const HandshakeResponse &) = default;
-
-    void readPayload(String s) override
+    void readPayload(Vector && payload) override
     {
-        std::istringstream ss(s);
+        std::cerr << PacketSender::packetToText(payload) << std::endl;
+        tracker.alloc(payload.size());
+        ReadBufferFromMemory buffer(payload.data(), payload.size());
 
-        ss.readsome(reinterpret_cast<char *>(&capability_flags), 4);
-        ss.readsome(reinterpret_cast<char *>(&max_packet_size), 4);
-        ss.readsome(reinterpret_cast<char *>(&character_set), 1);
-        ss.ignore(23);
+        buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
+        buffer.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
+        buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
+        buffer.ignore(23);
 
-        std::getline(ss, username, static_cast<char>(0x0));
+        readNullTerminated(username, buffer);
 
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
-            auto len = readLengthEncodedNumber(ss);
+            auto len = readLengthEncodedNumber(buffer);
             auth_response.resize(len);
-            ss.read(auth_response.data(), static_cast<std::streamsize>(len));
+            buffer.readStrict(auth_response.data(), len);
         }
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
-            uint8_t len;
-            ss.read(reinterpret_cast<char *>(&len), 1);
-            auth_response.resize(len);
-            ss.read(auth_response.data(), len);
+            char len;
+            buffer.readStrict(len);
+            auth_response.resize(static_cast<unsigned int>(len));
+            buffer.readStrict(auth_response.data(), len);
         }
         else
         {
-            std::getline(ss, auth_response, static_cast<char>(0x0));
+            readNullTerminated(auth_response, buffer);
         }
 
         if (capability_flags & CLIENT_CONNECT_WITH_DB)
         {
-            std::getline(ss, database, static_cast<char>(0x0));
+            readNullTerminated(database, buffer);
         }
 
         if (capability_flags & CLIENT_PLUGIN_AUTH)
         {
-            std::getline(ss, auth_plugin_name, static_cast<char>(0x0));
+            readNullTerminated(auth_plugin_name, buffer);
         }
     }
 };
@@ -373,13 +411,12 @@ public:
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, 0xfe);
-        writeNulTerminatedString(result, plugin_name);
-        result.append(auth_plugin_data);
-        return result;
+        buffer.write(0xfe);
+        writeNulTerminatedString(plugin_name, buffer);
+        writeString(auth_plugin_data, buffer);
+        std::cerr << auth_plugin_data.size() << std::endl;
     }
 };
 
@@ -387,10 +424,12 @@ class AuthSwitchResponse : public ReadPacket
 {
 public:
     String value;
+    PacketMemoryTracker tracker;
 
-    void readPayload(String s) override
+    void readPayload(Vector && payload) override
     {
-        value = std::move(s);
+        tracker.alloc(payload.size());
+        value.assign(payload.data(), payload.size());
     }
 };
 
@@ -398,14 +437,12 @@ class AuthMoreData : public WritePacket
 {
     String data;
 public:
-    AuthMoreData(String data): data(std::move(data)) {}
+    explicit AuthMoreData(String data): data(std::move(data)) {}
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, 0x01);
-        result.append(data);
-        return result;
+        buffer.write(0x01);
+        writeString(data, buffer);
     }
 };
 
@@ -413,15 +450,15 @@ public:
 class NullTerminatedString : public ReadPacket
 {
 public:
-    String value;
+    Vector value;
 
-    void readPayload(String s) override
+    void readPayload(Vector && payload) override
     {
-        if (s.length() == 0 || s.back() != 0)
+        if (payload.empty() || payload.back() != 0)
         {
             throw ProtocolError("String is not null terminated.", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
-        value = s;
+        value = std::move(payload);
         value.pop_back();
     }
 };
@@ -453,38 +490,36 @@ public:
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, header);
-        result.append(writeLengthEncodedNumber(affected_rows));
-        result.append(writeLengthEncodedNumber(0)); /// last insert-id
+        buffer.write(header);
+        writeLengthEncodedNumber(affected_rows, buffer);
+        writeLengthEncodedNumber(0, buffer); /// last insert-id
 
         if (capabilities & CLIENT_PROTOCOL_41)
         {
-            result.append(reinterpret_cast<const char *>(&status_flags), 2);
-            result.append(reinterpret_cast<const char *>(&warnings), 2);
+            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&warnings), 2);
         }
         else if (capabilities & CLIENT_TRANSACTIONS)
         {
-            result.append(reinterpret_cast<const char *>(&status_flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
         }
 
         if (capabilities & CLIENT_SESSION_TRACK)
         {
-            result.append(writeLengthEncodedNumber(info.length()));
-            result.append(info);
+            writeLengthEncodedNumber(info.length(), buffer);
+            writeString(info, buffer);
             if (status_flags & SERVER_SESSION_STATE_CHANGED)
             {
-                result.append(writeLengthEncodedNumber(session_state_changes.length()));
-                result.append(session_state_changes);
+                writeLengthEncodedNumber(session_state_changes.length(), buffer);
+                writeString(session_state_changes, buffer);
             }
         }
         else
         {
-            result.append(info);
+            writeString(info, buffer);
         }
-        return result;
     }
 };
 
@@ -496,13 +531,11 @@ public:
     EOF_Packet(int warnings, int status_flags) : warnings(warnings), status_flags(status_flags)
     {}
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, 0xfe); // EOF header
-        result.append(reinterpret_cast<const char *>(&warnings), 2);
-        result.append(reinterpret_cast<const char *>(&status_flags), 2);
-        return result;
+        buffer.write(0xfe); // EOF header
+        buffer.write(reinterpret_cast<const char *>(&warnings), 2);
+        buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
     }
 };
 
@@ -517,15 +550,13 @@ public:
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        result.append(1, 0xff);
-        result.append(reinterpret_cast<const char *>(&error_code), 2);
-        result.append("#", 1);
-        result.append(sql_state.data(), sql_state.length());
-        result.append(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
-        return result;
+        buffer.write(0xff);
+        buffer.write(reinterpret_cast<const char *>(&error_code), 2);
+        buffer.write('#');
+        buffer.write(sql_state.data(), sql_state.length());
+        buffer.write(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
     }
 };
 
@@ -573,23 +604,21 @@ public:
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        writeLengthEncodedString(result, "def"); /// always "def"
-        writeLengthEncodedString(result, ""); /// schema
-        writeLengthEncodedString(result, ""); /// table
-        writeLengthEncodedString(result, ""); /// org_table
-        writeLengthEncodedString(result, name);
-        writeLengthEncodedString(result, ""); /// org_name
-        result.append(writeLengthEncodedNumber(next_length));
-        result.append(reinterpret_cast<const char *>(&character_set), 2);
-        result.append(reinterpret_cast<const char *>(&column_length), 4);
-        result.append(reinterpret_cast<const char *>(&column_type), 1);
-        result.append(reinterpret_cast<const char *>(&flags), 2);
-        result.append(reinterpret_cast<const char *>(&decimals), 2);
-        result.append(2, 0x0);
-        return result;
+        writeLengthEncodedString(std::string("def"), buffer); /// always "def"
+        writeLengthEncodedString(schema, buffer);
+        writeLengthEncodedString(table, buffer);
+        writeLengthEncodedString(org_table, buffer);
+        writeLengthEncodedString(name, buffer);
+        writeLengthEncodedString(org_name, buffer);
+        writeLengthEncodedNumber(next_length, buffer);
+        buffer.write(reinterpret_cast<const char *>(&character_set), 2);
+        buffer.write(reinterpret_cast<const char *>(&column_length), 4);
+        buffer.write(reinterpret_cast<const char *>(&column_type), 1);
+        buffer.write(reinterpret_cast<const char *>(&flags), 2);
+        buffer.write(reinterpret_cast<const char *>(&decimals), 2);
+        writeChar(0x0, 2, buffer);
     }
 };
 
@@ -598,12 +627,13 @@ class ComFieldList : public ReadPacket
 public:
     String table, field_wildcard;
 
-    void readPayload(String payload)
+    void readPayload(Vector && payload) override
     {
-        std::istringstream ss(payload);
-        ss.ignore(1); // command byte
-        std::getline(ss, table, static_cast<char>(0x0));
-        field_wildcard = payload.substr(table.length() + 2); // rest of the packet
+        ReadBufferFromMemory buffer(payload.data(), payload.size());
+        buffer.ignore(1); // command byte
+        readNullTerminated(table, buffer);
+        field_wildcard.assign(payload.data() + table.size() + 2);
+        readStringUntilEOFInto(field_wildcard, buffer);
     }
 };
 
@@ -615,33 +645,29 @@ public:
     {
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        return writeLengthEncodedNumber(value);
+        writeLengthEncodedNumber(value, buffer);
     }
 };
 
 class ResultsetRow : public WritePacket
 {
-    std::vector<String> columns;
+    std::vector<Vector> columns;
 public:
     ResultsetRow()
     {
     }
 
-    void appendColumn(String value)
+    void appendColumn(Vector value)
     {
         columns.emplace_back(std::move(value));
     }
 
-    String getPayload() const override
+    void writePayload(WriteBuffer & buffer) const override
     {
-        String result;
-        for (const String & column : columns)
-        {
-            writeLengthEncodedString(result, column);
-        }
-        return result;
+        for (const Vector & column : columns)
+            writeLengthEncodedString(column, buffer);
     }
 };
 

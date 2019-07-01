@@ -45,8 +45,8 @@ void MySQLWireBlockOutputStream::write(const Block & block)
         ResultsetRow row_packet;
         for (const ColumnWithTypeAndName & column : block)
         {
-            String column_value;
-            WriteBufferFromString ostr(column_value);
+            Vector column_value;
+            WriteBufferFromVector ostr(column_value);
             column.type->serializeAsText(*column.column.get(), i, ostr, format_settings);
             ostr.finish();
 
