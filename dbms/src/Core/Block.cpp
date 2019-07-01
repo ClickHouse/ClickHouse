@@ -336,6 +336,7 @@ MutableColumns Block::mutateColumns()
 
 void Block::setColumns(MutableColumns && columns)
 {
+    /// TODO: assert if |columns| doesn't match |data|!
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = std::move(columns[i]);
@@ -344,6 +345,7 @@ void Block::setColumns(MutableColumns && columns)
 
 void Block::setColumns(const Columns & columns)
 {
+    /// TODO: assert if |columns| doesn't match |data|!
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = columns[i];
