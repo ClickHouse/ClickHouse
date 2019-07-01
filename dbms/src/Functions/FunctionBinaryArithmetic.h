@@ -1,5 +1,10 @@
 #pragma once
 
+// Include this first, because `#define _asan_poison_address` from
+// llvm/Support/Compiler.h conflicts with its forward declaration in
+// sanitizer/asan_interface.h
+#include <Common/Arena.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
@@ -18,7 +23,6 @@
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
-#include <Common/Arena.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
