@@ -223,7 +223,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
 
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
-   
+
 #pragma GCC diagnostic push
 #if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
