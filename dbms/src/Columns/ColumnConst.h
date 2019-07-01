@@ -197,6 +197,7 @@ public:
         return false;
     }
 
+    bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
@@ -215,7 +216,5 @@ public:
     template <typename T>
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };
-
-bool isColumnConst(const IColumn & column);
 
 }

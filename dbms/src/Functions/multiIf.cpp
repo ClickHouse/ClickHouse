@@ -152,7 +152,7 @@ public:
                 }
                 else
                 {
-                    if (checkColumn<ColumnNullable>(*cond_col.column))
+                    if (isColumnNullable(*cond_col.column))
                         instruction.condition_is_nullable = true;
 
                     instruction.condition = cond_col.column.get();

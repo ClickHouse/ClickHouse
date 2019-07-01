@@ -1411,7 +1411,7 @@ private:
 
             const auto & dst = out_block.getByPosition(key_pos).column;
             const auto & src = sample_block_with_keys.getByPosition(i).column;
-            if (checkColumn<ColumnNullable>(*dst) != checkColumn<ColumnNullable>(*src))
+            if (isColumnNullable(*dst) != isColumnNullable(*src))
                 nullability_changes.insert(key_pos);
         }
 

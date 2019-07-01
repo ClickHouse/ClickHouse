@@ -191,7 +191,7 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
-    if (checkColumn<ColumnNullable>(*column_holder))
+    if (isColumnNullable(*column_holder))
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
     index.setColumn(getRawColumnPtr());
