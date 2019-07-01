@@ -693,7 +693,7 @@ private:
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        if (checkColumn<ColumnNullable>(*column))
+        if (isColumnNullable(*column))
             return column;
 
         return ColumnNullable::create(
@@ -813,7 +813,7 @@ private:
         {
             if (cond_col)
             {
-                if (checkColumn<ColumnNullable>(*arg_else.column))
+                if (isColumnNullable(*arg_else.column))
                 {
                     auto arg_else_column = arg_else.column;
                     auto result_column = (*std::move(arg_else_column)).mutate();
@@ -855,7 +855,7 @@ private:
                 for (size_t i = 0; i < size; ++i)
                     negated_null_map_data[i] = !null_map_data[i];
 
-                if (checkColumn<ColumnNullable>(*arg_then.column))
+                if (isColumnNullable(*arg_then.column))
                 {
                     auto arg_then_column = arg_then.column;
                     auto result_column = (*std::move(arg_then_column)).mutate();

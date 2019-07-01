@@ -308,7 +308,7 @@ struct AggregationMethodKeysFixed
             ColumnUInt8 * null_map;
 
             /// If we have a nullable column, get its nested column and its null map.
-            if (has_nullable_keys && checkColumn<ColumnNullable>(*key_columns[i]))
+            if (has_nullable_keys && isColumnNullable(*key_columns[i]))
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
@@ -321,7 +321,7 @@ struct AggregationMethodKeysFixed
             }
 
             bool is_null;
-            if (has_nullable_keys && checkColumn<ColumnNullable>(*key_columns[i]))
+            if (has_nullable_keys && isColumnNullable(*key_columns[i]))
             {
                 /// The current column is nullable. Check if the value of the
                 /// corresponding key is nullable. Update the null map accordingly.

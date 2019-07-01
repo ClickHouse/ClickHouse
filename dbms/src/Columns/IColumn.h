@@ -297,6 +297,9 @@ public:
 
     /// Various properties on behaviour of column type.
 
+    /// True if column contains something nullable inside. It's true for ColumnNullable, can be true or false for ColumnConst, etc.
+    virtual bool isNullable() const { return false; }
+
     /// It's a special kind of column, that contain single value, but is not a ColumnConst.
     virtual bool isDummy() const { return false; }
 
@@ -429,6 +432,10 @@ bool checkColumn(const IColumn * column)
     return checkAndGetColumn<Type>(column);
 }
 
-bool isColumnConst(const IColumn & column); /// defined in ColumnConst.cpp
+/// True if column's an ColumnConst instance. It's just a syntax sugar for type check.
+bool isColumnConst(const IColumn & column);
+
+/// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
+bool isColumnNullable(const IColumn & column);
 
 }

@@ -749,12 +749,12 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
 
     col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (col_array)
-        is_array_of_nullable = checkColumn<ColumnNullable>(col_array->getData());
+        is_array_of_nullable = isColumnNullable(col_array->getData());
     else
     {
         col_const_array = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_const_array)
-            is_array_of_nullable = checkColumn<ColumnNullable>(col_const_array->getData());
+            is_array_of_nullable = isColumnNullable(col_const_array->getData());
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);

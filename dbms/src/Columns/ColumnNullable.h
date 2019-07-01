@@ -100,6 +100,7 @@ public:
         return false;
     }
 
+    bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
@@ -141,8 +142,6 @@ private:
     void applyNullMapImpl(const ColumnUInt8 & map);
 };
 
-
 ColumnPtr makeNullable(const ColumnPtr & column);
-bool isNullable(const IColumn & column);
 
 }

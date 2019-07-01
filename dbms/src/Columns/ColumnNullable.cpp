@@ -451,23 +451,15 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
-
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
-    if (checkColumn<ColumnNullable>(*column))
+    if (isColumnNullable(*column))
         return column;
 
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
-}
-
-bool isNullable(const IColumn & column)
-{
-    if (auto * column_const = checkAndGetColumn<ColumnConst>(column))
-        return checkColumn<ColumnNullable>(column_const->getDataColumn());
-    return checkColumn<ColumnNullable>(column);
 }
 
 }
