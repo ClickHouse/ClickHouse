@@ -92,7 +92,7 @@
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
 
 #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
-//    #error PLATFORM_NOT_SUPPORTED
+    #error PLATFORM_NOT_SUPPORTED
 #endif
 
 /// Check for presence of address sanitizer
@@ -118,10 +118,12 @@
 #if defined(__clang__)
     #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
     #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+    #define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #else
     /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
     #define NO_SANITIZE_UNDEFINED
     #define NO_SANITIZE_ADDRESS
+    #define NO_SANITIZE_THREAD
 #endif
 
 #if defined __GNUC__ && !defined __clang__
