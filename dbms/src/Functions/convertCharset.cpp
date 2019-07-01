@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_core.h"
 #if USE_ICU
 
 #include <Functions/IFunction.h>

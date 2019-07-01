@@ -66,7 +66,9 @@ RUN apt-get --allow-unauthenticated update -y \
             libjemalloc-dev \
             unixodbc-dev \
             odbcinst \
-            tzdata
+            tzdata \
+            gperf \
+            alien
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

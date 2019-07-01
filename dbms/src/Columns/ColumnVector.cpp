@@ -33,7 +33,7 @@ template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore(pos, data[n]);
+    unalignedStore<T>(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
 

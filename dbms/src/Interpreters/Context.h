@@ -10,9 +10,8 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -144,6 +143,9 @@ private:
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -464,6 +466,11 @@ public:
     using SessionKey = std::pair<String, String>;
 
     SampleBlockCache & getSampleBlockCache() const;
+
+    /// Query parameters for prepared statements.
+    bool hasQueryParameters() const;
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;

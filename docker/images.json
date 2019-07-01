@@ -9,5 +9,6 @@
     "docker/test/stateful": "yandex/clickhouse-stateful-test",
     "docker/test/stateless": "yandex/clickhouse-stateless-test",
     "docker/test/unit": "yandex/clickhouse-unit-test",
+    "docker/test/stress": "yandex/clickhouse-stress-test",
     "dbms/tests/integration/image": "yandex/clickhouse-integration-tests-runner"
 }

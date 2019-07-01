@@ -35,3 +35,5 @@ endif ()
 if (ENABLE_CODE_QUALITY)
     add_subdirectory (check-style)
 endif ()
+
+add_subdirectory (package)
