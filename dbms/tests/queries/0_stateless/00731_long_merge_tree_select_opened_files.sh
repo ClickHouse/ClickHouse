@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT $settings -q "INSERT INTO merge_tree_table SELECT (intHash64(
 
 $CLICKHOUSE_CLIENT $settings -q "OPTIMIZE TABLE merge_tree_table FINAL;"
 
-toching_many_parts_query="SELECT count() from (SELECT toDayOfWeek(date) as m, id, count() FROM merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1)"
+toching_many_parts_query="SELECT count() FROM (SELECT toDayOfWeek(date) AS m, id, count() FROM merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1)"
 $CLICKHOUSE_CLIENT $settings -q "$toching_many_parts_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
