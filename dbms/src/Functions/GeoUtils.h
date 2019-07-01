@@ -229,8 +229,8 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
-     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
+    cell_width = (max_corner.x() - min_corner.x()) / grid_size;
+    cell_height = (max_corner.y() - min_corner.y()) / grid_size;
 
 #pragma GCC diagnostic pop
 
