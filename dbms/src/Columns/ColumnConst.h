@@ -99,6 +99,11 @@ public:
         return data->getBool(0);
     }
 
+    Float64 getFloat64(size_t) const override
+    {
+        return data->getFloat64(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
