@@ -68,7 +68,8 @@ void MySQLHandler::run()
 
         LOG_TRACE(log, "Sent handshake");
 
-        HandshakeResponse handshake_response = finishHandshake();
+        HandshakeResponse handshake_response;
+        finishHandshake(handshake_response);
         connection_context.client_capabilities = handshake_response.capability_flags;
         if (handshake_response.max_packet_size)
             connection_context.max_packet_size = handshake_response.max_packet_size;
@@ -104,7 +105,7 @@ void MySQLHandler::run()
         while (true)
         {
             packet_sender->resetSequenceId();
-            String payload = packet_sender->receivePacketPayload();
+            Vector payload = packet_sender->receivePacketPayload();
             int command = payload[0];
             LOG_DEBUG(log, "Received command: " << std::to_string(command) << ". Connection id: " << connection_id << ".");
             try
@@ -114,13 +115,13 @@ void MySQLHandler::run()
                     case COM_QUIT:
                         return;
                     case COM_INIT_DB:
-                        comInitDB(payload);
+                        comInitDB(std::move(payload));
                         break;
                     case COM_QUERY:
-                        comQuery(payload);
+                        comQuery(std::move(payload));
                         break;
                     case COM_FIELD_LIST:
-                        comFieldList(payload);
+                        comFieldList(std::move(payload));
                         break;
                     case COM_PING:
                         comPing();
@@ -151,9 +152,8 @@ void MySQLHandler::run()
  *  Reading is performed from socket instead of ReadBuffer to prevent reading part of SSL handshake.
  *  If we read it from socket, it will be impossible to start SSL connection using Poco. Size of SSLRequest packet payload is 32 bytes, thus we can read at most 36 bytes.
  */
-MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
+void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 {
-    HandshakeResponse packet;
     size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
 
     /// Buffer for SSLRequest or part of HandshakeResponse.
@@ -181,7 +181,10 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
     {
         read_bytes(packet_size); /// Reading rest SSLRequest.
         SSLRequest ssl_request;
-        ssl_request.readPayload(String(buf + PACKET_HEADER_SIZE, pos - PACKET_HEADER_SIZE));
+        Vector payload;
+        WriteBufferFromVector buffer(payload);
+        buffer.write(buf + PACKET_HEADER_SIZE, pos - PACKET_HEADER_SIZE);
+        ssl_request.readPayload(std::move(payload));
         connection_context.client_capabilities = ssl_request.capability_flags;
         connection_context.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
         secure_connection = true;
@@ -197,13 +200,14 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
     {
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
-        WriteBufferFromOwnString buf_for_handshake_response;
+        Vector packet_data;
+        WriteBufferFromVector buf_for_handshake_response(packet_data);
         buf_for_handshake_response.write(buf, pos);
         copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
-        packet.readPayload(buf_for_handshake_response.str().substr(PACKET_HEADER_SIZE));
+        Vector payload(Vector::const_iterator(packet_data.data() + PACKET_HEADER_SIZE), const_cast<const Vector &>(packet_data).end());
+        packet.readPayload(std::move(payload));
         packet_sender->sequence_id++;
     }
-    return packet;
 }
 
 String MySQLHandler::generateScramble()
@@ -319,18 +323,18 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     }
 }
 
-void MySQLHandler::comInitDB(const String & payload)
+void MySQLHandler::comInitDB(Vector && payload)
 {
-    String database = payload.substr(1);
+    String database(payload.data() + 1, payload.size() - 1);
     LOG_DEBUG(log, "Setting current database to " << database);
     connection_context.setCurrentDatabase(database);
     packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }
 
-void MySQLHandler::comFieldList(const String & payload)
+void MySQLHandler::comFieldList(Vector && payload)
 {
     ComFieldList packet;
-    packet.readPayload(payload);
+    packet.readPayload(std::move(payload));
     String database = connection_context.getCurrentDatabase();
     StoragePtr tablePtr = connection_context.getTable(database, packet.table);
     for (const NameAndTypePair & column: tablePtr->getColumns().getAll())
@@ -348,21 +352,26 @@ void MySQLHandler::comPing()
     packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
-void MySQLHandler::comQuery(const String & payload)
+void MySQLHandler::comQuery(Vector && payload)
 {
     bool with_output = false;
     std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
         with_output = true;
     };
 
-    String query = payload.substr(1);
+    // MariaDB client starts session with that query
+    String select_version = "select @@version_comment limit 1";
 
     // Translate query from MySQL to ClickHouse.
     // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
-    if (query == "select @@version_comment limit 1")  // MariaDB client starts session with that query
-        query = "select ''";
+    if (payload.size() > 1 && String(payload.data() + 1, payload.data() - 1) == select_version)
+    {
+        payload.clear();
+        WriteBufferFromVector buffer(payload);
+        writeString(select_version, buffer);
+    }
 
-    ReadBufferFromString buf(query);
+    ReadBufferFromMemory buf(payload.data() + 1, payload.size() - 1);
     executeQuery(buf, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
