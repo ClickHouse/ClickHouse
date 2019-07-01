@@ -15,7 +15,7 @@
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
@@ -116,7 +116,7 @@ static void call_default_signal_handler(int sig)
 
 
 using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(Backtrace) + sizeof(ThreadNumber);
+static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -154,12 +154,12 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    const Backtrace backtrace(signal_context);
+    const StackTrace stackTrace(signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
-    DB::writePODBinary(backtrace, out);
+    DB::writePODBinary(stackTrace, out);
     DB::writeBinary(getThreadNumber(), out);
 
     out.next();
@@ -232,15 +232,15 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
-                Backtrace backtrace(NoCapture{});
+                StackTrace stackTrace(NoCapture{});
                 ThreadNumber thread_num;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
-                DB::readPODBinary(backtrace, in);
+                DB::readPODBinary(stackTrace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, backtrace, thread_num);
+                onFault(sig, info, context, stackTrace, thread_num);
             }
         }
     }
@@ -255,14 +255,14 @@ private:
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, const Backtrace & backtrace, ThreadNumber thread_num) const
+    void onFault(int sig, siginfo_t & info, ucontext_t & context, const StackTrace & stackTrace, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         LOG_ERROR(log, signalToErrorMessage(sig, info, context));
-        LOG_ERROR(log, backtrace.toString());
+        LOG_ERROR(log, stackTrace.toString());
     }
 };
 
