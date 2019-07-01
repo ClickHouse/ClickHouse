@@ -6,12 +6,19 @@
 namespace DB
 {
 
+/// Get 64 integer valuses, makes 64x64 bit matrix, transpose it and crop unused bits (most significant zeroes).
+/// In example, if we have UInt8 with only 0 and 1 inside 64xUInt8 would be compressed into 1xUInt64.
+/// It detects unused bits by calculating min and max values of data part, saving them in header in compression phase.
+/// There's a special case with signed integers parts with crossing zero data. Here it stores one more bit to detect sign of value.
 class CompressionCodecT64 : public ICompressionCodec
 {
 public:
     static constexpr UInt32 HEADER_SIZE = 1 + 2 * sizeof(UInt64);
     static constexpr UInt32 MAX_COMPRESSED_BLOCK_SIZE = sizeof(UInt64) * 64;
 
+    /// There're 2 compression variants:
+    /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
+    /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
     enum class Variant
     {
         Byte,
@@ -26,7 +33,7 @@ public:
     UInt8 getMethodByte() const override;
     String getCodecDesc() const override
     {
-        return String("T64(\'") + ((variant == Variant::Byte) ? "byte" : "bit") + "\')";
+        return String("T64") + ((variant == Variant::Byte) ? "" : "(\'bit\')");
     }
 
     void useInfoAboutType(DataTypePtr data_type) override;
