@@ -1,4 +1,4 @@
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 
@@ -7,28 +7,11 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 
-/// XXX: dbms depends on libcommon so we cannot add #include <Core/Defines.h> here
-/// TODO: remove after libcommon and dbms merge
-#if defined(__clang__)
-    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
-#else
-    #define NO_SANITIZE_ADDRESS
-#endif
-
-/// Arcadia compatibility DEVTOOLS-3976
-#if defined(BACKTRACE_INCLUDE)
-#include BACKTRACE_INCLUDE
-#endif
-
-#if !defined(BACKTRACE_FUNC) && USE_UNWIND
-#define BACKTRACE_FUNC unw_backtrace
-#endif
-
 #if USE_UNWIND
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 
-static_assert(Backtrace::capacity < LIBUNWIND_MAX_STACK_SIZE, "Backtrace cannot be larger than libunwind upper bound on stack size");
+static_assert(StackTrace::capacity < LIBUNWIND_MAX_STACK_SIZE, "StackTrace cannot be larger than libunwind upper bound on stack size");
 #endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
@@ -192,47 +175,62 @@ void * getCallerAddress(const ucontext_t & context)
     return nullptr;
 }
 
-
-Backtrace::Backtrace(std::optional<ucontext_t> signal_context)
+StackTrace::StackTrace()
 {
-    size = 0;
+    tryCapture();
+}
 
-#if defined(BACKTRACE_FUNC)
-    size = BACKTRACE_FUNC(frames.data(), capacity);
-#else
-    if (signal_context.has_value()) {
-        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
-        /// So at least print the function where the signal happened.
-        void * caller_address = getCallerAddress(*signal_context);
+StackTrace::StackTrace(const ucontext_t & signal_context)
+{
+    tryCapture();
+
+    if (size == 0)
+    {
+        /// No stack trace was captured. At least we can try parsing caller address
+        void * caller_address = getCallerAddress(signal_context);
         if (caller_address)
             frames[size++] = reinterpret_cast<void *>(caller_address);
     }
+}
+
+StackTrace::StackTrace(NoCapture)
+{
+}
+
+StackTrace::StackTrace(const std::vector<void *> & source_frames)
+{
+    for (size = 0; size < std::min(source_frames.size(), capacity); ++size)
+        frames[size] = source_frames[size];
+}
+
+void StackTrace::tryCapture()
+{
+    size = 0;
+#if USE_UNWIND
+    size = unw_backtrace(frames.data(), capacity);
 #endif
 }
 
-Backtrace::Backtrace(const std::vector<void *>& sourceFrames) {
-    for (size = 0; size < std::min(sourceFrames.size(), capacity); size++)
-        frames[size] = sourceFrames[size];
-}
-
-size_t Backtrace::getSize() const {
+size_t StackTrace::getSize() const
+{
     return size;
 }
 
-const Backtrace::Frames& Backtrace::getFrames() const {
+const StackTrace::Frames& StackTrace::getFrames() const
+{
     return frames;
 }
 
-std::string Backtrace::toString() const
+std::string StackTrace::toString() const
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
-    static SimpleCache<decltype(Backtrace::toStringImpl), &Backtrace::toStringImpl> func_cached;
+    static SimpleCache<decltype(StackTrace::toStringImpl), &StackTrace::toStringImpl> func_cached;
     return func_cached(frames, size);
 }
 
-std::string Backtrace::toStringImpl(const Frames& frames, size_t size)
+std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
 {
     if (size == 0)
         return "<Empty trace>";

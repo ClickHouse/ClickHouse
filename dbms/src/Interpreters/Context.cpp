@@ -49,7 +49,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -215,7 +215,7 @@ struct ContextShared
         static std::atomic<size_t> num_calls{0};
         if (++num_calls > 1)
         {
-            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << Backtrace().toString();
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
             std::cerr.flush();
             std::terminate();
         }
