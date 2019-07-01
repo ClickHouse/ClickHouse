@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_core.h"
 #if USE_MYSQL
 
 #include <DataTypes/DataTypesNumber.h>
@@ -19,7 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/typeid_cast.h>
-#include <Common/convertMySQLDataType.h>
+#include <DataTypes/convertMySQLDataType.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 

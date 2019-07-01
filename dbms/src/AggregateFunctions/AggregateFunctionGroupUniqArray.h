@@ -122,7 +122,7 @@ public:
 
 
 /// Generic implementation, it uses serialized representation as object descriptor.
-struct AggreagteFunctionGroupUniqArrayGenericData
+struct AggregateFunctionGroupUniqArrayGenericData
 {
     static constexpr size_t INIT_ELEMS = 2; /// adjustable
     static constexpr size_t ELEM_SIZE = sizeof(HashSetCellWithSavedHash<StringRef, StringRefHash>);
@@ -132,7 +132,7 @@ struct AggreagteFunctionGroupUniqArrayGenericData
 };
 
 
-/// Helper function for deserialize and insert for the class AggreagteFunctionGroupUniqArrayGeneric
+/// Helper function for deserialize and insert for the class AggregateFunctionGroupUniqArrayGeneric
 template <bool is_plain_column>
 static StringRef getSerializationImpl(const IColumn & column, size_t row_num, Arena & arena);
 
@@ -143,15 +143,15 @@ static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false, typename Tlimit_num_elem = std::false_type>
-class AggreagteFunctionGroupUniqArrayGeneric
-    : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
+class AggregateFunctionGroupUniqArrayGeneric
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
 {
     DataTypePtr & input_data_type;
 
     static constexpr bool limit_num_elems = Tlimit_num_elem::value;
     UInt64 max_elems;
 
-    using State = AggreagteFunctionGroupUniqArrayGenericData;
+    using State = AggregateFunctionGroupUniqArrayGenericData;
 
     static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena)
     {
@@ -164,8 +164,8 @@ class AggreagteFunctionGroupUniqArrayGeneric
     }
 
 public:
-    AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type}, {})
+    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type}, {})
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 

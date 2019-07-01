@@ -1,5 +1,4 @@
 <test>
-    <name>linear_regression</name>
     <type>loop</type>
 
     <stop_conditions>

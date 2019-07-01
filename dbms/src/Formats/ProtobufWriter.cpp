@@ -1,5 +1,7 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufWriter.h"
 
 #include <cassert>
 #include <optional>
@@ -11,7 +13,6 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "ProtobufWriter.h"
 
 
 namespace DB
