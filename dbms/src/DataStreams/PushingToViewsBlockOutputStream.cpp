@@ -75,6 +75,17 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 }
 
 
+Block PushingToViewsBlockOutputStream::getHeader() const
+{
+    /// If we don't write directly to the destination
+    /// then expect that we're inserting with precalculated virtual columns
+    if (output)
+        return storage->getSampleBlock();
+    else
+        return storage->getSampleBlockWithVirtuals();
+}
+
+
 void PushingToViewsBlockOutputStream::write(const Block & block)
 {
     /** Throw an exception if the sizes of arrays - elements of nested data structures doesn't match.
@@ -92,6 +103,8 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     else
     {
         if (output)
+            /// TODO: to support virtual and alias columns inside MVs, we should return here the inserted block extended
+            ///       with additional columns directly from storage and pass it to MVs instead of raw block.
             output->write(block);
     }
 
