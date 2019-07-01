@@ -21,7 +21,7 @@ public:
 
     String getName() const override { return "TTLBlockInputStream"; }
 
-    Block getHeader() const override { return header; };
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
