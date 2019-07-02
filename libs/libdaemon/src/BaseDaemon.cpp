@@ -60,7 +60,7 @@
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
 
