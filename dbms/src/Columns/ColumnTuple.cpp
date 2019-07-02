@@ -39,7 +39,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     columns.reserve(mutable_columns.size());
     for (auto & column : mutable_columns)
     {
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
         columns.push_back(std::move(column));
@@ -49,7 +49,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
     for (const auto & column : columns)
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
     auto column_tuple = ColumnTuple::create(MutableColumns());
@@ -61,7 +61,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 {
     for (const auto & column : columns)
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
     auto column_tuple = ColumnTuple::create(MutableColumns());

@@ -138,7 +138,7 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (key_columns[0]->isColumnConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
+            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -287,8 +287,8 @@ void Join::setSampleBlock(const Block & block)
         }
 
         /// We will join only keys, where all components are not NULL.
-        if (key_columns[i]->isColumnNullable())
-            key_columns[i] = &static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn();
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
+            key_columns[i] = &nullable->getNestedColumn();
     }
 
     if (strictness == ASTTableJoin::Strictness::Asof)
@@ -1408,7 +1408,7 @@ private:
 
             const auto & dst = out_block.getByPosition(key_pos).column;
             const auto & src = sample_block_with_keys.getByPosition(i).column;
-            if (dst->isColumnNullable() != src->isColumnNullable())
+            if (isColumnNullable(*dst) != isColumnNullable(*src))
                 nullability_changes.insert(key_pos);
         }
 
@@ -1423,8 +1423,8 @@ private:
             if (changes_bitmap[i])
             {
                 ColumnPtr column = std::move(columns[i]);
-                if (column->isColumnNullable())
-                    column = static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
+                if (auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+                    column = nullable->getNestedColumnPtr();
                 else
                     column = makeNullable(column);
 
