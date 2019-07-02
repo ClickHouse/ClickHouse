@@ -2,7 +2,7 @@
 
 ### New Feature
 * Print information about frozen parts in system.parts table. [#5471](https://github.com/yandex/ClickHouse/pull/5471) ([proller](https://github.com/proller))
-* Ask client password on tty [#5092](https://github.com/yandex/ClickHouse/pull/5092) ([proller](https://github.com/proller))
+* Ask client password on clickhouse-client start on tty if not set in aguments [#5092](https://github.com/yandex/ClickHouse/pull/5092) ([proller](https://github.com/proller))
 * Implement dictGet and dictGetOrDefault functions for Decimal types. [#5394](https://github.com/yandex/ClickHouse/pull/5394) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
