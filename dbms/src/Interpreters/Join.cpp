@@ -1,5 +1,3 @@
-#include <array>
-#include <common/constexpr_helpers.h>
 #include <common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
@@ -10,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Join.h>
+#include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
 
 #include <DataStreams/IBlockInputStream.h>
@@ -31,7 +30,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int ILLEGAL_COLUMN;
 }
-
 
 static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & key_names, const NamesAndTypesList & columns_added_by_join)
 {
@@ -226,8 +224,8 @@ void Join::init(Type type_)
 
     if (kind == ASTTableJoin::Kind::Cross)
         return;
-    dispatch(MapInitTag());
-    dispatch([&](auto, auto, auto & map) { map.create(type); });
+    joinDispatchInit(kind, strictness, maps);
+    joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { map.create(type); });
 }
 
 size_t Join::getTotalRowCount() const
@@ -241,7 +239,7 @@ size_t Join::getTotalRowCount() const
     }
     else
     {
-        dispatch([&](auto, auto, auto & map) { res += map.getTotalRowCount(type); });
+        joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { res += map.getTotalRowCount(type); });
     }
 
     return res;
@@ -258,7 +256,7 @@ size_t Join::getTotalByteCount() const
     }
     else
     {
-        dispatch([&](auto, auto, auto & map) { res += map.getTotalByteCountImpl(type); });
+        joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { res += map.getTotalByteCountImpl(type); });
         res += pool.size();
     }
 
@@ -561,7 +559,7 @@ bool Join::insertFromBlock(const Block & block)
 
     if (kind != ASTTableJoin::Kind::Cross)
     {
-        dispatch([&](auto, auto strictness_, auto & map)
+        joinDispatch(kind, strictness, maps, [&](auto, auto strictness_, auto & map)
         {
             insertFromBlockImpl<strictness_>(*this, type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         });
@@ -1082,7 +1080,7 @@ void Join::joinBlock(Block & block, const Names & key_names_left, const NamesAnd
 
     checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
 
-    if (dispatch([&](auto kind_, auto strictness_, auto & map)
+    if (joinDispatch(kind, strictness, maps, [&](auto kind_, auto strictness_, auto & map)
         {
             joinBlockImpl<kind_, strictness_>(block, key_names_left, columns_added_by_join, sample_block_with_columns_to_add, map);
         }))
@@ -1239,9 +1237,8 @@ protected:
             return Block();
 
         Block block;
-        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
-            ;
-        else
+        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
+                [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
         return block;
     }
