@@ -10,8 +10,6 @@
 #if USE_UNWIND
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
-
-static_assert(StackTrace::capacity < LIBUNWIND_MAX_STACK_SIZE, "StackTrace cannot be larger than libunwind upper bound on stack size");
 #endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
