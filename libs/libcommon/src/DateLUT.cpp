@@ -23,6 +23,7 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
     return digest_engine.digest();
 }
 
+
 std::string determineDefaultTimeZone()
 {
     namespace fs = boost::filesystem;
@@ -52,6 +53,10 @@ std::string determineDefaultTimeZone()
     {
         error_prefix = "Could not determine local time zone: ";
         tz_file_path = "/etc/localtime";
+
+        /// No TZ variable and no tzdata installed (e.g. Docker)
+        if (!fs::exists(tz_file_path))
+            return "UTC";
 
         /// Read symlink but not transitive.
         /// Example:
