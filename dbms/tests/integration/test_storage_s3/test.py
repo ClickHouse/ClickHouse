@@ -40,31 +40,37 @@ except ImportError:
     from http.server import HTTPServer
 
 
-localhost = '127.0.0.1'
-
-def GetFreeTCPPorts(n):
-    result = []
-    sockets = []
-    for i in range(n):
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.bind((localhost, 0))
-        addr, port = tcp.getsockname()
-        result.append(port)
-        sockets.append(tcp)
-    [ s.close() for s in sockets ]
-    return result
-
-test_csv = os.path.join(os.path.dirname(sys.argv[0]), 'test.csv')
-format = 'column1 UInt32, column2 UInt32, column3 UInt32'
-values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
-other_values = '(1, 1, 1), (1, 1, 1), (11, 11, 11)'
-redirecting_host = localhost
-redirecting_to_http_port, redirecting_to_https_port, preserving_data_port, redirecting_preserving_data_port = GetFreeTCPPorts(4)
-bucket = 'abc'
-
-
 def test_sophisticated_default(started_cluster):
     instance = started_cluster.instances['dummy']
+
+    def GetCurrentIP():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+
+    localhost = GetCurrentIP()
+
+    def GetFreeTCPPorts(n):
+        result = []
+        sockets = []
+        for i in range(n):
+            tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp.bind((localhost, 0))
+            addr, port = tcp.getsockname()
+            result.append(port)
+            sockets.append(tcp)
+        [ s.close() for s in sockets ]
+        return result
+
+    format = 'column1 UInt32, column2 UInt32, column3 UInt32'
+    values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
+    other_values = '(1, 1, 1), (1, 1, 1), (11, 11, 11)'
+    redirecting_host = localhost
+    redirecting_to_http_port, redirecting_to_https_port, preserving_data_port, redirecting_preserving_data_port = GetFreeTCPPorts(4)
+    bucket = 'abc'
+
     def run_query(query):
         return instance.query(query)
     
@@ -237,6 +243,7 @@ def test_sophisticated_default(started_cluster):
     [ job.start() for job in jobs ]
     
     try:
+        subprocess.check_call(['ss', '-an'])
         for query in prepare_put_queries:
             print(query)
             run_query(query)
