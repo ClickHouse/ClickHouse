@@ -76,7 +76,7 @@ public:
         , mrk_hashing_buf(mrk_file_buf)
     {}
 
-    void assertMark()
+    void assertMark(bool throw_if_not_equal=true)
     {
         MarkInCompressedFile mrk_mark;
         readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
@@ -120,7 +120,7 @@ public:
         data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
         data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-        if (mrk_mark != data_mark || mrk_rows != index_granularity.getMarkRows(mark_position))
+        if (throw_if_not_equal && (mrk_mark != data_mark || mrk_rows != index_granularity.getMarkRows(mark_position)))
             throw Exception("Incorrect mark: " + data_mark.toStringWithRows(index_granularity.getMarkRows(mark_position)) +
                 (has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
                 mrk_mark.toStringWithRows(mrk_rows) + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
@@ -319,20 +319,30 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         size_t column_size = 0;
         size_t mark_num = 0;
 
+        IDataType::DeserializeBinaryBulkStatePtr state;
+        IDataType::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](const IDataType::SubstreamPath & substream_path)
+            {
+                String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+                auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
+                return &stream.uncompressed_hashing_buf;
+            };
+        name_type.type->deserializeBinaryBulkStatePrefix(settings, state);
+
         while (true)
         {
-            IDataType::DeserializeBinaryBulkSettings settings;
 
             /// Check that mark points to current position in file.
             bool marks_eof = false;
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+
                     auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
                     try
                     {
                         if (!stream.mrk_hashing_buf.eof())
-                            stream.assertMark();
+                            stream.assertMark(substream_path.empty() || substream_path.back().type != IDataType::Substream::DictionaryKeys);
                         else
                             marks_eof = true;
                     }
@@ -352,17 +362,6 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
 
             MutableColumnPtr tmp_column = name_type.type->createColumn();
-            settings.getter = [&](const IDataType::SubstreamPath & substream_path)
-            {
-                String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                auto stream_it = streams.find(file_name);
-                if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
-                return &stream_it->second.uncompressed_hashing_buf;
-            };
-
-            IDataType::DeserializeBinaryBulkStatePtr state;
-            name_type.type->deserializeBinaryBulkStatePrefix(settings, state);
             name_type.type->deserializeBinaryBulkWithMultipleStreams(*tmp_column, rows_after_mark, settings, state);
 
             size_t read_size = tmp_column->size();
