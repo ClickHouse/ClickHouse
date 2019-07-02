@@ -22,7 +22,10 @@ add_library(common
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
     src/argsToConfig.cpp
+    src/StackTrace.cpp
 
+    include/common/SimpleCache.h
+    include/common/StackTrace.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h
@@ -58,6 +61,14 @@ add_library(common
 
     ${CONFIG_COMMON}
 )
+
+if (USE_UNWIND)
+    target_compile_definitions (common PRIVATE USE_UNWIND=1)
+    target_include_directories (common BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
+	endif ()
+endif ()
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
