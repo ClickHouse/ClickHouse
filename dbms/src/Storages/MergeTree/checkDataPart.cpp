@@ -76,7 +76,7 @@ public:
         , mrk_hashing_buf(mrk_file_buf)
     {}
 
-    void assertMark(bool throw_if_not_equal=true)
+    void assertMark(bool only_read=false)
     {
         MarkInCompressedFile mrk_mark;
         readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
@@ -120,7 +120,7 @@ public:
         data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
         data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-        if (throw_if_not_equal && (mrk_mark != data_mark || mrk_rows != index_granularity.getMarkRows(mark_position)))
+        if (!only_read && (mrk_mark != data_mark || mrk_rows != index_granularity.getMarkRows(mark_position)))
             throw Exception("Incorrect mark: " + data_mark.toStringWithRows(index_granularity.getMarkRows(mark_position)) +
                 (has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
                 mrk_mark.toStringWithRows(mrk_rows) + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
@@ -327,6 +327,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
                 return &stream.uncompressed_hashing_buf;
             };
+
+        /// Prefixes have to be read before data because first mark points after prefix
         name_type.type->deserializeBinaryBulkStatePrefix(settings, state);
 
         while (true)
@@ -341,8 +343,11 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                     auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
                     try
                     {
+                        /// LowCardinality dictionary column is not read monotonically, so marks maybe inconsistent with
+                        /// offset position in file. So we just read data and marks file, but doesn't check marks equality.
+                        bool only_read = !substream_path.empty() && substream_path.back().type == IDataType::Substream::DictionaryKeys;
                         if (!stream.mrk_hashing_buf.eof())
-                            stream.assertMark(substream_path.empty() || substream_path.back().type != IDataType::Substream::DictionaryKeys);
+                            stream.assertMark(only_read);
                         else
                             marks_eof = true;
                     }
