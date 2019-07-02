@@ -419,7 +419,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     {
         T min_value = min;
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
-            unalignedStore(dst, min_value);
+            unalignedStore<T>(dst, min_value);
         return;
     }
 
