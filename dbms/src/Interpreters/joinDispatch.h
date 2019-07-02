@@ -5,6 +5,10 @@
 
 #include <Interpreters/Join.h>
 
+
+/** Used in implementation of Join to process different data structures.
+  */
+
 namespace DB
 {
 
