@@ -187,7 +187,7 @@ MutableColumnPtr AddingDefaultsBlockInputStream::mixColumns(const ColumnWithType
     {
         if (defaults_mask[i])
         {
-            if (col_defaults.column->isColumnConst())
+            if (isColumnConst(*col_defaults.column))
                 column_mixed->insert((*col_defaults.column)[i]);
             else
                 column_mixed->insertFrom(*col_defaults.column, i);

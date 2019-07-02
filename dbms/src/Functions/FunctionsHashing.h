@@ -1043,7 +1043,7 @@ private:
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
-        if (!level_col->isColumnConst())
+        if (!isColumnConst(*level_col))
             throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
