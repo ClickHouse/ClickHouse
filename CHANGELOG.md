@@ -1,3 +1,52 @@
+## ClickHouse release 19.9.2.4, 2019-07-24
+
+### New Feature
+* Print information about frozen parts in system.parts table. [#5471](https://github.com/yandex/ClickHouse/pull/5471) ([proller](https://github.com/proller))
+* Ask client password on clickhouse-client start on tty if not set in arguments [#5092](https://github.com/yandex/ClickHouse/pull/5092) ([proller](https://github.com/proller))
+* Implement dictGet and dictGetOrDefault functions for Decimal types. [#5394](https://github.com/yandex/ClickHouse/pull/5394) ([Artem Zuikov](https://github.com/4ertus2))
+
+### Improvement
+* Debian init: Add service stop timeout [#5522](https://github.com/yandex/ClickHouse/pull/5522) ([proller](https://github.com/proller))
+* Add setting forbidden by default to create table with suspicious types for LowCardinality [#5448](https://github.com/yandex/ClickHouse/pull/5448) ([Olga Khvostikova](https://github.com/stavrolia))
+* Regression functions return model weights when not used as State in function `evalMLMethod`. [#5411](https://github.com/yandex/ClickHouse/pull/5411) ([Quid37](https://github.com/Quid37))
+* Rename and improve regression methods. [#5492](https://github.com/yandex/ClickHouse/pull/5492) ([Quid37](https://github.com/Quid37))
+* Clearer interfaces of string searchers. [#5586](https://github.com/yandex/ClickHouse/pull/5586) ([Danila Kutenin](https://github.com/danlark1))
+
+### Bug Fix
+* Fix potential data loss in Kafka [#5445](https://github.com/yandex/ClickHouse/pull/5445) ([Ivan](https://github.com/abyss7))
+* Fix potential infinite loop in PrettySpace format when called with zero columns [#5560](https://github.com/yandex/ClickHouse/pull/5560) ([Olga Khvostikova](https://github.com/stavrolia))
+* Fixed UInt32 overflow bug in linear models. Allow eval ML model for non-const model argument. [#5516](https://github.com/yandex/ClickHouse/pull/5516) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* `ALTER TABLE ... DROP INDEX IF EXISTS ...` should not raise an exception if provided index does not exist [#5524](https://github.com/yandex/ClickHouse/pull/5524) ([Gleb Novikov](https://github.com/NanoBjorn))
+* Fix segfault with bitmapHasAny in scalar subquery [#5528](https://github.com/yandex/ClickHouse/pull/5528) ([Zhichang Yu](https://github.com/yuzhichang))
+* Fixed error when replication connection pool doesn't retry to resolve host, even when DNS cache was dropped. [#5534](https://github.com/yandex/ClickHouse/pull/5534) ([alesapin](https://github.com/alesapin))
+* Fixed ALTER ... MODIFY TTL on ReplicatedMergeTree. [#5539](https://github.com/yandex/ClickHouse/pull/5539) ([Anton Popov](https://github.com/CurtizJ))
+* Fix INSERT into Distributed table with MATERIALIZED column [#5429](https://github.com/yandex/ClickHouse/pull/5429) ([Azat Khuzhin](https://github.com/azat))
+* Fix bad alloc when truncate Join storage [#5437](https://github.com/yandex/ClickHouse/pull/5437) ([TCeason](https://github.com/TCeason))
+* In recent versions of package tzdata some of files are symlinks now. The current mechanism for detecting default timezone gets broken and gives wrong names for some timezones. Now at least we force the timezone name to the contents of TZ if provided. [#5443](https://github.com/yandex/ClickHouse/pull/5443) ([Ivan](https://github.com/abyss7))
+* Fix some extremely rare cases with MultiVolnitsky searcher when the constant needles in sum are at least 16KB long. The algorithm missed or overwrote the previous results which can lead to the incorrect result of multiSearchAny. [#5588](https://github.com/yandex/ClickHouse/pull/5588) ([Danila Kutenin](https://github.com/danlark1))
+* For some reasons settings for ExternalData requests couldn't use ClickHouse settings, fix this issue. Also, for now, settings `date_time_input_format` and `low_cardinality_allow_in_native_format` cannot be used because of the ambiguity of names (in external data it can be interpreted as table format and in the query it can be a setting). [#5455](https://github.com/yandex/ClickHouse/pull/5455) ([Danila Kutenin](https://github.com/danlark1))
+* Fix bug when parts were removed only from FS without dropping them from Zookeeper. [#5520](https://github.com/yandex/ClickHouse/pull/5520) ([alesapin](https://github.com/alesapin))
+* Remove debug logging from MySQL protocol [#5478](https://github.com/yandex/ClickHouse/pull/5478) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Skip ZNONODE during DDL query processing [#5489](https://github.com/yandex/ClickHouse/pull/5489) ([Azat Khuzhin](https://github.com/azat))
+* Fix mix UNION ALL result column type. There were cases with inconsistent data and column types of resulting columns. [#5503](https://github.com/yandex/ClickHouse/pull/5503) ([Artem Zuikov](https://github.com/4ertus2))
+* Throw an exception on wrong integers in dictGetT functions instead of crash. [#5446](https://github.com/yandex/ClickHouse/pull/5446) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix element_count for hashed dictionary (do not include duplicates) [#5440](https://github.com/yandex/ClickHouse/pull/5440) ([Azat Khuzhin](https://github.com/azat))
+
+### Build/Testing/Packaging Improvement
+* Fixed build without `Brotli` HTTP compression support (`ENABLE_BROTLI=OFF` cmake variable). [#5521](https://github.com/yandex/ClickHouse/pull/5521) ([Anton Yuzhaninov](https://github.com/citrin))
+* Include roaring.h as roaring/roaring.h [#5523](https://github.com/yandex/ClickHouse/pull/5523) ([Orivej Desh](https://github.com/orivej))
+* Fix gcc9 warnings in hyperscan (#line directive is evil!) [#5546](https://github.com/yandex/ClickHouse/pull/5546) ([Danila Kutenin](https://github.com/danlark1))
+* Fix all warnings when compiling with gcc-9. Fix some contrib issues. Fix gcc9 ICE and submit it to bugzilla. [#5498](https://github.com/yandex/ClickHouse/pull/5498) ([Danila Kutenin](https://github.com/danlark1))
+* Fixed linking with lld [#5477](https://github.com/yandex/ClickHouse/pull/5477) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Remove unused specializations in dictionaries [#5452](https://github.com/yandex/ClickHouse/pull/5452) ([Artem Zuikov](https://github.com/4ertus2))
+* Improvement performance tests for formatting and parsing tables for different types of files [#5497](https://github.com/yandex/ClickHouse/pull/5497) ([Olga Khvostikova](https://github.com/stavrolia))
+* Fixes for parallel test run [#5506](https://github.com/yandex/ClickHouse/pull/5506) ([proller](https://github.com/proller))
+* docker: use configs from clickhouse-test [#5531](https://github.com/yandex/ClickHouse/pull/5531) ([proller](https://github.com/proller))
+* Fix compile for FreeBSD [#5447](https://github.com/yandex/ClickHouse/pull/5447) ([proller](https://github.com/proller))
+* Upgrade boost to 1.70 [#5570](https://github.com/yandex/ClickHouse/pull/5570) ([proller](https://github.com/proller))
+* Fix build clickhouse as submodule [#5574](https://github.com/yandex/ClickHouse/pull/5574) ([proller](https://github.com/proller))
+* Improve JSONExtract performance tests [#5444](https://github.com/yandex/ClickHouse/pull/5444) ([Vitaly Baranov](https://github.com/vitlibar))
+
 ## ClickHouse release 19.8.3.8, 2019-06-11
 
 ### New Features
