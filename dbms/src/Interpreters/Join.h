@@ -288,9 +288,12 @@ private:
     /// Overwrite existing values when encountering the same key again
     bool any_take_last_row;
 
-    /** Blocks of "right" table.
-      */
+    /// Blocks of "right" table.
     BlocksList blocks;
+
+    /// Nullmaps for blocks of "right" table (if needed)
+    using BlockNullmapList = std::list<std::pair<const Block *, ColumnPtr>>;
+    BlockNullmapList blocks_nullmaps;
 
     MapsVariant maps;
 
