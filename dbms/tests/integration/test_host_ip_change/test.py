@@ -138,3 +138,4 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
     assert_eq_with_retry(node4, "SELECT * FROM distributed_lost_host", "0")
 
     assert TSV(node4.query("SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'")) == TSV("lost_host\t127.0.0.1\n")
+    assert TSV(node4.query("SELECT hostName()")) == TSV("node4")

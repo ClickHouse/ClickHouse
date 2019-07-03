@@ -155,7 +155,6 @@ String DNSResolver::getHostName()
     if (!impl->host_name.has_value())
         impl->host_name.emplace(Poco::Net::DNS::hostName());
 
-    addToNewHosts(*impl->host_name);
     return *impl->host_name;
 }
 
@@ -166,6 +165,8 @@ bool DNSResolver::updateCache()
         for (auto & host : impl->new_hosts)
             impl->known_hosts.insert(std::move(host));
         impl->new_hosts.clear();
+
+        impl->host_name.emplace(Poco::Net::DNS::hostName());
     }
 
     std::lock_guard lock(impl->update_mutex);
