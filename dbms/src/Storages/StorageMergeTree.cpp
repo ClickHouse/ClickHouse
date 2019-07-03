@@ -1138,19 +1138,19 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         String checksums_path = full_part_path + "checksums.txt";
         if (!Poco::File(checksums_path).exists())
         {
-            auto counted_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
             try
             {
+                auto counted_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
                 counted_checksums.checkEqual(part->checksums, true);
                 WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
                 part->checksums.write(out);
                 Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
-                results.emplace_back(part->name, true, "Checksums recounted and written to disk");
+                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
             catch (Exception & ex)
             {
                 results.emplace_back(part->name, false,
-                    "Checksums file absent and counted doesn't equal to checksums in memory. Error: '" + ex.message() + "'");
+                    "Check of part finished with error: '" + ex.message() + "'");
             }
         }
         else
