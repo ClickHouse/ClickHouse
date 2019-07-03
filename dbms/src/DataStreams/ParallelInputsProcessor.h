@@ -8,10 +8,9 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 
@@ -96,12 +95,11 @@ public:
     {
         active_threads = max_threads;
         threads.reserve(max_threads);
-        auto thread_group = CurrentThread::getGroup();
 
         try
         {
             for (size_t i = 0; i < max_threads; ++i)
-                threads.emplace_back([=] () { thread(thread_group, i); });
+                threads.emplace_back(&ParallelInputsProcessor::thread, this, CurrentThread::getGroup(), i);
         }
         catch (...)
         {
@@ -164,7 +162,7 @@ private:
     struct InputData
     {
         BlockInputStreamPtr in;
-        size_t i;        /// The source number (for debugging).
+        size_t i = 0;      /// The source number (for debugging).
 
         InputData() {}
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}

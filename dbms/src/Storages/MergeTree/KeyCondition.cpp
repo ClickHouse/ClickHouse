@@ -284,20 +284,20 @@ KeyCondition::KeyCondition(
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
-    if (select.where_expression)
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (select.where())
     {
-        traverseAST(select.where_expression, context, block_with_constants);
+        traverseAST(select.where(), context, block_with_constants);
 
-        if (select.prewhere_expression)
+        if (select.prewhere())
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
+            traverseAST(select.prewhere(), context, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
-    else if (select.prewhere_expression)
+    else if (select.prewhere())
     {
-        traverseAST(select.prewhere_expression, context, block_with_constants);
+        traverseAST(select.prewhere(), context, block_with_constants);
     }
     else
     {
@@ -317,11 +317,11 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
 /** Computes value of constant expression and its data type.
   * Returns false, if expression isn't constant.
   */
-static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
+bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
     String column_name = expr->getColumnName();
 
-    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
+    if (const auto * lit = expr->as<ASTLiteral>())
     {
         /// By default block_with_constants has only one column named "_dummy".
         /// If block contains only constants it's may not be preprocessed by
@@ -334,7 +334,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
         out_type = block_with_constants.getByName(column_name).type;
         return true;
     }
-    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst())
+    else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
     {
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);
@@ -370,11 +370,11 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 {
     RPNElement element;
 
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
+    if (auto * func = node->as<ASTFunction>())
     {
         if (operatorFromAST(func, element))
         {
-            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+            auto & args = func->arguments->children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
             {
                 traverseAST(args[i], context, block_with_constants);
@@ -486,7 +486,7 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
-    const ASTFunction * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
+    const auto * left_arg_tuple = left_arg->as<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
@@ -502,7 +502,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     PreparedSetKey set_key;
-    if (typeid_cast<const ASTSubquery *>(right_arg.get()) || typeid_cast<const ASTIdentifier *>(right_arg.get()))
+    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
         set_key = PreparedSetKey::forSubquery(*right_arg);
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
@@ -574,7 +574,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
         if (args.size() != 1)
@@ -620,9 +620,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
       */
     Field const_value;
     DataTypePtr const_type;
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->as<ASTFunction>())
     {
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        const ASTs & args = func->arguments->children;
 
         if (args.size() != 2)
             return false;
@@ -706,7 +706,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
+            || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);
@@ -737,7 +737,7 @@ bool KeyCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
     /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
       * (or, the same thing - calling the function `and` from one argument).
       */
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+    const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
     {
@@ -810,7 +810,7 @@ String KeyCondition::toString() const
   */
 
 template <typename F>
-static bool forAnyParallelogram(
+static BoolMask forAnyParallelogram(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
@@ -866,16 +866,15 @@ static bool forAnyParallelogram(
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         parallelogram[i] = Range();
 
-    if (callback(parallelogram))
-        return true;
+    BoolMask result(false, false);
+    result = result | callback(parallelogram);
 
     /// [x1]       x [y1 .. +inf)
 
     if (left_bounded)
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback);
     }
 
     /// [x2]       x (-inf .. y2]
@@ -883,15 +882,14 @@ static bool forAnyParallelogram(
     if (right_bounded)
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback);
     }
 
-    return false;
+    return result;
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const Field * left_key,
     const Field * right_key,
@@ -917,7 +915,7 @@ bool KeyCondition::mayBeTrueInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -928,11 +926,11 @@ bool KeyCondition::mayBeTrueInRange(
     });
 }
 
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type
-)
+    DataTypePtr current_type)
 {
     for (auto & func : functions)
     {
@@ -965,7 +963,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
+BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -1013,7 +1011,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -1048,22 +1046,23 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
 
-    return rpn_stack[0].can_be_true;
+    return rpn_stack[0];
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
+    return checkInRange(used_key_size, left_key, right_key, data_types, true);
 }
 
-bool KeyCondition::mayBeTrueAfter(
+
+BoolMask KeyCondition::getMaskAfter(
     size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false);
 }
 
 

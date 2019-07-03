@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -120,7 +120,13 @@ StoragePtr StorageFactory::get(
 
     auto it = storages.find(name);
     if (it == storages.end())
-        throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
+    {
+        auto hints = getHints(name);
+        if (!hints.empty())
+            throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
+        else
+            throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
+    }
 
     Arguments arguments
     {

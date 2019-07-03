@@ -32,7 +32,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , format{config.getString(config_prefix + ".format")}
     , sample_block{sample_block}
     , context(context)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
 }
 
@@ -45,7 +45,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , format{other.format}
     , sample_block{other.sample_block}
     , context(other.context)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
 }
 

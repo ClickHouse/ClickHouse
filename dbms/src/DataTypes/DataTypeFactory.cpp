@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataTypeDomain.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -32,19 +32,19 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
 
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
             throw Exception("Data type cannot have multiple parenthesed parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
         return get(func->name, func->arguments);
     }
 
-    if (const ASTIdentifier * ident = typeid_cast<const ASTIdentifier *>(ast.get()))
+    if (const auto * ident = ast->as<ASTIdentifier>())
     {
         return get(ident->name, {});
     }
 
-    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(ast.get()))
+    if (const auto * lit = ast->as<ASTLiteral>())
     {
         if (lit->value.isNull())
             return get("Null", {});
@@ -115,19 +115,23 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeDomain(const String & type_name, DataTypeDomainPtr domain, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    all_domains.reserve(all_domains.size() + 1);
-
-    auto data_type = get(type_name);
-    setDataTypeDomain(*data_type, *domain);
-
-    registerDataType(domain->getName(), [data_type](const ASTPtr & /*ast*/)
+    registerDataType(family_name, [creator](const ASTPtr & ast)
     {
-        return data_type;
-    }, case_sensitiveness);
+        auto res = creator(ast);
+        res.first->setCustomization(std::move(res.second));
 
-    all_domains.emplace_back(std::move(domain));
+        return res.first;
+    }, case_sensitiveness);
+}
+
+void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+{
+    registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
+    {
+        return creator();
+    }, case_sensitiveness);
 }
 
 const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String & family_name) const
@@ -153,11 +157,6 @@ const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String 
         throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
-void DataTypeFactory::setDataTypeDomain(const IDataType & data_type, const IDataTypeDomain & domain)
-{
-    data_type.setDomain(&domain);
-}
-
 void registerDataTypeNumbers(DataTypeFactory & factory);
 void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
@@ -175,6 +174,7 @@ void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 
 
 DataTypeFactory::DataTypeFactory()
@@ -196,6 +196,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
+    registerDataTypeDomainSimpleAggregateFunction(*this);
 }
 
 DataTypeFactory::~DataTypeFactory()

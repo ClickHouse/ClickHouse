@@ -1,5 +1,5 @@
-#include <Functions/GatherUtils/Sinks.h>
-#include <Functions/GatherUtils/Sources.h>
+#include "Sinks.h"
+#include "Sources.h"
 #include <Core/TypeListNumber.h>
 
 namespace DB::GatherUtils
@@ -41,8 +41,7 @@ std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_siz
     using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<ColumnNullable *>(&col.getData()))
     {
-        auto column = ColumnArray::create(column_nullable->getNestedColumnPtr()->assumeMutable(),
-                                          col.getOffsetsPtr()->assumeMutable());
+        auto column = ColumnArray::create(column_nullable->getNestedColumnPtr()->assumeMutable(), col.getOffsetsPtr()->assumeMutable());
         return Creator::create(*column, &column_nullable->getNullMapData(), column_size);
     }
     return Creator::create(col, nullptr, column_size);

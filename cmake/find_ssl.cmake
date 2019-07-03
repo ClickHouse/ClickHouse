@@ -1,5 +1,17 @@
+option (ENABLE_SSL "Enable ssl" ON)
+
+if (ENABLE_SSL)
+
 if(NOT ARCH_32)
     option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+endif()
+
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/ssl/CMakeLists.txt")
+    if(USE_INTERNAL_SSL_LIBRARY)
+        message(WARNING "submodule contrib/ssl is missing. to fix try run: \n git submodule update --init --recursive")
+    endif()
+    set(USE_INTERNAL_SSL_LIBRARY 0)
+    set(MISSING_INTERNAL_SSL_LIBRARY 1)
 endif()
 
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
@@ -28,7 +40,7 @@ if (NOT USE_INTERNAL_SSL_LIBRARY)
     endif ()
 endif ()
 
-if (NOT OPENSSL_FOUND)
+if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
     set (USE_INTERNAL_SSL_LIBRARY 1)
     set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/ssl")
     set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
@@ -43,4 +55,77 @@ if (NOT OPENSSL_FOUND)
     set (OPENSSL_FOUND 1)
 endif ()
 
-message (STATUS "Using ssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
+if(OPENSSL_FOUND)
+    # we need keep OPENSSL_FOUND for many libs in contrib
+    set(USE_SSL 1)
+endif()
+
+# used by new poco
+# part from /usr/share/cmake-*/Modules/FindOpenSSL.cmake, with removed all "EXISTS "
+if(OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY)
+  if(NOT TARGET OpenSSL::Crypto AND
+      (OPENSSL_CRYPTO_LIBRARY OR
+        LIB_EAY_LIBRARY_DEBUG OR
+        LIB_EAY_LIBRARY_RELEASE)
+      )
+    add_library(OpenSSL::Crypto UNKNOWN IMPORTED)
+    set_target_properties(OpenSSL::Crypto PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
+    if(OPENSSL_CRYPTO_LIBRARY)
+      set_target_properties(OpenSSL::Crypto PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES "C"
+        IMPORTED_LOCATION "${OPENSSL_CRYPTO_LIBRARY}")
+    endif()
+    if(LIB_EAY_LIBRARY_RELEASE)
+      set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+        IMPORTED_CONFIGURATIONS RELEASE)
+      set_target_properties(OpenSSL::Crypto PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
+        IMPORTED_LOCATION_RELEASE "${LIB_EAY_LIBRARY_RELEASE}")
+    endif()
+    if(LIB_EAY_LIBRARY_DEBUG)
+      set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+        IMPORTED_CONFIGURATIONS DEBUG)
+      set_target_properties(OpenSSL::Crypto PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES_DEBUG "C"
+        IMPORTED_LOCATION_DEBUG "${LIB_EAY_LIBRARY_DEBUG}")
+    endif()
+  endif()
+  if(NOT TARGET OpenSSL::SSL AND
+      (OPENSSL_SSL_LIBRARY OR
+        SSL_EAY_LIBRARY_DEBUG OR
+        SSL_EAY_LIBRARY_RELEASE)
+      )
+    add_library(OpenSSL::SSL UNKNOWN IMPORTED)
+    set_target_properties(OpenSSL::SSL PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
+    if(OPENSSL_SSL_LIBRARY)
+      set_target_properties(OpenSSL::SSL PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES "C"
+        IMPORTED_LOCATION "${OPENSSL_SSL_LIBRARY}")
+    endif()
+    if(SSL_EAY_LIBRARY_RELEASE)
+      set_property(TARGET OpenSSL::SSL APPEND PROPERTY
+        IMPORTED_CONFIGURATIONS RELEASE)
+      set_target_properties(OpenSSL::SSL PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "C"
+        IMPORTED_LOCATION_RELEASE "${SSL_EAY_LIBRARY_RELEASE}")
+    endif()
+    if(SSL_EAY_LIBRARY_DEBUG)
+      set_property(TARGET OpenSSL::SSL APPEND PROPERTY
+        IMPORTED_CONFIGURATIONS DEBUG)
+      set_target_properties(OpenSSL::SSL PROPERTIES
+        IMPORTED_LINK_INTERFACE_LANGUAGES_DEBUG "C"
+        IMPORTED_LOCATION_DEBUG "${SSL_EAY_LIBRARY_DEBUG}")
+    endif()
+    if(TARGET OpenSSL::Crypto)
+      set_target_properties(OpenSSL::SSL PROPERTIES
+        INTERFACE_LINK_LIBRARIES OpenSSL::Crypto)
+    endif()
+  endif()
+endif()
+
+
+endif ()
+
+message (STATUS "Using ssl=${USE_SSL}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

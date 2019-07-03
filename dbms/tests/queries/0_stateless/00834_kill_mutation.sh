@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, latest_failed_part IN ('200001
 sleep 0.1
 ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation' AND mutation_id = 'mutation_4.txt'"
 
-wait_for_mutation "kill_mutation" "mutation_5.txt"
+wait_for_mutation "kill_mutation" "mutation_5.txt" "test"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.kill_mutation"
 

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , format_version(storage.data.format_version)
+    , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
 {}
@@ -62,14 +62,14 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         Strings children = zookeeper->getChildren(queue_path);
 
         auto to_remove_it = std::remove_if(
-                children.begin(), children.end(), [&](const String & path)
-                {
-                    return already_loaded_paths.count(path);
-                });
+            children.begin(), children.end(), [&](const String & path)
+            {
+                return already_loaded_paths.count(path);
+            });
 
         LOG_DEBUG(log,
-                  "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
-                            << (children.end() - to_remove_it) << " entries already loaded.");
+            "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
+                    << (children.end() - to_remove_it) << " entries already loaded.");
         children.erase(to_remove_it, children.end());
 
         std::sort(children.begin(), children.end());
@@ -960,7 +960,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * But if all threads are free (maximal size of merge is allowed) then execute any merge,
           *  (because it may be ordered by OPTIMIZE or early with differrent settings).
           */
-        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
         if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
             && sum_parts_size_in_bytes > max_source_parts_size)
         {

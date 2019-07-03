@@ -1,13 +1,14 @@
 #pragma once
 
-#include <set>
-#include <memory>
-#include <ostream>
-#include <algorithm>
-
 #include <Core/Types.h>
-#include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Common/Exception.h>
+#include <Common/TypePromotion.h>
+
+#include <algorithm>
+#include <ostream>
+#include <set>
 
 
 class SipHash;
@@ -26,16 +27,12 @@ namespace ErrorCodes
 
 using IdentifierNameSet = std::set<String>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
-
 class WriteBuffer;
 
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public std::enable_shared_from_this<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -164,6 +161,13 @@ public:
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
+        FormatSettings(std::ostream & ostr_, const FormatSettings & other)
+            : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+        {
+            nl_or_ws = one_line ? ' ' : '\n';
+        }
+
         void writeIdentifier(const String & name) const;
     };
 
@@ -173,7 +177,10 @@ public:
         /** The SELECT query in which the alias was found; identifier of a node with such an alias.
           * It is necessary that when the node has met again, output only the alias.
           */
-        std::set<std::pair<const IAST *, std::string>> printed_asts_with_alias;
+        std::set<std::tuple<
+            const IAST * /* SELECT query node */,
+            std::string /* alias */,
+            Hash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
@@ -204,6 +211,7 @@ public:
     static const char * hilite_function;
     static const char * hilite_operator;
     static const char * hilite_alias;
+    static const char * hilite_substitution;
     static const char * hilite_none;
 
 private:
@@ -211,7 +219,9 @@ private:
 };
 
 
-/// Surrounds an identifier by back quotes if it is necessary.
+/// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const String & x);
+/// Quote the identifier with backquotes.
+String backQuote(const String & x);
 
 }

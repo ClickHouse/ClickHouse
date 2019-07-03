@@ -5,24 +5,24 @@ select toTypeName(dict), dict, lowCardinalityIndices(dict), lowCardinalityKeys(d
 
 select 'MergeTree';
 
-drop table if exists test.lc_small_dict;
-drop table if exists test.lc_big_dict;
+drop table if exists lc_small_dict;
+drop table if exists lc_big_dict;
 
-create table test.lc_small_dict (str StringWithDictionary) engine = MergeTree order by str;
-create table test.lc_big_dict (str StringWithDictionary) engine = MergeTree order by str;
+create table lc_small_dict (str StringWithDictionary) engine = MergeTree order by str;
+create table lc_big_dict (str StringWithDictionary) engine = MergeTree order by str;
 
-insert into test.lc_small_dict select toString(number % 1000) from system.numbers limit 1000000;
-insert into test.lc_big_dict select toString(number) from system.numbers limit 1000000;
+insert into lc_small_dict select toString(number % 1000) from system.numbers limit 1000000;
+insert into lc_big_dict select toString(number) from system.numbers limit 1000000;
 
-detach table test.lc_small_dict;
-detach table test.lc_big_dict;
+detach table lc_small_dict;
+detach table lc_big_dict;
 
-attach table test.lc_small_dict;
-attach table test.lc_big_dict;
+attach table lc_small_dict;
+attach table lc_big_dict;
 
-select sum(toUInt64OrZero(str)) from test.lc_small_dict;
-select sum(toUInt64OrZero(str)) from test.lc_big_dict;
+select sum(toUInt64OrZero(str)) from lc_small_dict;
+select sum(toUInt64OrZero(str)) from lc_big_dict;
 
-drop table if exists test.lc_small_dict;
-drop table if exists test.lc_big_dict;
+drop table if exists lc_small_dict;
+drop table if exists lc_big_dict;
 

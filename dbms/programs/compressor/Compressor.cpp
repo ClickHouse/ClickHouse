@@ -1,6 +1,7 @@
 #include <iostream>
 #include <optional>
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -9,6 +10,8 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -64,7 +67,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
         ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
-        ("level", boost::program_options::value<std::vector<int>>()->multitoken(), "compression levels for codecs specified via --codec")
+        ("level", boost::program_options::value<int>(), "compression level for codecs spicified via flags")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
@@ -94,6 +97,9 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
             throw DB::Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", DB::ErrorCodes::BAD_ARGUMENTS);
 
+        if (!codecs.empty() && options.count("level"))
+            throw DB::Exception("Wrong options, --level is not compatible with --codec list", DB::ErrorCodes::BAD_ARGUMENTS);
+
         std::string method_family = "LZ4";
 
         if (use_lz4hc)
@@ -103,28 +109,22 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (use_none)
             method_family = "NONE";
 
-        std::vector<int> levels;
+        std::optional<int> level = std::nullopt;
         if (options.count("level"))
-            levels = options["level"].as<std::vector<int>>();
+            level = options["level"].as<int>();
+
 
         DB::CompressionCodecPtr codec;
         if (!codecs.empty())
         {
-            if (levels.size() > codecs.size())
-                throw DB::Exception("Specified more levels than codecs", DB::ErrorCodes::BAD_ARGUMENTS);
+            DB::ParserCodec codec_parser;
 
-            std::vector<DB::CodecNameWithLevel> codec_names;
-            for (size_t i = 0; i < codecs.size(); ++i)
-            {
-                if (i < levels.size())
-                    codec_names.emplace_back(codecs[i], levels[i]);
-                else
-                    codec_names.emplace_back(codecs[i], std::nullopt);
-            }
-            codec = DB::CompressionCodecFactory::instance().get(codec_names);
+            std::string codecs_line = boost::algorithm::join(codecs, ",");
+            auto ast = DB::parseQuery(codec_parser, "(" + codecs_line + ")", 0);
+            codec = DB::CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else
-            codec = DB::CompressionCodecFactory::instance().get(method_family, levels.empty() ? std::nullopt : std::optional<int>(levels.back()));
+            codec = DB::CompressionCodecFactory::instance().get(method_family, level);
 
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);

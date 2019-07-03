@@ -1,15 +1,15 @@
-drop table if exists test.lc;
-drop table if exists test.lc_mv;
+drop table if exists lc_00752;
+drop table if exists lc_mv_00752;
 
-create table test.lc (str StringWithDictionary) engine = MergeTree order by tuple();
+create table lc_00752 (str StringWithDictionary) engine = MergeTree order by tuple();
 
-insert into test.lc values ('a'), ('bbb'), ('ab'), ('accccc'), ('baasddas'), ('bcde');
+insert into lc_00752 values ('a'), ('bbb'), ('ab'), ('accccc'), ('baasddas'), ('bcde');
 
-CREATE MATERIALIZED VIEW test.lc_mv ENGINE = AggregatingMergeTree() ORDER BY tuple() populate AS SELECT substring(str, 1, 1) as letter, min(length(str)) AS min_len, max(length(str)) AS max_len FROM test.lc GROUP BY substring(str, 1, 1);
+CREATE MATERIALIZED VIEW lc_mv_00752 ENGINE = AggregatingMergeTree() ORDER BY tuple() populate AS SELECT substring(str, 1, 1) as letter, min(length(str)) AS min_len, max(length(str)) AS max_len FROM lc_00752 GROUP BY substring(str, 1, 1);
 
-insert into test.lc values ('a'), ('bbb'), ('ab'), ('accccc'), ('baasddas'), ('bcde');
-select * from test.lc_mv order by letter;
+insert into lc_00752 values ('a'), ('bbb'), ('ab'), ('accccc'), ('baasddas'), ('bcde');
+select * from lc_mv_00752 order by letter;
 
-drop table if exists test.lc;
-drop table if exists test.lc_mv;
+drop table if exists lc_00752;
+drop table if exists lc_mv_00752;
 

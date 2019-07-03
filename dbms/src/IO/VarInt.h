@@ -113,7 +113,7 @@ readVarUInt(T & x, ReadBuffer & istr)
 }
 
 
-inline void throwReadAfterEOF()
+[[noreturn]] inline void throwReadAfterEOF()
 {
     throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }

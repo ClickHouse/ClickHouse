@@ -41,7 +41,7 @@ set( thriftcpp_threads_SOURCES
     ${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp
     ${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp
 )
-add_library(${THRIFT_LIBRARY} ${LINK_MODE} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
 target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
@@ -149,7 +149,7 @@ if (ARROW_WITH_ZSTD)
 endif()
 
 
-add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
+add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} Threads::Threads)
 if (ARROW_WITH_LZ4)
@@ -195,7 +195,7 @@ list(APPEND PARQUET_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_constants.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_types.cpp
 )
-add_library(${PARQUET_LIBRARY} ${LINK_MODE} ${PARQUET_SRCS})
+add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
 target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})

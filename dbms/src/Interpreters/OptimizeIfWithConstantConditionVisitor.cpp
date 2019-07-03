@@ -16,7 +16,7 @@ namespace ErrorCodes
 static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value)
 {
     /// numeric constant in condition
-    if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(condition.get()))
+    if (const auto * literal = condition->as<ASTLiteral>())
     {
         if (literal->value.getType() == Field::Types::Int64 ||
             literal->value.getType() == Field::Types::UInt64)
@@ -27,14 +27,14 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     }
 
     /// cast of numeric constant in condition to UInt8
-    if (const ASTFunction * function = typeid_cast<ASTFunction * >(condition.get()))
+    if (const auto * function = condition->as<ASTFunction>())
     {
         if (function->name == "CAST")
         {
-            if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(function->arguments.get()))
+            if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
                 const ASTPtr & type_ast = expr_list->children.at(1);
-                if (const ASTLiteral * type_literal = typeid_cast<ASTLiteral *>(type_ast.get()))
+                if (const auto * type_literal = type_ast->as<ASTLiteral>())
                 {
                     if (type_literal->value.getType() == Field::Types::String &&
                         type_literal->value.get<std::string>() == "UInt8")
@@ -54,7 +54,7 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
 
     for (ASTPtr & child : current_ast->children)
     {
-        auto * function_node = typeid_cast<ASTFunction *>(child.get());
+        auto * function_node = child->as<ASTFunction>();
         if (!function_node || function_node->name != "if")
         {
             visit(child);
@@ -62,7 +62,7 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
         }
 
         visit(function_node->arguments);
-        auto * args = typeid_cast<ASTExpressionList *>(function_node->arguments.get());
+        const auto * args = function_node->arguments->as<ASTExpressionList>();
 
         if (args->children.size() != 3)
             throw Exception("Wrong number of arguments for function 'if' (" + toString(args->children.size()) + " instead of 3)",

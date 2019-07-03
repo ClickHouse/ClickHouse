@@ -34,7 +34,7 @@ namespace LZ4
   *  that is allowed to read/write.
   * This value is a little overestimation.
   */
-static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 32;
+static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 64;
 
 
 /** When decompressing uniform sequence of blocks (for example, blocks from one file),
@@ -88,7 +88,7 @@ struct PerformanceStatistics
     };
 
     /// Number of different algorithms to select from.
-    static constexpr size_t NUM_ELEMENTS = 3;
+    static constexpr size_t NUM_ELEMENTS = 4;
 
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
     static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;

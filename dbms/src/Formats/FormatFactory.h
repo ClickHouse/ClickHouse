@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
-#include <functional>
-#include <unordered_map>
-#include <ext/singleton.h>
 #include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <ext/singleton.h>
+
+#include <functional>
+#include <memory>
+#include <unordered_map>
 
 
 namespace DB
@@ -17,24 +19,24 @@ struct FormatSettings;
 class ReadBuffer;
 class WriteBuffer;
 
-class IBlockInputStream;
-class IBlockOutputStream;
-
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
-
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
   */
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
+public:
+    /// This callback allows to perform some additional actions after reading a single row.
+    /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
+    using ReadCallback = std::function<void()>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        UInt64 rows_portion_size,
+        ReadCallback callback,
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
@@ -48,8 +50,14 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-    BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size) const;
+    BlockInputStreamPtr getInput(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;

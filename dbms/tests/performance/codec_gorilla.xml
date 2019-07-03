@@ -1,0 +1,67 @@
+<test>
+    <name>IPv4 Functions</name>
+
+    <type>once</type>
+    <stop_conditions>
+        <any_of>
+            <average_speed_not_changing_for_ms>1000</average_speed_not_changing_for_ms>
+            <total_time_ms>2000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <substitutions>
+        <substitution>
+            <name>table_suffix</name>
+            <values>
+                <value>g</value>
+                <value>lz4</value>
+                <value>g_lz4</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE IF NOT EXISTS seq_g (n UInt64 CODEC(Gorilla, NONE)) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS mon_g AS seq_g;</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS rnd_g AS seq_g;</create_query>
+
+    <create_query>CREATE TABLE IF NOT EXISTS seq_lz4 (n UInt64 CODEC(LZ4, NONE)) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS mon_lz4 AS seq_lz4;</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS rnd_lz4 AS seq_lz4;</create_query>
+
+    <create_query>CREATE TABLE IF NOT EXISTS seq_g_lz4 (n UInt64 CODEC(Gorilla, LZ4, NONE)) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS mon_g_lz4 AS seq_g_lz4;</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS rnd_g_lz4 AS seq_g_lz4;</create_query>
+
+    <fill_query>INSERT INTO seq_{table_suffix} (n) SELECT number/pi() FROM system.numbers LIMIT 100000</fill_query>
+    <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT number+sin(number) FROM system.numbers LIMIT 100000</fill_query>
+    <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT (rand() - 4294967295)/pi() FROM system.numbers LIMIT 100000</fill_query>
+    
+    <fill_query>INSERT INTO seq_{table_suffix} (n) SELECT n FROM seq_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT n FROM mon_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT n FROM rnd_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO seq_{table_suffix} (n) SELECT n FROM seq_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT n FROM mon_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT n FROM rnd_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO seq_{table_suffix} (n) SELECT n FROM seq_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT n FROM mon_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT n FROM rnd_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO seq_{table_suffix} (n) SELECT n FROM seq_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT n FROM mon_{table_suffix}</fill_query>
+    <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT n FROM rnd_{table_suffix}</fill_query>
+
+
+    <query>INSERT INTO seq_{table_suffix} (n) SELECT number/pi() FROM system.numbers SETTINGS max_threads=1</query>
+    <query>INSERT INTO mon_{table_suffix} (n) SELECT number+sin(number) FROM system.numbers SETTINGS max_threads=1</query>
+    <query>INSERT INTO rnd_{table_suffix} (n) SELECT (rand() - 4294967295)/pi() FROM system.numbers SETTINGS max_threads=1</query>
+
+
+    <query>SELECT count(n) FROM seq_{table_suffix} SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM mon_{table_suffix} SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM rnd_{table_suffix} SETTINGS max_threads=1</query>
+
+
+    <drop_query>DROP TABLE IF EXISTS seq_{table_suffix}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS mon_{table_suffix}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rnd_{table_suffix}</drop_query>
+
+</test>

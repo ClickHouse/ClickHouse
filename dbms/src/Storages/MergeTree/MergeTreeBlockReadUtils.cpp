@@ -20,20 +20,19 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
         const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name))
+        if (part->hasColumnFiles(column_name, *storage.getColumn(column_name).type))
         {
             all_column_files_missing = false;
             continue;
         }
 
-        const auto default_it = storage.getColumns().defaults.find(column_name);
-        /// columns has no explicit default expression
-        if (default_it == std::end(storage.getColumns().defaults))
+        const auto column_default = storage.getColumns().getDefault(column_name);
+        if (!column_default)
             continue;
 
         /// collect identifiers required for evaluation
         IdentifierNameSet identifiers;
-        default_it->second.expression->collectIdentifierNames(identifiers);
+        column_default->expression->collectIdentifierNames(identifiers);
 
         for (const auto & identifier : identifiers)
         {

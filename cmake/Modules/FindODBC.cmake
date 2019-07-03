@@ -1,88 +1,147 @@
-# This file copied from contrib/poco/cmake/FindODBC.cmake to allow build without submodules
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
+#.rst:
+# FindMySQL
+# -------
 #
-# Find the ODBC driver manager includes and library.
+# Find ODBC Runtime
 #
-# ODBC is an open standard for connecting to different databases in a
-# semi-vendor-independent fashion.  First you install the ODBC driver
-# manager.  Then you need a driver for each separate database you want
-# to connect to (unless a generic one works).  VTK includes neither
-# the driver manager nor the vendor-specific drivers: you have to find
-# those yourself.
+# This will define the following variables::
 #
-# This module defines
-# ODBC_INCLUDE_DIRECTORIES, where to find sql.h
-# ODBC_LIBRARIES, the libraries to link against to use ODBC
-# ODBC_FOUND.  If false, you cannot build anything that requires ODBC.
+#   ODBC_FOUND           - True if the system has the libraries
+#   ODBC_INCLUDE_DIRS    - where to find the headers
+#   ODBC_LIBRARIES       - where to find the libraries
+#   ODBC_DEFINITIONS     - compile definitons
+#
+# Hints:
+# Set ``ODBC_ROOT_DIR`` to the root directory of an installation.
+#
+include(FindPackageHandleStandardArgs)
 
-option (ENABLE_ODBC "Enable ODBC" ${OS_LINUX})
-if (OS_LINUX)
-    option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
-else ()
-    option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" OFF)
-endif ()
+find_package(PkgConfig QUIET)
+pkg_check_modules(PC_ODBC QUIET odbc)
 
-if (USE_INTERNAL_ODBC_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/unixodbc/README")
-    message (WARNING "submodule contrib/unixodbc is missing. to fix try run: \n git submodule update --init --recursive")
-   set (USE_INTERNAL_ODBC_LIBRARY 0)
-endif ()
+if(WIN32)
+	get_filename_component(kit_dir "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots;KitsRoot]" REALPATH)
+	get_filename_component(kit81_dir "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots;KitsRoot81]" REALPATH)
+endif()
 
-if (ENABLE_ODBC)
-    if (USE_INTERNAL_ODBC_LIBRARY)
-        set (ODBC_LIBRARIES unixodbc)
-        set (ODBC_INCLUDE_DIRECTORIES ${CMAKE_SOURCE_DIR}/contrib/unixodbc/include)
-        set (ODBC_FOUND 1)
-        set (USE_ODBC 1)
-    else ()
-        find_path(ODBC_INCLUDE_DIRECTORIES
-            NAMES sql.h
-            HINTS
-            /usr/include
-            /usr/include/iodbc
-            /usr/include/odbc
-            /usr/local/include
-            /usr/local/include/iodbc
-            /usr/local/include/odbc
-            /usr/local/iodbc/include
-            /usr/local/odbc/include
-            "C:/Program Files/ODBC/include"
-            "C:/Program Files/Microsoft SDKs/Windows/v7.0/include"
-            "C:/Program Files/Microsoft SDKs/Windows/v6.0a/include"
-            "C:/ODBC/include"
-            DOC "Specify the directory containing sql.h."
-        )
+find_path(ODBC_INCLUDE_DIR
+	NAMES sql.h
+	HINTS
+		${ODBC_ROOT_DIR}/include
+		${ODBC_ROOT_INCLUDE_DIRS}
+	PATHS
+		${PC_ODBC_INCLUDE_DIRS}
+		/usr/include
+		/usr/local/include
+		/usr/local/odbc/include
+		/usr/local/iodbc/include
+		"C:/Program Files/ODBC/include"
+		"C:/Program Files/Microsoft SDKs/Windows/v7.0/include"
+		"C:/Program Files/Microsoft SDKs/Windows/v6.0a/include"
+		"C:/ODBC/include"
+		"${kit_dir}/Include/um"
+		"${kit81_dir}/Include/um"
+	PATH_SUFFIXES
+		odbc
+		iodbc
+	DOC "Specify the directory containing sql.h."
+)
 
-        find_library(ODBC_LIBRARIES
-            NAMES iodbc odbc iodbcinst odbcinst odbc32
-            HINTS
-            /usr/lib
-            /usr/lib/iodbc
-            /usr/lib/odbc
-            /usr/local/lib
-            /usr/local/lib/iodbc
-            /usr/local/lib/odbc
-            /usr/local/iodbc/lib
-            /usr/local/odbc/lib
-            "C:/Program Files/ODBC/lib"
-            "C:/ODBC/lib/debug"
-            "C:/Program Files (x86)/Microsoft SDKs/Windows/v7.0A/Lib"
-            DOC "Specify the ODBC driver manager library here."
-        )
+if(NOT ODBC_INCLUDE_DIR AND WIN32)
+  set(ODBC_INCLUDE_DIR "")
+else()
+  set(REQUIRED_INCLUDE_DIR ODBC_INCLUDE_DIR)
+endif()
 
-        # MinGW find usually fails
-        if(MINGW)
-            set(ODBC_INCLUDE_DIRECTORIES ".")
-            set(ODBC_LIBRARIES odbc32)
-        endif()
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(WIN_ARCH x64)
+elseif(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+  set(WIN_ARCH x86)
+endif()
 
-        include(FindPackageHandleStandardArgs)
-        find_package_handle_standard_args(ODBC
-            DEFAULT_MSG
-            ODBC_INCLUDE_DIRECTORIES
-            ODBC_LIBRARIES)
+find_library(ODBC_LIBRARY
+	NAMES unixodbc iodbc odbc odbc32
+	HINTS
+		${ODBC_ROOT_DIR}/lib
+		${ODBC_ROOT_LIBRARY_DIRS}
+	PATHS
+		${PC_ODBC_LIBRARY_DIRS}
+		/usr/lib
+		/usr/local/lib
+		/usr/local/odbc/lib
+		/usr/local/iodbc/lib
+		"C:/Program Files/ODBC/lib"
+		"C:/ODBC/lib/debug"
+		"C:/Program Files (x86)/Microsoft SDKs/Windows/v7.0A/Lib"
+		"${kit81_dir}/Lib/winv6.3/um"
+		"${kit_dir}/Lib/win8/um"
+	PATH_SUFIXES
+		odbc
+		${WIN_ARCH}
+	DOC "Specify the ODBC driver manager library here."
+)
 
-        mark_as_advanced(ODBC_FOUND ODBC_LIBRARIES ODBC_INCLUDE_DIRECTORIES)
-    endif ()
-endif ()
+if(NOT ODBC_LIBRARY AND WIN32)
+  # List names of ODBC libraries on Windows
+  set(ODBC_LIBRARY odbc32.lib)
+endif()
 
-message (STATUS "Using odbc: ${ODBC_INCLUDE_DIRECTORIES} : ${ODBC_LIBRARIES}")
+# List additional libraries required to use ODBC library
+if(WIN32 AND MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+  set(_odbc_required_libs_names odbccp32;ws2_32)
+endif()
+foreach(_lib_name IN LISTS _odbc_required_libs_names)
+	find_library(_lib_path
+		NAMES ${_lib_name}
+		HINTS
+			${ODBC_ROOT_DIR}/lib
+			${ODBC_ROOT_LIBRARY_DIRS}
+		PATHS
+			${PC_ODBC_LIBRARY_DIRS}
+			/usr/lib
+			/usr/local/lib
+			/usr/local/odbc/lib
+			/usr/local/iodbc/lib
+			"C:/Program Files/ODBC/lib"
+			"C:/ODBC/lib/debug"
+			"C:/Program Files (x86)/Microsoft SDKs/Windows/v7.0A/Lib"
+		PATH_SUFFIXES
+			odbc
+	)
+	if (_lib_path)
+		list(APPEND _odbc_required_libs_paths ${_lib_path})
+	endif()
+	unset(_lib_path CACHE)
+endforeach()
+unset(_odbc_lib_paths)
+unset(_odbc_required_libs_names)
+
+
+find_package_handle_standard_args(ODBC
+	FOUND_VAR ODBC_FOUND
+	REQUIRED_VARS
+		ODBC_LIBRARY
+		${REQUIRED_INCLUDE_DIR}
+	VERSION_VAR ODBC_VERSION
+)
+
+if(ODBC_FOUND)
+  set(ODBC_LIBRARIES ${ODBC_LIBRARY} ${_odbc_required_libs_paths})
+  set(ODBC_INCLUDE_DIRS ${ODBC_INCLUDE_DIR})
+  set(ODBC_DEFINITIONS ${PC_ODBC_CFLAGS_OTHER})
+endif()
+
+if(ODBC_FOUND AND NOT TARGET ODBC::ODBC)
+  add_library(ODBC::ODBC UNKNOWN IMPORTED)
+  set_target_properties(ODBC::ODBC PROPERTIES
+	IMPORTED_LOCATION "${ODBC_LIBRARY}"
+	INTERFACE_LINK_LIBRARIES "${_odbc_required_libs_paths}"
+	INTERFACE_COMPILE_OPTIONS "${PC_ODBC_CFLAGS_OTHER}"
+	INTERFACE_INCLUDE_DIRECTORIES "${ODBC_INCLUDE_DIR}"
+  )
+endif()
+
+mark_as_advanced(ODBC_LIBRARY ODBC_INCLUDE_DIR)

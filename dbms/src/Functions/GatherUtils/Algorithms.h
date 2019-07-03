@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
-
-#include <Functions/GatherUtils/Sources.h>
-#include <Functions/GatherUtils/Sinks.h>
+#include "Sources.h"
+#include "Sinks.h"
 #include <Core/AccurateComparison.h>
-
 #include <ext/range.h>
 
 
@@ -53,7 +51,7 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    if (slice.elements->structureEquals(sink.elements))
     {
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
         sink.current_offset += slice.size;
@@ -125,7 +123,7 @@ void writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericValueSlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArraySink & sink)
 {
-    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    if (slice.elements->structureEquals(sink.elements))
     {
         sink.elements.insertFrom(*slice.elements, slice.position);
         ++sink.current_offset;
@@ -457,7 +455,7 @@ template <bool all>
 bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
-    if (typeid(*first.elements) != typeid(*second.elements))
+    if (!first.elements->structureEquals(*second.elements))
         return false;
 
     auto impl = sliceHasImpl<all, GenericArraySlice, GenericArraySlice, sliceEqualElements>;
@@ -520,7 +518,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
     while (!sink.isEnd())
     {
         size_t row_num = array_source.rowNum();
-        bool has_size = !size_null_map || (size_null_map && (*size_null_map)[row_num]);
+        bool has_size = !size_null_map || (*size_null_map)[row_num];
 
         if (has_size)
         {

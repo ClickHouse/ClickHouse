@@ -84,11 +84,11 @@ SetPtr makeExplicitSet(
 
     auto getTupleTypeFromAst = [&context](const ASTPtr & tuple_ast) -> DataTypePtr
     {
-        auto ast_function = typeid_cast<const ASTFunction *>(tuple_ast.get());
-        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
+        const auto * func = tuple_ast->as<ASTFunction>();
+        if (func && func->name == "tuple" && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
-            auto element = ast_function->arguments->children.at(0);
+            auto element = func->arguments->children.at(0);
             std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
             return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
         }
@@ -122,7 +122,7 @@ SetPtr makeExplicitSet(
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_tuple_depth + 1 == right_tuple_depth)
     {
-        ASTFunction * set_func = typeid_cast<ASTFunction *>(right_arg.get());
+        const auto * set_func = right_arg->as<ASTFunction>();
 
         if (!set_func || set_func->name != "tuple")
             throw Exception("Incorrect type of 2nd argument for function " + node->name
@@ -263,11 +263,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
     };
 
     /// If the result of the calculation already exists in the block.
-    if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
-        && actions_stack.getSampleBlock().has(getColumnName()))
+    if ((ast->as<ASTFunction>() || ast->as<ASTLiteral>()) && actions_stack.getSampleBlock().has(getColumnName()))
         return;
 
-    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (const auto * identifier = ast->as<ASTIdentifier>())
     {
         if (!only_consts && !actions_stack.getSampleBlock().has(getColumnName()))
         {
@@ -288,7 +287,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
     }
-    else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
+    else if (const auto * node = ast->as<ASTFunction>())
     {
         if (node->name == "lambda")
             throw Exception("Unexpected lambda expression", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -329,10 +328,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 if (!only_consts)
                 {
                     /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                    /// Do not subquery and create sets. We treat "IN" as "ignore" function.
+                    /// Do not subquery and create sets. We treat "IN" as "ignoreExceptNull" function.
 
                     actions_stack.addAction(ExpressionAction::applyFunction(
-                            FunctionFactory::instance().get("ignore", context),
+                            FunctionFactory::instance().get("ignoreExceptNull", context),
                             { node->arguments->children.at(0)->getColumnName() },
                             getColumnName()));
                 }
@@ -383,14 +382,14 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             auto & child = node->arguments->children[arg];
             auto child_column_name = child->getColumnName();
 
-            ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
+            const auto * lambda = child->as<ASTFunction>();
             if (lambda && lambda->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
                 if (lambda->arguments->children.size() != 2)
                     throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
+                const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
 
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                     throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -454,12 +453,12 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             {
                 ASTPtr child = node->arguments->children[i];
 
-                ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
+                const auto * lambda = child->as<ASTFunction>();
                 if (lambda && lambda->name == "lambda")
                 {
                     const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
-                    ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
-                    ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
+                    const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
+                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
                     NamesAndTypesList lambda_arguments;
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
@@ -517,7 +516,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 ExpressionAction::applyFunction(function_builder, argument_names, getColumnName()));
         }
     }
-    else if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(ast.get()))
+    else if (const auto * literal = ast->as<ASTLiteral>())
     {
         DataTypePtr type = applyVisitor(FieldToDataType(), literal->value);
 
@@ -533,8 +532,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, UNION.
-            if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && !typeid_cast<const ASTSelectQuery *>(child.get()))
+            if (!child->as<ASTTableExpression>() && !child->as<ASTSelectQuery>())
                 visit(child);
         }
     }
@@ -550,8 +548,8 @@ SetPtr ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bl
     const ASTPtr & arg = args.children.at(1);
 
     /// If the subquery or table name for SELECT.
-    const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
-    if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
+    const auto * identifier = arg->as<ASTIdentifier>();
+    if (arg->as<ASTSubquery>() || identifier)
     {
         auto set_key = PreparedSetKey::forSubquery(*arg);
         if (prepared_sets.count(set_key))

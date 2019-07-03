@@ -49,13 +49,20 @@ CHECK TABLE [db.]name
 3. Выполните запрос `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. В результате неповрежденные данные будут скопированы в другую таблицу. Обратите внимание, будут скопированы только те данные, которые следуют до поврежденного участка.
 4. Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
 
-## DESCRIBE TABLE
+## DESCRIBE TABLE {#misc-describe-table}
 
 ```sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
+Возвращает описание столбцов таблицы.
 
-Возвращает два столбца: `name`, `type` типа `String`, в которых описаны имена и типы столбцов указанной таблицы.
+Результат запроса содержит столбцы (все столбцы имеют тип String): 
+
+- `name` — имя столбца таблицы;
+- `type`— тип столбца;
+- `default_type` — в каком виде задано [выражение для значения по умолчанию](create.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Столбец содержит пустую строку, если значение по умолчанию не задано.
+- `default_expression` — значение, заданное в секции `DEFAULT`;
+- `comment_expression` — комментарий к столбцу.
 
 Вложенные структуры данных выводятся в "развёрнутом" виде. То есть, каждый столбец - по отдельности, с именем через точку.
 
@@ -160,7 +167,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
-## OPTIMIZE
+## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
@@ -173,7 +180,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 
 !!! warning "Внимание"Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
 
-## RENAME
+## RENAME {#misc_operations-rename}
 
 Переименовывает одну или несколько таблиц.
 

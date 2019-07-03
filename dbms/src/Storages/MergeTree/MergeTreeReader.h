@@ -51,6 +51,12 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
+    MergeTreeData::DataPartPtr data_part;
+
+    size_t getFirstMarkToRead() const
+    {
+        return all_mark_ranges.back().begin;
+    }
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
@@ -60,7 +66,6 @@ private:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// Path to the directory containing the part
     String path;
-    MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
 
@@ -76,7 +81,6 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
-    size_t index_granularity;
 
     void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

@@ -1,22 +1,16 @@
 # Roadmap
 
-## Q1 2019
-
-- JOIN syntax compatible with SQL standard:
-    - Mutliple `JOIN`s in single `SELECT`
-- Protobuf and Parquet input and output formats
-- Import/export from HDFS and S3
-- Lower metadata size in ZooKeeper
-- Adaptive index granularity for MergeTree engine family
-
 ## Q2 2019
+
+- DDL for dictionaries
+- Integration with S3-like object stores
+- Multiple storages for hot/cold data, JBOD support
+
+## Q3 2019
 
 - JOIN execution improvements:
     - Distributed join not limited by memory
 - Resource pools for more precise distribution of cluster capacity between users
-
-## Q3 2019
-
 - Fine-grained authorization
 - Integration with external authentication services
 

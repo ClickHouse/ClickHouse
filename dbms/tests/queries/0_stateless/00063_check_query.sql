@@ -14,3 +14,6 @@ CREATE TABLE check_query_log (N UInt32,S String) Engine = Log;
 INSERT INTO check_query_log VALUES (1, 'A'), (2, 'B'), (3, 'C')
 
 CHECK TABLE check_query_log;
+
+DROP TABLE check_query_log;
+DROP TABLE check_query_tiny_log;

@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 StoragePtr TableFunctionCatBoostPool::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
+    ASTs & args_func = ast_function->children;
 
     std::string err = "Table function '" + getName() + "' requires 2 parameters: "
                        + "column descriptions file, dataset description file";
@@ -26,14 +26,14 @@ StoragePtr TableFunctionCatBoostPool::executeImpl(const ASTPtr & ast_function, c
     if (args_func.size() != 1)
         throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+    ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 2)
         throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     auto getStringLiteral = [](const IAST & node, const char * description)
     {
-        auto lit = typeid_cast<const ASTLiteral *>(&node);
+        const auto * lit = node.as<ASTLiteral>();
         if (!lit)
             throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
 

@@ -167,7 +167,7 @@ public:
         const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
-        if (src.column->isColumnConst())
+        if (isColumnConst(*src.column))
         {
             block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
             return;

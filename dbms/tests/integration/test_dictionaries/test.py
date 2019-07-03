@@ -1,5 +1,6 @@
 import pytest
 import os
+import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -10,6 +11,25 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = None
 instance = None
 test_table = None
+
+
+def get_status(dictionary_name):
+    return instance.query("SELECT status FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+
+
+def get_loading_start_time(dictionary_name):
+    s = instance.query("SELECT loading_start_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
+    if s == "0000-00-00 00:00:00":
+        return None
+    return time.strptime(s, "%Y-%m-%d %H:%M:%S")
+
+
+def get_loading_duration(dictionary_name):
+    return float(instance.query("SELECT loading_duration FROM system.dictionaries WHERE name='" + dictionary_name + "'"))
+
+
+def replace_in_file_in_container(file_name, what, replace_with):
+    instance.exec_in_container('sed -i "s/' + what + '/' + replace_with + '/g" ' + file_name)
 
 
 def setup_module(module):
@@ -29,6 +49,7 @@ def setup_module(module):
 def started_cluster():
     try:
         cluster.start()
+        instance.query("CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary")
         test_table.create_clickhouse_source(instance)
         for line in TSV(instance.query('select name from system.dictionaries')).lines:
             print line,
@@ -122,6 +143,7 @@ def test_select_all_from_cached(cached_dictionary_structure):
     print test_table.process_diff(diff)
     assert not diff
 
+
 def test_null_value(started_cluster):
     query = instance.query
 
@@ -132,3 +154,143 @@ def test_null_value(started_cluster):
     # Check, that empty null_value interprets as default value
     assert TSV(query("select dictGetUInt64('clickhouse_cache', 'UInt64_', toUInt64(12121212))")) == TSV("0")
     assert TSV(query("select dictGetDateTime('clickhouse_cache', 'DateTime_', toUInt64(12121212))")) == TSV("0000-00-00 00:00:00")
+
+
+def test_dictionary_dependency(started_cluster):
+    query = instance.query
+
+    # dictionaries_lazy_load == false, so these dictionary are not loaded.
+    assert get_status('dep_x') == 'NOT_LOADED'
+    assert get_status('dep_y') == 'NOT_LOADED'
+    assert get_status('dep_z') == 'NOT_LOADED'
+
+    # Dictionary 'dep_x' depends on 'dep_z', which depends on 'dep_y'.
+    # So they all should be loaded at once.
+    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert get_status('dep_x') == 'LOADED'
+    assert get_status('dep_y') == 'LOADED'
+    assert get_status('dep_z') == 'LOADED'
+
+    # Other dictionaries should work too.
+    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(12121212))") == "XX\n"
+    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(12121212))") == "YY\n"
+    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(12121212))") == "ZZ\n"
+
+
+def test_reload_while_loading(started_cluster):
+    query = instance.query
+
+    # dictionaries_lazy_load == false, so this dictionary is not loaded.
+    assert get_status('longload') == "NOT_LOADED"
+    assert get_loading_duration('longload') == 0
+
+    # It's not possible to get a value from the dictionary within 1.0 second, so the following query fails by timeout.
+    assert query("SELECT dictGetInt32('longload', 'a', toUInt64(5))", timeout = 1, ignore_error = True) == ""
+
+    # The dictionary is now loading.
+    assert get_status('longload') == "LOADING"
+    start_time, duration = get_loading_start_time('longload'), get_loading_duration('longload')
+    assert duration > 0
+
+    time.sleep(0.5) # Still loading.
+    assert get_status('longload') == "LOADING"
+    prev_start_time, prev_duration = start_time, duration
+    start_time, duration = get_loading_start_time('longload'), get_loading_duration('longload')
+    assert start_time == prev_start_time
+    assert duration >= prev_duration
+
+    # SYSTEM RELOAD DICTIONARY should restart loading.
+    query("SYSTEM RELOAD DICTIONARY 'longload'")
+    assert get_status('longload') == "LOADING"
+    prev_start_time, prev_duration = start_time, duration
+    start_time, duration = get_loading_start_time('longload'), get_loading_duration('longload')
+    assert start_time > prev_start_time
+    assert duration < prev_duration
+
+    time.sleep(0.5) # Still loading.
+    assert get_status('longload') == "LOADING"
+    prev_start_time, prev_duration = start_time, duration
+    start_time, duration = get_loading_start_time('longload'), get_loading_duration('longload')
+    assert start_time == prev_start_time
+    assert duration >= prev_duration
+
+    # SYSTEM RELOAD DICTIONARIES should restart loading again.
+    query("SYSTEM RELOAD DICTIONARIES")
+    assert get_status('longload') == "LOADING"
+    prev_start_time, prev_duration = start_time, duration
+    start_time, duration = get_loading_start_time('longload'), get_loading_duration('longload')
+    assert start_time > prev_start_time
+    assert duration < prev_duration
+
+    # Changing the configuration file should restart loading one more time.
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_longload.xml', 'sleep 100', 'sleep 0')
+    time.sleep(5) # Configuration files are reloaded once in 5 seconds.
+
+    # This time loading should finish quickly.
+    assert get_status('longload') == "LOADED"
+    assert query("SELECT dictGetInt32('longload', 'a', toUInt64(5))") == "6\n"
+
+
+def test_reload_after_loading(started_cluster):
+    query = instance.query
+
+    assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "8\n"
+    assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "10\n"
+
+    # Change the dictionaries' data.
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_cmd.xml', '8', '81')
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_file.txt', '10', '101')
+
+    # SYSTEM RELOAD 'name' reloads only the specified dictionary.
+    query("SYSTEM RELOAD DICTIONARY 'cmd'")
+    assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "81\n"
+    assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "10\n"
+
+    query("SYSTEM RELOAD DICTIONARY 'file'")
+    assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "81\n"
+    assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "101\n"
+
+    # SYSTEM RELOAD DICTIONARIES reloads all loaded dictionaries.
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_cmd.xml', '81', '82')
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_file.txt', '101', '102')
+    query("SYSTEM RELOAD DICTIONARIES")
+    assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "82\n"
+    assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "102\n"
+
+    # Configuration files are reloaded and lifetimes are checked automatically once in 5 seconds.
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_cmd.xml', '82', '83')
+    replace_in_file_in_container('/etc/clickhouse-server/config.d/dictionary_preset_file.txt', '102', '103')
+    time.sleep(5)
+    assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "103\n"
+    assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "83\n"
+
+
+def test_reload_after_fail(started_cluster):
+    query = instance.query
+
+    # dictionaries_lazy_load == false, so this dictionary is not loaded.
+    assert get_status("no_file") == "NOT_LOADED"
+
+    # We expect an error because the file source doesn't exist.
+    expected_error = "No such file"
+    assert expected_error in instance.query_and_get_error("SELECT dictGetInt32('no_file', 'a', toUInt64(9))")
+    assert get_status("no_file") == "FAILED"
+
+    # SYSTEM RELOAD should not change anything now, the status is still FAILED.
+    query("SYSTEM RELOAD DICTIONARY 'no_file'")
+    assert expected_error in instance.query_and_get_error("SELECT dictGetInt32('no_file', 'a', toUInt64(9))")
+    assert get_status("no_file") == "FAILED"
+
+    # Creating the file source makes the dictionary able to load.
+    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/dictionary_preset_file.txt"), "/etc/clickhouse-server/config.d/dictionary_preset_no_file.txt")
+    query("SYSTEM RELOAD DICTIONARY 'no_file'")
+    query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
+    assert get_status("no_file") == "LOADED"
+
+    # Removing the file source should not spoil the loaded dictionary.
+    instance.exec_in_container("rm /etc/clickhouse-server/config.d/dictionary_preset_no_file.txt")
+    query("SYSTEM RELOAD DICTIONARY 'no_file'")
+    query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
+    assert get_status("no_file") == "LOADED"

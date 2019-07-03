@@ -18,7 +18,7 @@
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
 #include <Interpreters/AggregateDescription.h>
@@ -307,8 +307,12 @@ struct AggregationMethodKeysFixed
             IColumn * observed_column;
             ColumnUInt8 * null_map;
 
+            bool column_nullable = false;
+            if constexpr (has_nullable_keys)
+                column_nullable = isColumnNullable(*key_columns[i]);
+
             /// If we have a nullable column, get its nested column and its null map.
-            if (has_nullable_keys && key_columns[i]->isColumnNullable())
+            if (column_nullable)
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
@@ -320,8 +324,8 @@ struct AggregationMethodKeysFixed
                 null_map = nullptr;
             }
 
-            bool is_null;
-            if (has_nullable_keys && key_columns[i]->isColumnNullable())
+            bool is_null = false;
+            if (column_nullable)
             {
                 /// The current column is nullable. Check if the value of the
                 /// corresponding key is nullable. Update the null map accordingly.
@@ -331,8 +335,6 @@ struct AggregationMethodKeysFixed
                 null_map->insertValue(val);
                 is_null = val == 1;
             }
-            else
-                is_null = false;
 
             if (has_nullable_keys && is_null)
                 observed_column->insertDefault();
@@ -407,12 +409,12 @@ struct AggregatedDataVariants : private boost::noncopyable
       */
     Aggregator * aggregator = nullptr;
 
-    size_t keys_size;    /// Number of keys. NOTE do we need this field?
+    size_t keys_size{};  /// Number of keys. NOTE do we need this field?
     Sizes key_sizes;     /// Dimensions of keys, if keys of fixed length
 
     /// Pools for states of aggregate functions. Ownership will be later transferred to ColumnAggregateFunction.
     Arenas aggregates_pools;
-    Arena * aggregates_pool;    /// The pool that is currently used for allocation.
+    Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
 
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */

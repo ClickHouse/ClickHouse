@@ -6,4 +6,4 @@ clickhouse_program_add(local)
 
 if(NOT CLICKHOUSE_ONE_SHARED)
     target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
-endif ()
+endif()

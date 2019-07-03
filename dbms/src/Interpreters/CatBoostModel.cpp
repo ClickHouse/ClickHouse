@@ -537,9 +537,9 @@ bool CatBoostModel::isModified() const
     return true;
 }
 
-std::unique_ptr<IExternalLoadable> CatBoostModel::clone() const
+std::shared_ptr<const IExternalLoadable> CatBoostModel::clone() const
 {
-    return std::make_unique<CatBoostModel>(name, model_path, lib_path, lifetime);
+    return std::make_shared<CatBoostModel>(name, model_path, lib_path, lifetime);
 }
 
 size_t CatBoostModel::getFloatFeaturesCount() const

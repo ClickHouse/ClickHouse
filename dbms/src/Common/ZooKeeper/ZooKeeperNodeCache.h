@@ -41,7 +41,7 @@ public:
     {
         bool exists = false;
         std::string contents;
-        Coordination::Stat stat;
+        Coordination::Stat stat{};
     };
 
     ZNode get(const std::string & path, EventPtr watch_event);

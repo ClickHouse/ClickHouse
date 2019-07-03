@@ -1,7 +1,6 @@
 #include <future>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Common/CurrentThread.h>
 

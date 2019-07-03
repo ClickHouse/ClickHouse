@@ -1,6 +1,6 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
@@ -27,7 +27,14 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+BlockInputStreamPtr FormatFactory::getInput(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const Context & context,
+    UInt64 max_block_size,
+    UInt64 rows_portion_size,
+    ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -39,14 +46,17 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
+    format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
 
-    return input_getter(buf, sample, context, max_block_size, format_settings);
+    return input_getter(
+        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
 }
 
 
@@ -129,6 +139,7 @@ void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
+void registerOutputFormatMySQLWire(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -167,6 +178,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatODBCDriver(*this);
     registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
+    registerOutputFormatMySQLWire(*this);
 }
 
 }

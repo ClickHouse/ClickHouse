@@ -53,6 +53,10 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
         case IdentifierQuotingStyle::DoubleQuotes:
             writeDoubleQuotedString(s, out);
             break;
+
+        case IdentifierQuotingStyle::BackticksMySQL:
+            writeBackQuotedStringMySQL(s, out);
+            break;
     }
 }
 
@@ -298,7 +302,7 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
             composeKeyCondition(key_columns, row, out);
         }
     }
-    else if (method == IN_WITH_TUPLES)
+    else /* if (method == IN_WITH_TUPLES) */
     {
         writeString(composeKeyTupleDefinition(), out);
         writeString(" IN (", out);

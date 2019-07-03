@@ -2,6 +2,7 @@
 
 #include <Poco/Timestamp.h>
 #include "IDictionarySource.h"
+#include <Core/Block.h>
 
 
 namespace DB

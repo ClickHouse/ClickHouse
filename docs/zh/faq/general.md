@@ -9,4 +9,14 @@
 大多数MapReduce系统允许您在集群上执行任意代码。但是，声明性查询语言更适合OLAP，以便快速运行实验。例如，Hadoop包含Hive和Pig，Cloudera Impala或Shark（过时）for Spark，以及Spark SQL、Presto和Apache Drill。与专业系统相比，运行此类任务时的性能非常不理想，所以将这些系统用作Web接口的后端服务是不现实的，因为延迟相对较高。
 
 
+## What to do if I have a problem with encodings when using Oracle through ODBC? {#oracle-odbc-encodings}
+
+If you use Oracle through ODBC driver as a source of external dictionaries, you need to set up correctly value for the `NLS_LANG` variable in the `/etc/default/clickhouse`. For more details see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+
+**Example**
+
+```
+NLS_LANG=CHINESE_CHINA.ZHS16GBK
+```
+
 [来源文章](https://clickhouse.yandex/docs/zh/faq/general/) <!--hide-->

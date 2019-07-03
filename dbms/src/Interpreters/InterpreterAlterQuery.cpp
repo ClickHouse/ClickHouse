@@ -30,7 +30,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 
 BlockIO InterpreterAlterQuery::execute()
 {
-    auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {alter.database});

@@ -1,5 +1,3 @@
-USE test;
-
 SELECT arrayDistinct([1, 2, 3]);
 SELECT arrayDistinct([1, 2, 3, 2, 2]);
 SELECT arrayDistinct([1, 2, NULL, 5, 2, NULL]);

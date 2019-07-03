@@ -2,15 +2,12 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
-
-class IAST; // XXX: should include full class - for proper use inside inline methods
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
@@ -42,6 +39,8 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+
     void shutdown() override;
 
     void checkTableCanBeDropped() const override;
@@ -51,6 +50,8 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+
+    ActionLock getActionLock(StorageActionBlockType type) override;
 
     BlockInputStreams read(
         const Names & column_names,

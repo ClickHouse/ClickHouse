@@ -10,7 +10,7 @@ struct BitSwapLastTwoImpl
 {
     using ResultType = UInt8;
 
-    static inline ResultType apply(A a)
+    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
         return static_cast<ResultType>(
                 ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
