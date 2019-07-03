@@ -7,6 +7,7 @@
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/joinDispatch.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -23,7 +24,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
-
 
 StorageJoin::StorageJoin(
     const String & path_,
@@ -230,9 +230,8 @@ protected:
             return Block();
 
         Block block;
-        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
-            ;
-        else
+        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
+                [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
         return block;
     }

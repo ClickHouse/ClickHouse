@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
-    if (!column->isColumnConst())
+    if (!isColumnConst(*column))
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -64,17 +64,14 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
             {
                 res.insert({nullptr, nested_type, col.name});
             }
-            else if (col.column->isColumnNullable())
+            else if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
             {
-                const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
-
+                const auto & nested_col = nullable->getNestedColumnPtr();
                 res.insert({nested_col, nested_type, col.name});
             }
-            else if (col.column->isColumnConst())
+            else if (auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
-                const auto & nested_col = static_cast<const ColumnNullable &>(
-                    static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
-
+                const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
                 res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
             }
             else

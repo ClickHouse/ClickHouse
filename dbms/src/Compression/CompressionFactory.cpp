@@ -138,6 +138,8 @@ void registerCodecMultiple(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
+void registerCodecDoubleDelta(CompressionCodecFactory & factory);
+void registerCodecGorilla(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -149,6 +151,8 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
     registerCodecT64(*this);
+    registerCodecDoubleDelta(*this);
+    registerCodecGorilla(*this);
 }
 
 }
