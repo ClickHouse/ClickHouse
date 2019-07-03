@@ -271,11 +271,17 @@ struct NgramDistanceImpl
         {
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
             /// For !Symmetric version we should not use first_size.
-            res = distance * 1.f / std::max(Symmetric * first_size + second_size, size_t(1));
+            if constexpr (Symmetric)
+                res = distance * 1.f / std::max(first_size + second_size, size_t(1));
+            else
+                res = 1.f - distance * 1.f / std::max(second_size, size_t(1));
         }
         else
         {
-            res = 1.f;
+            if constexpr (Symmetric)
+                res = 1.f;
+            else
+                res = 0.f;
         }
     }
 
@@ -333,13 +339,19 @@ struct NgramDistanceImpl
 
 
                 /// For !Symmetric version we should not use haystack_stats_size.
-                res[i] = distance * 1.f / std::max(Symmetric * haystack_stats_size + needle_stats_size, size_t(1));
+                if constexpr (Symmetric)
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+                else
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, size_t(1));
             }
             else
             {
                 /// Strings are too big, we are assuming they are not the same. This is done because of limiting number
                 /// of bigrams added and not allocating too much memory.
-                res[i] = 1.f;
+                if constexpr (Symmetric)
+                    res[i] = 1.f;
+                else
+                    res[i] = 0.f;
             }
 
             prev_needle_offset = needle_offsets[i];
@@ -399,11 +411,11 @@ struct NgramDistanceImpl
                     for (size_t j = 0; j < needle_stats_size; ++j)
                         --common_stats[needle_ngram_storage[j]];
 
-                    res[i] = distance * 1.f / std::max(needle_stats_size, size_t(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, size_t(1));
                 }
                 else
                 {
-                    res[i] = 1.f;
+                    res[i] = 0.f;
                 }
 
                 prev_offset = needle_offsets[i];
@@ -446,12 +458,18 @@ struct NgramDistanceImpl
                     distance,
                     ngram_storage.get());
                 /// For !Symmetric version we should not use haystack_stats_size.
-                res[i] = distance * 1.f / std::max(Symmetric * haystack_stats_size + needle_stats_size, size_t(1));
+                if constexpr (Symmetric)
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+                else
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, size_t(1));
             }
             else
             {
                 /// if the strings are too big, we say they are completely not the same
-                res[i] = 1.f;
+                if constexpr (Symmetric)
+                    res[i] = 1.f;
+                else
+                    res[i] = 0.f;
             }
             distance = needle_stats_size;
             prev_offset = offsets[i];

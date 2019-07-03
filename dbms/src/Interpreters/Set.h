@@ -167,7 +167,7 @@ using Sets = std::vector<SetPtr>;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
-/// Class for mayBeTrueInRange function.
+/// Class for checkInRange function.
 class MergeTreeSetIndex
 {
 public:
@@ -185,7 +185,7 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
-    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
     Columns ordered_set;

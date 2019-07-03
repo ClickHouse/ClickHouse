@@ -2,6 +2,10 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
 
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+endif ()
+
 if(COMPILER_PIPE)
     set(MAX_COMPILER_MEMORY 2500)
 else()
@@ -223,8 +227,9 @@ if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
-if (USE_LFALLOC)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LFALLOC_INCLUDE_DIR})
+if (USE_MIMALLOC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MIMALLOC_INCLUDE_DIR})
+    target_link_libraries (clickhouse_common_io PRIVATE ${MIMALLOC_LIBRARY})
 endif ()
 
 if(CPUID_LIBRARY)
