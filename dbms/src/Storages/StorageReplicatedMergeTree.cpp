@@ -30,6 +30,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTCheckQuery.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -5099,6 +5100,33 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     return true;
+}
+
+
+CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const Context & context)
+{
+    CheckResults results;
+    DataPartsVector data_parts;
+    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    {
+        String partition_id = getPartitionIDFromQuery(check_query.partition, context);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    }
+    else
+        data_parts = getDataPartsVector();
+
+    for (auto & part : data_parts)
+    {
+        try
+        {
+            results.push_back(part_check_thread.checkPart(part->name));
+        }
+        catch(Exception & ex)
+        {
+            results.emplace_back(part->name, false, "Error during check:" + ex.message());
+        }
+    }
+    return results;
 }
 
 }

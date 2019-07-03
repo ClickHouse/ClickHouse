@@ -7,8 +7,10 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/queryToString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -1117,12 +1119,54 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
     return {};
 }
 
-bool StorageMergeTree::checkData() const
+CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & context)
 {
-    DataPartsVector data_parts = getDataPartsVector();
+    CheckResults results;
+    DataPartsVector data_parts;
+    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    {
+        String partition_id = getPartitionIDFromQuery(check_query.partition, context);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    }
+    else
+        data_parts = getDataPartsVector();
+
     for (auto & part : data_parts)
-        checkDataPart(part, true, primary_key_data_types, skip_indices);
-    return true;
+    {
+        String full_part_path = part->getFullPath();
+        /// If the checksums file is not present, calculate the checksums and write them to disk.
+        String checksums_path = full_part_path + "checksums.txt";
+        if (!Poco::File(checksums_path).exists())
+        {
+            auto counted_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+            try
+            {
+                counted_checksums.checkEqual(part->checksums, true);
+                WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
+                part->checksums.write(out);
+                Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
+                results.emplace_back(part->name, true, "Checksums recounted and written to disk");
+            }
+            catch (Exception & ex)
+            {
+                results.emplace_back(part->name, false,
+                    "Checksums file absent and counted doesn't equal to checksums in memory. Error: '" + ex.message() + "'");
+            }
+        }
+        else
+        {
+            try
+            {
+                checkDataPart(part, true, primary_key_data_types, skip_indices);
+                results.emplace_back(part->name, true, "");
+            }
+            catch (Exception & ex)
+            {
+                results.emplace_back(part->name, false, ex.message());
+            }
+        }
+    }
+    return results;
 }
 
 }

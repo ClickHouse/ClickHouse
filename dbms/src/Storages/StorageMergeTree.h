@@ -70,7 +70,7 @@ public:
 
     String getDataPath() const override { return full_path; }
 
-    bool checkData() const override;
+    CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
     String path;
