@@ -41,7 +41,7 @@ INSERT INTO t FORMAT TabSeparated
 在使用命令行客户端或HTTP客户端时，你可以将具体的查询语句与数据分开发送。更多具体信息，请参考“[客户端](../interfaces/index.md#interfaces)”部分。
 
 
-### 使用`SELECT`的结果写入
+### 使用`SELECT`的结果写入 {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...

@@ -18,13 +18,14 @@ namespace DB
 
 /** Column for String values.
   */
-class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
+class ColumnString final : public COWHelper<IColumn, ColumnString>
 {
 public:
+    using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    friend class COWPtrHelper<IColumn, ColumnString>;
+    friend class COWHelper<IColumn, ColumnString>;
 
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
     Offsets offsets;
@@ -230,6 +231,11 @@ public:
 
 
     bool canBeInsideNullable() const override { return true; }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnString);
+    }
 
 
     Chars & getChars() { return chars; }

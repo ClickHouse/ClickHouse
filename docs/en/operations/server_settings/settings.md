@@ -83,7 +83,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -101,7 +101,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -118,7 +118,7 @@ The default is `true`.
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -128,7 +128,6 @@ The path to the directory with the schemes for the input data, such as schemas f
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
 
 ## graphite {#server_settings-graphite}
 
@@ -490,31 +489,18 @@ Keys for server/client settings:
 ```
 
 
-## part_log
+## part_log {#server_settings-part-log}
 
 Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the ClickHouse table, not in a separate file.
-
-Columns in the log:
-
-- event_time – Date of the event.
-- duration_ms – Duration of the event.
-- event_type – Type of event. 1 – new data part; 2 – merge result; 3 – data part downloaded from replica; 4 – data part deleted.
-- database_name – The name of the database.
-- table_name – Name of the table.
-- part_name – Name of the data part.
-- partition_id – The identifier of the partition.
-- size_in_bytes – Size of the data part in bytes.
-- merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
-- merge_time_ms – Time spent on the merge.
+Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -542,18 +528,18 @@ The path to the directory containing data.
 ```
 
 
-## query_log
+## query_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the ClickHouse table, not in a separate file.
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -611,7 +597,7 @@ Port for communicating with clients over the TCP protocol.
 
 ## tcp_port_secure {#server_settings-tcp_port_secure}
 
-Port for communicating with the clients over the secure connection by TCP protocol. Use it with [OpenSSL](#server_settings-openssl) settings.
+TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
 
 **Possible values**
 
@@ -678,33 +664,83 @@ Path to the file that contains:
 ```
 
 
-## zookeeper
+## zookeeper {#server-settings_zookeeper}
 
-Configuration of ZooKeeper servers.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing replica metadata when using replicated tables.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter can be omitted if replicated tables are not used.
+This section contains the following parameters:
 
-For more information, see the section "[Replication](../../operations/table_engines/replication.md)".
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
-**Example**
+    For example:
+
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
+
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+
+**Example configuration**
 
 ```xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
-        <host>example3</host>
-        <port>2181</port>
-    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
 </zookeeper>
 ```
+
+**See Also**
+
+- [Replication](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Storage method for data part headers in ZooKeeper.
+
+This setting only applies to the `MergeTree` family. It can be specified:
+
+- Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
+
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
+
+- For each individual table.
+
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
+
+**Possible values**
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
+
+!!! attention
+    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that doesn't support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+
+    Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+
+**Default value:** 0.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

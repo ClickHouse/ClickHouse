@@ -39,7 +39,7 @@ Block InterpreterExplainQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    const ASTExplainQuery & ast = typeid_cast<const ASTExplainQuery &>(*query);
+    const auto & ast = query->as<ASTExplainQuery &>();
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -51,7 +51,8 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
-        InterpreterSelectWithUnionQuery interpreter(ast.children.at(0), context, {}, QueryProcessingStage::FetchColumns, 0, true, true);
+        InterpreterSelectWithUnionQuery interpreter(ast.children.at(0), context,
+                                                    SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
         interpreter.getQuery()->format(IAST::FormatSettings(ss, false));
     }
 

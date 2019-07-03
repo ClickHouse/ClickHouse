@@ -22,12 +22,12 @@ namespace ErrorCodes
 StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     // Parse args
-    ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
+    ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+    ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 3)
         throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: filename, format and structure.",
@@ -36,9 +36,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     for (size_t i = 0; i < 3; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string filename = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
-    std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+    std::string filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
     // Create sample block
     std::vector<std::string> structure_vals;

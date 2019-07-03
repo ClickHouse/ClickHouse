@@ -78,13 +78,13 @@ private:
         const Context & context) const;
 
     MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPart::Index & index,
+        const MergeTreeData::DataPartPtr & part,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
     MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index,
-        IndexConditionPtr condition,
+        MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings) const;

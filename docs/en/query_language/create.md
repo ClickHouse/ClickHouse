@@ -3,7 +3,7 @@
 Creating db_name databases
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
 `A database` is just a directory for tables.
@@ -17,8 +17,8 @@ The `CREATE TABLE` query can have several forms.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -80,6 +80,13 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
+### TTL expression
+
+Can be specified only for MergeTree-family tables. An expression for setting storage time for values. It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
+    `TTL date + INTERVAL 1 DAY`
+
+You are not allowed to set TTL for key columns. For more details, see [TTL for columns and tables](../operations/table_engines/mergetree.md)
+
 ## Column Compression Codecs
 
 Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
@@ -94,6 +101,8 @@ Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for b
 Greater values stands for better compression and higher CPU usage.
 - `Delta(delta_bytes)` - compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
 Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
+- `DoubleDelta` - stores delta of deltas in compact binary form, compressing values down to 1 bit (in the best case). Best compression rates are achieved on monotonic sequences with constant stride, e.g. time samples. Can be used against any fixed-width type. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix instead of 4-bit prefix.
+- `Gorilla` - stores (parts of) xored values in compact binary form, compressing values down to 1 bit (in the best case). Best compression rate is achieved when neighbouring values are binary equal. Basic use case - floating point data that do not change rapidly. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types.
 
 Syntax example:
 ```
@@ -117,14 +126,14 @@ CREATE TABLE timeseries_example
     dt Date,
     ts DateTime,
     path String,
-    value Float32 CODEC(Delta(2), ZSTD)
+    value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = MergeTree
 PARTITION BY dt
 ORDER BY (path, ts)
 ```
 
-### Temporary Tables
+## Temporary Tables
 
 ClickHouse supports temporary tables which have the following characteristics:
 

@@ -13,7 +13,7 @@ namespace DB
 
 
 /// Parse `name = value`.
-static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, Expected & expected)
+static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
     ParserIdentifier name_p;
     ParserLiteral value_p;
@@ -32,7 +32,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
         return false;
 
     getIdentifierName(name, change.name);
-    change.value = typeid_cast<const ASTLiteral &>(*value).value;
+    change.value = value->as<ASTLiteral &>().value;
 
     return true;
 }
@@ -50,14 +50,14 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    ASTSetQuery::Changes changes;
+    SettingsChanges changes;
 
     while (true)
     {
         if (!changes.empty() && !s_comma.ignore(pos))
             break;
 
-        changes.push_back(ASTSetQuery::Change());
+        changes.push_back(SettingChange{});
 
         if (!parseNameValuePair(changes.back(), pos, expected))
             return false;
@@ -67,7 +67,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     query->is_standalone = !parse_only_internals;
-    query->changes = changes;
+    query->changes = std::move(changes);
 
     return true;
 }

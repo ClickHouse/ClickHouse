@@ -25,7 +25,16 @@ struct PrewhereInfo
         : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
+/// Helper struct to store all the information about the filter expression.
+struct FilterInfo
+{
+    ExpressionActionsPtr actions;
+    String column_name;
+    bool do_remove_column = false;
+};
+
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;

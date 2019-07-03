@@ -29,7 +29,7 @@ struct SortCursorImpl
       * Cursor number (always?) equals to number of merging part.
       * Therefore this field can be used to determine part number of current row (see ColumnGathererStream).
       */
-    size_t order;
+    size_t order = 0;
 
     using NeedCollationFlags = std::vector<UInt8>;
 

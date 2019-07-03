@@ -19,9 +19,9 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
 {
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
-    const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(table_expression.get());
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(table_expression.get());
-    const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(table_expression.get());
+    const auto * subquery = table_expression->as<ASTSubquery>();
+    const auto * function = table_expression->as<ASTFunction>();
+    const auto * table = table_expression->as<ASTIdentifier>();
 
     if (!subquery && !table && !function)
         throw Exception("Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery." , ErrorCodes::LOGICAL_ERROR);
@@ -41,6 +41,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).subquery();
+
     ASTPtr query;
     if (table || function)
     {
@@ -53,9 +55,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_query = std::make_shared<ASTSelectQuery>();
         select_with_union_query->list_of_selects->children.push_back(select_query);
 
-        const auto select_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->select_expression_list = select_expression_list;
-        select_query->children.emplace_back(select_query->select_expression_list);
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
 
@@ -64,14 +65,14 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         {
             auto query_context = const_cast<Context *>(&context.getQueryContext());
             const auto & storage = query_context->executeTableFunction(table_expression);
-            columns = storage->getColumns().ordinary;
-            select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression));
+            columns = storage->getColumns().getOrdinary();
+            select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
         else
         {
             DatabaseAndTableWithAlias database_table(*table);
             const auto & storage = context.getTable(database_table.database, database_table.table);
-            columns = storage->getColumns().ordinary;
+            columns = storage->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
         }
 
@@ -83,48 +84,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     else
     {
         query = subquery->children.at(0);
-
-        /** Columns with the same name can be specified in a subquery. For example, SELECT x, x FROM t
-          * This is bad, because the result of such a query can not be saved to the table, because the table can not have the same name columns.
-          * Saving to the table is required for GLOBAL subqueries.
-          *
-          * To avoid this situation, we will rename the same columns.
-          */
-
-        std::set<std::string> all_column_names;
-        std::set<std::string> assigned_column_names;
-
-        if (ASTSelectWithUnionQuery * select_with_union = typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
-        {
-            if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(select_with_union->list_of_selects->children.at(0).get()))
-            {
-                for (auto & expr : select->select_expression_list->children)
-                    all_column_names.insert(expr->getAliasOrColumnName());
-
-                for (auto & expr : select->select_expression_list->children)
-                {
-                    auto name = expr->getAliasOrColumnName();
-
-                    if (!assigned_column_names.insert(name).second)
-                    {
-                        size_t i = 1;
-                        while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
-                            ++i;
-
-                        name = name + "_" + toString(i);
-                        expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
-                        expr->setAlias(name);
-
-                        all_column_names.insert(name);
-                        assigned_column_names.insert(name);
-                    }
-                }
-            }
-        }
+        subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(
-        query, subquery_context, required_source_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
 }
 
 }

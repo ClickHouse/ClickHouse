@@ -190,24 +190,27 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().alloc(size);
+        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+            memory_tracker->alloc(size);
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().alloc(new_size - old_size);
+        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+            memory_tracker->alloc(new_size - old_size);
     }
 
     void free(Int64 size)
     {
-        if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().free(size);
+        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+            memory_tracker->free(size);
     }
 }
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    return DB::CurrentThread::getMemoryTracker().blocker.cancel();
+    auto memory_tracker = DB::CurrentThread::getMemoryTracker();
+    if (!memory_tracker)
+        return {};
+    return memory_tracker->blocker.cancel();
 }

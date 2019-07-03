@@ -1,8 +1,8 @@
-DROP TABLE IF EXISTS test.stripelog;
-CREATE TABLE test.stripelog (x UInt8) ENGINE = StripeLog;
+DROP TABLE IF EXISTS stripelog;
+CREATE TABLE stripelog (x UInt8) ENGINE = StripeLog;
 
-SELECT * FROM test.stripelog ORDER BY x;
-INSERT INTO test.stripelog VALUES (1), (2);
-SELECT * FROM test.stripelog ORDER BY x;
+SELECT * FROM stripelog ORDER BY x;
+INSERT INTO stripelog VALUES (1), (2);
+SELECT * FROM stripelog ORDER BY x;
 
-DROP TABLE test.stripelog;
+DROP TABLE stripelog;

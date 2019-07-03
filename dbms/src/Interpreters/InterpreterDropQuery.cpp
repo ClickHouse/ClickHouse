@@ -31,7 +31,7 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & 
 
 BlockIO InterpreterDropQuery::execute()
 {
-    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
+    auto & drop = query_ptr->as<ASTDropQuery &>();
 
     checkAccess(drop);
 

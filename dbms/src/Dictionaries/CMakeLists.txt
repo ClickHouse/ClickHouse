@@ -14,8 +14,8 @@ add_headers_and_sources(clickhouse_dictionaries ${CMAKE_CURRENT_BINARY_DIR}/gene
 list(REMOVE_ITEM clickhouse_dictionaries_sources DictionaryFactory.cpp DictionarySourceFactory.cpp DictionaryStructure.cpp)
 list(REMOVE_ITEM clickhouse_dictionaries_headers DictionaryFactory.h DictionarySourceFactory.h DictionaryStructure.h)
 
-add_library(clickhouse_dictionaries ${LINK_MODE} ${clickhouse_dictionaries_sources})
-target_link_libraries(clickhouse_dictionaries PRIVATE dbms clickhouse_common_io pocoext ${BTRIE_LIBRARIES} PUBLIC Threads::Threads)
+add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
+target_link_libraries(clickhouse_dictionaries PRIVATE dbms clickhouse_common_io ${BTRIE_LIBRARIES} PUBLIC Threads::Threads)
 
 if(Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
@@ -23,7 +23,7 @@ endif()
 
 if(USE_POCO_SQLODBC)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
-    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} ${Poco_SQL_INCLUDE_DIR})
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR} ${Poco_SQL_INCLUDE_DIR})
 endif()
 
 if(Poco_Data_FOUND)
@@ -32,7 +32,7 @@ endif()
 
 if(USE_POCO_DATAODBC)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_DataODBC_LIBRARY} ${Poco_Data_LIBRARY})
-    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
 endif()
 
 if(USE_POCO_MONGODB)

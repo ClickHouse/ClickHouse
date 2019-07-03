@@ -1,6 +1,7 @@
 #pragma once
+
 #include <Core/Types.h>
-#include <boost/core/noncopyable.hpp>
+
 #include <list>
 #include <vector>
 #include <mutex>

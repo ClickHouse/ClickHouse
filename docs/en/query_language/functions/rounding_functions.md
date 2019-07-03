@@ -16,42 +16,62 @@ If rounding causes overflow (for example, floor(-128, -1)), an implementation-sp
 
 Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above).
 
-## round(x\[, N\])
+## round(x[, N]) {#rounding_functions-round}
 
-Implements [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even), i.e., rounding to the nearest even integer.
+Rounds a value to a specified number of decimal places.
 
-**Function arguments:**
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
 
-- `x` — the number to be rounded. [Type](../../data_types/index.md#data_types) —  any number.
-- `N`—  the position of the number after the decimal point to round the number to.
+```
+round(expression [, decimal_places])
+```
+
+**Parameters:**
+
+- `expression` — A number to be rounded. Can be any [expression](../syntax.md#syntax-expressions) returning the numeric [data type](../../data_types/index.md#data_types).
+- `decimal-places` — An integer value.
+    - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
+    - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
+    - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
 
 **Returned value:**
 
-The rounded number of the same type as the input number `x`
+The rounded number of the same type as the input number.
 
-**Example:**
+### Examples
+
+**Example of use**
 
 ``` sql
-SELECT
-    number / 2 AS x,
-    round(x)
-FROM system.numbers
-LIMIT 10
+SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 ```
-
 ```
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
 │   1 │                        1 │
-│ 1.5 │                        2 │
-│   2 │                        2 │
-│ 2.5 │                        2 │
-│   3 │                        3 │
-│ 3.5 │                        4 │
-│   4 │                        4 │
-│ 4.5 │                        4 │
 └─────┴──────────────────────────┘
+```
+
+**Examples of rounding**
+
+Rounding to the nearest number.
+
+```
+round(3.2, 0) = 3
+round(4.1267, 2) = 4.13
+round(22,-1) = 20
+round(467,-2) = 500
+round(-467,-2) = -500
+```
+
+Banker's rounding.
+
+```
+round(3.5) = 4
+round(4.5) = 4
+round(3.55, 1) = 3.6
+round(3.65, 1) = 3.6
 ```
 
 ## roundToExp2(num)

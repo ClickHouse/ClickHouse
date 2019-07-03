@@ -1,0 +1,16 @@
+\N	test	0	1	Nullable(String)	Nullable(String)
+bar	bar	1	2	Nullable(String)	Nullable(String)
+\N		0	1	Nullable(String)	Nullable(String)
+foo	\N	2	0	Nullable(String)	Nullable(String)
+\N	test	0	1	Nullable(String)	Nullable(String)
+bar	bar	1	2	Nullable(String)	Nullable(String)
+\N		0	1	Nullable(String)	Nullable(String)
+foo	\N	2	0	Nullable(String)	Nullable(String)
+foo		2	0	String	Nullable(String)
+bar	bar	1	2	String	Nullable(String)
+	test	0	1	String	Nullable(String)
+bar	bar	1	2	String	Nullable(String)
+	test	0	1	String	Nullable(String)
+foo	2	0	String
+bar	1	2	String
+test	0	1	String

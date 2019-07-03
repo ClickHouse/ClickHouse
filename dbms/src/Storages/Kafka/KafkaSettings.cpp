@@ -1,5 +1,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 
 
@@ -9,24 +11,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_SETTING;
 }
+
+IMPLEMENT_SETTINGS_COLLECTION(KafkaSettings, LIST_OF_KAFKA_SETTINGS)
 
 void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
-        for (const ASTSetQuery::Change & setting : storage_def.settings->changes)
+        try
         {
-#define SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
-            else if (setting.name == #NAME) NAME.set(setting.value);
-
-            if (false) {}
-            APPLY_FOR_KAFKA_SETTINGS(SET)
+            applyChanges(storage_def.settings->changes);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+                throw Exception(e.message() + " for storage " + storage_def.engine->name, ErrorCodes::BAD_ARGUMENTS);
             else
-                throw Exception(
-                    "Unknown setting " + setting.name + " for storage " + storage_def.engine->name,
-                    ErrorCodes::BAD_ARGUMENTS);
-#undef SET
+                e.rethrow();
         }
     }
     else

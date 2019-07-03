@@ -27,6 +27,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column("MODIFY COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
+    ParserKeyword s_modify_ttl("MODIFY TTL");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -202,7 +203,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parser_string_literal.parse(pos, ast_from, expected))
             return false;
 
-        command->from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
+        command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
         command->type = ASTAlterCommand::FETCH_PARTITION;
     }
     else if (s_freeze.ignore(pos, expected))
@@ -229,7 +230,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_string_literal.parse(pos, ast_with_name, expected))
                 return false;
 
-            command->with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+            command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
         }
     }
     else if (s_modify_column.ignore(pos, expected))
@@ -282,6 +283,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         command->type = ASTAlterCommand::COMMENT_COLUMN;
     }
+    else if (s_modify_ttl.ignore(pos, expected))
+    {
+        if (!parser_exp_elem.parse(pos, command->ttl, expected))
+            return false;
+        command->type = ASTAlterCommand::MODIFY_TTL;
+    }
     else
         return false;
 
@@ -299,6 +306,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->update_assignments);
     if (command->comment)
         command->children.push_back(command->comment);
+    if (command->ttl)
+        command->children.push_back(command->ttl);
 
     return true;
 }

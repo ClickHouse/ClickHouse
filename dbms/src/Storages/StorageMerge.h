@@ -26,6 +26,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
+    /// Consider columns coming from the underlying tables
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -64,6 +65,8 @@ private:
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
+
+    DatabaseIteratorPtr getDatabaseIterator(const Context & context) const;
 
 protected:
     StorageMerge(

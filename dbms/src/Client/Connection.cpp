@@ -48,7 +48,7 @@ namespace ErrorCodes
 }
 
 
-void Connection::connect()
+void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
@@ -230,10 +230,15 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision)
+void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
+                                  String & name,
+                                  UInt64 & version_major,
+                                  UInt64 & version_minor,
+                                  UInt64 & version_patch,
+                                  UInt64 & revision)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     name = server_name;
     version_major = server_version_major;
@@ -242,40 +247,40 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     revision = server_revision;
 }
 
-UInt64 Connection::getServerRevision()
+UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_revision;
 }
 
-const String & Connection::getServerTimezone()
+const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_timezone;
 }
 
-const String & Connection::getServerDisplayName()
+const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_display_name;
 }
 
-void Connection::forceConnected()
+void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
     {
-        connect();
+        connect(timeouts);
     }
     else if (!ping())
     {
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
-        connect();
+        connect(timeouts);
     }
 }
 
@@ -318,10 +323,11 @@ bool Connection::ping()
     return true;
 }
 
-TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & request)
+TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & timeouts,
+                                                 const TablesStatusRequest & request)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
@@ -344,6 +350,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
 
 
 void Connection::sendQuery(
+    const ConnectionTimeouts & timeouts,
     const String & query,
     const String & query_id_,
     UInt64 stage,
@@ -352,12 +359,14 @@ void Connection::sendQuery(
     bool with_pending_data)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
+
+    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
     if (settings)
     {
         std::optional<int> level;
-        std::string method = settings->network_compression_method;
+        std::string method = Poco::toUpper(settings->network_compression_method.toString());
 
         /// Bad custom logic
         if (method == "ZSTD")
@@ -401,7 +410,7 @@ void Connection::sendQuery(
     if (settings)
         settings->serialize(*out);
     else
-        writeStringBinary("", *out);
+        writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);

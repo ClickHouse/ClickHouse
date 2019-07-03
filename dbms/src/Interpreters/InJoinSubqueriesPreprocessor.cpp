@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -23,95 +24,180 @@ namespace ErrorCodes
 namespace
 {
 
-/** Call a function for each non-GLOBAL subquery in IN or JOIN.
-  * Pass to function: AST node with subquery, and AST node with corresponding IN function or JOIN.
-  * Consider only first-level subqueries (do not go recursively into subqueries).
-  */
-template <typename F>
-void forEachNonGlobalSubquery(IAST * node, F && f)
-{
-    if (ASTFunction * function = typeid_cast<ASTFunction *>(node))
-    {
-        if (function->name == "in" || function->name == "notIn")
-        {
-            f(function->arguments->children.at(1).get(), function, nullptr);
-            return;
-        }
-
-        /// Pass into other functions, as subquery could be in aggregate or in lambda functions.
-    }
-    else if (ASTTablesInSelectQueryElement * join = typeid_cast<ASTTablesInSelectQueryElement *>(node))
-    {
-        if (join->table_join && join->table_expression)
-        {
-            auto & table_join = static_cast<ASTTableJoin &>(*join->table_join);
-            if (table_join.locality != ASTTableJoin::Locality::Global)
-            {
-                auto & subquery = static_cast<ASTTableExpression &>(*join->table_expression).subquery;
-                if (subquery)
-                    f(subquery.get(), nullptr, &table_join);
-            }
-            return;
-        }
-
-        /// Pass into other kind of JOINs, as subquery could be in ARRAY JOIN.
-    }
-
-    /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
-    for (auto & child : node->children)
-        if (!typeid_cast<ASTSelectQuery *>(child.get()))
-            forEachNonGlobalSubquery(child.get(), f);
-}
-
-
-/** Find all (ordinary) tables in any nesting level in AST.
-  */
-template <typename F>
-void forEachTable(IAST * node, F && f)
-{
-    if (auto table_expression = typeid_cast<ASTTableExpression *>(node))
-    {
-        auto & database_and_table = table_expression->database_and_table_name;
-        if (database_and_table)
-            f(database_and_table);
-    }
-
-    for (auto & child : node->children)
-        forEachTable(child.get(), f);
-}
-
-
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
     DatabaseAndTableWithAlias db_and_table(database_and_table);
     return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
+using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;
+
+struct NonGlobalTableData
+{
+    using TypeToVisit = ASTTableExpression;
+
+    const CheckShardsAndTables & checker;
+    const Context & context;
+    ASTFunction * function = nullptr;
+    ASTTableJoin * table_join = nullptr;
+
+    void visit(ASTTableExpression & node, ASTPtr &)
+    {
+        ASTPtr & database_and_table = node.database_and_table_name;
+        if (database_and_table)
+            renameIfNeeded(database_and_table);
+    }
+
+private:
+    void renameIfNeeded(ASTPtr & database_and_table)
+    {
+        const SettingDistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
+
+        StoragePtr storage = tryGetTable(database_and_table, context);
+        if (!storage || !checker.hasAtLeastTwoShards(*storage))
+            return;
+
+        if (distributed_product_mode == DistributedProductMode::DENY)
+        {
+            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
+                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
+                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+        }
+        else if (distributed_product_mode == DistributedProductMode::GLOBAL)
+        {
+            if (function)
+            {
+                auto * concrete = function->as<ASTFunction>();
+
+                if (concrete->name == "in")
+                    concrete->name = "globalIn";
+                else if (concrete->name == "notIn")
+                    concrete->name = "globalNotIn";
+                else if (concrete->name == "globalIn" || concrete->name == "globalNotIn")
+                {
+                    /// Already processed.
+                }
+                else
+                    throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
+            }
+            else if (table_join)
+                table_join->locality = ASTTableJoin::Locality::Global;
+            else
+                throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
+        }
+        else if (distributed_product_mode == DistributedProductMode::LOCAL)
+        {
+            /// Convert distributed table to corresponding remote table.
+
+            std::string database;
+            std::string table;
+            std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
+
+            String alias = database_and_table->tryGetAlias();
+            if (alias.empty())
+                throw Exception("Distributed table should have an alias when distributed_product_mode set to local.",
+                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+
+            database_and_table = createTableIdentifier(database, table);
+            database_and_table->setAlias(alias);
+        }
+        else
+            throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+};
+
+using NonGlobalTableMatcher = OneTypeMatcher<NonGlobalTableData>;
+using NonGlobalTableVisitor = InDepthNodeVisitor<NonGlobalTableMatcher, true>;
+
+
+class NonGlobalSubqueryMatcher
+{
+public:
+    struct Data
+    {
+        const CheckShardsAndTables & checker;
+        const Context & context;
+    };
+
+    static void visit(ASTPtr & node, Data & data)
+    {
+        if (auto * function = node->as<ASTFunction>())
+            visit(*function, node, data);
+        if (const auto * tables = node->as<ASTTablesInSelectQueryElement>())
+            visit(*tables, node, data);
+    }
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
+    {
+        if (auto * function = node->as<ASTFunction>())
+            if (function->name == "in" || function->name == "notIn")
+                return false; /// Processed, process others
+
+        if (const auto * t = node->as<ASTTablesInSelectQueryElement>())
+            if (t->table_join && t->table_expression)
+                return false; /// Processed, process others
+
+        /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
+        if (child->as<ASTSelectQuery>())
+            return false;
+        return true;
+    }
+
+private:
+    static void visit(ASTFunction & node, ASTPtr &, Data & data)
+    {
+        if (node.name == "in" || node.name == "notIn")
+        {
+            auto & subquery = node.arguments->children.at(1);
+            NonGlobalTableVisitor::Data table_data{data.checker, data.context, &node, nullptr};
+            NonGlobalTableVisitor(table_data).visit(subquery);
+        }
+    }
+
+    static void visit(const ASTTablesInSelectQueryElement & node, ASTPtr &, Data & data)
+    {
+        if (!node.table_join || !node.table_expression)
+            return;
+
+        ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
+        if (table_join->locality != ASTTableJoin::Locality::Global)
+        {
+            if (auto & subquery = node.table_expression->as<ASTTableExpression>()->subquery)
+            {
+                NonGlobalTableVisitor::Data table_data{data.checker, data.context, nullptr, table_join};
+                NonGlobalTableVisitor(table_data).visit(subquery);
+            }
+        }
+    }
+};
+
+using NonGlobalSubqueryVisitor = InDepthNodeVisitor<NonGlobalSubqueryMatcher, true>;
+
 }
 
 
-void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
+void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 {
-    if (!query)
+    if (!ast)
         return;
 
-    const SettingDistributedProductMode distributed_product_mode = context.getSettingsRef().distributed_product_mode;
-
-    if (distributed_product_mode == DistributedProductMode::ALLOW)
+    ASTSelectQuery * query = ast->as<ASTSelectQuery>();
+    if (!query || !query->tables())
         return;
 
-    if (!query->tables)
+    if (context.getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
         return;
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*query->tables);
+    const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return;
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return;
 
-    ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    const auto * table_expression = tables_element.table_expression->as<ASTTableExpression>();
 
     /// If not ordinary table, skip it.
     if (!table_expression->database_and_table_name)
@@ -120,65 +206,16 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     /// If not really distributed table, skip it.
     {
         StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
-        if (!storage || !hasAtLeastTwoShards(*storage))
+        if (!storage || !checker->hasAtLeastTwoShards(*storage))
             return;
     }
 
-    forEachNonGlobalSubquery(query, [&] (IAST * subquery, IAST * function, IAST * table_join)
-    {
-        forEachTable(subquery, [&] (ASTPtr & database_and_table)
-        {
-            StoragePtr storage = tryGetTable(database_and_table, context);
-
-            if (!storage || !hasAtLeastTwoShards(*storage))
-                return;
-
-            if (distributed_product_mode == DistributedProductMode::DENY)
-            {
-                throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
-                    " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
-                    ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
-            }
-            else if (distributed_product_mode == DistributedProductMode::GLOBAL)
-            {
-                if (function)
-                {
-                    ASTFunction * concrete = static_cast<ASTFunction *>(function);
-
-                    if (concrete->name == "in")
-                        concrete->name = "globalIn";
-                    else if (concrete->name == "notIn")
-                        concrete->name = "globalNotIn";
-                    else if (concrete->name == "globalIn" || concrete->name == "globalNotIn")
-                    {
-                        /// Already processed.
-                    }
-                    else
-                        throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
-                }
-                else if (table_join)
-                    static_cast<ASTTableJoin &>(*table_join).locality = ASTTableJoin::Locality::Global;
-                else
-                    throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
-            }
-            else if (distributed_product_mode == DistributedProductMode::LOCAL)
-            {
-                /// Convert distributed table to corresponding remote table.
-
-                std::string database;
-                std::string table;
-                std::tie(database, table) = getRemoteDatabaseAndTableName(*storage);
-
-                database_and_table = createTableIdentifier(database, table);
-            }
-            else
-                throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting", ErrorCodes::LOGICAL_ERROR);
-        });
-    });
+    NonGlobalSubqueryVisitor::Data visitor_data{*checker, context};
+    NonGlobalSubqueryVisitor(visitor_data).visit(ast);
 }
 
 
-bool InJoinSubqueriesPreprocessor::hasAtLeastTwoShards(const IStorage & table) const
+bool InJoinSubqueriesPreprocessor::CheckShardsAndTables::hasAtLeastTwoShards(const IStorage & table) const
 {
     const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&table);
     if (!distributed)
@@ -189,7 +226,7 @@ bool InJoinSubqueriesPreprocessor::hasAtLeastTwoShards(const IStorage & table) c
 
 
 std::pair<std::string, std::string>
-InJoinSubqueriesPreprocessor::getRemoteDatabaseAndTableName(const IStorage & table) const
+InJoinSubqueriesPreprocessor::CheckShardsAndTables::getRemoteDatabaseAndTableName(const IStorage & table) const
 {
     const StorageDistributed & distributed = dynamic_cast<const StorageDistributed &>(table);
     return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };

@@ -59,17 +59,17 @@ using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
 
 /// Condition on the index.
-class IIndexCondition
+class IMergeTreeIndexCondition
 {
 public:
-    virtual ~IIndexCondition() = default;
+    virtual ~IMergeTreeIndexCondition() = default;
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };
 
-using IndexConditionPtr = std::shared_ptr<IIndexCondition>;
+using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 
 
 /// Structure for storing basic index info like columns, expression, arguments, ...
@@ -95,10 +95,13 @@ public:
     /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + name; }
 
+    /// Checks whether the column is in data skipping index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
+
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual IndexConditionPtr createIndexCondition(
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
     String name;

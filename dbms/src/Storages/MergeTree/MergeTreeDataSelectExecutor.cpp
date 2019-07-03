@@ -93,7 +93,7 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts, const KeyCondition & key_condition, const Settings & settings) const
 {
-    size_t full_marks_count = 0;
+    size_t rows_count = 0;
 
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
@@ -101,7 +101,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     for (size_t i = 0; i < parts.size(); ++i)
     {
         const MergeTreeData::DataPartPtr & part = parts[i];
-        MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
+        MarkRanges ranges = markRangesFromPKRange(part, key_condition, settings);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -109,10 +109,11 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
           */
         for (size_t j = 0; j < ranges.size(); ++j)
             if (ranges[j].end - ranges[j].begin > 2)
-                full_marks_count += ranges[j].end - ranges[j].begin - 2;
+                rows_count += part->index_granularity.getRowsCountInRange({ranges[j].begin + 1, ranges[j].end - 1});
+
     }
 
-    return full_marks_count * data.index_granularity;
+    return rows_count;
 }
 
 
@@ -129,7 +130,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
     if (approx_total_rows == 0)
         return 1;
 
-    const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
+    const auto & node_sample = node->as<ASTSampleRatio &>();
 
     auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
     return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
@@ -264,8 +265,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInParallelogram(
-                    part->minmax_idx.parallelogram, data.minmax_idx_column_types))
+            if (minmax_idx_condition && !minmax_idx_condition->checkInParallelogram(
+                    part->minmax_idx.parallelogram, data.minmax_idx_column_types).can_be_true)
                 continue;
 
             if (max_block_numbers_to_read)
@@ -287,7 +288,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     auto select_sample_size = select.sample_size();
     auto select_sample_offset = select.sample_offset();
@@ -295,8 +296,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     if (select_sample_size)
     {
         relative_sample_size.assign(
-            typeid_cast<const ASTSampleRatio &>(*select_sample_size).ratio.numerator,
-            typeid_cast<const ASTSampleRatio &>(*select_sample_size).ratio.denominator);
+            select_sample_size->as<ASTSampleRatio &>().ratio.numerator,
+            select_sample_size->as<ASTSampleRatio &>().ratio.denominator);
 
         if (relative_sample_size < 0)
             throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -304,8 +305,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         relative_sample_offset = 0;
         if (select_sample_offset)
             relative_sample_offset.assign(
-                typeid_cast<const ASTSampleRatio &>(*select_sample_offset).ratio.numerator,
-                typeid_cast<const ASTSampleRatio &>(*select_sample_offset).ratio.denominator);
+                select_sample_offset->as<ASTSampleRatio &>().ratio.numerator,
+                select_sample_offset->as<ASTSampleRatio &>().ratio.denominator);
 
         if (relative_sample_offset < 0)
             throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -448,7 +449,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingExpression());
+                args->children.push_back(data.getSamplingKeyAST());
                 args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
@@ -465,7 +466,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingExpression());
+                args->children.push_back(data.getSamplingKeyAST());
                 args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();
@@ -512,12 +513,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     /// PREWHERE
     String prewhere_column;
-    if (select.prewhere_expression)
-        prewhere_column = select.prewhere_expression->getColumnName();
+    if (select.prewhere())
+        prewhere_column = select.prewhere()->getColumnName();
 
     RangesInDataParts parts_with_ranges;
 
-    std::vector<std::pair<MergeTreeIndexPtr, IndexConditionPtr>> useful_indices;
+    std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
     for (const auto & index : data.skip_indices)
     {
         auto condition = index->createIndexCondition(query_info, context);
@@ -533,9 +534,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         RangesInDataPart ranges(part, part_index++);
 
         if (data.hasPrimaryKey())
-            ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
+            ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
+            ranges.ranges = MarkRanges{MarkRange{0, part->getMarksCount()}};
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
@@ -616,6 +617,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     return res;
 }
 
+namespace
+{
+
+size_t roundRowsOrBytesToMarks(
+    size_t rows_setting,
+    size_t bytes_setting,
+    size_t rows_granularity,
+    size_t bytes_granularity)
+{
+    if (bytes_granularity == 0)
+        return (rows_setting + rows_granularity - 1) / rows_granularity;
+    else
+        return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
+}
+
+}
+
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
@@ -627,16 +645,16 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const size_t min_marks_for_concurrent_read =
-        (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-    const size_t max_marks_to_use_cache =
-        (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
     size_t sum_marks = 0;
+    size_t total_rows = 0;
+
+    size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
+        total_rows += parts[i].getRowsCount();
         /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
@@ -644,7 +662,25 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             sum_marks_in_parts[i] += range.end - range.begin;
 
         sum_marks += sum_marks_in_parts[i];
+        if (parts[i].data_part->index_granularity_info.is_adaptive)
+            adaptive_parts++;
     }
+
+    size_t index_granularity_bytes = 0;
+    if (adaptive_parts > parts.size() / 2)
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+
+    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+        settings.merge_tree_max_rows_to_use_cache,
+        settings.merge_tree_max_bytes_to_use_cache,
+        data.settings.index_granularity,
+        index_granularity_bytes);
+
+    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
+        settings.merge_tree_min_rows_for_concurrent_read,
+        settings.merge_tree_min_bytes_for_concurrent_read,
+        data.settings.index_granularity,
+        index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
@@ -662,7 +698,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        const size_t total_rows = data.index_granularity * sum_marks;
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
         for (size_t i = 0; i < num_streams; ++i)
@@ -769,13 +804,27 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const size_t max_marks_to_use_cache =
-        (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
     size_t sum_marks = 0;
+    size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
+    {
         for (size_t j = 0; j < parts[i].ranges.size(); ++j)
             sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+
+        if (parts[i].data_part->index_granularity_info.is_adaptive)
+            adaptive_parts++;
+    }
+
+    size_t index_granularity_bytes = 0;
+    if (adaptive_parts >= parts.size() / 2)
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+
+    const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
+        settings.merge_tree_max_rows_to_use_cache,
+        settings.merge_tree_max_bytes_to_use_cache,
+        data.settings.index_granularity,
+        index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
@@ -796,6 +845,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.sorting_key_expr));
     }
+
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
@@ -870,23 +920,33 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
-    const MergeTreeData::DataPart::Index & index, const KeyCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartPtr & part, const KeyCondition & key_condition, const Settings & settings) const
 {
     MarkRanges res;
 
-    size_t marks_count = index.at(0)->size();
+    size_t marks_count = part->index_granularity.getMarksCount();
+    const auto & index = part->index;
     if (marks_count == 0)
         return res;
+
+    bool has_final_mark = part->index_granularity.hasFinalMark();
 
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
     {
-        res.push_back(MarkRange(0, marks_count));
+        if (has_final_mark)
+            res.push_back(MarkRange(0, marks_count - 1));
+        else
+            res.push_back(MarkRange(0, marks_count));
     }
     else
     {
         size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+        size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+            settings.merge_tree_min_rows_for_seek,
+            settings.merge_tree_min_bytes_for_seek,
+            part->index_granularity_info.fixed_index_granularity,
+            part->index_granularity_info.index_granularity_bytes);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
@@ -905,26 +965,27 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             ranges_stack.pop_back();
 
             bool may_be_true;
-            if (range.end == marks_count)
+            if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
-                {
                     index[i]->get(range.begin, index_left[i]);
-                }
 
-                may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, index_left.data(), data.primary_key_data_types);
+                may_be_true = key_condition.getMaskAfter(
+                    used_key_size, index_left.data(), data.primary_key_data_types).can_be_true;
             }
             else
             {
+                if (has_final_mark && range.end == marks_count)
+                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
                     index[i]->get(range.begin, index_left[i]);
                     index[i]->get(range.end, index_right[i]);
                 }
 
-                may_be_true = key_condition.mayBeTrueInRange(
-                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
+                may_be_true = key_condition.checkInRange(
+                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types).can_be_true;
             }
 
             if (!may_be_true)
@@ -957,24 +1018,32 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index,
-    IndexConditionPtr condition,
+    MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings) const
 {
     if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
     {
-        LOG_DEBUG(log, "File for index `" << index->name << "` does not exist. Skipping it.");
+        LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
         return ranges;
     }
 
-    const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+        settings.merge_tree_min_rows_for_seek,
+        settings.merge_tree_min_bytes_for_seek,
+        part->index_granularity_info.index_granularity_bytes,
+        part->index_granularity_info.fixed_index_granularity);
 
     size_t granules_dropped = 0;
 
+    size_t marks_count = part->getMarksCount();
+    size_t final_mark = part->index_granularity.hasFinalMark();
+    size_t index_marks_count = (marks_count - final_mark + index->granularity - 1) / index->granularity;
+
     MergeTreeIndexReader reader(
             index, part,
-            ((part->marks_count + index->granularity - 1) / index->granularity),
+            index_marks_count,
             ranges);
 
     MarkRanges res;
@@ -1016,9 +1085,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index `" << index->name << "` has dropped " << granules_dropped << " granules.");
+    LOG_DEBUG(log, "Index " << backQuote(index->name) << " has dropped " << granules_dropped << " granules.");
 
     return res;
 }
+
 
 }

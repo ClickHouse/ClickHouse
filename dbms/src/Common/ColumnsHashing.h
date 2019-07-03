@@ -36,6 +36,11 @@ struct HashMethodOneNumber
         vec = key_columns[0]->getRawData().data;
     }
 
+    HashMethodOneNumber(const IColumn * column)
+    {
+        vec = column->getRawData().data;
+    }
+
     /// Creates context. Method is called once and result context is used in all threads.
     using Base::createContext; /// (const HashMethodContext::Settings &) -> HashMethodContextPtr
 

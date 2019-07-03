@@ -36,7 +36,7 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, Context & context_, bool allow_materialized_)
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
 }
@@ -46,7 +46,7 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 {
     if (query.table_function)
     {
-        auto table_function = typeid_cast<const ASTFunction *>(query.table_function.get());
+        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
         return factory.get(table_function->name, context)->execute(query.table_function, context);
     }
@@ -57,8 +57,6 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-
-
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
@@ -66,6 +64,8 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
         /// Format Native ignores header and write blocks as is.
         if (query.format == "Native")
             return {};
+        else if (query.no_destination)
+            return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
     }
@@ -92,7 +92,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
     StoragePtr table = getTable(query);
 
@@ -108,14 +108,14 @@ BlockIO InterpreterInsertQuery::execute()
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
     auto query_sample_block = getSampleBlock(query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, table->getSampleBlock(), table->getColumns().defaults, context);
+        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -128,7 +128,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, {}, QueryProcessingStage::Complete, 1};
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
         res.in = interpreter_select.execute().in;
 
@@ -140,9 +140,9 @@ BlockIO InterpreterInsertQuery::execute()
         if (!allow_materialized)
         {
             Block in_header = res.in->getHeader();
-            for (const auto & name_type : table->getColumns().materialized)
-                if (in_header.has(name_type.name))
-                    throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+            for (const auto & column : table->getColumns())
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
+                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
@@ -171,7 +171,7 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 
 std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
     return {query.database, query.table};
 }
 

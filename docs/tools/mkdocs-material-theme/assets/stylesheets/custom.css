@@ -166,6 +166,38 @@ h1, h2, h3, .md-logo {
     text-decoration: none;
 }
 
+.md-selector {
+    border: 1px solid #ccc;
+    padding: 2px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.md-selector select {
+    padding: 8px 8px;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    background-image: none;
+    -webkit-appearance: none;
+    display: inline-block;
+    padding-right: 20px;
+    position: relative;
+    z-index: 2;
+}
+
+#releases-selector-after {
+    padding: 0 4px;
+    margin-left: -20px;
+    position: relative;
+    z-index: 1;
+}
+
+.md-selector select:focus {
+    outline: none;
+}
+
 @media only screen and (min-width: 60em) {
     #md-sidebar-flags {
         display: none;

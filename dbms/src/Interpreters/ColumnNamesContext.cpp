@@ -35,11 +35,7 @@ void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node)
 
     /// There should be no complex cases after query normalization. Names to aliases: one-to-many.
     String alias = node.tryGetAlias();
-    if (!alias.empty())
-        required_names[node.name].insert(alias);
-
-    if (!required_names.count(node.name))
-        required_names[node.name] = {};
+    required_names[node.name].addInclusion(alias);
 }
 
 bool ColumnNamesContext::addArrayJoinAliasIfAny(const IAST & ast)
@@ -55,6 +51,14 @@ bool ColumnNamesContext::addArrayJoinAliasIfAny(const IAST & ast)
 void ColumnNamesContext::addArrayJoinIdentifier(const ASTIdentifier & node)
 {
     array_join_columns.insert(node.name);
+}
+
+size_t ColumnNamesContext::nameInclusion(const String & name) const
+{
+    auto it = required_names.find(name);
+    if (it != required_names.end())
+        return it->second.appears;
+    return 0;
 }
 
 NameSet ColumnNamesContext::requiredColumns() const
@@ -81,7 +85,7 @@ std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols)
     for (const auto & pr : cols.required_names)
     {
         os << "'" << pr.first << "'";
-        for (auto & alias : pr.second)
+        for (auto & alias : pr.second.aliases)
             os << "/'" << alias << "'";
     }
     os << " source_tables: ";

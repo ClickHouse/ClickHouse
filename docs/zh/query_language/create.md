@@ -45,7 +45,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考 [表引擎](../operations/table_engines/index.md) 中关于建表的描述。
 
-### 默认值
+### 默认值 {#create-default-values}
 
 在列描述中你可以通过以下方式之一为列指定默认表达式：`DEFAULT expr`，`MATERIALIZED expr`，`ALIAS expr`。
 示例：`URLDomain String DEFAULT domain(URL)`。

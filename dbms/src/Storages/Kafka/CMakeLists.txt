@@ -1,7 +1,7 @@
 if(USE_RDKAFKA)
     include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
     add_headers_and_sources(clickhouse_storage_kafka .)
-    add_library(clickhouse_storage_kafka ${LINK_MODE} ${clickhouse_storage_kafka_sources})
+    add_library(clickhouse_storage_kafka ${clickhouse_storage_kafka_sources})
     target_link_libraries(clickhouse_storage_kafka PRIVATE clickhouse_common_io ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories(clickhouse_storage_kafka SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})

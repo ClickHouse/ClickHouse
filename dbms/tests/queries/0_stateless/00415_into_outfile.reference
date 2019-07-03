@@ -6,7 +6,7 @@ performing test: union_all
 performing test: bad_union_all
 query failed
 performing test: describe_table
-dummy	UInt8				
+dummy	UInt8					
 performing test: clickhouse-local
 2	3
 performing test: http

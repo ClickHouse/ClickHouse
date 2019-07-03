@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
@@ -112,8 +112,8 @@ public:
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         std::string dir_name_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
-        UInt32 shard_num;
-        UInt32 weight;
+        UInt32 shard_num = 0;
+        UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;

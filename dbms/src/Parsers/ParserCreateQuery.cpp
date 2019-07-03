@@ -4,6 +4,8 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -126,8 +128,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
-    index->name = typeid_cast<const ASTIdentifier &>(*name).name;
-    index->granularity = typeid_cast<const ASTLiteral &>(*granularity).value.get<UInt64>();
+    index->name = name->as<ASTIdentifier &>().name;
+    index->granularity = granularity->as<ASTLiteral &>().value.get<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
@@ -179,9 +181,9 @@ bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, 
 
     for (const auto & elem : list->children)
     {
-        if (typeid_cast<const ASTColumnDeclaration *>(elem.get()))
+        if (elem->as<ASTColumnDeclaration>())
             columns->children.push_back(elem);
-        else if (typeid_cast<const ASTIndexDeclaration *>(elem.get()))
+        else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else
             return false;
@@ -208,6 +210,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
+    ParserKeyword s_ttl("TTL");
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
@@ -219,6 +222,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
+    ASTPtr ttl_table;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -263,6 +267,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        if (!ttl_table && s_ttl.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, ttl_table, expected))
+                continue;
+            else
+                return false;
+        }
+
         if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
@@ -278,6 +290,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
+    storage->set(storage->ttl_table, ttl_table);
 
     storage->set(storage->settings, settings);
 

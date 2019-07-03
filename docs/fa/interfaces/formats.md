@@ -14,7 +14,7 @@ Format | INSERT | SELECT
 [TabSeparatedWithNamesAndTypes](formats.md#tabseparatedwithnamesandtypes) | ✔ | ✔ |
 [CSV](formats.md#csv) | ✔ | ✔ |
 [CSVWithNames](formats.md#csvwithnames) | ✔ | ✔ |
-[Values](formats.md#values) | ✔ | ✔ |
+[Values](formats.md#data-format-values) | ✔ | ✔ |
 [Vertical](formats.md#vertical) | ✗ | ✔ |
 [VerticalRaw](formats.md#verticalraw) | ✗ | ✔ |
 [JSON](formats.md#json) | ✗ | ✔ |
@@ -421,7 +421,7 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 
 آرایه به عنوان variant length نشان داده می شود (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128))، دنباله ای از عانصر پیوسته آرایه
 
-## Values
+## Values {#data-format-values}
 
 هر سطر داخل براکت چاپ می شود. سطر ها توسط comma جدا می شوند. برای آخرین سطر comma وجود ندارد. مقادیر داخل براکت همچنین توسط comma جدا می شوند. اعداد با فرمت decimal و بدون کوتیشن چاپ می شوند. آرایه ها در براکت ها چاپ می شوند. رشته ها، تاریخ و تاریخ با ساعت داخل کوتیشن قرار می گیرند. قوانین escape و پارس کردن شبیه به فرمت TabSeparated انجام می شود. در طول فرمت، extra spaces درج نمی شوند، اما در هنگام پارس کردن، آنها مجاز و skip می شوند. (به جز space های داخل مقادیر آرایه، که مجاز نیستند).
 

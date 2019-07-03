@@ -1,17 +1,15 @@
 #pragma once
 
+#include <Core/Names.h>
+#include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
+
 #include <memory>
 #include <optional>
-
-#include <Core/Types.h>
-#include <Core/Names.h>
 
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ASTSelectQuery;
 class ASTIdentifier;

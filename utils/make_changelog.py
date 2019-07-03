@@ -29,9 +29,9 @@ def http_get_json(url, token, max_retries, retry_timeout):
         if resp.status_code != 200:
             msg = "Request {} failed with code {}.\n{}\n".format(url, resp.status_code, resp.text)
 
-            if resp.status_code == 403:
+            if resp.status_code == 403 or resp.status_code >= 500:
                 try:
-                    if resp.json()['message'].startswith('API rate limit exceeded') and t + 1 < max_retries:
+                    if (resp.json()['message'].startswith('API rate limit exceeded') or resp.status_code >= 500) and t + 1 < max_retries:
                         logging.warning(msg)
                         time.sleep(retry_timeout)
                         continue
@@ -364,7 +364,7 @@ if __name__ == '__main__':
     parser.add_argument('--token', help='Github token. Use it to increase github api query limit. ')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
-    parser.add_argument('--repo', help='ClockHouse repo on GitHub.', default='yandex/ClickHouse')
+    parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='yandex/ClickHouse')
     parser.add_argument('--max_retry', default=100, type=int,
                         help='Max number of retries pre api query in case of API rate limit exceeded error.')
     parser.add_argument('--retry_timeout', help='Timeout after retry in seconds.', type=int, default=5)

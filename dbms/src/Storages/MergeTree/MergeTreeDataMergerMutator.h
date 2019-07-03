@@ -45,12 +45,17 @@ public:
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSize();
+    UInt64 getMaxSourcePartsSizeForMerge();
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSize(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+
+    /** Get maximum total size of parts to do mutation, at current moment of time.
+      * It depends only on amount of free space in disk.
+      */
+    UInt64 getMaxSourcePartSizeForMutation();
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -127,7 +132,7 @@ private:
 
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
 
 private:
     MergeTreeData & data;
@@ -137,6 +142,9 @@ private:
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
+
+    /// Last time when TTLMergeSelector has been used
+    time_t last_merge_with_ttl = 0;
 };
 
 

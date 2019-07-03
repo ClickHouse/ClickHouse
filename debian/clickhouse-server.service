@@ -5,10 +5,10 @@ Description=ClickHouse Server (analytic DBMS for big data)
 Type=simple
 User=clickhouse
 Group=clickhouse
-PermissionsStartOnly=true
 Restart=always
 RestartSec=30
-ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml
+RuntimeDirectory=clickhouse-server
+ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
 LimitCORE=infinity
 LimitNOFILE=500000
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK

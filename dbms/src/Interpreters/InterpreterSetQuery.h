@@ -1,15 +1,14 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
 class ASTSetQuery;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Change one or several settings for the session or just for the current context.
@@ -23,8 +22,6 @@ public:
     /** Usual SET query. Set setting for the session.
       */
     BlockIO execute() override;
-
-    void checkAccess(const ASTSetQuery & ast);
 
     /** Set setting for current context (query context).
       * It is used for interpretation of SETTINGS clause in SELECT query.

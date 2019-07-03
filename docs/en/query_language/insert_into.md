@@ -41,7 +41,7 @@ INSERT INTO t FORMAT TabSeparated
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
 
-### Inserting The Results of `SELECT`
+### Inserting The Results of `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...

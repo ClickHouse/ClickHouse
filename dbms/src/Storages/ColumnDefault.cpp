@@ -31,7 +31,10 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
     };
 
     const auto it = map.find(str);
-    return it != std::end(map) ? it->second : throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
+    if (it != std::end(map))
+        return it->second;
+
+    throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -44,13 +47,17 @@ std::string toString(const ColumnDefaultKind kind)
     };
 
     const auto it = map.find(kind);
-    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
+    if (it != std::end(map))
+        return it->second;
+
+    throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
 }
 
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    return lhs.kind == rhs.kind && queryToString(lhs.expression) == queryToString(rhs.expression);
+    auto expression_str = [](const ASTPtr & expr) { return expr ? queryToString(expr) : String(); };
+    return lhs.kind == rhs.kind && expression_str(lhs.expression) == expression_str(rhs.expression);
 }
 
 }

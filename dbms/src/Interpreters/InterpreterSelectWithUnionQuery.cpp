@@ -6,7 +6,7 @@
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataTypes/getLeastSupertype.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
@@ -26,17 +26,13 @@ namespace ErrorCodes
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_result_column_names,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    bool only_analyze,
-    bool modify_inplace)
-    : query_ptr(query_ptr_),
-    context(context_),
-    to_stage(to_stage_),
-    subquery_depth(subquery_depth_)
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names)
+    : options(options_),
+    query_ptr(query_ptr_),
+    context(context_)
 {
-    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
+    const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
     size_t num_selects = ast.list_of_selects->children.size();
 
@@ -57,7 +53,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
         Block full_result_header = InterpreterSelectQuery(
-            ast.list_of_selects->children.at(0), context, Names(), to_stage, subquery_depth, true).getSampleBlock();
+            ast.list_of_selects->children.at(0), context, options.copy().analyze().noModify()).getSampleBlock();
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
@@ -66,7 +62,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_selects; ++query_num)
         {
             Block full_result_header_for_current_select = InterpreterSelectQuery(
-                ast.list_of_selects->children.at(query_num), context, Names(), to_stage, subquery_depth, true).getSampleBlock();
+                ast.list_of_selects->children.at(query_num), context, options.copy().analyze().noModify()).getSampleBlock();
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -89,11 +85,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
             ast.list_of_selects->children.at(query_num),
             context,
-            current_required_result_column_names,
-            to_stage,
-            subquery_depth,
-            only_analyze,
-            modify_inplace));
+            options,
+            current_required_result_column_names));
     }
 
     /// Determine structure of the result.
@@ -121,39 +114,13 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         for (size_t column_num = 0; column_num < num_columns; ++column_num)
         {
+            std::vector<const ColumnWithTypeAndName *> columns;
+            columns.reserve(num_selects);
+            for (size_t i = 0; i < num_selects; ++i)
+                columns.push_back(&headers[i].getByPosition(column_num));
+
             ColumnWithTypeAndName & result_elem = result_header.getByPosition(column_num);
-
-            /// Determine common type.
-
-            DataTypes types(num_selects);
-            for (size_t query_num = 0; query_num < num_selects; ++query_num)
-                types[query_num] = headers[query_num].getByPosition(column_num).type;
-
-            result_elem.type = getLeastSupertype(types);
-
-            /// If there are different constness or different values of constants, the result must be non-constant.
-
-            if (result_elem.column->isColumnConst())
-            {
-                bool need_materialize = false;
-                for (size_t query_num = 1; query_num < num_selects; ++query_num)
-                {
-                    const ColumnWithTypeAndName & source_elem = headers[query_num].getByPosition(column_num);
-
-                    if (!source_elem.column->isColumnConst()
-                        || (static_cast<const ColumnConst &>(*result_elem.column).getField()
-                            != static_cast<const ColumnConst &>(*source_elem.column).getField()))
-                    {
-                        need_materialize = true;
-                        break;
-                    }
-                }
-
-                if (need_materialize)
-                    result_elem.column = result_elem.type->createColumn();
-            }
-
-            /// BTW, result column names are from first SELECT.
+            result_elem = getLeastSuperColumn(columns);
         }
     }
 }
@@ -179,7 +146,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
         return cache[key];
     }
 
-    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, {}, QueryProcessingStage::Complete, 0, true).getSampleBlock();
+    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
 

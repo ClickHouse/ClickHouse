@@ -1,14 +1,17 @@
 #pragma once
 
-#include <memory>
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/IFactoryWithAliases.h>
+
+#include <ext/singleton.h>
+
 #include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
-#include <ext/singleton.h>
-#include <DataTypes/IDataType.h>
-#include <Common/IFactoryWithAliases.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionInfo.h>
 
 namespace DB
 {
@@ -18,10 +21,6 @@ class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using CodecNameWithLevel = std::pair<String, std::optional<int>>;
-
-class IAST;
-
-using ASTPtr = std::shared_ptr<IAST>;
 
 /** Creates a codec object by name of compression algorithm family and parameters.
  */
@@ -41,15 +40,13 @@ public:
     /// Get codec by AST and possible column_type
     /// some codecs can use information about type to improve inner settings
     /// but every codec should be able to work without information about type
-    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type=nullptr) const;
+    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type = nullptr) const;
 
     /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const UInt8 byte_code) const;
 
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
-
-    CompressionCodecPtr get(const std::vector<CodecNameWithLevel> & codecs) const;
 
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<UInt8> byte_code, CreatorWithType creator);

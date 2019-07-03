@@ -1,5 +1,5 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_,
+LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(const ASTFunction * or_function_,
     const IAST::Hash & expression_, const std::string & alias_)
     : or_function(or_function_), expression(expression_), alias(alias_)
 {
@@ -43,7 +43,7 @@ void LogicalExpressionsOptimizer::perform()
         return;
 
     size_t position = 0;
-    for (auto & column : select_query->select_expression_list->children)
+    for (auto & column : select_query->select()->children)
     {
         bool inserted = column_to_position.emplace(column.get(), position).second;
 
@@ -79,7 +79,7 @@ void LogicalExpressionsOptimizer::perform()
 
 void LogicalExpressionsOptimizer::reorderColumns()
 {
-    auto & columns = select_query->select_expression_list->children;
+    auto & columns = select_query->select()->children;
     size_t cur_position = 0;
 
     while (cur_position < columns.size())
@@ -111,24 +111,24 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         bool found_chain = false;
 
-        auto function = typeid_cast<ASTFunction *>(to_node);
-        if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
+        auto * function = to_node->as<ASTFunction>();
+        if (function && function->name == "or" && function->children.size() == 1)
         {
-            auto expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
-            if (expression_list != nullptr)
+            const auto * expression_list = function->children[0]->as<ASTExpressionList>();
+            if (expression_list)
             {
                 /// The chain of elements of the OR expression.
                 for (auto & child : expression_list->children)
                 {
-                    auto equals = typeid_cast<ASTFunction *>(&*child);
-                    if ((equals != nullptr) && (equals->name == "equals") && (equals->children.size() == 1))
+                    auto * equals = child->as<ASTFunction>();
+                    if (equals && equals->name == "equals" && equals->children.size() == 1)
                     {
-                        auto equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
-                        if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
+                        const auto * equals_expression_list = equals->children[0]->as<ASTExpressionList>();
+                        if (equals_expression_list && equals_expression_list->children.size() == 2)
                         {
                             /// Equality expr = xN.
-                            auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
-                            if (literal != nullptr)
+                            const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
+                            if (literal)
                             {
                                 auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
                                 OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
@@ -157,7 +157,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
         {
             for (auto & child : to_node->children)
             {
-                if (typeid_cast<ASTSelectQuery *>(child.get()) == nullptr)
+                if (!child->as<ASTSelectQuery>())
                 {
                     if (!visited_nodes.count(child.get()))
                         to_visit.push_back(Edge(to_node, &*child));
@@ -187,10 +187,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 namespace
 {
 
-inline ASTs & getFunctionOperands(ASTFunction * or_function)
+inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 {
-    auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-    return expression_list->children;
+    return or_function->children[0]->children;
 }
 
 }
@@ -206,11 +205,11 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 
     /// We check that the right-hand sides of all equalities have the same type.
     auto & first_operands = getFunctionOperands(equality_functions[0]);
-    auto first_literal = static_cast<ASTLiteral *>(&*first_operands[1]);
+    const auto * first_literal = first_operands[1]->as<ASTLiteral>();
     for (size_t i = 1; i < equality_functions.size(); ++i)
     {
         auto & operands = getFunctionOperands(equality_functions[i]);
-        auto literal = static_cast<ASTLiteral *>(&*operands[1]);
+        const auto * literal = operands[1]->as<ASTLiteral>();
 
         if (literal->value.getType() != first_literal->value.getType())
             return false;
@@ -238,8 +237,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     /// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
     std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
     {
-        const auto val_lhs = static_cast<const ASTLiteral *>(&*lhs);
-        const auto val_rhs = static_cast<const ASTLiteral *>(&*rhs);
+        const auto * val_lhs = lhs->as<ASTLiteral>();
+        const auto * val_rhs = rhs->as<ASTLiteral>();
         return val_lhs->value < val_rhs->value;
     });
 
@@ -277,7 +276,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 {
     /// Saves for each optimized OR-chain the iterator on the first element
     /// list of operands to be deleted.
-    std::unordered_map<ASTFunction *, ASTs::iterator> garbage_map;
+    std::unordered_map<const ASTFunction *, ASTs::iterator> garbage_map;
 
     /// Initialization.
     garbage_map.reserve(processed_count);
@@ -365,12 +364,12 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
             /// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.
             /// Due to the fact that we are dealing with a directed acyclic graph, we must check all cases.
-            if (select_query->where_expression && (or_function == &*(select_query->where_expression)))
-                select_query->where_expression = operands[0];
-            if (select_query->prewhere_expression && (or_function == &*(select_query->prewhere_expression)))
-                select_query->prewhere_expression = operands[0];
-            if (select_query->having_expression && (or_function == &*(select_query->having_expression)))
-                select_query->having_expression = operands[0];
+            if (select_query->where() && (or_function == &*(select_query->where())))
+                select_query->setExpression(ASTSelectQuery::Expression::WHERE, operands[0]->clone());
+            if (select_query->prewhere() && (or_function == &*(select_query->prewhere())))
+                select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, operands[0]->clone());
+            if (select_query->having() && (or_function == &*(select_query->having())))
+                select_query->setExpression(ASTSelectQuery::Expression::HAVING, operands[0]->clone());
         }
     }
 }

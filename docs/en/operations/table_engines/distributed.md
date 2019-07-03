@@ -63,8 +63,8 @@ Cluster names must not contain dots.
 The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `compression` are specified for each server:
 
 :   -   `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
--   `port`– The TCP port for messenger activity ('tcp_port' in the config, usually set to 9000). Do not confuse it with http_port.
--   `user`– Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section "Access rights".
+-   `port` – The TCP port for messenger activity ('tcp_port' in the config, usually set to 9000). Do not confuse it with http_port.
+-   `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section "Access rights".
 -   `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 -   `secure` - Use ssl for connection, usually you also should define `port` = 9440. Server should listen on <tcp_port_secure>9440</tcp_port_secure> and have correct certificates.
 -   `compression` - Use data compression. Default value: true.

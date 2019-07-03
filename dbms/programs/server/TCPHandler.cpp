@@ -1,8 +1,6 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
-#include <daemon/OwnSplitChannel.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
@@ -370,8 +368,8 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
         const auto & db_and_table = query_context->getInsertionTable();
-        if (auto * columns = ColumnsDescription::loadFromContext(*query_context, db_and_table.first, db_and_table.second))
-            sendTableColumns(*columns);
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
     }
 
     /// Send block to the client - table structure.
@@ -723,8 +721,7 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context->tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}, ColumnCodecs{}});
+                storage = StorageMemory::create(external_table_name, ColumnsDescription{columns});
                 storage->startup();
                 query_context->addExternalTable(external_table_name, storage);
             }
@@ -768,7 +765,7 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            std::string method = query_context->getSettingsRef().network_compression_method;
+            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
                 level = query_context->getSettingsRef().network_zstd_compression_level;

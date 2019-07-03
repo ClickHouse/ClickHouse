@@ -7,7 +7,7 @@
 #include <Common/ThreadStatus.h>
 
 #include <Poco/Logger.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ TasksStatsCounters TasksStatsCounters::current()
 
 ThreadStatus::ThreadStatus()
 {
-    thread_number = Poco::ThreadNumber::get();
+    thread_number = getThreadNumber();
     os_thread_id = TaskStatsInfoGetter::getCurrentTID();
 
     last_rusage = std::make_unique<RUsageCounters>();

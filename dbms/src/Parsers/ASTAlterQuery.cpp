@@ -40,6 +40,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->predicate = predicate->clone();
         res->children.push_back(res->predicate);
     }
+    if (ttl)
+    {
+        res->ttl = ttl->clone();
+        res->children.push_back(res->ttl);
+    }
 
     return res;
 }
@@ -76,6 +81,13 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::COMMENT_COLUMN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+        settings.ostr << " " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
@@ -167,12 +179,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::COMMENT_COLUMN)
+    else if (type == ASTAlterCommand::MODIFY_TTL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
-        column->formatImpl(settings, state, frame);
-        settings.ostr << " " << (settings.hilite ? hilite_none : "");
-        comment->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
+        ttl->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

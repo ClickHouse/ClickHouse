@@ -35,8 +35,8 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
-                                 const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_);
+    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage, const ASTPtr & query_ast,
+                                 const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
 
     Block getHeader() const override;
     void write(const Block & block) override;
@@ -78,11 +78,11 @@ private:
     std::string getCurrentStateDescription();
 
 private:
+    const Context & context;
     StorageDistributed & storage;
     ASTPtr query_ast;
     String query_string;
     ClusterPtr cluster;
-    const Settings & settings;
     size_t inserted_blocks = 0;
     size_t inserted_rows = 0;
 

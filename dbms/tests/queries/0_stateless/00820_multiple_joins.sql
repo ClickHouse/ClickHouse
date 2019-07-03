@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 DROP TABLE IF EXISTS table3;
@@ -57,17 +55,17 @@ from table1 as t1
 join table2 as t2 on table1.a = table2.a
 join table3 as t3 on table2.b = table3.b;
 
--- TODO
 select t1.*, t2.*, t3.*
 from table1 as t1
 join table2 as t2 on table1.a = table2.a
-join table3 as t3 on table2.b = table3.b; -- { serverError 48 }
+join table3 as t3 on table2.b = table3.b
+FORMAT PrettyCompactNoEscapes;
 
--- TODO
 select *
 from table1 as t1
 join table2 as t2 on t1.a = t2.a
-join table3 as t3 on t2.b = t3.b; -- { serverError 48 }
+join table3 as t3 on t2.b = t3.b
+FORMAT PrettyCompactNoEscapes;
 
 select t1.a as t1_a, t2.a as t2_a, t2.b as t2_b, t3.b as t3_b,
     (t1.a + table2.b) as t1_t2_x, (table1.a + table3.b) as t1_t3_x, (t2.b + t3.b) as t2_t3_x
