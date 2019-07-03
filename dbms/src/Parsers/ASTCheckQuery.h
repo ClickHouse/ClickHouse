@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTPartition.h>
+#include <iostream>
 
 namespace DB
 {
@@ -22,7 +24,7 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
@@ -39,6 +41,12 @@ protected:
                 settings.ostr << ".";
             }
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(table) << (settings.hilite ? hilite_none : "");
+        }
+
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
         }
     }
 };

@@ -57,10 +57,11 @@ CheckResults FileChecker::check() const
 
     for (const auto & name_size : local_map)
     {
-        Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + name_size.first);
+        Poco::Path path = Poco::Path(files_info_path).parent().toString() + "/" + name_size.first;
+        Poco::File file(path);
         if (!file.exists())
         {
-            results.emplace_back(file.path(), false, "File " + file.path() + " doesn't exist");
+            results.emplace_back(path.getFileName(), false, "File " + file.path() + " doesn't exist");
             break;
         }
 
@@ -68,10 +69,10 @@ CheckResults FileChecker::check() const
         size_t real_size = file.getSize();
         if (real_size != name_size.second)
         {
-            results.emplace_back(file.path(), false, "Size of " + file.path() + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second));
+            results.emplace_back(path.getFileName(), false, "Size of " + file.path() + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second));
             break;
         }
-        results.emplace_back(file.path(), true, "");
+        results.emplace_back(path.getFileName(), true, "");
     }
 
     return results;
