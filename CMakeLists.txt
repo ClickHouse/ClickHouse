@@ -296,7 +296,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     if (USE_LIBCXX)
         if (USE_INTERNAL_LIBCXX_LIBRARY)
             set (LIBCXX_LIBS "lib/libc++${${CMAKE_POSTFIX_VARIABLE}}.a lib/libc++abi${${CMAKE_POSTFIX_VARIABLE}}.a")
-        else
+        else ()
             set (LIBCXX_LIBS "-lc++ -lc++abi")
         endif ()
 
