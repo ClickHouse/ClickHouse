@@ -167,6 +167,12 @@ public:
         }
 
         auto min = counter_list.back();
+        if (increment > min->count)
+        {
+            destroyLastElement();
+            push(new Counter(arena.emplace(key), increment, error, hash));
+            return;
+        }
         const size_t alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
         if (alpha + increment < min->count)
@@ -298,6 +304,7 @@ public:
     }
 
 protected:
+
     void push(Counter * counter)
     {
         counter->slot = counter_list.size();
@@ -331,6 +338,17 @@ private:
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
+    }
+
+    void destroyLastElement()
+    {
+        auto last_element = counter_list.back();
+        auto cell = counter_map.find(last_element->key, last_element->hash);
+        cell->setZero();
+        counter_map.reinsert(cell, last_element->hash);
+        counter_list.pop_back();
+        arena.free(last_element->key);
+        delete last_element;
     }
 
     HashMap<TKey, Counter *, Hash, Grower, Allocator> counter_map;
