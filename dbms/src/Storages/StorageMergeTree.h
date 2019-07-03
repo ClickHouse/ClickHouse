@@ -70,6 +70,8 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    bool checkData() const override;
+
 private:
     String path;
 
