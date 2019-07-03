@@ -10,8 +10,6 @@
 #include <atomic>
 #include <optional>
 
-#include <common/logger_useful.h>
-
 
 namespace DB
 {
