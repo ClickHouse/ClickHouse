@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 #include <optional>
@@ -1114,6 +1115,14 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
         return merger_mutator.actions_blocker.cancel();
 
     return {};
+}
+
+bool StorageMergeTree::checkData() const
+{
+    DataPartsVector data_parts = getDataPartsVector();
+    for (auto & part : data_parts)
+        checkDataPart(part, true, primary_key_data_types, skip_indices);
+    return true;
 }
 
 }

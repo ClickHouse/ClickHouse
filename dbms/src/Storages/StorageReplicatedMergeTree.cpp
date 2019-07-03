@@ -2380,7 +2380,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     auto results = zookeeper->multi(ops);
 
-    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results[0]).path_created;
+    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
     log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
     queue.insert(zookeeper, log_entry);
 }
