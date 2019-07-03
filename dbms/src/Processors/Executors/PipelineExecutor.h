@@ -8,7 +8,7 @@
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
 
-#include <boost/lockfree/queue.hpp>
+#include <boost/lockfree/stack.hpp>
 
 namespace DB
 {
@@ -119,7 +119,21 @@ private:
     Nodes graph;
 
     using Stack = std::stack<UInt64>;
-    using TaskQueue = boost::lockfree::queue<ExecutionState *>;
+
+    class TaskQueue
+    {
+    public:
+        TaskQueue() : container(0) {}
+
+        bool push(ExecutionState * value);
+        bool pop(ExecutionState *& value);
+
+        void reserve(size_t size);
+        void reserve_unsafe(size_t size);
+    private:
+
+        boost::lockfree::stack<ExecutionState *> container;
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
