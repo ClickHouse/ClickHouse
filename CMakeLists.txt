@@ -474,6 +474,7 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
 
             if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
                 add_dependencies(${target_name} cxx_static cxxabi_static)
+            endif ()
 
             if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
                 add_dependencies(${target_name} ${UNWIND_LIBRARY})
