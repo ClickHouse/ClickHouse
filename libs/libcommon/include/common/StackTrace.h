@@ -45,7 +45,7 @@ protected:
     void tryCapture();
     static std::string toStringImpl(const Frames & frames, size_t size);
 
-    size_t size;
+    size_t size = 0;
     Frames frames;
 };
 
