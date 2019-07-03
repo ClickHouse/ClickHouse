@@ -13,8 +13,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <iostream>
-#include <common/StringRef.h>
 
 
 
