@@ -1328,13 +1328,13 @@ private:
         if (!joinDispatch(parent.kind, parent.strictness, parent.maps, fill_callback))
             throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
 
-        /// Revert columns nullability
-        changeNullability(columns_keys_and_right, key_nullability_changes);
-
         fillNullsFromBlocks(columns_keys_and_right, rows_added);
 
         if (!rows_added)
             return {};
+
+        /// Revert columns nullability
+        changeNullability(columns_keys_and_right, key_nullability_changes);
 
         Block res = result_sample_block.cloneEmpty();
 
