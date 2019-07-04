@@ -39,7 +39,7 @@ Password could be specified in plaintext or in SHA256 (hex format).
 
     For example, `<password>qwerty</password>`. The password can be left blank.
 
-- To assign the SHA256 hash of a password, place it in a `password_sha256_hex` element.
+- To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
 
     For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
 
@@ -54,9 +54,9 @@ Password could be specified in plaintext or in SHA256 (hex format).
 
 ### user_name/networks
 
-List of networks that the user can connect to the ClickHouse server from.
+List of networks from which the user can connect to the ClickHouse server.
 
-Each element of the list has one of the following forms:
+Each element of the list can have one of the following forms:
 
 - `<ip>` — IP address or network mask.
 
@@ -72,7 +72,7 @@ Each element of the list has one of the following forms:
 
     Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
 
-    To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then regexp is applied. Then, for the results of PTR query, another DNS query is performed and all received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
+    To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
 
 All results of DNS requests are cached until the server restarts.
 
@@ -101,18 +101,18 @@ You can assign a settings profile for the user. Settings profiles are configured
 
 ### user_name/quota
 
-Quotas allow you to limit resource usage over a period of time or track resource usage. Quotas are configured in the `quotas`
+Quotas allow you to track or limit resource usage over a period of time. Quotas are configured in the `quotas`
 section of the `users.xml` configuration file.
 
-You can assign a quota for the user. For a detailed description of quota configuration, see [Quotas](../quotas.md#quotas).
+You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../quotas.md#quotas).
 
 ### user_name/databases
 
-In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries from the current user, thus implementing basic row-level security.
+In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
 
 **Example**
 
-The following configuration establishes that user `user1` can only see the rows of `table1` as the result of `SELECT` queries, where the value of the `id` field is 1000.
+The following configuration forces that user `user1` can only see the rows of `table1` as the result of `SELECT` queries, where the value of the `id` field is 1000.
 
 ```
 <user1>
