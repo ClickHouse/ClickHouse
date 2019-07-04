@@ -70,7 +70,7 @@ public:
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
 
-        if (!col->isColumnConst())
+        if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());

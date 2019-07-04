@@ -50,7 +50,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -220,7 +220,7 @@ struct ContextShared
         static std::atomic<size_t> num_calls{0};
         if (++num_calls > 1)
         {
-            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << Backtrace().toString();
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
             std::cerr.flush();
             std::terminate();
         }
@@ -250,15 +250,12 @@ struct ContextShared
             return;
         shutdown_called = true;
 
-        {
-            std::lock_guard lock(mutex);
+        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
+          *  Note that part changes at shutdown won't be logged to part log.
+          */
 
-            /** After this point, system logs will shutdown their threads and no longer write any data.
-            * It will prevent recreation of system tables at shutdown.
-            * Note that part changes at shutdown won't be logged to part log.
-            */
-            system_logs.reset();
-        }
+        if (system_logs)
+            system_logs->shutdown();
 
         /** At this point, some tables may have threads that block our mutex.
           * To shutdown them correctly, we will copy the current list of tables,
@@ -286,6 +283,7 @@ struct ContextShared
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
 
+        system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries.reset();
         external_models.reset();
@@ -1884,6 +1882,25 @@ void Context::setFormatSchemaPath(const String & path)
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     return getQueryContext().sample_block_cache;
+}
+
+
+bool Context::hasQueryParameters() const
+{
+    return !query_parameters.empty();
+}
+
+
+const NameToNameMap & Context::getQueryParameters() const
+{
+    return query_parameters;
+}
+
+
+void Context::setQueryParameter(const String & name, const String & value)
+{
+    if (!query_parameters.emplace(name, value).second)
+        throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

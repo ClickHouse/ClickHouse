@@ -1,7 +1,7 @@
 #pragma once
 
 #include <common/Pipe.h>
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
@@ -43,11 +43,11 @@ namespace
         const std::string & query_id = CurrentThread::getQueryId();
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        const Backtrace backtrace(signal_context);
+        const StackTrace stack_trace(signal_context);
 
         DB::writeIntBinary(false, out);
         DB::writeStringBinary(query_id, out);
-        DB::writePODBinary(backtrace, out);
+        DB::writePODBinary(stack_trace, out);
         DB::writeIntBinary(timer_type, out);
         out.next();
     }

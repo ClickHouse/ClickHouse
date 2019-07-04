@@ -144,7 +144,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             const ColumnPtr & src = block.safeGetByPosition(i).column;
 
-            if (src->isColumnConst())
+            if (isColumnConst(*src))
             {
                 /// Equal min and max.
                 extremes_columns[i] = src->cloneResized(2);
@@ -171,7 +171,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             ColumnPtr & old_extremes = extremes.safeGetByPosition(i).column;
 
-            if (old_extremes->isColumnConst())
+            if (isColumnConst(*old_extremes))
                 continue;
 
             Field min_value = (*old_extremes)[0];

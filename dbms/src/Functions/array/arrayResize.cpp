@@ -124,7 +124,7 @@ public:
 
         auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
 
-        if (size_column->isColumnConst())
+        if (isColumnConst(*size_column))
             GatherUtils::resizeConstantSize(*array_source, *value_source, *sink, size_column->getInt(0));
         else
             GatherUtils::resizeDynamicSize(*array_source, *value_source, *sink, *size_column);

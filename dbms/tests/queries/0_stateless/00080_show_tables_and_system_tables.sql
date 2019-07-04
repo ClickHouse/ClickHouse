@@ -24,11 +24,6 @@ DROP DATABASE IF EXISTS test_DatabaseMemory;
 CREATE DATABASE test_DatabaseMemory ENGINE = Memory;
 CREATE TABLE test_DatabaseMemory.A (A UInt8) ENGINE = Null;
 
--- Just in case
-DROP DATABASE IF EXISTS test_DatabaseDictionary;
-CREATE DATABASE test_DatabaseDictionary ENGINE = Dictionary;
-
 SELECT sum(ignore(*, metadata_modification_time, engine_full, create_table_query)) FROM system.tables;
 
-DROP DATABASE test_DatabaseDictionary; -- { serverError 48 }
 DROP DATABASE test_DatabaseMemory;

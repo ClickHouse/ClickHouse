@@ -1,7 +1,7 @@
 #include "TraceCollector.h"
 
 #include <common/Sleep.h>
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -32,17 +32,17 @@ namespace DB
                 break;
 
             std::string query_id;
-            Backtrace backtrace(NoCapture{});
+            StackTrace stack_trace(NoCapture{});
             TimerType timer_type;
 
             DB::readStringBinary(query_id, in);
-            DB::readPODBinary(backtrace, in);
+            DB::readPODBinary(stack_trace, in);
             DB::readIntBinary(timer_type, in);
 
             if (trace_log != nullptr)
             {
-                const auto size = backtrace.getSize();
-                const auto& frames = backtrace.getFrames();
+                const auto size = stack_trace.getSize();
+                const auto& frames = stack_trace.getFrames();
 
                 std::vector<UInt64> trace;
                 trace.reserve(size);

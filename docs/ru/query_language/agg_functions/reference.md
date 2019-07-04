@@ -199,7 +199,7 @@ groupBitmap(expr)
 Тестовые данные:
 
 ```
-userid
+UserID
 1
 1
 2
@@ -209,7 +209,7 @@ userid
 Запрос:
 
 ```
-SELECT groupBitmap(userid) as num FROM t
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Результат:

@@ -186,7 +186,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                 const auto & col = block.getByName(column_name);
 
                 /// Constant expressions have non-null column pointer at this stage.
-                if (col.column && col.column->isColumnConst())
+                if (col.column && isColumnConst(*col.column))
                 {
                     /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                     if (!aggregate_descriptions.empty() || size > 1)
