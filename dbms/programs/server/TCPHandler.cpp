@@ -120,16 +120,22 @@ void TCPHandler::runImpl()
 
     while (1)
     {
-        /// Set context of request.
-        query_context = connection_context;
-
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
-            ;
+        {
+            Stopwatch idle_time;
+            while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
+            {
+                if (idle_time.elapsedSeconds() > global_settings.idle_connection_timeout)
+                    return;
+            }
+        }
 
         /// If we need to shut down, or client disconnects.
         if (server.isCancelled() || in->eof())
             break;
+
+        /// Set context of request.
+        query_context = connection_context;
 
         Stopwatch watch;
         state.reset();
