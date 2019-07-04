@@ -10,6 +10,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -46,13 +47,17 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"column",                                     std::make_shared<DataTypeString>()},
-        {"type",                                       std::make_shared<DataTypeString>() },
-        {"default_kind",                               std::make_shared<DataTypeString>() },
-        {"default_expression",                         std::make_shared<DataTypeString>() },
-        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>() },
-        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>() },
-        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>() },
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>() },
+        {"type",                                       std::make_shared<DataTypeString>()},
+        {"default_kind",                               std::make_shared<DataTypeString>()},
+        {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+
+        {"hash_of_all_files",                          std::make_shared<DataTypeString>()},
+        {"hash_of_uncompressed_files",                 std::make_shared<DataTypeString>()},
+        {"uncompressed_hash_of_compressed_files",      std::make_shared<DataTypeString>()}
     }
     )
 {
@@ -100,6 +105,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         using State = MergeTreeDataPart::State;
 
         for (const auto & column : part->columns)
+
         {
             size_t j = 0;
             {
@@ -158,6 +164,27 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
 
             if (has_state_column)
                 columns[j++]->insert(part->stateString());
+
+            {
+                constexpr auto GetLow = CityHash_v1_0_2::Uint128Low64;
+                constexpr auto GetHigh = CityHash_v1_0_2::Uint128High64;
+
+                MinimalisticDataPartChecksums helper;
+                helper.computeTotalChecksums(part->checksums);
+
+                auto lo = GetLow(helper.hash_of_all_files);
+                auto hi = GetHigh(helper.hash_of_all_files);
+                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+
+                lo = GetLow(helper.hash_of_uncompressed_files);
+                hi = GetHigh(helper.hash_of_uncompressed_files);
+                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+
+                lo = GetLow(helper.uncompressed_hash_of_compressed_files);
+                hi = GetHigh(helper.uncompressed_hash_of_compressed_files);
+                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+            }
+
         }
     }
 }
