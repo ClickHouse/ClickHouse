@@ -11,7 +11,6 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
 endif ()
 
 add_library (common
-    src/Backtrace.cpp
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -24,8 +23,10 @@ add_library (common
     src/getThreadNumber.cpp
     src/Sleep.cpp
     src/argsToConfig.cpp
+    src/StackTrace.cpp
 
-    include/common/Backtrace.h
+    include/common/SimpleCache.h
+    include/common/StackTrace.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h

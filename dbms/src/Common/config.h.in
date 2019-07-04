@@ -8,7 +8,6 @@
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_CPUINFO
 #cmakedefine01 USE_BROTLI
-#cmakedefine01 USE_LFALLOC
-#cmakedefine01 USE_LFALLOC_RANDOM_HINT
+#cmakedefine01 USE_MIMALLOC
 
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY

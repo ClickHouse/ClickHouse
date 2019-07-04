@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Backtrace.h>
+#include <common/StackTrace.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -92,7 +92,7 @@ public:
             {
                 frames.push_back(reinterpret_cast<void *>(data[pos]));
             }
-            std::string backtrace = Backtrace(frames).toString();
+            std::string backtrace = StackTrace(frames).toString();
 
             result_column->insertDataWithTerminatingZero(backtrace.c_str(), backtrace.length() + 1);
         }
