@@ -568,7 +568,14 @@ bool Join::insertFromBlock(const Block & block)
 
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     if (isRightOrFull(kind) && null_map)
-        blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+    {
+        UInt8 has_null = 0;
+        for (size_t i = 0; !has_null && i < null_map->size(); ++i)
+            has_null |= (*null_map)[i];
+
+        if (has_null)
+            blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+    }
 
     return limits.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
