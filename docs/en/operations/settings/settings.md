@@ -236,6 +236,26 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables inserting of JSON data with nested structures.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the JSONEachRow format.
+
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -253,6 +273,27 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
+
+## date_time_input_format {#settings-date_time_input_format}
+
+Enables or disables extended parsing of date and time formatted strings.
+
+The setting doesn't apply to date and time functions.
+
+Possible values:
+
+- `'best effort'` — Enables extended parsing.
+
+    ClickHouse can parse all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) data and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic format `YYYY-MM-DD HH:MM:SS`.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 

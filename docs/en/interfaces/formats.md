@@ -320,7 +320,7 @@ When using this format, ClickHouse outputs rows as separated, newline-delimited 
 ```json
 {"SearchPhrase":"curtain designs","count()":"1064"}
 {"SearchPhrase":"baku","count()":"1000"}
-{"SearchPhrase":"","count":"8267016"}
+{"SearchPhrase":"","count()":"8267016"}
 ```
 
 When inserting the data, you should provide a separate JSON object for each row.
@@ -382,6 +382,9 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 !!! note "Note"
     Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+
+### Usage of Nested Structures {#jsoneachrow-nested}
+
 
 ## Native {#native}
 
