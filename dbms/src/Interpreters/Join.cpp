@@ -1,3 +1,5 @@
+#include <any>
+
 #include <common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
@@ -16,7 +18,6 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
-#include <Common/ErasedType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -1172,7 +1173,6 @@ public:
                               const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size_)
         : parent(parent_)
         , max_block_size(max_block_size_)
-        , nulls_it(dirtyIterator())
     {
         /** left_sample_block contains keys and "left" columns.
           * result_sample_block - keys, "left" columns, and "right" columns.
@@ -1256,14 +1256,9 @@ private:
     /// Which key columns need change nullability (right is nullable and left is not or vice versa)
     std::vector<bool> key_nullability_changes;
 
-    ErasedType::Ptr position;
-    Join::BlockNullmapList::const_iterator nulls_it;
+    std::any position;
+    std::optional<Join::BlockNullmapList::const_iterator> nulls_position;
 
-    static Join::BlockNullmapList::const_iterator dirtyIterator()
-    {
-        static const Join::BlockNullmapList dirty{};
-        return dirty.end();
-    }
 
     void makeResultSampleBlock(const Block & left_sample_block, const Block & right_sample_block,
                                const NamesAndTypesList & columns_added_by_join,
@@ -1389,10 +1384,10 @@ private:
 
         size_t rows_added = 0;
 
-        if (!position)
-            position = ErasedType::create<Iterator>(map.begin());
+        if (!position.has_value())
+            position = std::make_any<Iterator>(map.begin());
 
-        Iterator & it = ErasedType::get<Iterator>(position);
+        Iterator & it = std::any_cast<Iterator &>(position);
         auto end = map.end();
 
         for (; it != end; ++it)
@@ -1415,15 +1410,15 @@ private:
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
-        if (nulls_it == dirtyIterator())
-            nulls_it = parent.blocks_nullmaps.begin();
+        if (!nulls_position.has_value())
+            nulls_position = parent.blocks_nullmaps.begin();
 
         auto end = parent.blocks_nullmaps.end();
 
-        for (; nulls_it != end && rows_added < max_block_size; ++nulls_it)
+        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
-            const Block * block = nulls_it->first;
-            const NullMap & nullmap = static_cast<const ColumnUInt8 &>(*nulls_it->second).getData();
+            const Block * block = it->first;
+            const NullMap & nullmap = static_cast<const ColumnUInt8 &>(*it->second).getData();
 
             for (size_t row = 0; row < nullmap.size(); ++row)
             {

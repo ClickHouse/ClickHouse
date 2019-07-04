@@ -3,6 +3,7 @@
 #include <variant>
 #include <optional>
 #include <shared_mutex>
+#include <deque>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -292,7 +293,7 @@ private:
     BlocksList blocks;
 
     /// Nullmaps for blocks of "right" table (if needed)
-    using BlockNullmapList = std::list<std::pair<const Block *, ColumnPtr>>;
+    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
     BlockNullmapList blocks_nullmaps;
 
     MapsVariant maps;
