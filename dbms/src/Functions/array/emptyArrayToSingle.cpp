@@ -392,16 +392,15 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     const IColumn * inner_col;
     IColumn * inner_res_col;
 
-    bool nullable = src_data.isColumnNullable();
-    if (nullable)
+    auto nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
+    if (nullable_col)
     {
-        auto nullable_col = static_cast<const ColumnNullable *>(&src_data);
         inner_col = &nullable_col->getNestedColumn();
         src_null_map = &nullable_col->getNullMapData();
 
-        auto nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = &nullable_res_col->getNestedColumn();
-        res_null_map = &nullable_res_col->getNullMapData();
+        auto & nullable_res_col = static_cast<ColumnNullable &>(res_data);
+        inner_res_col = &nullable_res_col.getNestedColumn();
+        res_null_map = &nullable_res_col.getNullMapData();
     }
     else
     {
@@ -409,7 +408,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         inner_res_col = &res_data;
     }
 
-    if (nullable)
+    if (nullable_col)
         FunctionEmptyArrayToSingleImpl::executeDispatch<true>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
     else
         FunctionEmptyArrayToSingleImpl::executeDispatch<false>(*inner_col, src_offsets, *inner_res_col, res_offsets, src_null_map, res_null_map);
