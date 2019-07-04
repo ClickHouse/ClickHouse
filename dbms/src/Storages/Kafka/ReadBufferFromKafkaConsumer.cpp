@@ -49,6 +49,8 @@ void ReadBufferFromKafkaConsumer::commit()
             "Committed offset " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
                                 << ", partition: " << topic_part.get_partition() << ")");
     }
+
+    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)

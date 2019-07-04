@@ -30,7 +30,7 @@ IColumn::Selector createBlockSelector(
     using UnsignedT = std::make_unsigned_t<T>;
 
     /// const columns contain only one value, therefore we do not need to read it at every iteration
-    if (column.isColumnConst())
+    if (isColumnConst(column))
     {
         const auto data = static_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
