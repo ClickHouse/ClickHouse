@@ -15,6 +15,7 @@ void registerFunctionBlockSize(FunctionFactory &);
 void registerFunctionBlockNumber(FunctionFactory &);
 void registerFunctionRowNumberInBlock(FunctionFactory &);
 void registerFunctionRowNumberInAllBlocks(FunctionFactory &);
+void registerFunctionNextInBlock(FunctionFactory &);
 void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
@@ -60,6 +61,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionBlockNumber(factory);
     registerFunctionRowNumberInBlock(factory);
     registerFunctionRowNumberInAllBlocks(factory);
+    registerFunctionNextInBlock(factory);
     registerFunctionSleep(factory);
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
