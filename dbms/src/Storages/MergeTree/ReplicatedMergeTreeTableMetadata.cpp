@@ -28,7 +28,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.index_granularity_info.fixed_index_granularity;
+    index_granularity = data.settings.index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
@@ -45,10 +45,14 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
-    skip_indices = data.getIndices().toString();
-    constraints = data.getConstraints().toString();
-    index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
     ttl_table = formattedAST(data.ttl_table_ast);
+    skip_indices = data.getIndices().toString();
+    if (data.canUseAdaptiveGranularity())
+        index_granularity_bytes = data.settings.index_granularity_bytes;
+    else
+        index_granularity_bytes = 0;
+
+    constraints = data.getConstraints().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -99,8 +103,8 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (in.eof())
         data_format_version = 0;
-    else
-        in >> "data format version: " >> data_format_version.toUnderType() >> "\n";
+    else if (checkString("data format version: ", in))
+        in >> data_format_version.toUnderType() >> "\n";
 
     if (data_format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         in >> "partition key: " >> partition_key >> "\n";
@@ -108,16 +112,19 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
 
+    if (checkString("ttl: ", in))
+        in >> ttl_table >> "\n";
+
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
     if (checkString("granularity bytes: ", in))
+    {
         in >> index_granularity_bytes >> "\n";
+        index_granularity_bytes_found_in_zk = true;
+    }
     else
         index_granularity_bytes = 0;
-
-    if (checkString("ttl: ", in))
-        in >> ttl_table >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -245,7 +252,7 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (index_granularity_bytes != from_zk.index_granularity_bytes)
+    if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
         throw Exception("Existing table metadata in ZooKeeper differs in index granularity bytes."
             " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity_bytes) +
             ", local: " + DB::toString(index_granularity_bytes),

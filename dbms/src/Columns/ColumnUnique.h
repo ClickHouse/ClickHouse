@@ -64,6 +64,8 @@ public:
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
+    Float64 getFloat64(size_t n) const override { return getNestedColumn()->getFloat64(n); }
+    bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
@@ -191,7 +193,7 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
-    if (column_holder->isColumnNullable())
+    if (isColumnNullable(*column_holder))
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
     index.setColumn(getRawColumnPtr());
@@ -271,7 +273,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
     if (is_nullable && src.isNullAt(n))
         return getNullValueIndex();
 
-    if (auto * nullable = typeid_cast<const ColumnNullable *>(&src))
+    if (auto * nullable = checkAndGetColumn<ColumnNullable>(src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
 
     auto ref = src.getDataAt(n);
@@ -430,7 +432,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (auto nullable_column = typeid_cast<const ColumnNullable *>(&src))
+    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
     {
         src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
         null_map = &nullable_column->getNullMapData();
