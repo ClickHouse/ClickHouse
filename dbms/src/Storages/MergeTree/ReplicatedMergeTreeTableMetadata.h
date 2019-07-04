@@ -27,8 +27,8 @@ struct ReplicatedMergeTreeTableMetadata
     String sorting_key;
     String skip_indices;
     String constraints;
-    UInt64 index_granularity_bytes;
     String ttl_table;
+    UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
@@ -60,6 +60,9 @@ struct ReplicatedMergeTreeTableMetadata
     };
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;
+
+private:
+    bool index_granularity_bytes_found_in_zk = false;
 };
 
 }

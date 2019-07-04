@@ -1,5 +1,6 @@
 #pragma once
 
+#include <variant>
 #include <optional>
 #include <shared_mutex>
 
@@ -19,8 +20,6 @@
 
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <variant>
-#include <common/constexpr_helpers.h>
 
 
 namespace DB
@@ -271,80 +270,7 @@ public:
     using MapsAllFull =         MapsTemplate<JoinStuff::MappedAllFull>;
     using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
-    template <ASTTableJoin::Kind KIND>
-    struct KindTrait
-    {
-        // Affects the Adder trait so that when the right part is empty, adding a default value on the left
-        static constexpr bool fill_left = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
-
-        // Affects the Map trait so that a `used` flag is attached to map slots in order to
-        // generate default values on the right when the left part is empty
-        static constexpr bool fill_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
-    };
-
-    template <bool fill_right, typename ASTTableJoin::Strictness>
-    struct MapGetterImpl;
-
-    template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness>
-    using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness>::Map;
-
-    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES
-        = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
-    static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
-        = {ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Full, ASTTableJoin::Kind::Right};
-
-    struct MapInitTag {};
-
-    template <typename Func>
-    bool dispatch(Func && func)
-    {
-        if (any_take_last_row)
-        {
-            return static_for<0, KINDS.size()>([&](auto i)
-            {
-                if (kind == KINDS[i] && strictness == ASTTableJoin::Strictness::Any)
-                {
-                    if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], ASTTableJoin::Strictness::Any>();
-                    else
-                        func(
-                            std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
-                            std::integral_constant<ASTTableJoin::Strictness, ASTTableJoin::Strictness::Any>(),
-                            std::get<Map<KINDS[i], ASTTableJoin::Strictness::Any>>(maps));
-                    return true;
-                }
-                return false;
-            });
-        }
-        else
-        {
-            return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
-            {
-                // NOTE: Avoid using nested static loop as GCC and CLANG have bugs in different ways
-                // See https://stackoverflow.com/questions/44386415/gcc-and-clang-disagree-about-c17-constexpr-lambda-captures
-                constexpr auto i = ij / STRICTNESSES.size();
-                constexpr auto j = ij % STRICTNESSES.size();
-                if (kind == KINDS[i] && strictness == STRICTNESSES[j])
-                {
-                    if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], STRICTNESSES[j]>();
-                    else
-                        func(
-                            std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
-                            std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
-                            std::get<Map<KINDS[i], STRICTNESSES[j]>>(maps));
-                    return true;
-                }
-                return false;
-            });
-        }
-    }
-
-    template <typename Func>
-    bool dispatch(Func && func) const
-    {
-        return const_cast<Join &>(*this).dispatch(std::forward<Func>(func));
-    }
+    using MapsVariant = std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof>;
 
 private:
     friend class NonJoinedBlockInputStream;
@@ -366,12 +292,11 @@ private:
       */
     BlocksList blocks;
 
-    std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof> maps;
+    MapsVariant maps;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
 
-private:
     Type type = Type::EMPTY;
     std::optional<AsofRowRefs::Type> asof_type;
 
@@ -427,35 +352,5 @@ private:
 
 using JoinPtr = std::shared_ptr<Join>;
 using Joins = std::vector<JoinPtr>;
-
-template <>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::Any>
-{
-    using Map = MapsAny;
-};
-
-template <>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::Any>
-{
-    using Map = MapsAnyFull;
-};
-
-template <>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::All>
-{
-    using Map = MapsAll;
-};
-
-template <>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All>
-{
-    using Map = MapsAllFull;
-};
-
-template <bool fill_right>
-struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof>
-{
-    using Map = MapsAsof;
-};
 
 }
