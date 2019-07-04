@@ -304,7 +304,6 @@ public:
     }
 
 protected:
-
     void push(Counter * counter)
     {
         counter->slot = counter_list.size();
