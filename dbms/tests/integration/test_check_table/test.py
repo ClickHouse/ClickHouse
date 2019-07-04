@@ -43,6 +43,8 @@ def remove_checksums_on_disk(node, table, part_name):
 
 def remove_part_from_disk(node, table, part_name):
     part_path = node.query("SELECT path FROM system.parts WHERE table = '{}' and name = '{}'".format(table, part_name)).strip()
+    if not part_path:
+        raise Exception("Part " + part_name + "doesn't exist")
     node.exec_in_container(['bash', '-c', 'rm -r {p}/*'.format(p=part_path)], privileged=True)
 
 
@@ -80,6 +82,8 @@ def test_check_normal_table_corruption(started_cluster):
 
 
 def test_check_replicated_table_simple(started_cluster):
+    node1.query("TRUNCATE TABLE replicated_mt")
+    node2.query("SYSTEM SYNC REPLICA replicated_mt")
     node1.query("INSERT INTO replicated_mt VALUES (toDate('2019-02-01'), 1, 10), (toDate('2019-02-01'), 2, 12)")
     node2.query("SYSTEM SYNC REPLICA replicated_mt")
 
@@ -100,6 +104,7 @@ def test_check_replicated_table_simple(started_cluster):
 
 def test_check_replicated_table_corruption(started_cluster):
     node1.query("TRUNCATE TABLE replicated_mt")
+    node2.query("SYSTEM SYNC REPLICA replicated_mt")
     node1.query("INSERT INTO replicated_mt VALUES (toDate('2019-02-01'), 1, 10), (toDate('2019-02-01'), 2, 12)")
     node1.query("INSERT INTO replicated_mt VALUES (toDate('2019-01-02'), 3, 10), (toDate('2019-01-02'), 4, 12)")
     node2.query("SYSTEM SYNC REPLICA replicated_mt")
@@ -107,16 +112,16 @@ def test_check_replicated_table_corruption(started_cluster):
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
     assert node2.query("SELECT count() from replicated_mt") == "4\n"
 
-    corrupt_data_part_on_disk(node1, "replicated_mt", "201901_2_2_0")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_2_2_0\t0\tPart 201901_2_2_0 looks broken. Removing it and queueing a fetch.\n"
+    corrupt_data_part_on_disk(node1, "replicated_mt", "201901_0_0_0")
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t0\tPart 201901_0_0_0 looks broken. Removing it and queueing a fetch.\n"
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_2_2_0\t1\t\n"
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t1\t\n"
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
 
-    remove_part_from_disk(node2, "replicated_mt", "201901_2_2_0")
-    assert node2.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_2_2_0\t0\tPart 201901_2_2_0 looks broken. Removing it and queueing a fetch.\n"
+    remove_part_from_disk(node2, "replicated_mt", "201901_0_0_0")
+    assert node2.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t0\tPart 201901_0_0_0 looks broken. Removing it and queueing a fetch.\n"
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_2_2_0\t1\t\n"
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t1\t\n"
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
