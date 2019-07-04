@@ -1,14 +1,22 @@
 #include "DNSResolver.h"
 #include <common/SimpleCache.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
+#include <Poco/Logger.h>
+#include <common/logger_useful.h>
 #include <arpa/inet.h>
 #include <atomic>
 #include <optional>
+
+namespace ProfileEvents
+{
+    extern Event NetworkErrors;
+}
 
 
 namespace DB
@@ -172,14 +180,30 @@ bool DNSResolver::updateCache()
     std::lock_guard lock(impl->update_mutex);
 
     bool updated = false;
+    String lost_hosts;
     for (const auto & host : impl->known_hosts)
     {
         try
         {
             updated |= updateHost(host);
         }
-        catch (const Poco::Net::NetException &) {}
+        catch (const Poco::Net::NetException &)
+        {
+            ProfileEvents::increment(ProfileEvents::NetworkErrors);
+
+            if (!lost_hosts.empty())
+                lost_hosts += ", ";
+            lost_hosts += host;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
+
+    if (!lost_hosts.empty())
+        LOG_INFO(&Logger::get("DNSResolver"), "Cached hosts not found: " << lost_hosts);
+
     return updated;
 }
 
