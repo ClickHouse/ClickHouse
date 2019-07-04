@@ -5121,7 +5121,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const C
         {
             results.push_back(part_check_thread.checkPart(part->name));
         }
-        catch(Exception & ex)
+        catch (Exception & ex)
         {
             results.emplace_back(part->name, false, "Error during check:" + ex.message());
         }
