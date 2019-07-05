@@ -1,10 +1,38 @@
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
-201403_13_18_1	72582042e6d69eb45ba69fcdcc073964	e4769ae02a3db60e1ecadb1da8c69223	1e39ad7fd5746dae693ec5c24ddb21c6
+partition	String					
+name	String					
+active	UInt8					
+marks	UInt64					
+rows	UInt64					
+bytes_on_disk	UInt64					
+data_compressed_bytes	UInt64					
+data_uncompressed_bytes	UInt64					
+marks_bytes	UInt64					
+modification_time	DateTime					
+remove_time	DateTime					
+refcount	UInt32					
+min_date	Date					
+max_date	Date					
+partition_id	String					
+min_block_number	Int64					
+max_block_number	Int64					
+level	UInt32					
+data_version	UInt64					
+primary_key_bytes_in_memory	UInt64					
+primary_key_bytes_in_memory_allocated	UInt64					
+database	String					
+table	String					
+engine	String					
+path	String					
+column	String					
+type	String					
+default_kind	String					
+default_expression	String					
+column_bytes_on_disk	UInt64					
+column_data_compressed_bytes	UInt64					
+column_data_uncompressed_bytes	UInt64					
+column_marks_bytes	UInt64					
+hash_of_all_files	String					
+hash_of_uncompressed_files	String					
+uncompressed_hash_of_compressed_files	String					
+bytes	UInt64	ALIAS	bytes_on_disk			
+marks_size	UInt64	ALIAS	marks_bytes			
