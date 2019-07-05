@@ -363,7 +363,7 @@ static void checkASTStructure(const ASTPtr & child)
 }
 
 template <typename DataTypeEnum>
-static DataTypePtr createExect(const ASTPtr & arguments)
+static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -415,24 +415,24 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto * func = child->as<ASTFunction>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
-        if (!value_literal)
-            throw Exception(
-                    "Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+        if (!value_literal
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
                     ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
         Int64 value = value_literal->value.get<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return createExect<DataTypeEnum16>(arguments);
+            return createExact<DataTypeEnum16>(arguments);
     }
 
-    return createExect<DataTypeEnum8>(arguments);
+    return createExact<DataTypeEnum8>(arguments);
 }
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", createExect<DataTypeEnum<Int8>>);
-    factory.registerDataType("Enum16", createExect<DataTypeEnum<Int16>>);
+    factory.registerDataType("Enum8", createExact<DataTypeEnum<Int8>>);
+    factory.registerDataType("Enum16", createExact<DataTypeEnum<Int16>>);
     factory.registerDataType("Enum", create);
 }
 
