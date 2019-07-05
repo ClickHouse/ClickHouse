@@ -26,8 +26,10 @@ RUN apt-get --allow-unauthenticated update -y \
 ENV COVERAGE_DIR=/coverage_reports
 ENV SOURCE_DIR=/build
 ENV OUTPUT_DIR=/output
+ENV IGNORE='.*contrib.*'
+
 
 CMD dpkg -i /package_folder/clickhouse-common-static_*.deb; \
     llvm-profdata-9 merge -sparse ${COVERAGE_DIR}/* -o clickhouse.profdata && \
-    llvm-cov-9 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -arch=x86_64 -j=16 -format=lcov -skip-functions -ignore-filename-regex '.*contrib.*' > output.lcov && \
+    llvm-cov-9 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -arch=x86_64 -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov && \
     genhtml output.lcov  --ignore-errors source --output-directory ${OUTPUT_DIR}
