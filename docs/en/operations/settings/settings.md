@@ -253,8 +253,7 @@ Default value: 0.
 
 **See Also**
 
-- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the JSONEachRow format.
-
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 

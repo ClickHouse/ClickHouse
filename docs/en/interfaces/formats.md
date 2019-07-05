@@ -385,6 +385,31 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
+If you have a table with [Nested](../data_types/nested.md) fields, you can directly insert the JSON data, having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+
+**Example**
+
+Creating a table with the nested structure:
+
+```sql
+CREATE TABLE json_each_row_nested (d1 UInt8, d2 String, n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+Inserting the JSON data:
+
+```sql
+SET input_format_import_nested_json = 1;
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"d1": 1, "d2": "ok", "n.s": ["abc", "def"], "n.i" : [1, 23]};
+```
+
+```sql
+SELECT * FROM json_each_row_nested
+```
+```text
+┌─d1─┬─d2─┬─n.s───────────┬─n.i────┐
+│  1 │ ok │ ['abc','def'] │ [1,23] │
+└────┴────┴───────────────┴────────┘
+```
 
 ## Native {#native}
 
