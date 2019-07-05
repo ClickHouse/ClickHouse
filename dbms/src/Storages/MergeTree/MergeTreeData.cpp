@@ -744,13 +744,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     data_parts_indexes.clear();
 
     bool has_adaptive_parts = false, has_non_adaptive_parts = false;
+    size_t data_parts_counter = 0;
     for (const String & file_name : part_file_names)
     {
         MergeTreePartInfo part_info;
         if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info, format_version))
             continue;
 
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info, data_parts_counter);
+        ++data_parts_counter;
         part->relative_path = file_name;
         bool broken = false;
 
