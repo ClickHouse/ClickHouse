@@ -6,10 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/TraceCollector.h>
-#include <Interpreters/TraceLog.h>
-#include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
@@ -32,15 +28,13 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
+
+    initQueryProfiler();
 }
 
 StringRef ThreadStatus::getQueryId() const
 {
-    static const std::string empty = "";
-    if (query_context)
-        return query_context->getClientInfo().current_query_id;
-
-    return empty;
+    return query_id;
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -102,7 +96,6 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     }
 
     initPerformanceCounters();
-    initQueryProfiler();
 
     thread_state = ThreadState::AttachedToQuery;
 }
@@ -134,7 +127,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     if (!query_context)
-        return;
+        throw Exception("Can't init query profiler without query context", ErrorCodes::LOGICAL_ERROR);
 
     auto & settings = query_context->getSettingsRef();
 
