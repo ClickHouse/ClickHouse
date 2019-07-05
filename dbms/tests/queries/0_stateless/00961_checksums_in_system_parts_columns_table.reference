@@ -1,38 +1,6 @@
-partition	String					
-name	String					
-active	UInt8					
-marks	UInt64					
-rows	UInt64					
-bytes_on_disk	UInt64					
-data_compressed_bytes	UInt64					
-data_uncompressed_bytes	UInt64					
-marks_bytes	UInt64					
-modification_time	DateTime					
-remove_time	DateTime					
-refcount	UInt32					
-min_date	Date					
-max_date	Date					
-partition_id	String					
-min_block_number	Int64					
-max_block_number	Int64					
-level	UInt32					
-data_version	UInt64					
-primary_key_bytes_in_memory	UInt64					
-primary_key_bytes_in_memory_allocated	UInt64					
-database	String					
-table	String					
-engine	String					
-path	String					
-column	String					
-type	String					
-default_kind	String					
-default_expression	String					
-column_bytes_on_disk	UInt64					
-column_data_compressed_bytes	UInt64					
-column_data_uncompressed_bytes	UInt64					
-column_marks_bytes	UInt64					
-hash_of_all_files	String					
-hash_of_uncompressed_files	String					
-uncompressed_hash_of_compressed_files	String					
-bytes	UInt64	ALIAS	bytes_on_disk			
-marks_size	UInt64	ALIAS	marks_bytes			
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
+20000101_20000101_1_1_0	test_00961	1c63ae7a38eb76e2a71c28aaf0b3ae4d	0053df9b467cc5483e752ec62e91cfd4	da96ff1e527a8a1f908ddf2b1d0af239
