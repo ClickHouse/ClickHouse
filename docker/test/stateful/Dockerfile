@@ -11,7 +11,8 @@ COPY s3downloader /s3downloader
 
 ENV DATASETS="hits visits"
 
-CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
+CMD chmod 777 /; \
+    dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
@@ -36,4 +37,5 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     && clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits" \
     && clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits" \
     && clickhouse-client --query "SHOW TABLES FROM test" \
-    && clickhouse-test --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+    && clickhouse-test --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt; \
+    if [ $WITH_COVERAGE -eq 1 ]; then cp /*.profraw /profraw; fi
