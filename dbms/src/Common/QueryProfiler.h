@@ -2,6 +2,7 @@
 
 #include <common/Pipe.h>
 #include <common/StackTrace.h>
+#include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
@@ -9,7 +10,6 @@
 
 #include <signal.h>
 #include <time.h>
-
 
 namespace Poco
 {
@@ -31,11 +31,11 @@ namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr UInt32 QUERY_ID_MAX_LEN = 1024;
+    constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * /* info */, void * context)
     {
-        constexpr UInt32 buf_size = sizeof(char) + // TraceCollector stop flag
+        constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
                                     sizeof(StackTrace) + // collected stack trace
@@ -44,12 +44,13 @@ namespace
         DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         const std::string & query_id = CurrentThread::getQueryId();
+        const StringRef cut_query_id(query_id.c_str(), std::min(query_id.size(), QUERY_ID_MAX_LEN));
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
         DB::writeChar(false, out);
-        DB::writeStringBinary(query_id, out);
+        DB::writeStringBinary(cut_query_id, out);
         DB::writePODBinary(stack_trace, out);
         DB::writePODBinary(timer_type, out);
         out.next();
