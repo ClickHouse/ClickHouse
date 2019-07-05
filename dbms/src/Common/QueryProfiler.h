@@ -43,14 +43,14 @@ namespace
         char buffer[buf_size];
         DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1], buf_size, buffer);
 
-        const std::string & query_id = CurrentThread::getQueryId();
-        const StringRef cut_query_id(query_id.c_str(), std::min(query_id.size(), QUERY_ID_MAX_LEN));
+        StringRef query_id = CurrentThread::getQueryId();
+        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
         DB::writeChar(false, out);
-        DB::writeStringBinary(cut_query_id, out);
+        DB::writeStringBinary(query_id, out);
         DB::writePODBinary(stack_trace, out);
         DB::writePODBinary(timer_type, out);
         out.next();
