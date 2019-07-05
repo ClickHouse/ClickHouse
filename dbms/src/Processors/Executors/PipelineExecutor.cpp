@@ -494,7 +494,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
     {
         try
         {
-            return prepareProcessor(pid, stack, false, thread_num);
+            return prepareProcessor(pid, stack, thread_num, false);
         }
         catch (...)
         {
