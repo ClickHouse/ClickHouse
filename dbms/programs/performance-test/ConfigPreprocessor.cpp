@@ -14,10 +14,15 @@ std::vector<XMLConfigurationPtr> ConfigPreprocessor::processConfig(
 {
 
     std::vector<XMLConfigurationPtr> result;
-    for (const auto & path : paths)
+    for (const auto & pathStr : paths)
     {
-        result.emplace_back(XMLConfigurationPtr(new XMLConfiguration(path)));
-        result.back()->setString("path", Poco::Path(path).absolute().toString());
+        auto test = XMLConfigurationPtr(new XMLConfiguration(pathStr));
+        result.push_back(test);
+
+        const auto path = Poco::Path(pathStr);
+        test->setString("path", path.absolute().toString());
+        if (test->getString("name", "") == "")
+            test->setString("name", path.getBaseName());
     }
 
     /// Leave tests:
