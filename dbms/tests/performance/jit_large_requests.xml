@@ -1,8 +1,6 @@
 <test>
     <type>loop</type>
     
-    <name>JIT testing - large dataset</name>
-
     <stop_conditions>
         <any_of>
             <iterations>100</iterations>
