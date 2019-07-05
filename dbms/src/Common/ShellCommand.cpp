@@ -10,6 +10,17 @@
 #include <csignal>
 #include <common/Pipe.h>
 
+namespace
+{
+    /// By these return codes from the child process, we learn (for sure) about errors when creating it.
+    enum class ReturnCodes : int
+    {
+        CANNOT_DUP_STDIN    = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
+        CANNOT_DUP_STDOUT   = 0x55555556,
+        CANNOT_DUP_STDERR   = 0x55555557,
+        CANNOT_EXEC         = 0x55555558,
+    };
+}
 
 namespace DB
 {
@@ -22,15 +33,6 @@ namespace ErrorCodes
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
-
-/// By these return codes from the child process, we learn (for sure) about errors when creating it.
-enum class ReturnCodes : int
-{
-    CANNOT_DUP_STDIN    = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-    CANNOT_DUP_STDOUT   = 0x55555556,
-    CANNOT_DUP_STDERR   = 0x55555557,
-    CANNOT_EXEC         = 0x55555558,
-};
 
 ShellCommand::ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_)
     : pid(pid)

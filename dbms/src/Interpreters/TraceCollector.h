@@ -1,24 +1,28 @@
 #pragma once
 
-#include <future>
 #include <Poco/Runnable.h>
-#include <Poco/Logger.h>
-#include <ext/singleton.h>
 #include <Interpreters/Context.h>
+
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
-    using Poco::Logger;
 
-    class TraceCollector : public Poco::Runnable
-    {
-    private:
-        Logger * log;
-        std::shared_ptr<TraceLog> trace_log;
+void NotifyTraceCollectorToStop();
 
-    public:
-        TraceCollector(std::shared_ptr<TraceLog> trace_log);
+class TraceCollector : public Poco::Runnable
+{
+private:
+    Poco::Logger * log;
+    std::shared_ptr<TraceLog> trace_log;
 
-        void run() override;
-    };
+public:
+    TraceCollector(std::shared_ptr<TraceLog> trace_log);
+
+    void run() override;
+};
+
 }

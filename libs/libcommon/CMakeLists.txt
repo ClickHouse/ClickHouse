@@ -63,8 +63,7 @@ add_library (common
     include/ext/unlock_guard.h
     include/ext/singleton.h
 
-    ${CONFIG_COMMON}
-)
+    ${CONFIG_COMMON})
 
 if (USE_UNWIND)
     target_compile_definitions (common PRIVATE USE_UNWIND=1)
@@ -133,8 +132,7 @@ target_link_libraries (common
         PRIVATE
     ${MALLOC_LIBRARIES}
     Threads::Threads
-    ${MEMCPY_LIBRARIES}
-)
+    ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)
     target_link_libraries (common PRIVATE ${RT_LIBRARY})

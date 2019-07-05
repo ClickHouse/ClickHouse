@@ -27,28 +27,31 @@ enum class TimerType : UInt8
     Cpu,
 };
 
-void CloseQueryTraceStream();
-
 namespace
 {
+    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
+    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
+    constexpr UInt32 QUERY_ID_MAX_LEN = 1024;
+
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * /* info */, void * context)
     {
-        char buffer[DBMS_DEFAULT_BUFFER_SIZE];
-        DB::WriteBufferFromFileDescriptor out(
-            /* fd */ trace_pipe.fds_rw[1],
-            /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
-            /* existing_memory */ buffer
-        );
+        constexpr UInt32 buf_size = sizeof(char) + // TraceCollector stop flag
+                                    8 * sizeof(char) + // maximum VarUInt length for string size
+                                    QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
+                                    sizeof(StackTrace) + // collected stack trace
+                                    sizeof(TimerType); // timer type
+        char buffer[buf_size];
+        DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         const std::string & query_id = CurrentThread::getQueryId();
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        DB::writeIntBinary(false, out);
+        DB::writeChar(false, out);
         DB::writeStringBinary(query_id, out);
         DB::writePODBinary(stack_trace, out);
-        DB::writeIntBinary(timer_type, out);
+        DB::writePODBinary(timer_type, out);
         out.next();
     }
 
@@ -56,6 +59,17 @@ namespace
 }
 
 
+/**
+  * Query profiler implementation for selected thread.
+  *
+  * This class installs timer and signal handler on creation to:
+  *  1. periodically pause given thread
+  *  2. collect thread's current stack trace
+  *  3. write collected stack trace to trace_pipe for TraceCollector
+  *
+  * Desctructor tries to unset timer and restore previous signal handler.
+  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
+  */
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
@@ -112,6 +126,7 @@ private:
     struct sigaction * previous_handler = nullptr;
 };
 
+/// Query profiler with timer based on real clock
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
@@ -125,6 +140,7 @@ public:
     }
 };
 
+/// Query profiler with timer based on CPU clock
 class QueryProfilerCpu : public QueryProfilerBase<QueryProfilerCpu>
 {
 public:

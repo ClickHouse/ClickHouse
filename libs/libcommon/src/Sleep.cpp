@@ -1,6 +1,17 @@
 #include "common/Sleep.h"
 
+#include <time.h>
+#include <errno.h>
 
+/**
+  * Sleep with nanoseconds precision
+  *
+  * In case query profiler is turned on, all threads spawned for
+  * query execution are repeatedly interrupted by signals from timer.
+  * Functions for relative sleep (sleep(3), nanosleep(2), etc.) have
+  * problems in this setup and man page for nanosleep(2) suggests
+  * using absolute deadlines, for instance clock_nanosleep(2).
+  */
 void SleepForNanoseconds(uint64_t nanoseconds)
 {
     const auto clock_type = CLOCK_REALTIME;
