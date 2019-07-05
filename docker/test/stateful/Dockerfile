@@ -38,4 +38,4 @@ CMD chmod 777 /; \
     && clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits" \
     && clickhouse-client --query "SHOW TABLES FROM test" \
     && clickhouse-test --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt; \
-    if [ $WITH_COVERAGE -eq 1 ]; then cp /*.profraw /profraw; fi
+    if [ $WITH_COVERAGE -eq 1 ]; then cp /*.profraw /profraw ||:; fi
