@@ -169,13 +169,13 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             helper.computeTotalChecksums(part->checksums);
 
             auto checksum = helper.hash_of_all_files;
-            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
+            columns[j++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
 
             checksum = helper.hash_of_uncompressed_files;
-            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
+            columns[j++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
 
             checksum = helper.uncompressed_hash_of_compressed_files;
-            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
+            columns[j++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
         }
     }
 }
