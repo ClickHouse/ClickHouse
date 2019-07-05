@@ -165,26 +165,17 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             if (has_state_column)
                 columns[j++]->insert(part->stateString());
 
-            {
-                constexpr auto GetLow = CityHash_v1_0_2::Uint128Low64;
-                constexpr auto GetHigh = CityHash_v1_0_2::Uint128High64;
+            MinimalisticDataPartChecksums helper;
+            helper.computeTotalChecksums(part->checksums);
 
-                MinimalisticDataPartChecksums helper;
-                helper.computeTotalChecksums(part->checksums);
+            auto checksum = helper.hash_of_all_files;
+            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
 
-                auto lo = GetLow(helper.hash_of_all_files);
-                auto hi = GetHigh(helper.hash_of_all_files);
-                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
+            checksum = helper.hash_of_uncompressed_files;
+            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
 
-                lo = GetLow(helper.hash_of_uncompressed_files);
-                hi = GetHigh(helper.hash_of_uncompressed_files);
-                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
-
-                lo = GetLow(helper.uncompressed_hash_of_compressed_files);
-                hi = GetHigh(helper.uncompressed_hash_of_compressed_files);
-                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
-            }
-
+            checksum = helper.uncompressed_hash_of_compressed_files;
+            columns[j++]->insert(getHexUIntUppercase(checksum.first) + getHexUIntUppercase(checksum.second));
         }
     }
 }
