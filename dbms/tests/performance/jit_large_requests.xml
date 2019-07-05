@@ -43,17 +43,21 @@
     </fill_query>
     <query>
         SELECT
-            a / b + c / d + e / f + g / h + i / j
+            COUNT()
         FROM
             jit_test
+        WHERE
+            NOT ignore(a / b + c / d + e / f + g / h + i / j)
         SETTINGS
             compile_expressions = 0;
     </query>
     <query>
         SELECT
-            a / b + c / d + e / f + g / h + i / j
+            COUNT()
         FROM
-           jit_test
+            jit_test
+        WHERE
+            NOT ignore(a / b + c / d + e / f + g / h + i / j)
         SETTINGS
             compile_expressions = 1,
             min_count_to_compile = 1
