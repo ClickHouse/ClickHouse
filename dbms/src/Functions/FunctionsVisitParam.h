@@ -100,7 +100,7 @@ struct ExtractRaw
 
         for (auto extract_begin = pos; pos != end; ++pos)
         {
-            if (*pos == current_expect_end)
+            if (current_expect_end && *pos == current_expect_end)
             {
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
