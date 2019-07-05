@@ -174,15 +174,15 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
 
                 auto lo = GetLow(helper.hash_of_all_files);
                 auto hi = GetHigh(helper.hash_of_all_files);
-                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
 
                 lo = GetLow(helper.hash_of_uncompressed_files);
                 hi = GetHigh(helper.hash_of_uncompressed_files);
-                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
 
                 lo = GetLow(helper.uncompressed_hash_of_compressed_files);
                 hi = GetHigh(helper.uncompressed_hash_of_compressed_files);
-                columns[j++]->insert(getHexUIntUppercase(hi) + getHexUIntUppercase(lo));
+                columns[j++]->insert(getHexUIntUppercase(lo) + getHexUIntUppercase(hi));
             }
 
         }
