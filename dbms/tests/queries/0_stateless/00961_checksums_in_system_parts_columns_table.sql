@@ -5,4 +5,4 @@ SELECT
     uncompressed_hash_of_compressed_files
 FROM system.parts_columns
 ORDER BY name
-LIMIT 50
+LIMIT 10
