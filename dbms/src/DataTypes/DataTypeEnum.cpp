@@ -350,6 +350,17 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
 
+static void checkASTStructure(const ASTPtr & child)
+{
+    const auto * func = child->as<ASTFunction>();
+    if (!func
+        || func->name != "equals"
+        || func->parameters
+        || !func->arguments
+        || func->arguments->children.size() != 2)
+        throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+                        ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
 
 template <typename DataTypeEnum>
 static DataTypePtr create(const ASTPtr & arguments)
@@ -365,15 +376,9 @@ static DataTypePtr create(const ASTPtr & arguments)
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        const auto * func = child->as<ASTFunction>();
-        if (!func
-            || func->name != "equals"
-            || func->parameters
-            || !func->arguments
-            || func->arguments->children.size() != 2)
-            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
-                ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+        checkASTStructure(child);
 
+        const auto * func = child->as<ASTFunction>();
         const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
@@ -403,18 +408,12 @@ static DataTypePtr createNotExect(const ASTPtr & arguments)
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
 
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
-    for (const ASTPtr & child : arguments->children) {
-        const auto *func = child->as<ASTFunction>();
-        if (!func
-            || func->name != "equals"
-            || func->parameters
-            || !func->arguments
-            || func->arguments->children.size() != 2)
-            throw Exception(
-                    "Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
-                    ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    for (const ASTPtr & child : arguments->children)
+    {
+        checkASTStructure(child);
 
-        const auto *value_literal = func->arguments->children[1]->as<ASTLiteral>();
+        const auto * func = child->as<ASTFunction>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
         if (!value_literal)
             throw Exception(
