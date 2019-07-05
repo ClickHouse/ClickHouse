@@ -1,5 +1,6 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/FinishSortingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/LimitByBlockInputStream.h>
 #include <DataStreams/PartialSortingBlockInputStream.h>
@@ -22,6 +23,7 @@
 #include <DataStreams/CubeBlockInputStream.h>
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/ReverseBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -573,6 +575,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
+    SelectQueryInfo query_info;
     /// PREWHERE optimization
     /// Turn off, if the table filter is applied.
     if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
@@ -584,7 +587,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {
-            SelectQueryInfo query_info;
             query_info.query = query_ptr;
             query_info.syntax_analyzer_result = syntax_analyzer_result;
             query_info.sets = query_analyzer->getPreparedSets();
@@ -637,7 +639,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere, query_info);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
     }
@@ -702,7 +704,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline);
+                    executeOrder(pipeline, query_info);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -796,7 +798,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline);
+                    executeOrder(pipeline, query_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -890,7 +892,8 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere,
+        SelectQueryInfo & query_info)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
@@ -1140,7 +1143,6 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
@@ -1431,13 +1433,92 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
 }
 
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo & query_info)
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
-    UInt64 limit = getLimitForSorting(query, context);
 
+    UInt64 limit = getLimitForSorting(query, context);
     const Settings & settings = context.getSettingsRef();
+
+    const auto & order_direction = order_descr.at(0).direction;
+
+    auto optimize_pk_order = [&](auto & merge_tree)
+    {
+        ASTPtr order_by_ptr = merge_tree.getSortingKeyAST();
+        SortDescription prefix_order_descr;
+        bool need_sorting = order_by_ptr->children.size() < order_descr.size();
+        size_t common_descr_size = std::min(order_descr.size(), order_by_ptr->children.size());
+        for (size_t i = 0; i < common_descr_size; ++i)
+        {
+            String name = order_by_ptr->children[i]->getAliasOrColumnName();
+            if (order_descr[i].column_name != name
+                || order_direction != order_descr[i].direction)
+            {
+                need_sorting = true;
+                break;
+            }
+            else
+            {
+                prefix_order_descr.push_back(order_descr[i]);
+            }
+        }
+        query_info.do_not_steal_task = true;
+        query_info.read_in_pk_order = true;
+        if (order_direction == -1)
+        {
+            query_info.read_in_reverse_order = true;
+            pipeline.transform([&](auto & stream)
+            {
+                stream = std::make_shared<ReverseBlockInputStream>(stream);
+            });
+        }
+        if (need_sorting)
+        {
+            if (!prefix_order_descr.empty())
+            {
+                pipeline.transform([&](auto & stream)
+                {
+                    stream = std::make_shared<FinishSortingBlockInputStream>(
+                        stream,
+                        prefix_order_descr,
+                        order_descr,
+                        settings.max_block_size,
+                        limit);
+                });
+            }
+            else
+            {
+                pipeline.transform([&](auto & stream)
+                {
+                    auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+
+                    /// Limits on sorting
+                    IBlockInputStream::LocalLimits limits;
+                    limits.mode = IBlockInputStream::LIMITS_TOTAL;
+                    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+                    sorting_stream->setLimits(limits);
+
+                    stream = sorting_stream;
+                });
+            }
+        }
+
+        executeUnion(pipeline);
+        pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
+            pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+            settings.max_bytes_before_remerge_sort,
+            settings.max_bytes_before_external_sort, context.getTemporaryPath());
+    };
+
+    if (settings.optimize_pk_order && !query.groupBy() && !order_descr.empty() && !query.final())
+    {
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+        {
+            optimize_pk_order(*merge_tree);
+            return;
+        }
+    }
 
     pipeline.transform([&](auto & stream)
     {
@@ -1461,7 +1542,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         settings.max_bytes_before_remerge_sort,
         settings.max_bytes_before_external_sort, context.getTemporaryPath());
 }
-
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {

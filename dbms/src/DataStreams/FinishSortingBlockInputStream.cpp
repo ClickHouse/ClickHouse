@@ -62,6 +62,31 @@ struct Less
     }
 };
 
+template<class ForwardIt, class T, class Comparator>
+ForwardIt upperBoundWithoutSWO(ForwardIt first, ForwardIt last, const T& value, Comparator comp)
+{
+    ForwardIt it;
+    typename std::iterator_traits<ForwardIt>::difference_type count, step;
+    count = std::distance(first, last);
+
+    while (count > 0)
+    {
+        it = first;
+        step = count / 2;
+        std::advance(it, step);
+        if (!comp(value, *it))
+        {
+            first = ++it;
+            count -= step + 1;
+        }
+        else
+        {
+            count = step;
+        }
+    }
+    return first;
+}
+
 Block FinishSortingBlockInputStream::readImpl()
 {
     if (limit && total_rows_processed >= limit)
@@ -120,7 +145,7 @@ Block FinishSortingBlockInputStream::readImpl()
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
 
-                auto it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
+                auto it = upperBoundWithoutSWO(perm.begin(), perm.end(), last_block.rows() - 1, less);
 
                 /// We need to save tail of block, because next block may starts with the same key as in tail
                 /// and we should sort these rows in one chunk.
@@ -148,8 +173,11 @@ Block FinishSortingBlockInputStream::readImpl()
             blocks.push_back(block);
         }
 
-        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
-        res = impl->read();
+        if (!blocks.empty())
+        {
+            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+            res = impl->read();
+        }
     }
 
     if (res)

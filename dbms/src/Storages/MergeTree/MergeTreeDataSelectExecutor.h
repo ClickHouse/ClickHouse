@@ -52,7 +52,16 @@ private:
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        const SelectQueryInfo & query_info,
+        const Names & virt_columns,
+        const Settings & settings) const;
+
+    BlockInputStreams spreadMarkRangesAmongStreamsPKOrder(
+        RangesInDataParts && parts,
+        const Names & column_names,
+        UInt64 max_block_size,
+        bool use_uncompressed_cache,
+        const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings) const;
 
@@ -61,7 +70,7 @@ private:
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings) const;
 
