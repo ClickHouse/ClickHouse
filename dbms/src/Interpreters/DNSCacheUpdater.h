@@ -24,7 +24,6 @@ private:
 
     BackgroundSchedulePool & pool;
     BackgroundSchedulePoolTaskHolder task_handle;
-    Stopwatch watch;
 };
 
 
