@@ -34,7 +34,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     }
 }
 
-const std::string & ThreadStatus::getQueryId() const
+StringRef ThreadStatus::getQueryId() const
 {
     static const std::string empty = "";
     if (query_context)
@@ -47,8 +47,7 @@ void CurrentThread::defaultThreadDeleter()
 {
     if (unlikely(!current_thread))
         return;
-    ThreadStatus & thread = CurrentThread::get();
-    thread.detachQuery(true, true);
+    current_thread->detachQuery(true, true);
 }
 
 void ThreadStatus::initializeQuery()
@@ -235,62 +234,59 @@ void CurrentThread::initializeQuery()
 {
     if (unlikely(!current_thread))
         return;
-    get().initializeQuery();
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->initializeQuery();
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    get().attachQuery(thread_group, true);
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->attachQuery(thread_group, true);
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    get().attachQuery(thread_group, false);
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->attachQuery(thread_group, false);
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
-const std::string & CurrentThread::getQueryId()
+StringRef CurrentThread::getQueryId()
 {
     if (unlikely(!current_thread))
-    {
-        const static std::string empty;
-        return empty;
-    }
-    return get().getQueryId();
+        return {};
+    return current_thread->getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
 {
     if (unlikely(!current_thread))
         return;
-    return get().attachQueryContext(query_context);
+    return current_thread->attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
 {
     if (unlikely(!current_thread))
         return;
-    get().finalizePerformanceCounters();
+    current_thread->finalizePerformanceCounters();
 }
 
 void CurrentThread::detachQuery()
 {
     if (unlikely(!current_thread))
         return;
-    get().detachQuery(false);
+    current_thread->detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
 {
     if (unlikely(!current_thread))
         return;
-    get().detachQuery(true);
+    current_thread->detachQuery(true);
 }
 
 
