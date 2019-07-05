@@ -385,30 +385,56 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](../data_types/nested.md) fields, you can directly insert the JSON data, having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data, having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
-**Example**
-
-Creating a table with the nested structure:
+For example, consider the following table:
 
 ```sql
-CREATE TABLE json_each_row_nested (d1 UInt8, d2 String, n Nested (s String, i Int32) ) ENGINE = Memory
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-Inserting the JSON data:
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data by the following way:
 
 ```sql
-SET input_format_import_nested_json = 1;
-INSERT INTO json_each_row_nested FORMAT JSONEachRow {"d1": 1, "d2": "ok", "n.s": ["abc", "def"], "n.i" : [1, 23]};
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
+If you try to insert hierarchical JSON object, such as:
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Then ClickHouse returns an exception, unless the case, when `input_format_import_nested_json=1`.
+
 ```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 SELECT * FROM json_each_row_nested
 ```
 ```text
-┌─d1─┬─d2─┬─n.s───────────┬─n.i────┐
-│  1 │ ok │ ['abc','def'] │ [1,23] │
-└────┴────┴───────────────┴────────┘
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
 ```
 
 ## Native {#native}
