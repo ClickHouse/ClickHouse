@@ -363,7 +363,7 @@ static void checkASTStructure(const ASTPtr & child)
 }
 
 template <typename DataTypeEnum>
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr createExect(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -402,7 +402,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeEnum>(values);
 }
 
-static DataTypePtr createNotExect(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -423,17 +423,17 @@ static DataTypePtr createNotExect(const ASTPtr & arguments)
         Int64 value = value_literal->value.get<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return create<DataTypeEnum16>(arguments);
+            return createExect<DataTypeEnum16>(arguments);
     }
 
-    return create<DataTypeEnum8>(arguments);
+    return createExect<DataTypeEnum8>(arguments);
 }
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", create<DataTypeEnum<Int8>>);
-    factory.registerDataType("Enum16", create<DataTypeEnum<Int16>>);
-    factory.registerDataType("Enum", createNotExect);
+    factory.registerDataType("Enum8", createExect<DataTypeEnum<Int8>>);
+    factory.registerDataType("Enum16", createExect<DataTypeEnum<Int16>>);
+    factory.registerDataType("Enum", create);
 }
 
 }
