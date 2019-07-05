@@ -1,3 +1,5 @@
+#include <any>
+
 #include <common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
@@ -531,9 +533,8 @@ bool Join::insertFromBlock(const Block & block)
     }
 
     /// We will insert to the map only keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     size_t rows = block.rows();
 
@@ -563,6 +564,17 @@ bool Join::insertFromBlock(const Block & block)
         {
             insertFromBlockImpl<strictness_>(*this, type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         });
+    }
+
+    /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
+    if (isRightOrFull(kind) && null_map)
+    {
+        UInt8 has_null = 0;
+        for (size_t i = 0; !has_null && i < null_map->size(); ++i)
+            has_null |= (*null_map)[i];
+
+        if (has_null)
+            blocks_nullmaps.emplace_back(stored_block, null_map_holder);
     }
 
     return limits.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -797,9 +809,8 @@ void Join::joinBlockImpl(
     }
 
     /// Keys with NULL value in any column won't join to anything.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     size_t existing_columns = block.columns();
 
@@ -1167,7 +1178,8 @@ class NonJoinedBlockInputStream : public IBlockInputStream
 public:
     NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left,
                               const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size_)
-        : parent(parent_), max_block_size(max_block_size_)
+        : parent(parent_)
+        , max_block_size(max_block_size_)
     {
         /** left_sample_block contains keys and "left" columns.
           * result_sample_block - keys, "left" columns, and "right" columns.
@@ -1235,12 +1247,7 @@ protected:
     {
         if (parent.blocks.empty())
             return Block();
-
-        Block block;
-        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
-                [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
-            throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
-        return block;
+        return createBlock();
     }
 
 private:
@@ -1256,7 +1263,8 @@ private:
     /// Which key columns need change nullability (right is nullable and left is not or vice versa)
     std::vector<bool> key_nullability_changes;
 
-    std::unique_ptr<void, std::function<void(void *)>> position;    /// type erasure
+    std::any position;
+    std::optional<Join::BlockNullmapList::const_iterator> nulls_position;
 
 
     void makeResultSampleBlock(const Block & left_sample_block, const Block & right_sample_block,
@@ -1304,8 +1312,7 @@ private:
         }
     }
 
-    template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    Block createBlock(const Maps & maps)
+    Block createBlock()
     {
         MutableColumns columns_left = columnsForIndex(result_sample_block, column_indices_left);
         MutableColumns columns_keys_and_right = columnsForIndex(result_sample_block, column_indices_keys_and_right);
@@ -1315,18 +1322,15 @@ private:
 
         size_t rows_added = 0;
 
-        switch (parent.type)
+        auto fill_callback = [&](auto, auto strictness, auto & map)
         {
-        #define M(TYPE) \
-            case Join::Type::TYPE: \
-                rows_added = fillColumns<STRICTNESS>(*maps.TYPE, columns_keys_and_right); \
-                break;
-            APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
+            rows_added = fillColumnsFromMap<strictness>(map, columns_keys_and_right);
+        };
 
-            default:
-                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-        }
+        if (!joinDispatch(parent.kind, parent.strictness, parent.maps, fill_callback))
+            throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
+
+        fillNullsFromBlocks(columns_keys_and_right, rows_added);
 
         if (!rows_added)
             return {};
@@ -1362,25 +1366,44 @@ private:
         return columns;
     }
 
+    template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
+    size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
+    {
+        switch (parent.type)
+        {
+        #define M(TYPE) \
+            case Join::Type::TYPE: \
+                return fillColumns<STRICTNESS>(*maps.TYPE, columns_keys_and_right);
+            APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+            default:
+                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+        }
+
+        __builtin_unreachable();
+    }
+
     template <ASTTableJoin::Strictness STRICTNESS, typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
+        using Mapped = typename Map::mapped_type;
+        using Iterator = typename Map::const_iterator;
+
         size_t rows_added = 0;
 
-        if (!position)
-            position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
-                [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
+        if (!position.has_value())
+            position = std::make_any<Iterator>(map.begin());
 
-        auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
+        Iterator & it = std::any_cast<Iterator &>(position);
         auto end = map.end();
 
         for (; it != end; ++it)
         {
-            if (it->getSecond().getUsed())
+            const Mapped & mapped = it->getSecond();
+            if (mapped.getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {
@@ -1390,6 +1413,30 @@ private:
         }
 
         return rows_added;
+    }
+
+    void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
+    {
+        if (!nulls_position.has_value())
+            nulls_position = parent.blocks_nullmaps.begin();
+
+        auto end = parent.blocks_nullmaps.end();
+
+        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        {
+            const Block * block = it->first;
+            const NullMap & nullmap = static_cast<const ColumnUInt8 &>(*it->second).getData();
+
+            for (size_t row = 0; row < nullmap.size(); ++row)
+            {
+                if (nullmap[row])
+                {
+                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                        columns_keys_and_right[col]->insertFrom(*block->getByPosition(col).column, row);
+                    ++rows_added;
+                }
+            }
+        }
     }
 
     static std::unordered_set<size_t> getNullabilityChanges(const Block & sample_block_with_keys, const Block & out_block,
