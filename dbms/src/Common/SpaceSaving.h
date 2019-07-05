@@ -167,6 +167,10 @@ public:
         }
 
         auto min = counter_list.back();
+        // The key doesn't exist and cannot fit in the current top K, but
+        // the new key has a bigger weight and is virtually more present
+        // compared to the element who is less present on the set. This part
+        // of the code is useful for the function topKWeighted
         if (increment > min->count)
         {
             destroyLastElement();
