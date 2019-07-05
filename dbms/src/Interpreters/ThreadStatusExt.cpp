@@ -11,12 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
-#include <csignal>
-#include <time.h>
-#include <signal.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
 
@@ -156,19 +150,12 @@ void ThreadStatus::initQueryProfiler()
             /* thread_id */ os_thread_id,
             /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period)
         );
-
-    has_query_profiler = true;
 }
 
 void ThreadStatus::finalizeQueryProfiler()
 {
-    if (!has_query_profiler)
-        return;
-
     query_profiler_real.reset(nullptr);
     query_profiler_cpu.reset(nullptr);
-
-    has_query_profiler = false;
 }
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)

@@ -1,7 +1,4 @@
 #include <daemon/BaseDaemon.h>
-#include <common/Pipe.h>
-#include <loggers/OwnFormattingChannel.h>
-#include <loggers/OwnPatternFormatter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <sys/stat.h>
 #include <sys/types.h>

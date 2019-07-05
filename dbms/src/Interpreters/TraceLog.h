@@ -17,7 +17,7 @@ struct TraceLogElement
     time_t event_time{};
     TimerType timer_type;
     String query_id{};
-    std::vector<UInt64> trace{};
+    Array trace{};
 
     static std::string name() { return "TraceLog"; }
     static Block createBlock();

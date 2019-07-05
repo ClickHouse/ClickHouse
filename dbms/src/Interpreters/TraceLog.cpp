@@ -36,13 +36,7 @@ void TraceLogElement::appendToBlock(Block &block) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(static_cast<UInt8>(timer_type));
     columns[i++]->insertData(query_id.data(), query_id.size());
-    {
-        Array trace_array;
-        trace_array.reserve(trace.size());
-        for (const UInt32 trace_address : trace)
-            trace_array.emplace_back(UInt64(trace_address));
-        columns[i++]->insert(trace_array);
-    }
+    columns[i++]->insert(trace);
 
     block.setColumns(std::move(columns));
 }

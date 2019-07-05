@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <time.h>
-#include <errno.h>
 
 void SleepForNanoseconds(uint64_t nanoseconds);
 

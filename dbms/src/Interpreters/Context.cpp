@@ -295,7 +295,7 @@ struct ContextShared
         if (trace_collector != nullptr)
         {
             /// Stop trace collector
-            CloseQueryTraceStream();
+            NotifyTraceCollectorToStop();
             trace_collector_thread.join();
 
             /// Close trace pipe - definitely nobody needs to write there after

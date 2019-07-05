@@ -84,17 +84,20 @@ public:
 
         auto result_column = ColumnString::create();
 
-        size_t pos = 0;
+        StackTrace::Frames frames;
+        size_t current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            std::vector<void *> frames;
-            for (; pos < offsets[i]; ++pos)
+            size_t current_size = 0;
+            for (; current_size < frames.size() && current_offset + current_size < offsets[i]; ++current_size)
             {
-                frames.push_back(reinterpret_cast<void *>(data[pos]));
+                frames[current_size] = reinterpret_cast<void *>(data[current_offset + current_size]);
             }
-            std::string backtrace = StackTrace(frames).toString();
 
+            std::string backtrace = StackTrace(frames.begin(), frames.begin() + current_size).toString();
             result_column->insertDataWithTerminatingZero(backtrace.c_str(), backtrace.length() + 1);
+
+            current_offset = offsets[i];
         }
 
         block.getByPosition(result).column = std::move(result_column);

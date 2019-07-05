@@ -294,6 +294,8 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
 
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period and query_profiler_cpu_time_period settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>

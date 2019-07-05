@@ -11,7 +11,6 @@
 #include <shared_mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
-#include <signal.h>
 
 
 namespace Poco
@@ -176,7 +175,6 @@ protected:
     size_t queries_started = 0;
 
     // CPU and Real time query profilers
-    bool has_query_profiler = false;
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
     std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
 
