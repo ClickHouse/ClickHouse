@@ -166,13 +166,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.if_exists = command_ast->if_exists;
-        if (command_ast->type == ASTAlterCommand::DROP_INDEX) {
+        if (command_ast->type == ASTAlterCommand::DROP_INDEX)
+        {
             command.type = AlterCommand::DROP_INDEX;
             command.index_name = command_ast->index->as<ASTIdentifier &>().name;
-        } else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT) {
+        } else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
+        {
             command.type = AlterCommand::DROP_CONSTRAINT;
             command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
-        } else if (command_ast->type == ASTAlterCommand::DROP_COLUMN) {
+        } else if (command_ast->type == ASTAlterCommand::DROP_COLUMN)
+        {
             command.type = AlterCommand::DROP_COLUMN;
             command.column_name = *getIdentifierName(command_ast->column);
         }
