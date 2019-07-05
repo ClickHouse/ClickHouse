@@ -55,4 +55,4 @@ CMD chmod 777 /; \
     service zookeeper start; sleep 5; \
     service clickhouse-server start && sleep 5 && \
     clickhouse-test --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt; \
-    if [ $WITH_COVERAGE -eq 1 ]; then cp /*.profraw /profraw; fi
+    if [ $WITH_COVERAGE -eq 1 ]; then cp /*.profraw /profraw ||:; fi
