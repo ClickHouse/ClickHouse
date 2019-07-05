@@ -1481,6 +1481,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::resetZooKeeper() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper.reset();
+}
+
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");

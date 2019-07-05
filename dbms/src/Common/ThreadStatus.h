@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/StringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
@@ -116,7 +117,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    const std::string & getQueryId() const;
+    StringRef getQueryId() const;
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
