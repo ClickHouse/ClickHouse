@@ -26,6 +26,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -180,7 +181,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             insert_query->has_tail = has_query_tail;
         }
         else
+        {
             query_end = end;
+        }
     }
     catch (...)
     {
@@ -200,6 +203,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        if (context.hasQueryParameters())
+        {
+            ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
+            visitor.visit(ast);
+        }
+
+        /// Get new query after substitutions.
+        if (context.hasQueryParameters())
+            query = serializeAST(*ast);
+
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
         /// Check the limits.
@@ -416,8 +430,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (!internal)
             onExceptionBeforeStart(query, context, current_time);
-
-        DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
 
         throw;
     }

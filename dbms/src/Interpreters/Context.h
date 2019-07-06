@@ -10,9 +10,8 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -144,6 +143,9 @@ private:
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -282,8 +284,6 @@ public:
     ExternalDictionaries & getExternalDictionaries();
     ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
-    void tryCreateExternalDictionaries() const;
-    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -373,6 +373,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
@@ -467,6 +469,11 @@ public:
 
     SampleBlockCache & getSampleBlockCache() const;
 
+    /// Query parameters for prepared statements.
+    bool hasQueryParameters() const;
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
+
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
     void setCompiledExpressionCache(size_t cache_size);
@@ -493,8 +500,6 @@ private:
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
-    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

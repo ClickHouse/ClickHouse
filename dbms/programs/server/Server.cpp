@@ -23,7 +23,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -33,6 +33,7 @@
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -310,7 +311,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
+    LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
     /// Directory with temporary data for processing of heavy queries.
     {
@@ -405,7 +406,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            buildLoggers(*config);
+            buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
@@ -524,8 +525,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     else
     {
-        /// Initialize a watcher updating DNS cache in case of network errors
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
 #if defined(__linux__)
@@ -772,6 +773,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         main_config_reloader->start();
         users_config_reloader->start();
+        if (dns_cache_updater)
+            dns_cache_updater->start();
 
         {
             std::stringstream message;
@@ -822,6 +825,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
+            dns_cache_updater.reset();
             main_config_reloader.reset();
             users_config_reloader.reset();
         });
@@ -832,7 +836,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (!config().getBool("dictionaries_lazy_load", true))
             {
                 global_context->tryCreateEmbeddedDictionaries();
-                global_context->tryCreateExternalDictionaries();
+                global_context->getExternalDictionaries().enableAlwaysLoadEverything(true);
             }
         }
         catch (...)
@@ -849,7 +853,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                *global_context, async_metrics, graphite_key));
+                global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
         SessionCleaner session_cleaner(*global_context);

@@ -1061,8 +1061,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
-        throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
-                        + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
@@ -2181,35 +2181,33 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
+            UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
                 settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
+            UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
-            if (max_source_parts_size > 0)
+            FutureMergedMutatedPart future_merged_part;
+            if (max_source_parts_size_for_merge > 0 &&
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
-                FutureMergedMutatedPart future_merged_part;
-                if (merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size, merge_pred))
+                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
+            }
+            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
+            {
+                /// Choose a part to mutate.
+                DataPartsVector data_parts = getDataPartsVector();
+                for (const auto & part : data_parts)
                 {
-                    success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
-                }
-                else if (queue.countMutations() > 0)
-                {
-                    /// Choose a part to mutate.
+                    if (part->bytes_on_disk > max_source_part_size_for_mutation)
+                        continue;
 
-                    DataPartsVector data_parts = getDataPartsVector();
-                    for (const auto & part : data_parts)
+                    std::optional<Int64> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
+                    if (!desired_mutation_version)
+                        continue;
+
+                    if (createLogEntryToMutatePart(*part, *desired_mutation_version))
                     {
-                        if (part->bytes_on_disk > max_source_parts_size)
-                            continue;
-
-                        std::optional<Int64> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
-                        if (!desired_mutation_version)
-                            continue;
-
-                        if (createLogEntryToMutatePart(*part, *desired_mutation_version))
-                        {
-                            success = true;
-                            break;
-                        }
+                        success = true;
+                        break;
                     }
                 }
             }
@@ -3960,8 +3958,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     /// there is no sense to send query to leader, because he will receive it from own DDLWorker
     if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        LOG_DEBUG(log, "Not leader replica received query from DDLWorker, skipping it.");
-        return;
+        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
     }
 
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
@@ -3986,8 +3983,6 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(global_context.getSettingsRef());
-
     const auto & query_settings = query_context.getSettingsRef();
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
@@ -4003,7 +3998,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, timeouts, "Follower replica");
+        user, password, "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
@@ -4789,6 +4784,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         /// Save deduplication block ids with special prefix replace_partition
 
         auto & src_part = src_all_parts[i];
+
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
         String hash_hex = src_part->checksums.getTotalChecksumHex();
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 

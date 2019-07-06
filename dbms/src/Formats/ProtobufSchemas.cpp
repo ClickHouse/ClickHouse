@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <Formats/FormatSchemaInfo.h>

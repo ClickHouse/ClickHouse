@@ -1,33 +1,33 @@
 # URL(URL, Format) {#table_engines-url}
 
-Manages data on a remote HTTP/HTTPS server. This engine is similar
-to the [File](file.md) engine.
+用于管理远程 HTTP/HTTPS 服务器上的数据。该引擎类似
+[File](file.md) 引擎。
 
-## Using the engine in the ClickHouse server
+## 在 ClickHouse 服务器中使用引擎
 
-`The format` must be one that ClickHouse can use in
-`SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
-[Formats](../../interfaces/formats.md#formats).
+`Format` 必须是 ClickHouse 可以用于
+`SELECT` 查询的一种格式，若有必要，还要可用于 `INSERT` 。有关支持格式的完整列表，请查看
+[Formats](../../interfaces/formats.md#formats)。
 
-`The URL` must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server
-that uses HTTP or HTTPS. This does not require any
-additional headers for getting a response from the server.
+`URL` 必须符合统一资源定位符的结构。指定的URL必须指向一个
+HTTP 或 HTTPS 服务器。对于服务端响应，
+不需要任何额外的 HTTP 头标记。
 
-`INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
-respectively. For processing `POST` requests, the remote server must support
-[Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+`INSERT` 和 `SELECT` 查询会分别转换为 `POST` 和 `GET` 请求。
+对于 `POST` 请求的处理，远程服务器必须支持
+[分块传输编码](https://en.wikipedia.org/wiki/Chunked_transfer_encoding)。
 
-**Example:**
+**示例：**
 
-**1.** Create a `url_engine_table` table on the server :
+**1.** 在 Clickhouse 服务上创建一个 `url_engine_table` 表：
 
 ``` sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
 
-**2.** Create a basic HTTP server using the standard Python 3 tools and
-start it:
+**2.** 用标准的 Python 3 工具库创建一个基本的 HTTP 服务并
+启动它：
 
 ```python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 python3 server.py
 ```
 
-**3.** Request data:
+**3.** 查询请求:
 
 ``` sql
 SELECT * FROM url_engine_table
@@ -62,12 +62,12 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## Details of Implementation
+## 功能实现
 
-- Reads and writes can be parallel
-- Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - Replication.
+- 读写操作都支持并发
+- 不支持：
+    - `ALTER` 和 `SELECT...SAMPLE` 操作。
+    - 索引。
+    - 副本。
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/url/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/url/) <!--hide-->

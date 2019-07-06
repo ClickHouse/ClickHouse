@@ -96,6 +96,7 @@ private:
 
     const String query;
     Context context;
+
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
@@ -118,7 +119,7 @@ private:
       */
     std::atomic<bool> finished { false };
 
-    /** Cancel query request was sent to all replicas beacuse data is not needed anymore
+    /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
