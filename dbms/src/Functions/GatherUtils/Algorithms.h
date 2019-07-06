@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
-
-#include <Functions/GatherUtils/Sources.h>
-#include <Functions/GatherUtils/Sinks.h>
+#include "Sources.h"
+#include "Sinks.h"
 #include <Core/AccurateComparison.h>
-
 #include <ext/range.h>
 
 

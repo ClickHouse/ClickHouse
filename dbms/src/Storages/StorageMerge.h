@@ -26,6 +26,7 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
+    /// Consider columns coming from the underlying tables
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
@@ -65,6 +66,8 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
+    DatabaseIteratorPtr getDatabaseIterator(const Context & context) const;
+
 protected:
     StorageMerge(
         const std::string & name_,
@@ -84,8 +87,6 @@ protected:
 
     void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
                                 BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage);
-
-    bool isVirtualColumn(const String & column_name) const override;
 };
 
 }

@@ -1,4 +1,3 @@
-USE test;
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]));
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
@@ -62,23 +61,27 @@ SELECT count(*) FROM bitmap_test WHERE bitmapHasAny(bitmapBuild([uid]), (SELECT 
 
 SELECT count(*) FROM bitmap_test WHERE 0 = bitmapHasAny((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), bitmapBuild([uid]));
 
+SELECT count(*) FROM bitmap_test WHERE bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
+
+SELECT count(*) FROM bitmap_test WHERE 0 = bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
+
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
 CREATE TABLE bitmap_state_test
 (
 	pickup_date Date,
 	city_id UInt32,
-    uv AggregateFunction( groupBitmap, UInt32 )	
+    uv AggregateFunction( groupBitmap, UInt32 )
 )
 ENGINE = AggregatingMergeTree( pickup_date, ( pickup_date, city_id ), 8192);
 
-INSERT INTO bitmap_state_test SELECT 
-    pickup_date, 
+INSERT INTO bitmap_state_test SELECT
+    pickup_date,
     city_id,
     groupBitmapState(uid) AS uv
 FROM bitmap_test
 GROUP BY pickup_date, city_id;
-	
+
 SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date;
 
 -- between column and expression test
@@ -171,3 +174,21 @@ select bitmapHasAll(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]),bitmapBuild([ 100, 200, 501,
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33]));
+
+-- bitmapContains:
+---- Empty
+SELECT bitmapContains(bitmapBuild(emptyArrayUInt32()), CAST(0, 'UInt32'));
+SELECT bitmapContains(bitmapBuild(emptyArrayUInt16()), CAST(5, 'UInt32'));
+---- Small
+select bitmapContains(bitmapBuild([1,5,7,9]),CAST(0, 'UInt32'));
+select bitmapContains(bitmapBuild([1,5,7,9]),CAST(9, 'UInt32'));
+---- Large
+select bitmapContains(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]),CAST(100, 'UInt32'));
+select bitmapContains(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]),CAST(101, 'UInt32'));
+select bitmapContains(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]),CAST(500, 'UInt32'));

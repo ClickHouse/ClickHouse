@@ -43,8 +43,8 @@ private:
 
     size_t connection_id = 0;
 
-    size_t server_capability_flags;
-    size_t client_capability_flags;
+    size_t server_capability_flags = 0;
+    size_t client_capability_flags = 0;
 
     RSA & public_key;
     RSA & private_key;

@@ -4,7 +4,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>

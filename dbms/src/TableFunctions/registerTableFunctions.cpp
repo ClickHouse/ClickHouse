@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "config_core.h"
 #include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 

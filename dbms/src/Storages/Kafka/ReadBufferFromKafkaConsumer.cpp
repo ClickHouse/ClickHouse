@@ -3,15 +3,54 @@
 namespace DB
 {
 
+using namespace std::chrono_literals;
+ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
+    ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_)
+    : ReadBuffer(nullptr, 0)
+    , consumer(consumer_)
+    , log(log_)
+    , batch_size(max_batch_size)
+    , poll_timeout(poll_timeout_)
+    , intermediate_commit(intermediate_commit_)
+    , current(messages.begin())
+{
+}
+
+ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
+{
+    /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
+    consumer->unsubscribe();
+    consumer->unassign();
+    while (consumer->get_consumer_queue().next_event(1s));
+}
+
 void ReadBufferFromKafkaConsumer::commit()
 {
-    if (messages.empty() || current == messages.begin())
-        return;
+    if (current != messages.end())
+    {
+        /// Since we can poll more messages than we already processed,
+        /// commit only processed messages.
+        consumer->async_commit(*current);
+    }
+    else
+    {
+        /// Commit everything we polled so far because either:
+        /// - read all polled messages (current == messages.end()),
+        /// - read nothing at all (messages.empty()),
+        /// - stalled.
+        consumer->async_commit();
+    }
 
-    auto & previous = *std::prev(current);
+    const auto & offsets = consumer->get_offsets_committed(consumer->get_assignment());
+    for (const auto & topic_part : offsets)
+    {
+        LOG_TRACE(
+            log,
+            "Committed offset " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
+                                << ", partition: " << topic_part.get_partition() << ")");
+    }
 
-    LOG_TRACE(log, "Committing message with offset " << previous.get_offset());
-    consumer->async_commit(previous);
+    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
@@ -20,12 +59,13 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     if (consumer->get_subscription().empty())
     {
-        using namespace std::chrono_literals;
-
         consumer->pause(); // don't accidentally read any messages
         consumer->subscribe(topics);
         consumer->poll(5s);
         consumer->resume();
+
+        // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+        //        see https://github.com/edenhill/librdkafka/issues/2077
     }
 
     stalled = false;
@@ -50,16 +90,19 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     {
         if (intermediate_commit)
             commit();
-        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
+
+        /// Don't drop old messages immediately, since we may need them for virtual columns.
+        auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
+        if (new_messages.empty())
+        {
+            LOG_TRACE(log, "Stalled");
+            stalled = true;
+            return false;
+        }
+        messages = std::move(new_messages);
         current = messages.begin();
 
         LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
-    }
-
-    if (messages.empty() || current == messages.end())
-    {
-        stalled = true;
-        return false;
     }
 
     if (auto err = current->get_error())

@@ -187,8 +187,8 @@ namespace VolnitskyTraits
 
                             /// put ngram for uppercase
                             utf8.convert(u_u32, seq, sizeof(seq));
-                            chars.c0 = seq[seq_ngram_offset];
-                            chars.c1 = seq[seq_ngram_offset + 1];
+                            chars.c0 = seq[seq_ngram_offset]; //-V519
+                            chars.c1 = seq[seq_ngram_offset + 1]; //-V519
                             putNGramBase(n, offset);
                         }
                     }
