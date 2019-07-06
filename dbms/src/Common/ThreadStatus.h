@@ -86,6 +86,8 @@ public:
     UInt32 thread_number = 0;
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     Int32 os_thread_id = -1;
+    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
+    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
