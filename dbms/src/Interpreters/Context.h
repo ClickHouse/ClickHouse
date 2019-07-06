@@ -416,6 +416,7 @@ public:
     void initializeSystemLogs();
 
     void initializeTraceCollector();
+    bool hasTraceCollector();
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
