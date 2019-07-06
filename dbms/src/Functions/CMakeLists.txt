@@ -11,6 +11,7 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 target_link_libraries(clickhouse_functions
     PUBLIC
         clickhouse_dictionaries
+        clickhouse_dictionaries_embedded
         dbms
         ${CONSISTENT_HASHING_LIBRARY}
         consistent-hashing-sumbur
@@ -19,6 +20,9 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
+
+    PRIVATE
+        ${Boost_FILESYSTEM_LIBRARY}
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
