@@ -304,7 +304,8 @@ struct ContextShared
         }
     }
 
-    bool hasTraceCollector() {
+    bool hasTraceCollector()
+    {
         return trace_collector != nullptr;
     }
 
