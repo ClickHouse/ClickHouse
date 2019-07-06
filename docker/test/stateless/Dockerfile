@@ -29,6 +29,7 @@ RUN apt-get update -y \
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ENV WITH_COVERAGE=0
 
 
 CMD chmod 777 /; \
