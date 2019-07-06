@@ -126,8 +126,9 @@ void ThreadStatus::finalizePerformanceCounters()
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_context)
-        throw Exception("Can't init query profiler without query context", ErrorCodes::LOGICAL_ERROR);
+    /// query profilers are useless without trace collector
+    if (!global_context->hasTraceCollector())
+        return;
 
     auto & settings = query_context->getSettingsRef();
 
@@ -146,8 +147,8 @@ void ThreadStatus::initQueryProfiler()
 
 void ThreadStatus::finalizeQueryProfiler()
 {
-    query_profiler_real.reset(nullptr);
-    query_profiler_cpu.reset(nullptr);
+    query_profiler_real.reset();
+    query_profiler_cpu.reset();
 }
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)

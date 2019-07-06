@@ -292,7 +292,7 @@ struct ContextShared
         ddl_worker.reset();
 
         /// Trace collector is only initialized in server program
-        if (trace_collector != nullptr)
+        if (hasTraceCollector())
         {
             /// Stop trace collector
             NotifyTraceCollectorToStop();
@@ -304,8 +304,15 @@ struct ContextShared
         }
     }
 
+    bool hasTraceCollector() {
+        return trace_collector != nullptr;
+    }
+
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
+        if (trace_log == nullptr)
+            return;
+
         trace_pipe.open();
         trace_collector.reset(new TraceCollector(trace_log));
         trace_collector_thread.start(*trace_collector);
@@ -1644,6 +1651,11 @@ void Context::initializeSystemLogs()
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
+}
+
+bool Context::hasTraceCollector()
+{
+    return shared->hasTraceCollector();
 }
 
 void Context::initializeTraceCollector()
