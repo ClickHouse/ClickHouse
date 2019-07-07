@@ -193,8 +193,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
 
             return true;
         }
@@ -214,8 +214,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
 
             return true;
         }
