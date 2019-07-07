@@ -30,10 +30,8 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 
 PipelineExecutor::PipelineExecutor(Processors & processors)
     : processors(processors)
-    , num_tasks_and_active_threads(0)
     , cancelled(false)
     , finished(false)
-    , num_waiting_threads(0)
     , num_processing_executors(0)
     , expand_pipeline_task(nullptr)
 {
@@ -367,12 +365,6 @@ void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task)
     {
         expandPipeline(*task->stack, task->node_to_expand->processors_id);
 
-        if (graph.size() > task_queue_reserved_size)
-        {
-            task_queue_reserved_size = graph.size();
-            task_queue.reserve(graph.size());
-        }
-
         expand_pipeline_task = nullptr;
 
         lock.unlock();
@@ -382,12 +374,12 @@ void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task)
 
 void PipelineExecutor::finish()
 {
-    bool expected = false;
-    if (finished.compare_exchange_strong(expected, true))
     {
-        for (auto & context : executor_contexts)
-            context->condvar.notify_one();
+        std::lock_guard lock(task_queue_mutex);
+        finished = true;
     }
+
+    task_queue_condvar.notify_all();
 }
 
 void PipelineExecutor::execute(size_t num_threads)
@@ -421,61 +413,7 @@ void PipelineExecutor::execute(size_t num_threads)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-namespace
-{
-
-struct AtomicCounter
-{
-    std::atomic<uint64_t> & counter;
-
-    constexpr static uint64_t num_bits_for_thread_counter = 16;
-    constexpr static uint64_t num_bits_for_task_counter = 8 * sizeof(uint64_t) - num_bits_for_thread_counter;
-    constexpr static uint64_t task_mask = (uint64_t(1) << num_bits_for_task_counter) - 1;
-    constexpr static uint64_t thread_mask = ~task_mask;
-
-    template <typename Updater>
-    void update(Updater updater)
-    {
-        uint64_t expected = counter.load();
-        uint64_t desired = updater(expected);
-
-        while (!counter.compare_exchange_weak(expected, desired))
-            desired = updater(expected);
-    }
-
-    uint64_t getNumTasks() const { return (counter.load() & task_mask); }
-    /// uint64_t getNumThreads() const { return ((counter.load() & thread_mask)) >> num_bits_for_task_counter; }
-
-    void addTask()
-    {
-        update([](uint64_t value) { return ((value & task_mask) + 1) | (value & thread_mask); });
-    }
-
-    void removeTask()
-    {
-        update([](uint64_t value) { return ((value & task_mask) - 1) | (value & thread_mask); });
-    }
-
-    void addActiveThread()
-    {
-        update([](uint64_t value)
-        {
-            return (value & task_mask) | ((value & thread_mask) + (uint64_t(1) << num_bits_for_task_counter));
-        });
-    }
-
-    void removeActiveThread()
-    {
-        update([](uint64_t value)
-        {
-            return (value & task_mask) | ((value & thread_mask) - (uint64_t(1) << num_bits_for_task_counter));
-        });
-    }
-};
-
-}
-
-void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
+void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
     UInt64 total_time_ns = 0;
     UInt64 execution_time_ns = 0;
@@ -483,12 +421,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
     UInt64 wait_time_ns = 0;
 
     Stopwatch total_time_watch;
-
-    std::mutex mutex;
     ExecutionState * state = nullptr;
-    AtomicCounter threads_and_tasks_counter { .counter = num_tasks_and_active_threads };
-
-    threads_and_tasks_counter.addActiveThread();
 
     auto prepare_processor = [&](UInt64 pid, Stack & stack)
     {
@@ -512,36 +445,31 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
+            std::unique_lock lock(task_queue_mutex);
 
-            while (threads_and_tasks_counter.getNumTasks())
+            if (!task_queue.empty())
             {
-                if (task_queue.pop(state))
-                {
-                    threads_and_tasks_counter.removeTask();
-                    break;
-                }
-                else
-                    state = nullptr;
+                state = task_queue.front();
+                task_queue.pop();
+                break;
             }
 
-            if (state)
-                break;
+            ++num_waiting_threads;
 
-            std::unique_lock lock(mutex);
-
-            threads_and_tasks_counter.removeActiveThread();
-
-            if (threads_and_tasks_counter.counter.load() == 0)
-                finish();
-
-            executor_contexts[thread_num]->is_waiting = true;
-            executor_contexts[thread_num]->condvar.wait_for(lock, std::chrono::microseconds(1), [&]()
+            if (num_waiting_threads == num_threads)
             {
-                return finished || threads_and_tasks_counter.getNumTasks();
-            });
-            executor_contexts[thread_num]->is_waiting = false;
+                finished = true;
+                lock.unlock();
+                task_queue_condvar.notify_all();
+                break;
+            }
 
-            threads_and_tasks_counter.addActiveThread();
+            task_queue_condvar.wait(lock, [&]()
+            {
+                return finished || !task_queue.empty();
+            });
+
+            --num_waiting_threads;
         }
 
         if (finished)
@@ -576,22 +504,19 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
                         state = graph[current_processor].execution_state.get();
                 }
 
-                bool do_wake_up_threads = !stack.empty();
-
-                while (!stack.empty() && !finished)
+                if (!stack.empty())
                 {
-                    auto cur_state = graph[stack.top()].execution_state.get();
-                    stack.pop();
+                    std::lock_guard lock(task_queue_mutex);
 
-                    threads_and_tasks_counter.addTask();
-                    while (!task_queue.push(cur_state));
-                }
+                    while (!stack.empty() && !finished)
+                    {
+                        auto cur_state = graph[stack.top()].execution_state.get();
+                        stack.pop();
 
-                if (do_wake_up_threads)
-                {
-                    for (auto & context : executor_contexts)
-                        if (context->is_waiting)
-                            context->condvar.notify_one();
+                        task_queue.push(cur_state);
+                    }
+
+                    task_queue_condvar.notify_all();
                 }
 
                 --num_processing_executors;
@@ -632,14 +557,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    task_queue_reserved_size = std::max<size_t>(min_task_queue_size, graph.size());
-    task_queue.reserve_unsafe(task_queue_reserved_size);
-
     Stack stack;
 
     addChildlessProcessorsToStack(stack);
-
-    AtomicCounter threads_and_tasks_counter { .counter = num_tasks_and_active_threads };
 
     while (!stack.empty())
     {
@@ -647,8 +567,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         stack.pop();
 
         auto cur_state = graph[proc].execution_state.get();
-        threads_and_tasks_counter.addTask();
-        while (!task_queue.push(cur_state));
+        task_queue.push(cur_state);
     }
 
     ThreadPool pool(num_threads);
@@ -661,11 +580,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     executor_contexts.reserve(num_threads);
 
     for (size_t i = 0; i < num_threads; ++i)
-    {
         executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
-        auto * executor_context = executor_contexts.back().get();
-        executor_context->is_waiting = false;
-    }
 
     auto thread_group = CurrentThread::getGroup();
 

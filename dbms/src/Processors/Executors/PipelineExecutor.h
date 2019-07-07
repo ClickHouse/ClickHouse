@@ -120,30 +120,13 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    class TaskQueue
-    {
-    public:
-        TaskQueue() : container(0) {}
-
-        bool push(ExecutionState * value);
-        bool pop(ExecutionState *& value);
-
-        void reserve(size_t size);
-        void reserve_unsafe(size_t size);
-    private:
-
-        boost::lockfree::stack<ExecutionState *> container;
-    };
+    using TaskQueue = std::queue<ExecutionState *>;
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
-    static constexpr size_t min_task_queue_size = 8192;
-    size_t task_queue_reserved_size = 0;
-
-    /// This counter stores number of active threads and number of tasks in different parts of 64-bit value.
-    /// It is needed to atomically check that execution is finished (when value is zero).
-    std::atomic<uint64_t> num_tasks_and_active_threads;
+    std::mutex task_queue_mutex;
+    std::condition_variable task_queue_condvar;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
@@ -151,7 +134,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
     /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
-    std::atomic<size_t> num_waiting_threads;
+    size_t num_waiting_threads = 0;
 
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
@@ -172,10 +155,6 @@ private:
     /// Context for each thread.
     struct ExecutorContext
     {
-        /// Flag is set if thread is waiting condvar.
-        std::atomic_bool is_waiting;
-        /// Wait this condvar when no tasks to prepare or execute.
-        std::condition_variable condvar;
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
