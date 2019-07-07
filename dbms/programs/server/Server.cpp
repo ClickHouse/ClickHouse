@@ -536,10 +536,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
-                      " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
-                      " Note that it will not work on 'nosuid' mounted filesystems."
-                      " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems."
+            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+    }
+
+    if (!hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");

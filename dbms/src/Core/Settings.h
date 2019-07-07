@@ -132,6 +132,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingInt64, network_zstd_compression_level, 1, "Allows you to select the level of ZSTD compression.") \
     \
     M(SettingUInt64, priority, 0, "Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.") \
+    M(SettingInt64, os_thread_priority, 0, "If non zero - set corresponding 'nice' value for query processing threads. Can be used to adjust query priority for OS scheduler.") \
     \
     M(SettingBool, log_queries, 0, "Log requests and write the log to the system table.") \
     \
