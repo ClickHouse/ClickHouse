@@ -400,6 +400,10 @@ public:
         return count;
     }
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#endif
     bool hasCurrentlyLoadedObjects() const
     {
         std::lock_guard lock{mutex};
@@ -408,6 +412,9 @@ public:
                 return true;
         return false;
     }
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
     /// Starts loading of a specified object.
     void load(const String & name)
