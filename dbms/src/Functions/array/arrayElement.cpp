@@ -749,12 +749,12 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
 
     col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (col_array)
-        is_array_of_nullable = col_array->getData().isColumnNullable();
+        is_array_of_nullable = isColumnNullable(col_array->getData());
     else
     {
         col_const_array = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_const_array)
-            is_array_of_nullable = col_const_array->getData().isColumnNullable();
+            is_array_of_nullable = isColumnNullable(col_const_array->getData());
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -836,7 +836,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     if (executeTuple(block, arguments, result, input_rows_count))
     {
     }
-    else if (!block.getByPosition(arguments[1]).column->isColumnConst())
+    else if (!isColumnConst(*block.getByPosition(arguments[1]).column))
     {
         if (!(executeArgument<UInt8>(block, arguments, result, builder, input_rows_count)
             || executeArgument<UInt16>(block, arguments, result, builder, input_rows_count)

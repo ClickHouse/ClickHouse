@@ -100,13 +100,12 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-    const ColumnNullable * nullable_col = nullptr;
+    const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(src_data);
 
     const IColumn * inner_col;
 
-    if (src_data.isColumnNullable())
+    if (nullable_col)
     {
-        nullable_col = static_cast<const ColumnNullable *>(&src_data);
         inner_col = &nullable_col->getNestedColumn();
     }
     else

@@ -83,6 +83,7 @@ WriteSpec getWriteSpec(const T & value)
 template <typename T, typename DeltaType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    static_assert(std::is_unsigned_v<T> && std::is_signed_v<DeltaType>, "T must be unsigned, while DeltaType must be signed integer type.");
     using UnsignedDeltaType = typename std::make_unsigned<DeltaType>::type;
 
     if (source_size % sizeof(T) != 0)
@@ -109,7 +110,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     {
         const T curr_value = unalignedLoad<T>(source);
         prev_delta = static_cast<DeltaType>(curr_value - prev_value);
-        unalignedStore<T>(dest, prev_delta);
+        unalignedStore<DeltaType>(dest, prev_delta);
 
         source += sizeof(curr_value);
         dest += sizeof(prev_delta);
@@ -123,8 +124,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     {
         const T curr_value = unalignedLoad<T>(source);
 
-        const auto delta = curr_value - prev_value;
-        const DeltaType double_delta = static_cast<DeltaType>(delta - static_cast<T>(prev_delta));
+        const DeltaType delta = static_cast<DeltaType>(curr_value - prev_value);
+        const DeltaType double_delta = delta - prev_delta;
 
         prev_delta = delta;
         prev_value = curr_value;
@@ -153,6 +154,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename T, typename DeltaType>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    static_assert(std::is_unsigned_v<T> && std::is_signed_v<DeltaType>, "T must be unsigned, while DeltaType must be signed integer type.");
     const char * source_end = source + source_size;
 
     const UInt32 items_count = unalignedLoad<UInt32>(source);
@@ -173,7 +175,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source < source_end)
     {
         prev_delta = unalignedLoad<DeltaType>(source);
-        prev_value = static_cast<T>(prev_value + prev_delta);
+        prev_value = prev_value + static_cast<T>(prev_delta);
         unalignedStore<T>(dest, prev_value);
 
         source += sizeof(prev_delta);
@@ -208,11 +210,11 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         }
         // else if first bit is zero, no need to read more data.
 
-        const T curr_value = static_cast<T>(prev_value + prev_delta + double_delta);
+        const T curr_value = prev_value + static_cast<T>(prev_delta + double_delta);
         unalignedStore<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
-        prev_delta = curr_value - prev_value;
+        prev_delta = static_cast<DeltaType>(curr_value - prev_value);
         prev_value = curr_value;
     }
 }

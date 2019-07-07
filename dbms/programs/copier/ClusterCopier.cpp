@@ -2201,6 +2201,10 @@ void ClusterCopierApp::mainImpl()
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
+
+    /// Reset ZooKeeper before removing ClusterCopier.
+    /// Otherwise zookeeper watch can call callback which use already removed ClusterCopier object.
+    context->resetZooKeeper();
 }
 
 

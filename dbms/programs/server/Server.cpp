@@ -525,18 +525,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     else
     {
-        /// Initialize a watcher updating DNS cache in case of network errors
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
 #if defined(__linux__)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
-                      " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
-                      " Note that it will not work on 'nosuid' mounted filesystems."
-                      " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems."
+            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+    }
+
+    if (!hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
@@ -773,6 +781,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         main_config_reloader->start();
         users_config_reloader->start();
+        if (dns_cache_updater)
+            dns_cache_updater->start();
 
         {
             std::stringstream message;
@@ -823,6 +833,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
+            dns_cache_updater.reset();
             main_config_reloader.reset();
             users_config_reloader.reset();
         });
@@ -850,7 +861,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                *global_context, async_metrics, graphite_key));
+                global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
         SessionCleaner session_cleaner(*global_context);
