@@ -180,7 +180,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "like",
-        [] (RPNElement & out, const Field & value)
+        [](RPNElement & out, const Field & value)
         {
             if (value.getType() != Field::Types::String)
                 return false;
@@ -193,8 +193,29 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
             out.function = RPNElement::FUNCTION_IN_RANGE;
             out.range = !right_bound.empty()
-                ? Range(prefix, true, right_bound, false)
-                : Range::createLeftBounded(prefix, true);
+                        ? Range(prefix, true, right_bound, false)
+                        : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
+        "startsWith",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = value.get<const String&>();
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                        ? Range(prefix, true, right_bound, false)
+                        : Range::createLeftBounded(prefix, true);
 
             return true;
         }
