@@ -1,17 +1,20 @@
 #pragma once
-#include <Processors/ISink.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
 
-class NullSink : public ISink
+class NullSink : public IProcessor
 {
 public:
-    explicit NullSink(Block header) : ISink(std::move(header)) {}
+    explicit NullSink(Block header) : IProcessor({std::move(header)}, {}) {}
     String getName() const override { return "NullSink"; }
 
-protected:
-    void consume(Chunk) override {}
+    Status prepare() override
+    {
+        inputs.front().close();
+        return Status::Finished;
+    }
 };
 
 }

@@ -334,11 +334,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread
 
             while (!expand_pipeline_task.compare_exchange_strong(expected, desired))
             {
-                doExpandPipeline(expected);
+                doExpandPipeline(expected, true);
                 expected = nullptr;
             }
 
-            doExpandPipeline(desired);
+            doExpandPipeline(desired, true);
 
             /// node is not longer valid after pipeline was expanded
             graph[pid].need_to_be_prepared = true;
@@ -350,14 +350,16 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread
     return false;
 }
 
-void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task)
+void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task, bool processing)
 {
     std::unique_lock lock(task->mutex);
-    ++task->num_waiting_threads;
+
+    if (processing)
+        ++task->num_waiting_processing_threads;
 
     task->condvar.wait(lock, [&]()
     {
-        return task->num_waiting_threads >= num_processing_executors || expand_pipeline_task != task;
+        return task->num_waiting_processing_threads >= num_processing_executors || expand_pipeline_task != task;
     });
 
     /// After condvar.wait() task may point to trash. Can change it only if it is still in expand_pipeline_task.
@@ -488,7 +490,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 ++num_processing_executors;
                 while (auto task = expand_pipeline_task.load())
-                    doExpandPipeline(task);
+                    doExpandPipeline(task, true);
 
                 /// Execute again if can.
                 if (!prepare_processor(state->processors_id, stack))
@@ -521,7 +523,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 --num_processing_executors;
                 while (auto task = expand_pipeline_task.load())
-                    doExpandPipeline(task);
+                    doExpandPipeline(task, false);
             }
 
             processing_time_ns += processing_time_watch.elapsed();
