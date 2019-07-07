@@ -100,7 +100,7 @@ struct ExtractRaw
 
         for (auto extract_begin = pos; pos != end; ++pos)
         {
-            if (*pos == current_expect_end)
+            if (current_expect_end && *pos == current_expect_end)
             {
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
@@ -192,7 +192,7 @@ struct ExtractParamImpl
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
-                res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i]);
+                res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i] - 1);  /// don't include terminating zero
             else
                 res[i] = 0;
 
