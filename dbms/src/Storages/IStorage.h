@@ -84,7 +84,8 @@ public:
 
 public: /// thread-unsafe part. lockStructure must be acquired
     virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
-
+    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    
     const IndicesDescription & getIndices() const;
 
     /// NOTE: these methods should include virtual columns,
@@ -113,7 +114,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     void check(const Block & block, bool need_all = false) const;
 
 protected: /// still thread-unsafe part.
-    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
     void setIndices(IndicesDescription indices_);
 
     /// Returns whether the column is virtual - by default all columns are real.
