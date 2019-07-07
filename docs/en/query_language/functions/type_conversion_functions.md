@@ -29,7 +29,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, "1.111".
+- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 - `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
@@ -71,7 +71,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, "1.111".
+- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
 - `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
@@ -138,10 +138,6 @@ SELECT
 ```
 
 Also see the `toUnixTimestamp` function.
-
-## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
-
-Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
 ## toFixedString(s, N)
 
