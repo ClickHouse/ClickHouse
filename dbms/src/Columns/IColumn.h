@@ -4,6 +4,7 @@
 #include <Common/COW.h>
 #include <Common/PODArray.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <common/StringRef.h>
 
 
@@ -296,12 +297,8 @@ public:
 
     /// Various properties on behaviour of column type.
 
-    /// Is this column a container for Nullable values? It's true only for ColumnNullable.
-    /// Note that ColumnConst(ColumnNullable(...)) is not considered.
-    virtual bool isColumnNullable() const { return false; }
-
-    /// Column stores a constant value. It's true only for ColumnConst wrapper.
-    virtual bool isColumnConst() const { return false; }
+    /// True if column contains something nullable inside. It's true for ColumnNullable, can be true or false for ColumnConst, etc.
+    virtual bool isNullable() const { return false; }
 
     /// It's a special kind of column, that contain single value, but is not a ColumnConst.
     virtual bool isDummy() const { return false; }
@@ -409,5 +406,36 @@ struct IsMutableColumns<Arg, Args ...>
 
 template <>
 struct IsMutableColumns<> { static const bool value = true; };
+
+
+template <typename Type>
+const Type * checkAndGetColumn(const IColumn & column)
+{
+    return typeid_cast<const Type *>(&column);
+}
+
+template <typename Type>
+const Type * checkAndGetColumn(const IColumn * column)
+{
+    return typeid_cast<const Type *>(column);
+}
+
+template <typename Type>
+bool checkColumn(const IColumn & column)
+{
+    return checkAndGetColumn<Type>(&column);
+}
+
+template <typename Type>
+bool checkColumn(const IColumn * column)
+{
+    return checkAndGetColumn<Type>(column);
+}
+
+/// True if column's an ColumnConst instance. It's just a syntax sugar for type check.
+bool isColumnConst(const IColumn & column);
+
+/// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
+bool isColumnNullable(const IColumn & column);
 
 }

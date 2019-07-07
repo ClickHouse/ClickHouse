@@ -198,6 +198,27 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
             return true;
         }
+    },
+    {
+        "startsWith",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = value.get<const String &>();
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
     }
 };
 
@@ -334,7 +355,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
         out_type = block_with_constants.getByName(column_name).type;
         return true;
     }
-    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst())
+    else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
     {
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);

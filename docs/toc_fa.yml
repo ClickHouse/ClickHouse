@@ -187,6 +187,7 @@ nav:
     - 'Restrictions on Query Complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings Profiles': 'operations/settings/settings_profiles.md'
+    - 'User Settings': 'operations/settings/settings_users.md'
     - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'
