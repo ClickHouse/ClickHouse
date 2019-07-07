@@ -16,7 +16,7 @@ protected:
     virtual void consume(Chunk block) = 0;
 
 public:
-    ISink(Block header);
+    explicit ISink(Block header);
 
     Status prepare() override;
     void work() override;

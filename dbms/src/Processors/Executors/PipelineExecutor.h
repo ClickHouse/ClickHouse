@@ -141,7 +141,7 @@ private:
     {
         ExecutionState * node_to_expand;
         Stack * stack;
-        size_t num_waiting_threads = 0;
+        size_t num_waiting_processing_threads = 0;
         std::mutex mutex;
         std::condition_variable condvar;
 
@@ -177,7 +177,7 @@ private:
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
     bool prepareProcessor(size_t pid, Stack & stack, size_t thread_number, bool async);
-    void doExpandPipeline(ExpandPipelineTask * task);
+    void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);
