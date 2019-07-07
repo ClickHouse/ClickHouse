@@ -180,7 +180,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
     },
     {
         "like",
-        [](RPNElement & out, const Field & value)
+        [] (RPNElement & out, const Field & value)
         {
             if (value.getType() != Field::Types::String)
                 return false;
