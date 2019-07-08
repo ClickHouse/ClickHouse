@@ -13,7 +13,7 @@
 ## ClickHouse release 19.7.6.1, 2019-07-05
 
 ### Bug Fix
-* Fix push require columns with join. [#5192](https://github.com/yandex/ClickHouse/pull/5192) ([Winter Zhang](https://github.com/zhang2014))
+* Fix performance regression in some queries with JOIN. [#5192](https://github.com/yandex/ClickHouse/pull/5192) ([Winter Zhang](https://github.com/zhang2014))
 
 ## ClickHouse release 19.9.2.4, 2019-06-24
 
