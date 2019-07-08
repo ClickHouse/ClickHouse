@@ -595,7 +595,7 @@ void QueryPipeline::calcRowsBeforeLimit()
             rows_before_limit += sorting->getNumReadRows();
 
             /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
-            continue;
+            /// continue;
         }
 
         /// Skip totals and extremes port for output format.
