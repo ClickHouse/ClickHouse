@@ -307,8 +307,12 @@ struct AggregationMethodKeysFixed
             IColumn * observed_column;
             ColumnUInt8 * null_map;
 
+            bool column_nullable = false;
+            if constexpr (has_nullable_keys)
+                column_nullable = isColumnNullable(*key_columns[i]);
+
             /// If we have a nullable column, get its nested column and its null map.
-            if (has_nullable_keys && key_columns[i]->isColumnNullable())
+            if (column_nullable)
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
@@ -320,8 +324,8 @@ struct AggregationMethodKeysFixed
                 null_map = nullptr;
             }
 
-            bool is_null;
-            if (has_nullable_keys && key_columns[i]->isColumnNullable())
+            bool is_null = false;
+            if (column_nullable)
             {
                 /// The current column is nullable. Check if the value of the
                 /// corresponding key is nullable. Update the null map accordingly.
@@ -331,8 +335,6 @@ struct AggregationMethodKeysFixed
                 null_map->insertValue(val);
                 is_null = val == 1;
             }
-            else
-                is_null = false;
 
             if (has_nullable_keys && is_null)
                 observed_column->insertDefault();

@@ -36,6 +36,11 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
   */
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
+public:
+    /// This callback allows to perform some additional actions after reading a single row.
+    /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
+    using ReadCallback = std::function<void()>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
@@ -43,6 +48,7 @@ private:
         const Context & context,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
+        ReadCallback callback,
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
@@ -71,8 +77,14 @@ private:
     using FormatProcessorsDictionary = std::unordered_map<String, ProcessorCreators>;
 
 public:
-    BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size = 0) const;
+    BlockInputStreamPtr getInput(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;

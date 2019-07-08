@@ -255,6 +255,14 @@ private:
     char stack_memory[N];
 
 public:
+    /// Do not use boost::noncopyable to avoid the warning about direct base
+    /// being inaccessible due to ambiguity, when derived classes are also
+    /// noncopiable (-Winaccessible-base).
+    AllocatorWithStackMemory(const AllocatorWithStackMemory&) = delete;
+    AllocatorWithStackMemory & operator = (const AllocatorWithStackMemory&) = delete;
+    AllocatorWithStackMemory() = default;
+    ~AllocatorWithStackMemory() = default;
+
     void * alloc(size_t size)
     {
         if (size <= N)

@@ -72,7 +72,14 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size) const
+BlockInputStreamPtr FormatFactory::getInput(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const Context & context,
+    UInt64 max_block_size,
+    UInt64 rows_portion_size,
+    ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -81,7 +88,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     const Settings & settings = context.getSettingsRef();
     FormatSettings format_settings = getInputFormatSetting(settings);
 
-    return input_getter(buf, sample, context, max_block_size, rows_portion_size, format_settings);
+    return input_getter(
+        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
 }
 
 

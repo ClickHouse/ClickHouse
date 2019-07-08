@@ -1,3 +1,5 @@
+#include "config_core.h"
+
 namespace DB
 {
 
@@ -45,6 +47,11 @@ void registerFunctionJoinGet(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
+
+#if USE_ICU
+void registerFunctionConvertCharset(FunctionFactory &);
+#endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -90,6 +97,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionFilesystem(factory);
     registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);
+    registerFunctionTransform(factory);
+
+#if USE_ICU
+    registerFunctionConvertCharset(factory);
+#endif
 }
 
 }
