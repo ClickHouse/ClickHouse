@@ -514,6 +514,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 {
                     /// A packet was received requesting to stop execution of the request.
                     executor->cancel();
+                    /// Clear queue in case if somebody is waiting lazy_format to push.
+                    lazy_format->finish();
+                    lazy_format->clearQueue();
+
                     break;
                 }
                 else
