@@ -3,8 +3,9 @@
 /// Macros for convenient usage of Poco logger.
 
 #include <sstream>
+#include <atomic>
 #include <Poco/Logger.h>
-#include <../../../../dbms/src/Core/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
