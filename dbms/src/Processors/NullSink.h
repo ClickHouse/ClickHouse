@@ -15,6 +15,8 @@ public:
         inputs.front().close();
         return Status::Finished;
     }
+
+    InputPort & getPort() { return inputs.front(); }
 };
 
 }

@@ -26,8 +26,16 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
+    void finish() { finished_processing = true; }
+    void clearQueue() { queue.clear(); }
+
 protected:
-    void consume(Chunk chunk) override { queue.emplace(std::move(chunk)); }
+    void consume(Chunk chunk) override
+    {
+        if (!finished_processing)
+            queue.emplace(std::move(chunk));
+    }
+
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
 
