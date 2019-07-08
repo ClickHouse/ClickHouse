@@ -11,6 +11,7 @@ set(SIMDJSON_SRC
     ${SIMDJSON_SRC_DIR}/stage2_build_tape.cpp
     ${SIMDJSON_SRC_DIR}/parsedjson.cpp
     ${SIMDJSON_SRC_DIR}/parsedjsoniterator.cpp
+    ${SIMDJSON_SRC_DIR}/simdjson.cpp
 )
 
 add_library(${SIMDJSON_LIBRARY} ${SIMDJSON_SRC})
