@@ -7,8 +7,8 @@
 
 ### Улучшения
 * Debian init: добавлен таймаут остановки [#5522](https://github.com/yandex/ClickHouse/pull/5522) ([proller](https://github.com/proller))
-* Добавлены setting-и для обхода запрета на создание LowCardinality-колонок от неподходящих типов данных[#5448](https://github.com/yandex/ClickHouse/pull/5448) ([Olga Khvostikova](https://github.com/stavrolia))
-* Функции регрессии функции возвращают веса модели (когда используются не в качестве State-а функции `evalMLMethod`). [#5411](https://github.com/yandex/ClickHouse/pull/5411) ([Quid37](https://github.com/Quid37))
+* Добавлены setting-и для обхода запрета на создание LowCardinality-колонок от неподходящих типов данных [#5448](https://github.com/yandex/ClickHouse/pull/5448) ([Olga Khvostikova](https://github.com/stavrolia))
+* Функции регрессии возвращают веса модели (когда используются не в качестве состояния для функции `evalMLMethod`). [#5411](https://github.com/yandex/ClickHouse/pull/5411) ([Quid37](https://github.com/Quid37))
 * Переименованы и улучшены функции регрессии. [#5492](https://github.com/yandex/ClickHouse/pull/5492) ([Quid37](https://github.com/Quid37))
 * Улучшения в интерфейсе поиска подстрок. [#5586](https://github.com/yandex/ClickHouse/pull/5586) ([Danila Kutenin](https://github.com/danlark1))
 
