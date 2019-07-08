@@ -33,7 +33,7 @@ This section provides support for [CTE](https://en.wikipedia.org/wiki/Hierarchic
 3. Expression's results are not available in subqueries
 Results of WITH clause expressions can be used inside SELECT clause.
 
-Пример 1: Evicting sum(bytes) expression result from SELECT clause column list
+Example 1: Evicting sum(bytes) expression result from SELECT clause column list
 ```
 WITH sum(bytes) as s
 SELECT
@@ -44,7 +44,7 @@ GROUP BY table
 ORDER BY s
 ```
 
-Пример 2: Using constant expression as "variable"
+Example 2: Using constant expression as "variable"
 ```
 WITH '2019-08-01 15:23:00' as ts_upper_bound
 SELECT *
@@ -54,7 +54,7 @@ WHERE
     EventTime <= ts_upper_bound
 ```
 
-Пример 3: Using results of scalar subquery
+Example 3: Using results of scalar subquery
 (this example would return TOP 10 of most huge tables)
 ```
 WITH
