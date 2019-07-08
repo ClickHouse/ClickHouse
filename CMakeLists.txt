@@ -243,6 +243,9 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 endif ()
 
 
+set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+
 include (cmake/find_unwind.cmake)
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
@@ -329,6 +332,7 @@ endif ()
 if (DEFAULT_LIBS)
     # Add default libs to all targets as the last dependency.
     set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
+    set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 endif ()
 
 if (NOT MAKE_STATIC_LIBRARIES)
@@ -518,4 +522,13 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
     add_default_dependencies(boost_program_options_internal)
     add_default_dependencies(boost_system_internal)
     add_default_dependencies(boost_regex_internal)
+    add_default_dependencies(roaring)
+    add_default_dependencies(btrie)
+    add_default_dependencies(cpuid)
+    add_default_dependencies(mysqlclient)
+    add_default_dependencies(zlib)
+    add_default_dependencies(thrift)
+    add_default_dependencies(brotli)
+    add_default_dependencies(libprotobuf)
+    add_default_dependencies(base64)
 endif ()
