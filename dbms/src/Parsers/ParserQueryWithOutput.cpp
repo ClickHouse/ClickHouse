@@ -15,7 +15,6 @@
 #include <Parsers/ASTExplainQuery.h>
 
 
-
 namespace DB
 {
 
