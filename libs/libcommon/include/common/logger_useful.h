@@ -13,7 +13,7 @@
 using Poco::Logger;
 using DB::LogsLevel;
 
-POCO_UNUSED std::atomic<LogsLevel> CLIENT_LOGS_LEVEL = LogsLevel::none;
+POCO_UNUSED static std::atomic<LogsLevel> CLIENT_LOGS_LEVEL = LogsLevel::none;
 
 /// Logs a message to a specified logger with that level.
 
