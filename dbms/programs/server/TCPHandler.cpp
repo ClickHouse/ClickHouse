@@ -28,6 +28,7 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
+#include <../../../libs/libcommon/include/common/logger_useful.h>
 
 #include "TCPHandler.h"
 
@@ -170,8 +171,9 @@ void TCPHandler::runImpl()
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
+            CLIENT_LOGS_LEVEL = query_context->getSettingsRef().send_logs_level.value;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && query_context->getSettingsRef().send_logs_level.value != LogsLevel::none)
+                && CLIENT_LOGS_LEVEL != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef().send_logs_level.toString());
