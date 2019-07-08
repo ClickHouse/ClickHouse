@@ -17,12 +17,14 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/parseRemoteDescription.h>
 #include <Common/typeid_cast.h>
 
 #include <fcntl.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
+#include <iostream>
 
 namespace DB
 {
@@ -86,7 +88,12 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             path = poco_path.absolute().toString();
-            checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+            size_t max_addresses = context_global.getSettingsRef().table_function_remote_max_addresses;
+            paths_after_globs_parsed = parseRemoteDescription(path, 0, path.size(), ',', max_addresses);
+            for (const auto & cur_path : paths_after_globs_parsed)
+            {
+                checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
+            }
             is_db_table = false;
         }
         else /// Is DB's file
@@ -116,7 +123,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, size_t num_of_path)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -142,11 +149,13 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-
-            read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+            if (storage.paths_after_globs_parsed.size() > 1)
+                read_buf = std::make_unique<ReadBufferFromFile>(storage.paths_after_globs_parsed[num_of_path]);
+            else
+                read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);     // need here?
     }
 
     String getName() const override
@@ -190,12 +199,20 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
+    BlockInputStreams result;
+    result.reserve(paths_after_globs_parsed.size());
     const ColumnsDescription & columns = getColumns();
     auto column_defaults = columns.getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+
+    for (size_t i = 0; i < paths_after_globs_parsed.size(); ++i)
+    {
+        BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, i);
+        if (column_defaults.empty())
+            result.push_back(block_input);
+        else
+            result.push_back(std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context));
+    }
+    return result;
 }
 
 

@@ -74,6 +74,7 @@ private:
     Context & context_global;
 
     std::string path;
+    std::vector<std::string> paths_after_globs_parsed;  /// empty vector means we have no globs
     int table_fd = -1;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file

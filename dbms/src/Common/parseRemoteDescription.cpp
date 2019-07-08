@@ -97,29 +97,29 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
                 if (cnt == 0) break;
             }
             if (cnt != 0)
-                throw Exception("Table function 'remote': incorrect brace sequence in first argument",
+                throw Exception("Incorrect brace sequence. ",
                                 ErrorCodes::BAD_ARGUMENTS);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
                 size_t left, right;
                 if (description[last_dot - 1] != '.')
-                    throw Exception("Table function 'remote': incorrect argument in braces (only one dot): " + description.substr(i, m - i + 1),
+                    throw Exception("Incorrect argument in braces (only one dot): " + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, i + 1, last_dot - 1, left))
-                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect left number): "
+                    throw Exception("Incorrect argument in braces (Incorrect left number): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (!parseNumber(description, last_dot + 1, m, right))
-                    throw Exception("Table function 'remote': incorrect argument in braces (Incorrect right number): "
+                    throw Exception("Incorrect argument in braces (Incorrect right number): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (left > right)
-                    throw Exception("Table function 'remote': incorrect argument in braces (left number is greater then right): "
+                    throw Exception("Incorrect argument in braces (left number is greater then right): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
                 if (right - left + 1 >  max_addresses)
-                    throw Exception("Table function 'remote': first argument generates too many result addresses",
+                    throw Exception("The string with globs generates too many result strings",
                         ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;
                 size_t len = last_dot - 1 - (i + 1);
@@ -163,7 +163,7 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
 
     res.insert(res.end(), cur.begin(), cur.end());
     if (res.size() > max_addresses)
-        throw Exception("Table function 'remote': first argument generates too many result addresses",
+        throw Exception("The string with globs generates too many result strings",
             ErrorCodes::BAD_ARGUMENTS);
 
     return res;
