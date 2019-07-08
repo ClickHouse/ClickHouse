@@ -289,7 +289,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
     if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
         # TODO: Allow to use non-static library as well.
-        set (EXCEPTION_HANDLING_LIBRARY "lib/libunwind${${CMAKE_POSTFIX_VARIABLE}}.a")
+        set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
     else ()
         set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
     endif ()
@@ -298,7 +298,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
     if (USE_LIBCXX)
         if (USE_INTERNAL_LIBCXX_LIBRARY)
-            set (LIBCXX_LIBS "lib/libc++${${CMAKE_POSTFIX_VARIABLE}}.a lib/libc++abi${${CMAKE_POSTFIX_VARIABLE}}.a")
+            set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
             set (LIBCXX_LIBS "-lc++ -lc++abi")
         endif ()
@@ -481,7 +481,7 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
             endif ()
 
             if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-                add_dependencies(${target_name} ${UNWIND_LIBRARY})
+                add_dependencies(${target_name} unwind_static)
             endif ()
         endif ()
     endfunction ()
