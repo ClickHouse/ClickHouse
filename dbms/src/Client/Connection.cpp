@@ -73,7 +73,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(current_resolved_address, timeouts.connection_timeout);
+        socket->connect(*current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -533,12 +533,9 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
-Poco::Net::SocketAddress Connection::getResolvedAddress() const
+std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 {
-    if (connected)
-        return current_resolved_address;
-
-    return DNSResolver::instance().resolveAddress(host, port);
+    return current_resolved_address;
 }
 
 
@@ -720,11 +717,14 @@ void Connection::initBlockLogsInput()
 void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
-    description = host + ":" + toString(resolved_address.port());
-    auto ip_address = resolved_address.host().toString();
+    description = host + ":" + toString(port);
 
-    if (host != ip_address)
-        description += ", " + ip_address;
+    if (resolved_address)
+    {
+        auto ip_address = resolved_address->host().toString();
+        if (host != ip_address)
+            description += ", " + ip_address;
+    }
 }
 
 
