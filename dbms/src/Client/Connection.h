@@ -63,7 +63,7 @@ public:
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_), current_resolved_address(host, port),
+        user(user_), password(password_),
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
@@ -168,9 +168,6 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    /// Returns initially resolved address
-    Poco::Net::SocketAddress getResolvedAddress() const;
-
 private:
     String host;
     UInt16 port;
@@ -180,11 +177,14 @@ private:
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
-    Poco::Net::SocketAddress current_resolved_address;
+    std::optional<Poco::Net::SocketAddress> current_resolved_address;
 
     /// For messages in log and in exceptions.
     String description;
     void setDescription();
+
+    /// Returns resolved address if it was resolved.
+    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
     String client_name;
 

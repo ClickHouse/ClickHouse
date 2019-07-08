@@ -64,7 +64,12 @@ std::string determineDefaultTimeZone()
         ///  /usr/share/zoneinfo//UTC -> UCT
         /// But the preferred time zone name is pointed by the first link (UTC), and the second link is just an internal detail.
         if (fs::is_symlink(tz_file_path))
+        {
             tz_file_path = fs::read_symlink(tz_file_path);
+            /// If it's relative - make it absolute.
+            if (tz_file_path.is_relative())
+                tz_file_path = (fs::path("/etc/") / tz_file_path).lexically_normal();
+        }
     }
 
     try
