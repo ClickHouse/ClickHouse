@@ -23,6 +23,10 @@ dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb
 
+mkdir -p /var/lib/clickhouse
+mkdir -p /var/log/clickhouse-server
+chmod 777 -R /var/log/clickhouse-server/
+
 ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \
@@ -42,6 +46,7 @@ start_clickhouse
 sleep 5
 
 /s3downloader --dataset-names $DATASETS
+
 chmod 777 -R /var/lib/clickhouse
 
 LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "SHOW DATABASES"
