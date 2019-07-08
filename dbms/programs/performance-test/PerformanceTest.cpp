@@ -313,16 +313,16 @@ void PerformanceTest::runQueries(
     for (auto & statistics : statistics_by_run)
     {
 retry:
-        RemoteBlockInputStream log(connection,
+        RemoteBlockInputStream log_reader(connection,
             "select memory_usage from system.query_log where type = 2 and query_id = '"
                                    + statistics.query_id + "'",
             {} /* header */, context);
 
-        log.readPrefix();
-        Block block = log.read();
+        log_reader.readPrefix();
+        Block block = log_reader.read();
         if (block.columns() == 0)
         {
-            log.readSuffix();
+            log_reader.readSuffix();
 
             if (n_waits >= max_waits)
                 break;
@@ -338,7 +338,7 @@ retry:
         StringRef ref = column->getDataAt(0);
         assert(ref.size == sizeof(UInt64));
         statistics.memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
-        log.readSuffix();
+        log_reader.readSuffix();
 
         fprintf(stderr, "Memory usage for query '%s' is %ld\n",
                 statistics.query_id.c_str(), statistics.memory_usage);
