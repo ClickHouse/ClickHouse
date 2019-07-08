@@ -303,7 +303,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
     const auto column_name = expr->getColumnName();
 
     if (expr->as<ASTLiteral>()
-        || (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst()))
+        || (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column)))
         return true;
 
     return false;

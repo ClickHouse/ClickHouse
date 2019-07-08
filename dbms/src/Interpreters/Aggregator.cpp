@@ -1233,7 +1233,7 @@ Block Aggregator::prepareBlockAndFill(
     /// Change the size of the columns-constants in the block.
     size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
-        if (res.getByPosition(i).column->isColumnConst())
+        if (isColumnConst(*res.getByPosition(i).column))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
     return res;

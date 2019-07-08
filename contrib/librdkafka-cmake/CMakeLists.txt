@@ -12,6 +12,7 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_background.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_broker.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_buf.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_cert.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_event.c
@@ -34,6 +35,7 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_timer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_topic.c

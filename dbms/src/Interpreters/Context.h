@@ -146,6 +146,9 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
+
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
@@ -374,6 +377,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
@@ -467,6 +472,11 @@ public:
     using SessionKey = std::pair<String, String>;
 
     SampleBlockCache & getSampleBlockCache() const;
+
+    /// Query parameters for prepared statements.
+    bool hasQueryParameters() const;
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
