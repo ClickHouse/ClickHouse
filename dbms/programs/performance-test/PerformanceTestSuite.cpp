@@ -89,6 +89,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
@@ -127,7 +128,6 @@ private:
     std::unordered_map<std::string, std::vector<size_t>> query_indexes;
 
     Context global_context = Context::createGlobal();
-    global_context.makeGlobalContext();
     std::shared_ptr<ReportBuilder> report_builder;
 
     std::string server_version;
