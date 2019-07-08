@@ -151,7 +151,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     time_t current_time = time(nullptr);
 
-    context.setQueryContext(context);
+    context.makeQueryContext();
     CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
