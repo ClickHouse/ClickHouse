@@ -189,6 +189,7 @@ nav:
     - 'Настройки': 'operations/settings/settings.md'
     - 'Ограничения на изменение настроек': 'operations/settings/constraints_on_settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
+    - 'Настройки пользователей': 'operations/settings/settings_users.md'
   - 'Утилиты':
     - 'Введение': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'

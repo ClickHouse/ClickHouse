@@ -165,7 +165,7 @@ BlockInputStreams StorageMerge::read(
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -201,8 +201,10 @@ BlockInputStreams StorageMerge::read(
         return createSourceStreams(
             query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
-    size_t remaining_streams = num_streams;
     size_t tables_count = selected_tables.size();
+    Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
+    num_streams *= num_streams_multiplier;
+    size_t remaining_streams = num_streams;
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {

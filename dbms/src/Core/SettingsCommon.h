@@ -275,7 +275,7 @@ namespace details
     {
         static void serializeName(const StringRef & name, WriteBuffer & buf);
         static String deserializeName(ReadBuffer & buf);
-        static void throwNameNotFound(const StringRef & name);
+        [[noreturn]] static void throwNameNotFound(const StringRef & name);
     };
 }
 

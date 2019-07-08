@@ -4,13 +4,16 @@
 namespace DB
 {
 
-void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map)
+ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
+    ColumnPtr null_map_holder;
+
     if (key_columns.size() == 1)
     {
         auto & column = key_columns[0];
         if (auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
         {
+            null_map_holder = column_nullable->getNullMapColumnPtr();
             null_map = &column_nullable->getNullMapData();
             column = &column_nullable->getNestedColumn();
         }
@@ -43,6 +46,8 @@ void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & nul
 
         null_map = null_map_holder ? &static_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
     }
+
+    return null_map_holder;
 }
 
 }
