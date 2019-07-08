@@ -2,7 +2,7 @@
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTPartition.h>
-#include <iostream>
+
 
 namespace DB
 {
