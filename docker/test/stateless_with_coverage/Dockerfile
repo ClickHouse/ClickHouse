@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-stateless-test .
+# docker build -t yandex/clickhouse-stateless-with-coverage-test .
 FROM yandex/clickhouse-deb-builder
 
 RUN apt-get update -y \
@@ -23,15 +23,17 @@ RUN apt-get update -y \
             moreutils \
             brotli \
             gdb \
-            lsof \
-            llvm-8
+            lsof
 
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ENV LLVM_PROFILE_FILE='code_%h_%p_%m.profraw'
 
 
-CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
+CMD chmod 777 /; \
+    echo "LLVM_PROFILE_FILE='code_%h_%p_%m.profraw'" >> /etc/environment; \
+    dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
@@ -45,11 +47,9 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer; \
-    echo "TSAN_OPTIONS='halt_on_error=1 history_size=7'" >> /etc/environment; \
-    echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
-    echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-8/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
     service zookeeper start; sleep 5; \
-    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+    LLVM_PROFILE_FILE='code_%h_%p_%m.profraw' sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml 1>/dev/null 2>/dev/null & \
+    sleep 10; \
+    LLVM_PROFILE_FILE='client.profraw' clickhouse-test --shard --zookeeper $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt; \
+    while kill -0 `pgrep -u clickhouse`; do kill `pgrep -u clickhouse` 2>/dev/null; echo "Process" `pgrep -u clickhouse` "still alive"; sleep 10; done; \
+    cp /*.profraw /profraw ||:

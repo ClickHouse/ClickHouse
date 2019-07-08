@@ -31,5 +31,5 @@ ENV IGNORE='.*contrib.*'
 
 CMD dpkg -i /package_folder/clickhouse-common-static_*.deb; \
     llvm-profdata-9 merge -sparse ${COVERAGE_DIR}/* -o clickhouse.profdata && \
-    llvm-cov-9 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -arch=x86_64 -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov && \
-    genhtml output.lcov  --ignore-errors source --output-directory ${OUTPUT_DIR}
+    llvm-cov-9 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov && \
+    genhtml output.lcov --ignore-errors source --output-directory ${OUTPUT_DIR}
