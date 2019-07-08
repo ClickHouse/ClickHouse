@@ -305,7 +305,6 @@ Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime
     Context res;
     res.shared = std::make_shared<ContextShared>(std::move(runtime_components_factory));
     res.quota = std::make_shared<QuotaForIntervals>();
-    res.global_context = &res;
     return res;
 }
 

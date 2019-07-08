@@ -347,6 +347,7 @@ public:
 
     void makeQueryContext() { query_context = this; }
     void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }

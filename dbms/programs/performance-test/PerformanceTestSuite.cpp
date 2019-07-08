@@ -127,6 +127,7 @@ private:
     std::unordered_map<std::string, std::vector<size_t>> query_indexes;
 
     Context global_context = Context::createGlobal();
+    global_context.makeGlobalContext();
     std::shared_ptr<ReportBuilder> report_builder;
 
     std::string server_version;
