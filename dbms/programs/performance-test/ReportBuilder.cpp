@@ -157,8 +157,7 @@ std::string ReportBuilder::buildFullReport(
                 runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
             }
 
-            runJSON.set("max_memory_usage", statistics.max_memory_usage);
-            runJSON.set("min_memory_usage", statistics.min_memory_usage);
+            runJSON.set("memory_usage", statistics.memory_usage);
 
             run_infos.push_back(runJSON);
         }

@@ -50,8 +50,7 @@ struct TestStats
     size_t number_of_rows_speed_info_batches = 0;
     size_t number_of_bytes_speed_info_batches = 0;
 
-    UInt64 max_memory_usage = 0;
-    UInt64 min_memory_usage = std::numeric_limits<uint64_t>::max();
+    UInt64 memory_usage = 0;
 
     bool ready = false; // check if a query wasn't interrupted by SIGINT
     std::string exception;

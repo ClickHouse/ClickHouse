@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -296,6 +297,54 @@ void PerformanceTest::runQueries(
             break;
         }
     }
+
+    if (got_SIGINT)
+    {
+        return;
+    }
+
+    // Pull memory usage data from query log. The log entries take some time
+    // to become available, so we do this after running all the queries, and
+    // might still have to wait. We will wait in increment of 0.5s, for no more
+    // than than 10s in total.
+    const int one_wait_us = 500 * 1000;
+    const int max_waits = (10 * 1000 * 1000) / one_wait_us;
+    int n_waits = 0;
+    for (auto & statistics : statistics_by_run)
+    {
+retry:
+        RemoteBlockInputStream log(connection,
+            "select memory_usage from system.query_log where type = 2 and query_id = '"
+                                   + statistics.query_id + "'",
+            {} /* header */, context);
+
+        log.readPrefix();
+        Block block = log.read();
+        if (block.columns() == 0)
+        {
+            log.readSuffix();
+
+            if (n_waits >= max_waits)
+                break;
+            n_waits++;
+
+            ::usleep(one_wait_us);
+            goto retry;
+        }
+        assert(block.columns() == 1);
+        assert(block.getDataTypes()[0]->getName() == "UInt64");
+        ColumnPtr column = block.getByPosition(0).column;
+        assert(column->size() == 1);
+        StringRef ref = column->getDataAt(0);
+        assert(ref.size == sizeof(UInt64));
+        statistics.memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
+        log.readSuffix();
+
+        fprintf(stderr, "Memory usage for query '%s' is %ld\n",
+                statistics.query_id.c_str(), statistics.memory_usage);
+    }
+    fprintf(stderr, "Waited for query log for %.2fs\n",
+            (n_waits * one_wait_us) / 1e6f);
 }
 
 
