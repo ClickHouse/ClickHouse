@@ -3,7 +3,8 @@
 `SELECT` осуществляет выборку данных.
 
 ```sql
-[WITH expr_list|(subquery)] SELECT [DISTINCT] expr_list
+    [WITH expr_list|(subquery)]
+    SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
     [ARRAY JOIN ...]
@@ -27,7 +28,12 @@
 Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. Подробнее смотрите в разделе "Настройки". Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию. `Merge join` в системе нет.
 
 ### Секция WITH
-В данной секции указываются выражения и алиасы для них. В дальнейшем, объявленные алиасы можно использовать внутри секции SELECT.
+Данная секция представляет собой [CTE](https://ru.wikipedia.org/wiki/Иерархические_и_рекурсивные_запросы_в_SQL), с рядом ограничений:
+1. Рекурсивные запросы не поддерживаются
+2. Если в качестве выражения используется подзапрос, то результат должен содержать ровно одну строку
+3. Результаты выражений нельзя переиспользовать во вложенных запросах
+В дальнейшем, результаты выражений можно использовать в секции SELECT.
+
 Пример 1: Выкидывание выражения sum(bytes) из списка колонок в SELECT
 ```
 WITH sum(bytes) as s
@@ -65,6 +71,23 @@ FROM system.parts
 GROUP BY table
 ORDER BY table_disk_usage DESC
 LIMIT 10
+```
+
+Для того чтобы использовать выражение в подзапросе, надо его продублировать:
+```
+WITH ['hello'] AS hello
+SELECT
+    hello,
+    *
+FROM
+(
+    WITH ['hello'] AS hello
+    SELECT hello
+)
+
+┌─hello─────┬─hello─────┐
+│ ['hello'] │ ['hello'] │
+└───────────┴───────────┘
 ```
 
 ### Секция FROM

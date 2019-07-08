@@ -26,6 +26,70 @@ The clauses below are described in almost the same order as in the query executi
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM.
 Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified: `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. `The system does not have "merge join"`.
 
+### WITH Clause
+This section provides support for [CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL), support with some limitations:
+1. Recursive queries are not supported
+2. When subquery is used inside WITH section, it's result should be scalar with exactly one row
+3. Expression's results are not available in subqueries
+Results of WITH clause expressions can be used inside SELECT clause.
+
+Пример 1: Evicting sum(bytes) expression result from SELECT clause column list
+```
+WITH sum(bytes) as s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s
+```
+
+Пример 2: Using constant expression as "variable"
+```
+WITH '2019-08-01 15:23:00' as ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound
+```
+
+Пример 3: Using results of scalar subquery
+(this example would return TOP 10 of most huge tables)
+```
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_consumed) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10
+```
+
+In order to reuse expression results in subquery, you have to duplicate it:
+```
+WITH ['hello'] AS hello
+SELECT
+    hello,
+    *
+FROM
+(
+    WITH ['hello'] AS hello
+    SELECT hello
+)
+
+┌─hello─────┬─hello─────┐
+│ ['hello'] │ ['hello'] │
+└───────────┴───────────┘
+```
+
+
 ### FROM Clause
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
