@@ -70,6 +70,7 @@ public:
         ptr_begin = rhs.ptr_begin;
         ptr_end = rhs.ptr_end;
         level = rhs.level;
+        return *this;
     }
 
     const char * data() const { return ptr_begin; }
