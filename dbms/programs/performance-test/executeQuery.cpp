@@ -78,45 +78,6 @@ void executeQuery(
         statistics.updateQueryInfo();
 
     statistics.setTotalTime();
-
-    /// Get max memory usage from the server query log.
-    /// We might have to wait for some time before the query log is updated.
-    int n_waits = 0;
-    const int one_wait_us = 500 * 1000;
-    const int max_waits = (10 * 1000 * 1000) / one_wait_us;
-    for (; n_waits < max_waits; n_waits++)
-    {
-        RemoteBlockInputStream log(connection,
-                                   "select memory_usage from system.query_log where type = 2 and query_id = '"
-                                   + statistics.query_id + "'",
-        {}, context, &settings);
-
-        log.readPrefix();
-        Block block = log.read();
-        if (block.columns() == 0)
-        {
-            log.readSuffix();
-            ::usleep(one_wait_us);
-            continue;
-        }
-        assert(block.columns() == 1);
-        assert(block.getDataTypes()[0]->getName() == "UInt64");
-        ColumnPtr column = block.getByPosition(0).column;
-        assert(column->size() == 1);
-        StringRef ref = column->getDataAt(0);
-        assert(ref.size == sizeof(UInt64));
-        const UInt64 memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
-        statistics.max_memory_usage = std::max(statistics.max_memory_usage,
-                                               memory_usage);
-        statistics.min_memory_usage = std::min(statistics.min_memory_usage,
-                                               memory_usage);
-        log.readSuffix();
-
-        fprintf(stderr, "Memory usage is %ld\n", memory_usage);
-        break;
-    }
-    fprintf(stderr, "Waited for query log for %.2fs\n",
-            (n_waits * one_wait_us) / 1e6f);
 }
 
 }
