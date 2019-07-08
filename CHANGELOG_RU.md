@@ -5,7 +5,8 @@
 * Исправлена ошибка в проверке частей в LowCardinality колонках. [#5832](https://github.com/yandex/ClickHouse/pull/5832) ([alesapin](https://github.com/alesapin))
 * Исправлена ошибка определения формата таймзоны по умолчанию (UCT вместо UTC). [#5828](https://github.com/yandex/ClickHouse/pull/5828) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Исправлена ошибка в распределенных запросах вида DROP/ALTER/TRUNCATE/OPTIMIZE ON CLUSTER. [#5757](https://github.com/yandex/ClickHouse/pull/5757) ([alesapin](https://github.com/alesapin))
-* Исправлена ошибка сегментации в колонках с величинами размером меньше 32 бит. Ошибка могла приводить к повреждениям памяти. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
+* Исправлена ошибка сегментации в кодеке сжатия Delta в колонках с величинами размером меньше 32 бит. Ошибка могла приводить к повреждениям памяти. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
+* Исправлена ошибка, которая при распределенных запросах могла привести к тому, что некоторые запросы не появлялись в query_log после SYSTEM FLUSH LOGS запроса. [#5685](https://github.com/yandex/ClickHouse/pull/5685) ([Anton Popov](https://github.com/CurtizJ))
 * Исправлена ошибка сегментации при слиянии кусков с истекшим TTL в случае, когда в блоке присутствуют столбцы, не входящие в структуру таблицы. [#5819](https://github.com/yandex/ClickHouse/pull/5819) ([Anton Popov](https://github.com/CurtizJ))
 * Добавлена отсутствовавшая поддержка константных аргументов для функции evalMLModel. [#5820](https://github.com/yandex/ClickHouse/pull/5820) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
