@@ -590,7 +590,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     {
         pool.schedule([this, thread_group, thread_num = i, num_threads]
         {
-            ThreadStatus thread_status;
+            /// ThreadStatus thread_status;
 
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
