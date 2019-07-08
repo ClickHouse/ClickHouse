@@ -27,7 +27,7 @@ DistinctTransform::DistinctTransform(
 
         auto & col = header.getByPosition(pos).column;
 
-        if (!(col && col->isColumnConst()))
+        if (!(col && isColumnConst(*col)))
             key_columns_pos.emplace_back(pos);
     }
 }

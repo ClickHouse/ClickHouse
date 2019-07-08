@@ -115,7 +115,7 @@ void ConvertingTransform::transform(Chunk & chunk)
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
-        if (!res_elem.column->isColumnConst())
+        if (!isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();
 
         res_columns.emplace_back(std::move(converted));

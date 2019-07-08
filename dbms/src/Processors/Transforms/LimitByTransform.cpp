@@ -17,7 +17,7 @@ LimitByTransform::LimitByTransform(const Block & header, size_t group_length_, s
         auto & column = header.getByPosition(position).column;
 
         /// Ignore all constant columns.
-        if (!(column && column->isColumnConst()))
+        if (!(column && isColumnConst(*column)))
             key_positions.emplace_back(position);
     }
 }
@@ -58,7 +58,7 @@ void LimitByTransform::transform(Chunk & chunk)
     if (inserted_count < num_rows)
     {
         for (auto & column : columns)
-            if (column->isColumnConst())
+            if (isColumnConst(*column))
                 column = column->cut(0, inserted_count);
             else
                 column = column->filter(filter, inserted_count);
