@@ -46,6 +46,6 @@ ${LIBCXX_SOURCE_DIR}/src/random.cpp
 add_library(cxx_static ${SRCS})
 
 target_include_directories(cxx_static PUBLIC ${LIBCXX_SOURCE_DIR}/include)
-target_compile_definitions(cxx_static PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
+target_compile_definitions(cxx_static PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 target_compile_options(cxx_static PRIVATE -nostdinc++)
 
