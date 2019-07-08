@@ -198,6 +198,9 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
+    if (chunk.getNumRows() == 0 && params->params.empty_result_for_aggregation_by_empty_set)
+        return;
+
     if (!is_consume_started)
     {
         LOG_TRACE(log, "Aggregating");
