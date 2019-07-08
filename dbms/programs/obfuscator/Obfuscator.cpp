@@ -1024,7 +1024,7 @@ try
     }
 
     Context context = Context::createGlobal();
-    context->makeGlobalContext();
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
