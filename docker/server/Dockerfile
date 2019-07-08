@@ -1,8 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.11.0
-ARG gosu_ver=1.10
+ARG gosu_ver=1.11
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -15,9 +14,9 @@ RUN apt-get update \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
-            clickhouse-common-static=$version \
-            clickhouse-client=$version \
-            clickhouse-server=$version \
+            clickhouse-common-static \
+            clickhouse-client \
+            clickhouse-server \
             libgcc-7-dev \
             locales \
             tzdata \
