@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -x
-
 kill_clickhouse () {
     while kill -0 `pgrep -u clickhouse`;
     do
@@ -13,6 +11,23 @@ kill_clickhouse () {
 
 start_clickhouse () {
     LLVM_PROFILE_FILE='server_%h_%p_%m.profraw' sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
+}
+
+wait_llvm_profdata () {
+    while kill -0 `pgrep llvm-profdata-9`;
+    do
+        echo "Waiting for profdata " `pgrep llvm-profdata-9` "still alive"
+        sleep 3
+    done
+}
+
+merge_client_files_in_background () {
+    client_files=`ls /client_*profraw 2>/dev/null`
+    if [ ! -z "$client_files" ]
+    then
+        llvm-profdata-9 merge -sparse $client_files -o merged_client_`date +%s`.profraw
+        rm $client_files
+    fi
 }
 
 chmod 777 /
@@ -37,6 +52,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
 
+
 service zookeeper start
 
 sleep 5
@@ -49,22 +65,34 @@ sleep 5
 
 chmod 777 -R /var/lib/clickhouse
 
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "SHOW DATABASES"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "CREATE DATABASE datasets"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "CREATE DATABASE test"
+while /bin/true; do
+    merge_client_files_in_background
+    sleep 2
+done &
+
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW DATABASES"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "CREATE DATABASE datasets"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "CREATE DATABASE test"
 
 kill_clickhouse
 start_clickhouse
 
 sleep 10
 
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client.profraw' clickhouse-test --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
+
+wait_llvm_profdata
+
+sleep 3
+
+wait_llvm_profdata # 100% merged all parts
+
 
 cp /*.profraw /profraw ||:
