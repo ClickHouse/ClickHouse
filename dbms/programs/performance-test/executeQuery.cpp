@@ -59,7 +59,6 @@ void executeQuery(
     statistics.last_query_bytes_read = 0;
     statistics.query_id = query_id_prefix + std::to_string(next_query_id++);
 
-    fprintf(stderr, "Query id is '%s'\n", statistics.query_id.c_str());
     RemoteBlockInputStream stream(connection, query, {}, context, &settings);
     stream.setQueryId(statistics.query_id);
 
