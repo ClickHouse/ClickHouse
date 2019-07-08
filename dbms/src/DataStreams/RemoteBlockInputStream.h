@@ -49,15 +49,6 @@ public:
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the
     /// server.
-    ///
-    /// FIXME This should have been a parameter of the constructor, but I can't bring
-    /// myself to add even more parameters. These constructors actually implement
-    /// (in a quite bizarre way) an overloaded function that prepares the multiplexed
-    /// connection wrapper. It should have been a plain function that is run by
-    /// the caller, but apparently that would have been obscenely straighforward,
-    /// too easy to understand and not insane at all, which is a blatant violation
-    /// of our coding conventions.
-    /// I'm not going to rewrite it now, so that I can get at least something done.
     void setQueryId(std::string _query_id) { assert(!sent_query); query_id = _query_id; }
 
     /// Specify how we allocate connections on a shard.
