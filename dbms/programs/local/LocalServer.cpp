@@ -131,6 +131,7 @@ try
 
 
     context = std::make_unique<Context>(Context::createGlobal());
+    context->makeGlobalContext();
     context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 

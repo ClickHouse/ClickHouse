@@ -187,6 +187,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases...
       */
     global_context = std::make_unique<Context>(Context::createGlobal());
+    global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
     bool has_zookeeper = config().has("zookeeper");

@@ -218,6 +218,7 @@ private:
 
         configReadClient(config(), home_path);
 
+        global_context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
