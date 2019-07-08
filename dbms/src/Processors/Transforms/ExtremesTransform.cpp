@@ -65,7 +65,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
         {
             const ColumnPtr & src = columns[i];
 
-            if (src->isColumnConst())
+            if (isColumnConst(*src))
             {
                 /// Equal min and max.
                 extremes_columns[i] = src->cloneResized(2);
@@ -88,7 +88,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
     {
         for (size_t i = 0; i < num_columns; ++i)
         {
-            if (extremes_columns[i]->isColumnConst())
+            if (isColumnConst(*extremes_columns[i]))
                 continue;
 
             Field min_value = (*extremes_columns[i])[0];

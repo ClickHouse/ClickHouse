@@ -261,7 +261,7 @@ MergeSortingTransform::MergeSortingTransform(
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         const auto & column = sample.getByPosition(pos);
-        if (!(column.column && column.column->isColumnConst()))
+        if (!(column.column && isColumnConst(*column.column)))
         {
             map[pos] = header_without_constants.columns();
             header_without_constants.insert(column);

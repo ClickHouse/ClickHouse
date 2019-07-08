@@ -128,7 +128,7 @@ void FilterTransform::transform(Chunk & chunk)
     size_t first_non_constant_column = num_columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!columns[i]->isColumnConst())
+        if (!isColumnConst(*columns[i]))
         {
             first_non_constant_column = i;
             break;
@@ -185,7 +185,7 @@ void FilterTransform::transform(Chunk & chunk)
         if (i == first_non_constant_column)
             continue;
 
-        if (current_column->isColumnConst())
+        if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
             current_column = current_column->filter(*filter_and_holder.data, num_filtered_rows);
