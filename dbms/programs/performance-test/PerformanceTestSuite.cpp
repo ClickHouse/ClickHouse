@@ -89,6 +89,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);

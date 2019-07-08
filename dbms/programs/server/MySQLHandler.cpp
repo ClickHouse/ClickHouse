@@ -48,7 +48,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 void MySQLHandler::run()
 {
     connection_context = server.context();
-    connection_context.setSessionContext(connection_context);
+    connection_context.makeSessionContext();
     connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
