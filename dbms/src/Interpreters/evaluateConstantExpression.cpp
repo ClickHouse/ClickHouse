@@ -50,7 +50,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
-    if (!result_column.isColumnConst())
+    if (!isColumnConst(result_column))
         throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_pair(result_column[0], result.type);

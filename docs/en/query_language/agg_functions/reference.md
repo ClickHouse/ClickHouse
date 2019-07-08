@@ -258,7 +258,7 @@ Value of the `UInt64` type.
 Test data:
 
 ```
-userid
+UserID
 1
 1
 2
@@ -268,7 +268,7 @@ userid
 Query:
 
 ```
-SELECT groupBitmap(userid) as num FROM t
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:

@@ -49,6 +49,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -1455,6 +1456,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+void Context::resetZooKeeper() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper.reset();
 }
 
 bool Context::hasZooKeeper() const

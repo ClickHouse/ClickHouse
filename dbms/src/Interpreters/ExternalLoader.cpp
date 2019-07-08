@@ -407,8 +407,8 @@ public:
     bool hasCurrentlyLoadedObjects() const
     {
         std::lock_guard lock{mutex};
-        for (auto & [name, info] : infos)
-            if (info.loaded())
+        for (auto & name_info : infos)
+            if (name_info.second.loaded())
                 return true;
         return false;
     }
