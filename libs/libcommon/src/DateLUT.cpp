@@ -68,7 +68,7 @@ std::string determineDefaultTimeZone()
             tz_file_path = fs::read_symlink(tz_file_path);
             /// If it's relative - make it absolute.
             if (tz_file_path.is_relative())
-                tz_file_path = (fs::path("/etc/localtime/") / tz_file_path).lexically_normal();
+                tz_file_path = (fs::path("/etc/") / tz_file_path).lexically_normal();
         }
     }
 
