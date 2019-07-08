@@ -54,6 +54,10 @@ void ExtremesTransform::work()
 
 void ExtremesTransform::transform(DB::Chunk & chunk)
 {
+
+    if (chunk.getNumRows() == 0)
+        return;
+
     size_t num_columns = chunk.getNumColumns();
     auto & columns = chunk.getColumns();
 
