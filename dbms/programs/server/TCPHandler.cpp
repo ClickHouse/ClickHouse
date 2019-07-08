@@ -30,7 +30,6 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Processors/Formats/LazyOutputFormat.h>
-#include <Interpreters/ThreadGroupThreadPoolCallbacks.h>
 
 #include "TCPHandler.h"
 
@@ -478,12 +477,22 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
     {
         auto thread_group = CurrentThread::getGroup();
-        ThreadPool pool(1, std::make_unique<ThreadGroupThreadPoolCallbacks>(thread_group));
+        ThreadPool pool(1);
         auto executor = pipeline.execute();
         std::atomic_bool exception = false;
 
         pool.schedule([&]()
         {
+            /// ThreadStatus thread_status;
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+            );
+
             CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
             setThreadName("QueryPipelineEx");
 

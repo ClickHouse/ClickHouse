@@ -28,7 +28,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/ThreadGroupThreadPoolCallbacks.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>

@@ -1,10 +1,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
-#include <Common/CurrentThread.h>
 
 #include <iostream>
 #include <type_traits>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -17,14 +15,14 @@ namespace DB
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, ThreadPoolCallbacksPtr callbacks_)
-    : ThreadPoolImpl(max_threads, max_threads, max_threads, std::move(callbacks_))
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
+    : ThreadPoolImpl(max_threads, max_threads, max_threads)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, ThreadPoolCallbacksPtr callbacks_)
-    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size), callbacks(std::move(callbacks_))
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
+    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size)
 {
 }
 
@@ -142,14 +140,6 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
-    if (callbacks)
-        callbacks->onThreadStart();
-
-    SCOPE_EXIT(
-        if (callbacks)
-            callbacks->onThreadFinish();
-    );
-
     while (true)
     {
         Job job;
