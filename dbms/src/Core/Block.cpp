@@ -474,7 +474,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
-        if (actual.column->isColumnConst() && expected.column->isColumnConst())
+        if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
         {
             Field actual_value = static_cast<const ColumnConst &>(*actual.column).getField();
             Field expected_value = static_cast<const ColumnConst &>(*expected.column).getField();

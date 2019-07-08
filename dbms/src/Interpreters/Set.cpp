@@ -127,9 +127,8 @@ void Set::setHeader(const Block & block)
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (fill_set_elements)
     {
@@ -168,9 +167,8 @@ bool Set::insertFromBlock(const Block & block)
     size_t rows = block.rows();
 
     /// We will insert to the Set only keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -349,9 +347,8 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     }
 
     /// We will check existence in Set only for keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 

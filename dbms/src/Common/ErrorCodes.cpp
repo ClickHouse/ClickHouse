@@ -433,7 +433,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_QUERY_PARAMETER = 456;
     extern const int BAD_QUERY_PARAMETER = 457;
     extern const int CANNOT_UNLINK = 458;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 459;
+    extern const int CANNOT_SET_THREAD_PRIORITY = 459;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 460;
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
