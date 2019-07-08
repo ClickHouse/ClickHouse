@@ -211,7 +211,6 @@ void HTTPHandler::processQuery(
     Output & used_output)
 {
     Context context = server.context();
-    context.makeGlobalContext();
 
     CurrentThread::QueryScope query_scope(context);
 
@@ -285,7 +284,7 @@ void HTTPHandler::processQuery(
         session = context.acquireSession(session_id, session_timeout, session_check == "1");
 
         context = *session;
-        context.makeSessionContext();
+        context.setSessionContext(*session);
     }
 
     SCOPE_EXIT({
