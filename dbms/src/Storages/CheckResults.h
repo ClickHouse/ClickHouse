@@ -12,7 +12,7 @@ struct CheckResult
     /// Part name for merge tree or file name for simplier tables
     String fs_path;
     /// Does check passed
-    bool success;
+    bool success = false;
     /// Failure message if any
     String failure_message;
 
