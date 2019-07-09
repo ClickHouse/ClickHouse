@@ -205,6 +205,18 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 # Uses MAKE_STATIC_LIBRARIES
 
 
+option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
+if (UNBUNDLED)
+    set(NOT_UNBUNDLED 0)
+else ()
+    set(NOT_UNBUNDLED 1)
+endif ()
+# Using system libs can cause lot of warnings in includes.
+if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
+    option (NO_WERROR "Disable -Werror compiler option" ON)
+endif ()
+
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
