@@ -303,15 +303,19 @@ void PerformanceTest::runQueries(
         return;
     }
 
-    // Pull memory usage data from query log. The log entries take some time
-    // to become available, so we do this after running all the queries, and
-    // might still have to wait.
-    const int one_wait_us = 500 * 1000;
-    const int max_waits = (30 * 1000 * 1000) / one_wait_us;
-    int n_waits = 0;
+    // Pull memory usage data from query log. The log is normally filled in
+    // background, so we have to flush it synchronously here to see all the
+    // previous queries.
+    {
+        RemoteBlockInputStream flush_log(connection, "system flush logs",
+            {} /* header */, context);
+        flush_log.readPrefix();
+        while (flush_log.read());
+        flush_log.readSuffix();
+    }
+
     for (auto & statistics : statistics_by_run)
     {
-retry:
         RemoteBlockInputStream log_reader(connection,
             "select memory_usage from system.query_log where type = 2 and query_id = '"
                                    + statistics.query_id + "'",
@@ -321,15 +325,10 @@ retry:
         Block block = log_reader.read();
         if (block.columns() == 0)
         {
-            log_reader.readSuffix();
-
-            if (n_waits >= max_waits)
-                break;
-            n_waits++;
-
-            ::usleep(one_wait_us);
-            goto retry;
+            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+            continue;
         }
+
         assert(block.columns() == 1);
         assert(block.getDataTypes()[0]->getName() == "UInt64");
         ColumnPtr column = block.getByPosition(0).column;
@@ -339,10 +338,6 @@ retry:
         statistics.memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
         log_reader.readSuffix();
     }
-
-    // LOG_INFO can't format floats. Print to stderr because stdout is the
-    // resulting JSON.
-    fprintf(stderr, "Waited for query log for %.2fs\n", (n_waits * one_wait_us) / 1e6f);
 }
 
 
