@@ -10,6 +10,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int NETWORK_ERROR;
 }
+
 HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
 {
     auto & host = uri.getHost();
@@ -26,19 +27,16 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-    std::string userInfo = uri.getUserInfo();
-    if (!userInfo.empty() && userInfo.front() != ':')
+    std::string user_info = uri.getUserInfo();
+    if (!user_info.empty() && user_info.front() != ':')
     {
         std::string user;
-        size_t delimPos = userInfo.find(":");
-        if (delimPos != std::string::npos)
-        {
-            user = userInfo.substr(0, delimPos);
-        }
+        size_t delim_pos = user_info.find(":");
+        if (delim_pos != std::string::npos)
+            user = user_info.substr(0, delim_pos);
         else
-        {
-            user = userInfo;
-        }
+            user = user_info;
+
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
