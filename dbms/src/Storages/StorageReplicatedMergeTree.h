@@ -170,6 +170,8 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
