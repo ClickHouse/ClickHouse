@@ -340,7 +340,9 @@ retry:
         log_reader.readSuffix();
     }
 
-    printf("Waited for query log for %.2fs\n", (n_waits * one_wait_us) / 1e6f);
+    // LOG_INFO can't format floats. Print to stderr because stdout is the
+    // resulting JSON.
+    fprintf(stderr, "Waited for query log for %.2fs\n", (n_waits * one_wait_us) / 1e6f);
 }
 
 
