@@ -2,8 +2,6 @@
 
 #if USE_HDFS
 #include <Common/Exception.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/classification.hpp>
 
 namespace DB
 {
@@ -31,13 +29,17 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
     std::string userInfo = uri.getUserInfo();
     if (!userInfo.empty() && userInfo.front() != ':')
     {
-        std::vector<std::string> splitRes;
-        boost::split(splitRes, userInfo, boost::algorithm::is_any_of(":"), boost::algorithm::token_compress_on);
-        const char *user = splitRes.front().c_str();
-        if (user)
+        std::string user;
+        size_t delimPos = userInfo.find(":");
+        if (delimPos != std::string::npos)
         {
-            hdfsBuilderSetUserName(builder.get(), user);
+            user = userInfo.substr(0, delimPos);
         }
+        else
+        {
+            user = userInfo;
+        }
+        hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     hdfsBuilderSetNameNodePort(builder.get(), port);
