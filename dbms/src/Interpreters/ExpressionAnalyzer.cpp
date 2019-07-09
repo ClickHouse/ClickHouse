@@ -144,7 +144,11 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             getRootActions(array_join_expression_list, true, temp_actions);
             addMultipleArrayJoinAction(temp_actions, is_array_join_left);
-            array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+
+            array_join_columns.clear();
+            for (auto & column : temp_actions->getSampleBlock().getNamesAndTypesList())
+                if (syntax->array_join_result_to_source.count(column.name))
+                    array_join_columns.emplace_back(column);
         }
 
         const ASTTablesInSelectQueryElement * join = select_query->join();
