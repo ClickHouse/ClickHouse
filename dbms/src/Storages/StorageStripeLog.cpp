@@ -282,7 +282,7 @@ BlockOutputStreamPtr StorageStripeLog::write(
 }
 
 
-bool StorageStripeLog::checkData() const
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
