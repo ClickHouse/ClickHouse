@@ -4,6 +4,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
+#include <Core/SettingsCommon.h>
+
 #include <IO/Progress.h>
 
 #include <memory>
@@ -61,6 +63,8 @@ public:
     /// The first thread created this thread group
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
+
+    LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
 };
@@ -130,7 +134,7 @@ public:
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue);
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel client_logs_level);
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
