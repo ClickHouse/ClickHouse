@@ -225,7 +225,7 @@ include (cmake/find_cxx.cmake)
 
 include (cmake/test_compiler.cmake)
 
-if (OS_LINUX)
+if (OS_LINUX AND COMPILER_CLANG)
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux)" ${HAVE_LIBCXX})
 
     if (USE_LIBCXX)
