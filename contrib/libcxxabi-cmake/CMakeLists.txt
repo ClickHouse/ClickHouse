@@ -29,6 +29,6 @@ add_library(cxxabi_static ${SRCS})
 
 target_include_directories(cxxabi_static PUBLIC ${LIBCXXABI_SOURCE_DIR}/include ${LIBCXX_SOURCE_DIR}/include)
 target_compile_definitions(cxxabi_static PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
-target_compile_options(cxxabi_static PRIVATE -nostdinc++)
+target_compile_options(cxxabi_static PRIVATE -nostdinc++ -fno-sanitize=undefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 
 
