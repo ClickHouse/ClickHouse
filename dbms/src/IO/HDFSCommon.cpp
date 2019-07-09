@@ -2,7 +2,9 @@
 
 #if USE_HDFS
 #include <Common/Exception.h>
-#include <string.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -27,9 +29,13 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
     std::string userInfo = uri.getUserInfo();
-    if (!userInfo.empty() && userInfo.front() != ':') {
-        char *user = strtok(const_cast<char *> (userInfo.c_str()), ":");
-        if (user != NULL) {
+    if (!userInfo.empty() && userInfo.front() != ':')
+    {
+        std::vector<std::string> splitRes;
+        boost::split(splitRes, userInfo, boost::algorithm::is_any_of(":"), boost::algorithm::token_compress_on);
+        const char *user = splitRes.front().c_str();
+        if (user)
+        {
             hdfsBuilderSetUserName(builder.get(), user);
         }
     }
