@@ -17,7 +17,7 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
-#include <Common/parseRemoteDescription.h>
+#include <Common/parseIntervalsInDescription.h>
 #include <Common/typeid_cast.h>
 
 #include <fcntl.h>
@@ -89,7 +89,7 @@ StorageFile::StorageFile(
 
             path = poco_path.absolute().toString();
             size_t max_addresses = context_global.getSettingsRef().table_function_remote_max_addresses;
-            paths_after_globs_parsed = parseRemoteDescription(path, 0, path.size(), ',', max_addresses);
+            paths_after_globs_parsed = parseIntervalsInDescription(path, 0, path.size(), ',', max_addresses);
             for (const auto & cur_path : paths_after_globs_parsed)
             {
                 checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);

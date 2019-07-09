@@ -1,4 +1,4 @@
-#include "parseRemoteDescription.h"
+#include "parseIntervalsInDescription.h"
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
@@ -64,7 +64,7 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
  * abc{1..9}de{f,g,h}   - is a direct product, 27 shards.
  * abc{1..9}de{0|1}     - is a direct product, 9 shards, in each 2 replicas.
  */
-std::vector<String> parseRemoteDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses)
+std::vector<String> parseIntervalsInDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses)
 {
     std::vector<String> res;
     std::vector<String> cur;
@@ -139,7 +139,7 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
                 }
             }
             else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
-                buffer = parseRemoteDescription(description, i + 1, m, separator, max_addresses);
+                buffer = parseIntervalsInDescription(description, i + 1, m, separator, max_addresses);
             else                     /// Otherwise just copy, spawn will occur when you call with the correct delimiter
                 buffer.push_back(description.substr(i, m - i + 1));
             /// Add all possible received extensions to the current set of lines
