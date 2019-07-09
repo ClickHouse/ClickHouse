@@ -104,7 +104,6 @@ if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
 endif ()
 
 if (COMPILER_CLANG)
-    # clang: warning: argument unused during compilation: '-stdlib=libc++'
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
@@ -213,13 +212,10 @@ include (cmake/find_cxx.cmake)
 
 include (cmake/test_compiler.cmake)
 
-if (OS_LINUX AND COMPILER_CLANG)
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS}")
-
-    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
+if (OS_LINUX)
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux)" ${HAVE_LIBCXX})
 
     if (USE_LIBCXX)
-        set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
         set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
     endif ()
 endif ()
@@ -272,6 +268,8 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     set (BUILTINS_LIB_PATH "")
     if (COMPILER_CLANG)
         execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    else ()
+        set (BUILTINS_LIB_PATH "-lgcc")
     endif ()
 
     string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
@@ -305,7 +303,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
@@ -392,6 +390,10 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
+if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
+endif ()
+
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
@@ -445,10 +447,6 @@ find_contrib_lib(double-conversion)
 
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
-endif ()
-
-if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
 endif ()
 
 # Need to process before "contrib" dir:
