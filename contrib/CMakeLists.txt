@@ -43,8 +43,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (double-conversion)
+    add_subdirectory (double-conversion-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
