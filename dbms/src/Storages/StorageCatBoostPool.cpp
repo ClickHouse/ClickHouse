@@ -90,11 +90,16 @@ static void checkCreationIsAllowed(const String & base_path, const String & path
 }
 
 
-StorageCatBoostPool::StorageCatBoostPool(const Context & context,
-                                         String column_description_file_name_,
-                                         String data_description_file_name_)
-        : column_description_file_name(std::move(column_description_file_name_)),
-          data_description_file_name(std::move(data_description_file_name_))
+StorageCatBoostPool::StorageCatBoostPool(
+    const String & database_name_,
+    const String & table_name_,
+    const Context & context,
+    String column_description_file_name_,
+    String data_description_file_name_)
+    : table_name(table_name_)
+    , database_name(database_name_)
+    , column_description_file_name(std::move(column_description_file_name_))
+    , data_description_file_name(std::move(data_description_file_name_))
 {
     auto base_path = canonicalPath(context.getPath());
     column_description_file_name = resolvePath(base_path, std::move(column_description_file_name));
