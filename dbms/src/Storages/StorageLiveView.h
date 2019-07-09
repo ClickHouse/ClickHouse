@@ -78,7 +78,7 @@ public:
         return blocks_ptr.use_count() > 1;
     }
 
-    /// Check we we have any active readers
+    /// Check we have any active readers
     /// must be called with mutex locked
     bool hasActiveUsers()
     {
