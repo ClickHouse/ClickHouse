@@ -635,7 +635,7 @@ Returns the remaining space information of the disk, in bytes. This information 
 
 Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
 
-## finalizeAggregation
+## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
