@@ -134,10 +134,12 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     while (!is_end_input() && !is_end_output())
     {
         auto output = get_next_out();
+        auto input = get_next_input();
+
         if (output == outputs.end())
             return get_status_if_no_outputs();
 
-        auto input = get_next_input();
+
         if (input == inputs.end())
             return get_status_if_no_inputs();
 
