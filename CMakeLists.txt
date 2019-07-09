@@ -412,6 +412,7 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
 
+find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
@@ -456,7 +457,6 @@ find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
-find_contrib_lib(double-conversion)
 
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
