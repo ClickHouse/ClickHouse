@@ -6,9 +6,9 @@
     #include <unicode/ucol.h>
 #else
     #ifdef __clang__
-        #pragma clang diagnostic push
         #pragma clang diagnostic ignored "-Wunused-private-field"
     #endif
+    #pragma clang diagnostic ignored "-Wmissing-noreturn"
 #endif
 
 #include <Common/Exception.h>
@@ -26,9 +26,6 @@ namespace DB
     }
 }
 
-#if !USE_ICU
-[[noreturn]]
-#endif
 Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
 {
 #if USE_ICU
