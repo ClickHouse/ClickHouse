@@ -1141,19 +1141,24 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         String full_part_path = part->getFullPath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = full_part_path + "checksums.txt";
+        String tmp_checksums_path = full_part_path + "checksums.txt.tmp";
         if (!Poco::File(checksums_path).exists())
         {
             try
             {
-                auto counted_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
-                counted_checksums.checkEqual(part->checksums, true);
-                WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
+                auto calculated_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+                calculated_checksums.checkEqual(part->checksums, true);
+                WriteBufferFromFile out(tmp_checksums_path, 4096);
                 part->checksums.write(out);
-                Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
+                Poco::File(tmp_checksums_path).renameTo(checksums_path);
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
-            catch (Exception & ex)
+            catch (const Exception & ex)
             {
+                Poco::File tmp_file(tmp_checksums_path);
+                if (tmp_file.exists())
+                    tmp_file.remove();
+
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
             }
@@ -1165,7 +1170,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
                 checkDataPart(part, true, primary_key_data_types, skip_indices);
                 results.emplace_back(part->name, true, "");
             }
-            catch (Exception & ex)
+            catch (const Exception & ex)
             {
                 results.emplace_back(part->name, false, ex.message());
             }

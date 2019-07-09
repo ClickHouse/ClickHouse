@@ -112,16 +112,18 @@ def test_check_replicated_table_corruption(started_cluster):
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
     assert node2.query("SELECT count() from replicated_mt") == "4\n"
 
-    corrupt_data_part_on_disk(node1, "replicated_mt", "201901_0_0_0")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t0\tPart 201901_0_0_0 looks broken. Removing it and queueing a fetch.\n"
+    part_name = node1.query("SELECT name from system.parts where table = 'replicated_mt' and partition_id = '201901' and active = 1").strip()
+
+    corrupt_data_part_on_disk(node1, "replicated_mt", part_name)
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "{p}\t0\tPart {p} looks broken. Removing it and queueing a fetch.\n".format(p=part_name)
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t1\t\n"
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
 
-    remove_part_from_disk(node2, "replicated_mt", "201901_0_0_0")
-    assert node2.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t0\tPart 201901_0_0_0 looks broken. Removing it and queueing a fetch.\n"
+    remove_part_from_disk(node2, "replicated_mt", part_name)
+    assert node2.query("CHECK TABLE replicated_mt PARTITION 201901") == "{p}\t0\tPart {p} looks broken. Removing it and queueing a fetch.\n".format(p=part_name)
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt")
-    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "201901_0_0_0\t1\t\n"
+    assert node1.query("CHECK TABLE replicated_mt PARTITION 201901") == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt") == "4\n"
