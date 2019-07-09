@@ -27,9 +27,10 @@ limitations under the License. */
 namespace DB
 {
 
-/**
-  */
-
+/** Implements LIVE VIEW table WATCH EVENTS input stream.
+ *  Keeps stream alive by outputing blocks with no rows
+ *  based on period specified by the heartbeat interval.
+ */
 class LiveViewEventsBlockInputStream : public IBlockInputStream
 {
 
@@ -41,13 +42,18 @@ public:
         /// Start storage no users thread
         /// if we are the last active user
         if (!storage->is_dropped && blocks_ptr.use_count() < 3)
-            storage->startNoUsersThread(temporary_live_view_timeout);
+            storage->startNoUsersThread(temporary_live_view_timeout_sec);
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
-    LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_, std::shared_ptr<BlocksPtr> blocks_ptr_, std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_, std::shared_ptr<bool> active_ptr_,
-        int64_t length_, const UInt64 & heartbeat_interval_, const UInt64 & temporary_live_view_timeout_)
-        : storage(storage_), blocks_ptr(blocks_ptr_), blocks_metadata_ptr(blocks_metadata_ptr_), active_ptr(active_ptr_), length(length_ + 1), heartbeat_interval(heartbeat_interval_ * 1000000), temporary_live_view_timeout(temporary_live_view_timeout_)
+    LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
+        std::shared_ptr<BlocksPtr> blocks_ptr_,
+        std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
+        std::shared_ptr<bool> active_ptr_,
+        const bool has_limit_, const UInt64 limit_,
+        const UInt64 heartbeat_interval_sec_,
+        const UInt64 temporary_live_view_timeout_sec_)
+        : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)), blocks_metadata_ptr(std::move(blocks_metadata_ptr_)), active_ptr(std::move(active_ptr_)), has_limit(has_limit_), limit(limit_), heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000), temporary_live_view_timeout_sec(temporary_live_view_timeout_sec_)
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -72,7 +78,7 @@ public:
     void refresh()
     {
         if (active && blocks && it == end)
-            it =  blocks->begin();
+            it = blocks->begin();
     }
 
     void suspend()
@@ -124,7 +130,7 @@ protected:
      */
     NonBlockingResult tryRead_(bool blocking)
     {
-        if (length == 0)
+        if (has_limit && num_updates == (Int64)limit)
         {
             return { Block(), true };
         }
@@ -177,7 +183,7 @@ protected:
                     while (true)
                     {
                         UInt64 timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                        bool signaled = storage->condition.tryWait(storage->mutex, std::max(static_cast<UInt64>(0), heartbeat_interval - (timestamp_usec - last_event_timestamp)) / 1000);
+                        bool signaled = storage->condition.tryWait(storage->mutex, std::max(static_cast<UInt64>(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec)) / 1000);
 
                         if (isCancelled() || storage->is_dropped)
                         {
@@ -190,7 +196,7 @@ protected:
                         else
                         {
                             // repeat the event block as a heartbeat
-                            last_event_timestamp = static_cast<UInt64>(timestamp.epochMicroseconds());
+                            last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
                             return { getHeader(), true };
                         }
                     }
@@ -205,11 +211,10 @@ protected:
         if (it == end)
         {
             end_of_blocks = false;
-            if (length > 0)
-                --length;
+            num_updates += 1;
         }
 
-        last_event_timestamp = static_cast<UInt64>(timestamp.epochMicroseconds());
+        last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
 
         return { getEventBlock(), true };
     }
@@ -225,12 +230,13 @@ private:
     Blocks::iterator it;
     Blocks::iterator end;
     Blocks::iterator begin;
-    /// Length specifies number of updates to send, default -1 (no limit)
-    int64_t length;
-    bool end_of_blocks{0};
-    UInt64 heartbeat_interval;
-    UInt64 temporary_live_view_timeout;
-    UInt64 last_event_timestamp{0};
+    const bool has_limit;
+    const UInt64 limit;
+    Int64 num_updates = -1;
+    bool end_of_blocks = false;
+    UInt64 heartbeat_interval_usec;
+    UInt64 temporary_live_view_timeout_sec;
+    UInt64 last_event_timestamp_usec = 0;
     Poco::Timestamp timestamp;
 };
 

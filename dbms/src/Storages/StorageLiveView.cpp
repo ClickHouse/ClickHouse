@@ -407,15 +407,18 @@ BlockInputStreams StorageLiveView::watch(
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
-    /// By default infinite stream of updates
-    int64_t length = -2;
+    bool has_limit = false;
+    UInt64 limit = 0;
 
     if (query.limit_length)
-        length = static_cast<int64_t>(safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value));
+    {
+        has_limit = true;
+        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+    }
 
     if (query.is_watch_events)
     {
-        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(std::static_pointer_cast<StorageLiveView>(shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        auto reader = std::make_shared<LiveViewEventsBlockInputStream>(std::static_pointer_cast<StorageLiveView>(shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
         context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
@@ -440,7 +443,7 @@ BlockInputStreams StorageLiveView::watch(
     }
     else
     {
-        auto reader = std::make_shared<LiveViewBlockInputStream>(std::static_pointer_cast<StorageLiveView>(shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, length, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
+        auto reader = std::make_shared<LiveViewBlockInputStream>(std::static_pointer_cast<StorageLiveView>(shared_from_this()), blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit, context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
         context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
         if (no_users_thread.joinable())
