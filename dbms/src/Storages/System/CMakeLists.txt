@@ -12,7 +12,7 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(storages_system .)
 list (APPEND storages_system_sources ${CONFIG_BUILD})
 add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
-target_link_libraries(clickhouse_storages_system PRIVATE dbms common string_utils clickhouse_common_zookeeper)
+target_link_libraries(clickhouse_storages_system PRIVATE dbms common string_utils clickhouse_common_zookeeper clickhouse_parsers)
 
 add_custom_target(generate-contributors ./StorageSystemContributors.sh SOURCES StorageSystemContributors.sh WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     # BYPRODUCTS StorageSystemContributors.generated.cpp

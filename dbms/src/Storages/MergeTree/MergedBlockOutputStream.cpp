@@ -392,7 +392,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
-            size_t current_mark = 0;
+            size_t skip_index_current_mark = 0;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
@@ -402,7 +402,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
                 else
                 {
-                    limit = index_granularity.getMarkRows(current_mark);
+                    limit = index_granularity.getMarkRows(skip_index_current_mark);
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -435,7 +435,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     }
                 }
                 prev_pos = pos;
-                current_mark++;
+                ++skip_index_current_mark;
             }
         }
     }
