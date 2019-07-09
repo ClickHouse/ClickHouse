@@ -12,7 +12,7 @@ class LazyOutputFormat : public IOutputFormat
 
 public:
     explicit LazyOutputFormat(const Block & header)
-        : IOutputFormat(header, out), queue(1), finished_processing(false) {}
+        : IOutputFormat(header, out), queue(2), finished_processing(false) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 
