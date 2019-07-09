@@ -746,6 +746,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 if (config().has("mysql_port"))
                 {
+#if USE_POCO_NETSSL
                     Poco::Net::ServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("mysql_port"), /* secure = */ true);
                     socket.setReceiveTimeout(Poco::Timespan());
@@ -757,6 +758,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         new Poco::Net::TCPServerParams));
 
                     LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+#else
+                    throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
                 }
             }
             catch (const Poco::Exception & e)
