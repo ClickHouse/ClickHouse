@@ -171,13 +171,13 @@ void TCPHandler::runImpl()
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
-            CLIENT_LOGS_LEVEL = query_context->getSettingsRef().send_logs_level.value;
+            const auto client_logs_level = query_context->getSettingsRef().send_logs_level.value;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && CLIENT_LOGS_LEVEL != LogsLevel::none)
+                && client_logs_level != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef().send_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
             }
 
             query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
