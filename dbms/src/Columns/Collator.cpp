@@ -26,7 +26,9 @@ namespace DB
     }
 }
 
-
+#if !USE_ICU
+[[noreturn]]
+#endif
 Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
 {
 #if USE_ICU
