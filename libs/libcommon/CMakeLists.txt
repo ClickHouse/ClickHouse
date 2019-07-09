@@ -127,7 +127,6 @@ target_link_libraries (common
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
-    ${DEFAULT_LIBS}
     ${MALLOC_LIBRARIES}
     Threads::Threads
     ${MEMCPY_LIBRARIES})
