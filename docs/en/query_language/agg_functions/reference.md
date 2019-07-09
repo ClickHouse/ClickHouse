@@ -672,6 +672,112 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
+## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+
+Calculates the moving sum of the input values.
+
+```
+groupArrayMovingSum(column_for_summing)
+groupArrayMovingSum(window_size)(column_for_summing)
+```
+
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the column size.
+
+**Parameters**
+
+- `column_for_summing` — Column name. The column should have the numeric or [Decimal](../../data_types/decimal.md) data type.
+- `window_size` — Size of the sample window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+**Example**
+
+The sample table:
+
+```text
+┌─a─┐
+│ 3 │
+│ 4 │
+│ 5 │
+│ 6 │
+└───┘
+```
+
+The queries:
+
+```sql
+SELECT groupArrayMovingSum(a) FROM b
+```
+```text
+┌─groupArrayMovingSum(a)─┐
+│ [3,7,12,18]            │
+└────────────────────────┘
+```
+```sql
+SELECT groupArrayMovingSum(2)(a) FROM b
+```
+```text
+┌─groupArrayMovingSum(2)(a)─┐
+│ [3,7,9,11]                │
+└───────────────────────────┘
+```
+
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+
+Calculates the moving average of the input values.
+
+```
+groupArrayMovingAvg(column_for_summing)
+groupArrayMovingAvg(window_size)(column_for_summing)
+```
+
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the column size.
+
+**Parameters**
+
+- `column_for_summing` — Column name. The column should have the numeric or [Decimal](../../data_types/decimal.md) data type.
+- `window_size` — Size of the sample window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+For integer numbers, the function truncates the decimal part of average values.
+
+**Example**
+
+The sample table `b`:
+
+```text
+┌─a─┐
+│ 3 │
+│ 4 │
+│ 5 │
+│ 6 │
+└───┘
+```
+
+The queries:
+
+```sql
+SELECT groupArrayMovingAvg(a) FROM b
+```
+```text
+┌─groupArrayMovingAvg(a)─┐
+│ [0,1,3,4]              │
+└────────────────────────┘
+```
+```sql
+SELECT groupArrayMovingAvg(2)(a) FROM b
+```
+```text
+┌─groupArrayMovingAvg(2)(a)─┐
+│ [1,3,4,5]                 │
+└───────────────────────────┘
+```
+
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
