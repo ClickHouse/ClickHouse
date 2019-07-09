@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Common/Exception.h>
+#include <string.h>
 namespace DB
 {
 namespace ErrorCodes
@@ -25,6 +26,13 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
+    std::string userInfo = uri.getUserInfo();
+    if (!userInfo.empty() && userInfo.front() != ':') {
+        char *user = strtok(const_cast<char *> (userInfo.c_str()), ":");
+        if (user != NULL) {
+            hdfsBuilderSetUserName(builder.get(), user);
+        }
+    }
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     hdfsBuilderSetNameNodePort(builder.get(), port);
     return builder;
