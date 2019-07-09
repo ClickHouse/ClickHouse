@@ -518,6 +518,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
         /// Wait in case of exception. Delete pipeline to release memory.
         SCOPE_EXIT(
+                /// Clear queue in case if somebody is waiting lazy_format to push.
+                lazy_format->finish();
+                lazy_format->clearQueue();
+
                 pool.wait();
                 pipeline = QueryPipeline()
         );
@@ -532,9 +536,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 {
                     /// A packet was received requesting to stop execution of the request.
                     executor->cancel();
-                    /// Clear queue in case if somebody is waiting lazy_format to push.
-                    lazy_format->finish();
-                    lazy_format->clearQueue();
 
                     break;
                 }
