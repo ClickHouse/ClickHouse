@@ -9,6 +9,7 @@
 /** The simplest cache for a free function.
   * You can also pass a static class method or lambda without captures.
   * The size is unlimited. Values are stored permanently and never evicted.
+  * But single record or all cache can be manually dropped.
   * Mutex is used for synchronization.
   * Suitable only for the simplest cases.
   *
@@ -51,6 +52,18 @@ public:
         }
 
         return res;
+    }
+
+    template <typename... Args>
+    void update(Args &&... args)
+    {
+        Result res = f(std::forward<Args>(args)...);
+        {
+            std::lock_guard lock(mutex);
+
+            Key key{std::forward<Args>(args)...};
+            cache[key] = std::move(res);
+        }
     }
 
     void drop()

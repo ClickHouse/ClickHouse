@@ -350,9 +350,20 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
 
+static void checkASTStructure(const ASTPtr & child)
+{
+    const auto * func = child->as<ASTFunction>();
+    if (!func
+        || func->name != "equals"
+        || func->parameters
+        || !func->arguments
+        || func->arguments->children.size() != 2)
+        throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+                        ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
 
 template <typename DataTypeEnum>
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -365,15 +376,9 @@ static DataTypePtr create(const ASTPtr & arguments)
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        const auto * func = child->as<ASTFunction>();
-        if (!func
-            || func->name != "equals"
-            || func->parameters
-            || !func->arguments
-            || func->arguments->children.size() != 2)
-            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
-                ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+        checkASTStructure(child);
 
+        const auto * func = child->as<ASTFunction>();
         const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
         const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
@@ -397,11 +402,38 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeEnum>(values);
 }
 
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.empty())
+        throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+
+    /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
+    for (const ASTPtr & child : arguments->children)
+    {
+        checkASTStructure(child);
+
+        const auto * func = child->as<ASTFunction>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+
+        if (!value_literal
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+                    ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+        Int64 value = value_literal->value.get<Int64>();
+
+        if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
+            return createExact<DataTypeEnum16>(arguments);
+    }
+
+    return createExact<DataTypeEnum8>(arguments);
+}
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", create<DataTypeEnum<Int8>>);
-    factory.registerDataType("Enum16", create<DataTypeEnum<Int16>>);
+    factory.registerDataType("Enum8", createExact<DataTypeEnum<Int8>>);
+    factory.registerDataType("Enum16", createExact<DataTypeEnum<Int16>>);
+    factory.registerDataType("Enum", create);
 }
 
 }

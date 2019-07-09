@@ -48,7 +48,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wshadow-uncaptured-local -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wcovered-switch-default -Wold-style-cast -Wrange-loop-analysis -Wunused-member-function -Wunreachable-code -Wunreachable-code-return -Wnewline-eof -Wembedded-directive -Wgnu-case-range -Wunused-macros -Wconditional-uninitialized -Wdeprecated -Wundef -Wreserved-id-macro -Wredundant-parens -Wzero-as-null-pointer-constant")
 
     if (WEVERYTHING)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-missing-noreturn -Wno-padded -Wno-switch-enum -Wno-shadow-field-in-constructor -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-used-but-marked-unused -Wno-vla-extension -Wno-vla -Wno-packed")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded -Wno-switch-enum -Wno-shadow-field-in-constructor -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-vla-extension -Wno-vla -Wno-packed")
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
@@ -113,6 +113,11 @@ add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
+
+if(USE_RDKAFKA)
+    add_headers_and_sources(dbms src/Storages/Kafka)
+endif()
+
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -222,6 +227,13 @@ target_link_libraries(clickhouse_common_io
     roaring
 )
 
+if (USE_RDKAFKA)
+    target_link_libraries(dbms PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
+    if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
+        target_include_directories(dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
+    endif()
+endif()
+
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -246,6 +258,8 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_parsers
     clickhouse_common_config
+    clickhouse_common_zookeeper
+    string_utils # FIXME: not sure if it's private
         PUBLIC
     clickhouse_common_io
         PRIVATE
@@ -255,6 +269,7 @@ target_link_libraries (dbms
         PRIVATE
     ${BTRIE_LIBRARIES}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
+    ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     Threads::Threads
@@ -318,10 +333,6 @@ if (USE_CAPNP)
     endif ()
 endif ()
 
-if (USE_RDKAFKA)
-    target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
-endif ()
-
 if (USE_PARQUET)
     target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY})
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
@@ -376,6 +387,10 @@ if (ENABLE_TESTS AND USE_GTEST)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
+
+    # gtest framework has substandard code
+    target_compile_options(unit_tests_dbms PRIVATE -Wno-zero-as-null-pointer-constant -Wno-undef -Wno-sign-compare -Wno-used-but-marked-unused -Wno-missing-noreturn)
+
     target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper)
     add_check(unit_tests_dbms)
 endif ()
