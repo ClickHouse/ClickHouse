@@ -38,7 +38,10 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
        client2.expect(prompt)
     # send Ctrl-C
     client1.send('\x03', eol='')
-    client1.expect(prompt)
+    match = client1.expect('(%s)|([#\$] )' % prompt)
+    if match.groups()[1]:
+        client1.send(client1.command)
+        client1.expect(prompt)    
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')
