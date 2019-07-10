@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/IRowOutputStream.h>
 
 
@@ -33,6 +34,9 @@ private:
     RowOutputStreamPtr row_output;
     Block header;
     bool first_row = true;
+
+    // Callback used to indicate that another row is written.
+    FormatFactory::WriteCallback write_single_row_callback;
 };
 
 }

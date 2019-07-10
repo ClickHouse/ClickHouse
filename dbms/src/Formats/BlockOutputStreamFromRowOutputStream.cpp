@@ -18,6 +18,9 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
             row_output->writeRowBetweenDelimiter();
         first_row = false;
         row_output->write(block, i);
+
+        if (write_single_row_callback)
+            write_singel_row_callback();
     }
 }
 

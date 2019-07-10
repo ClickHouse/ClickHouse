@@ -41,6 +41,10 @@ public:
     /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
     using ReadCallback = std::function<void()>;
 
+    /// This callback allows to perform some additional actions after writing a single row.
+    /// It's initial purpose was to flush Kafka message for each row.
+    using WriteCallback = std::function<void()>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
@@ -55,6 +59,7 @@ private:
         WriteBuffer & buf,
         const Block & sample,
         const Context & context,
+        WriteCallback callback,
         const FormatSettings & settings)>;
 
     using InputProcessorCreator = std::function<InputFormatPtr(
@@ -87,7 +92,7 @@ public:
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf,
         const Block & sample, const Context & context, UInt64 max_block_size) const;

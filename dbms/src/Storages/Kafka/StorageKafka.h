@@ -36,6 +36,11 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    BlockOutputStreamPtr write(
+        const ASTPtr & query,
+        const Context & context
+    ) override;
+
     void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
 
     void updateDependencies() override;
@@ -44,6 +49,8 @@ public:
     BufferPtr claimBuffer();
     BufferPtr tryClaimBuffer(long wait_ms);
     void pushBuffer(BufferPtr buf);
+
+    ProducerPtr createProducer();
 
     const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }

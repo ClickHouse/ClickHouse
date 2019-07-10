@@ -136,6 +136,11 @@ BlockInputStreams StorageKafka::read(
 }
 
 
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context &) {
+    return std::make_shared<KafkaBlockOutputStream>();
+}
+
+
 void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
