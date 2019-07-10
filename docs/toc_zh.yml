@@ -103,6 +103,7 @@ nav:
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
+  - 'SYSTEM': 'query_language/system.md'
   - 'Other kinds of queries': 'query_language/misc.md'
   - 'Functions':
     - '介绍': 'query_language/functions/index.md'

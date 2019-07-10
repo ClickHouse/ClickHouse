@@ -10,6 +10,12 @@ endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+
+if (USE_INTERNAL_UNWIND_LIBRARY)
+    add_subdirectory (libunwind-cmake)
+endif ()
+
+
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
 endif ()
@@ -50,10 +56,6 @@ add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
-endif ()
-
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
