@@ -9,8 +9,6 @@
 #include <Core/SettingsCommon.h>
 #include <Common/CurrentThread.h>
 
-#include <iostream>
-
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
 #endif
@@ -24,9 +22,6 @@ using DB::CurrentThread;
 
 #define LOG_TRACE(logger, message) do { \
     const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::trace); \
-    if (is_clients_log) {\
-        std::cerr << "CLIENTS LOG TRACE" << std::endl; \
-    }\
     if ((logger)->trace() || is_clients_log) {\
     std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
@@ -38,9 +33,6 @@ using DB::CurrentThread;
 
 #define LOG_DEBUG(logger, message) do { \
     const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::debug); \
-    if (is_clients_log) {\
-        std::cerr << "CLIENTS LOG DEBUG" << std::endl; \
-    }\
     if ((logger)->debug() || is_clients_log) {\
     std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
@@ -52,9 +44,6 @@ using DB::CurrentThread;
 
 #define LOG_INFO(logger, message) do { \
     const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::information); \
-    if (is_clients_log) {\
-        std::cerr << "CLIENTS LOG INFORMATION" << std::endl; \
-    }\
     if ((logger)->information() || is_clients_log) {\
     std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
