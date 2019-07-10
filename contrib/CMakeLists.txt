@@ -15,6 +15,14 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind-cmake)
 endif ()
 
+if (USE_LIBCXX AND USE_INTERNAL_LIBCXXABI_LIBRARY)
+    add_subdirectory(libcxxabi-cmake)
+endif()
+
+if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+    add_subdirectory(libcxx-cmake)
+endif()
+
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -35,8 +43,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (double-conversion)
+    add_subdirectory (double-conversion-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
@@ -156,7 +163,7 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
-if (USE_INTERNAL_CAPNP_LIBRARY)
+if (ENABLE_CAPNP AND USE_INTERNAL_CAPNP_LIBRARY)
     set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
@@ -284,7 +291,7 @@ if (USE_INTERNAL_LLVM_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-  add_subdirectory(libgsasl)
+    add_subdirectory(libgsasl)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)

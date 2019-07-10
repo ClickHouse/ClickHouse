@@ -104,7 +104,6 @@ if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
 endif ()
 
 if (COMPILER_CLANG)
-    # clang: warning: argument unused during compilation: '-stdlib=libc++'
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
@@ -203,18 +202,71 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
+# Uses MAKE_STATIC_LIBRARIES
+
+
+option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
+if (UNBUNDLED)
+    set(NOT_UNBUNDLED 0)
+else ()
+    set(NOT_UNBUNDLED 1)
+endif ()
+# Using system libs can cause lot of warnings in includes.
+if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
+    option (NO_WERROR "Disable -Werror compiler option" ON)
+endif ()
+
+
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package (Threads)
+
+include (cmake/find_cxxabi.cmake)
+include (cmake/find_cxx.cmake)
+
+include (cmake/test_compiler.cmake)
+
+if (OS_LINUX AND COMPILER_CLANG AND USE_STATIC_LIBRARIES)
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux)" ${HAVE_LIBCXX})
+
+    if (USE_LIBCXX)
+        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
+    endif ()
+endif ()
+
+if (USE_LIBCXX)
+    set (STATIC_STDLIB_FLAGS "")
+else ()
+    set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
+endif ()
+
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
+
+    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
+endif ()
+
+if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
+    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
+    set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
+endif ()
+
+
 set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
 set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 
-include (cmake/use_libcxx.cmake)
 include (cmake/find_unwind.cmake)
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     option (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING "Use internal unwind library for exception handling" ${USE_STATIC_LIBRARIES})
 endif ()
 
+
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
+
+string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING OR USE_LIBCXX))
@@ -229,6 +281,8 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     set (BUILTINS_LIB_PATH "")
     if (COMPILER_CLANG)
         execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    else ()
+        set (BUILTINS_LIB_PATH "-lgcc")
     endif ()
 
     string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
@@ -254,9 +308,15 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     message (STATUS "Using exception handling library: ${EXCEPTION_HANDLING_LIBRARY}")
 
     if (USE_LIBCXX)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        if (USE_INTERNAL_LIBCXX_LIBRARY)
+            set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
+        else ()
+            set (LIBCXX_LIBS "-lc++ -lc++abi")
+        endif ()
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
@@ -343,11 +403,16 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
+if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
+endif ()
+
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
 
+find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
@@ -382,16 +447,16 @@ include (cmake/find_pdqsort.cmake)
 include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
+include (cmake/find_parquet.cmake)
 include (cmake/find_hyperscan.cmake)
 include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
+
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
-find_contrib_lib(double-conversion)
-include (cmake/find_parquet.cmake)
 
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
@@ -421,6 +486,11 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
             if (GLIBC_COMPATIBILITY)
                 add_dependencies(${target_name} glibc-compatibility)
             endif ()
+
+            if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+                add_dependencies(${target_name} cxx_static cxxabi_static)
+            endif ()
+
             if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
                 add_dependencies(${target_name} unwind_static)
             endif ()
