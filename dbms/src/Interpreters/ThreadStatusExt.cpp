@@ -46,11 +46,6 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     initQueryProfiler();
 }
 
-StringRef ThreadStatus::getQueryId() const
-{
-    return query_id;
-}
-
 void CurrentThread::defaultThreadDeleter()
 {
     if (unlikely(!current_thread))
@@ -161,18 +156,18 @@ void ThreadStatus::initQueryProfiler()
     if (!global_context->hasTraceCollector())
         return;
 
-    auto & settings = query_context->getSettingsRef();
+    const auto & settings = query_context->getSettingsRef();
 
-    if (settings.query_profiler_real_time_period > 0)
+    if (settings.query_profiler_real_time_period_ns > 0)
         query_profiler_real = std::make_unique<QueryProfilerReal>(
             /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period)
+            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns)
         );
 
-    if (settings.query_profiler_cpu_time_period > 0)
+    if (settings.query_profiler_cpu_time_period_ns > 0)
         query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
             /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period)
+            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns)
         );
 }
 
@@ -289,13 +284,6 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
         return;
     current_thread->attachQuery(thread_group, false);
     current_thread->deleter = CurrentThread::defaultThreadDeleter;
-}
-
-StringRef CurrentThread::getQueryId()
-{
-    if (unlikely(!current_thread))
-        return {};
-    return current_thread->getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)

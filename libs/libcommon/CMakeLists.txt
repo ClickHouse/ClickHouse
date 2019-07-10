@@ -21,9 +21,10 @@ add_library (common
     src/demangle.cpp
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
-    src/Sleep.cpp
+    src/sleep.cpp
     src/argsToConfig.cpp
     src/StackTrace.cpp
+    src/Pipe.cpp
 
     include/common/SimpleCache.h
     include/common/StackTrace.h
@@ -48,7 +49,7 @@ add_library (common
     include/common/constexpr_helpers.h
     include/common/Pipe.h
     include/common/getThreadNumber.h
-    include/common/Sleep.h
+    include/common/sleep.h
     include/common/SimpleCache.h
 
     include/ext/bit_cast.h

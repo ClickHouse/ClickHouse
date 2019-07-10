@@ -8,7 +8,7 @@
 
 #include <mysqlxx/Pool.h>
 
-#include <common/Sleep.h>
+#include <common/sleep.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -135,7 +135,7 @@ Pool::Entry Pool::Get()
         }
 
         lock.unlock();
-        SleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+        sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         lock.lock();
     }
 }
@@ -195,7 +195,7 @@ void Pool::Entry::forceConnected() const
         if (first)
             first = false;
         else
-            SleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+            sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
         app.logger().information("MYSQL: Reconnecting to " + pool->description);
         data->conn.connect(

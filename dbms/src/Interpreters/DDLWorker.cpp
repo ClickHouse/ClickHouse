@@ -22,7 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-#include <common/Sleep.h>
+#include <common/sleep.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -953,7 +953,7 @@ void DDLWorker::runMainThread()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 /// Avoid busy loop when ZooKeeper is not available.
-                SleepForSeconds(1);
+                sleepForSeconds(1);
             }
         }
         catch (...)

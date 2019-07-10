@@ -119,7 +119,10 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    StringRef getQueryId() const;
+    StringRef getQueryId() const
+    {
+        return query_id;
+    }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();

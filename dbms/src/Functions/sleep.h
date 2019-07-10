@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FieldVisitors.h>
-#include <common/Sleep.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -88,7 +88,7 @@ public:
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
             UInt64 microseconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
-            SleepForMicroseconds(microseconds);
+            sleepForMicroseconds(microseconds);
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.

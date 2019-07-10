@@ -1,10 +1,10 @@
-#include "common/Sleep.h"
+#include "common/sleep.h"
 
 #include <time.h>
 #include <errno.h>
 
 /**
-  * Sleep with nanoseconds precision
+  * Sleep with nanoseconds precision. Tolerant to signal interruptions
   *
   * In case query profiler is turned on, all threads spawned for
   * query execution are repeatedly interrupted by signals from timer.
@@ -12,14 +12,14 @@
   * problems in this setup and man page for nanosleep(2) suggests
   * using absolute deadlines, for instance clock_nanosleep(2).
   */
-void SleepForNanoseconds(uint64_t nanoseconds)
+void sleepForNanoseconds(uint64_t nanoseconds)
 {
-    const auto clock_type = CLOCK_REALTIME;
+    constexpr auto clock_type = CLOCK_MONOTONIC;
 
     struct timespec current_time;
     clock_gettime(clock_type, &current_time);
 
-    const uint64_t resolution = 1'000'000'000;
+    constexpr uint64_t resolution = 1'000'000'000;
     struct timespec finish_time = current_time;
 
     finish_time.tv_nsec += nanoseconds % resolution;
@@ -31,17 +31,17 @@ void SleepForNanoseconds(uint64_t nanoseconds)
     while (clock_nanosleep(clock_type, TIMER_ABSTIME, &finish_time, nullptr) == EINTR);
 }
 
-void SleepForMicroseconds(uint64_t microseconds)
+void sleepForMicroseconds(uint64_t microseconds)
 {
-    SleepForNanoseconds(microseconds * 1000);
+    sleepForNanoseconds(microseconds * 1000);
 }
 
-void SleepForMilliseconds(uint64_t milliseconds)
+void sleepForMilliseconds(uint64_t milliseconds)
 {
-    SleepForMicroseconds(milliseconds * 1000);
+    sleepForMicroseconds(milliseconds * 1000);
 }
 
-void SleepForSeconds(uint64_t seconds)
+void sleepForSeconds(uint64_t seconds)
 {
-    SleepForMilliseconds(seconds * 1000);
+    sleepForMilliseconds(seconds * 1000);
 }
