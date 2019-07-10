@@ -17,6 +17,7 @@ namespace DB
 
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+static constexpr Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
 
 MemoryTracker::~MemoryTracker()
@@ -191,19 +192,38 @@ namespace CurrentMemoryTracker
     void alloc(Int64 size)
     {
         if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->alloc(size);
+        {
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked += size;
+            if (untracked > untracked_memory_limit)
+            {
+                memory_tracker->alloc(untracked);
+                untracked = 0;
+            }
+        }
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->alloc(new_size - old_size);
+        Int64 addition = new_size - old_size;
+        if (addition > 0)
+            alloc(addition);
+        else
+            free(-addition);
     }
 
     void free(Int64 size)
     {
         if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->free(size);
+        {
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked -= size;
+            if (untracked < -untracked_memory_limit)
+            {
+                memory_tracker->free(-untracked);
+                untracked = 0;
+            }
+        }
     }
 }
 
