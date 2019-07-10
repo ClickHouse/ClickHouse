@@ -78,8 +78,6 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_LIKE,
-            FUNCTION_NOT_LIKE,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
@@ -97,7 +95,7 @@ private:
             : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
-        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_LIKE, FUNCTION_NOT_LIKE.
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         size_t key_column;
         std::unique_ptr<BloomFilter> bloom_filter;
         /// For FUNCTION_IN and FUNCTION_NOT_IN
