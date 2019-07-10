@@ -105,6 +105,7 @@ nav:
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
+  - 'SYSTEM': 'query_language/system.md'
   - 'Прочие виды запросов': 'query_language/misc.md'
   - 'Функции':
     - 'Введение': 'query_language/functions/index.md'
