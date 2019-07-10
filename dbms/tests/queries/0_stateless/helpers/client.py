@@ -14,6 +14,7 @@ def client(command=None, name='', log=None):
     client = uexpect.spawn(['/bin/bash','--noediting'])
     if command is None:
         command = os.environ.get('CLICKHOUSE_BINARY', 'clickhouse') + '-client'
+    client.command = command
     client.eol('\r')
     client.logger(log, prefix=name)
     client.timeout(20)
