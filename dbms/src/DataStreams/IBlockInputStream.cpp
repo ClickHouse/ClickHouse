@@ -3,7 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
-#include <common/Sleep.h>
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -255,7 +255,7 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     if (desired_microseconds > total_elapsed_microseconds)
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
-        SleepForMicroseconds(sleep_microseconds);
+        sleepForMicroseconds(sleep_microseconds);
 
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
     }

@@ -6,7 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <common/Sleep.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <port/clock.h>
 
@@ -77,7 +77,7 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
-                SleepForNanoseconds(sleep_ns);
+                sleepForNanoseconds(sleep_ns);
 
                 ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }

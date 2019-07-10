@@ -54,8 +54,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
-#include "TraceCollector.h"
 
 
 namespace ProfileEvents
@@ -155,8 +155,7 @@ struct ContextShared
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
-    Poco::Thread trace_collector_thread;                    /// Thread collecting traces from threads executing queries
-    std::unique_ptr<Poco::Runnable> trace_collector;
+    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -291,17 +290,8 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        /// Trace collector is only initialized in server program
-        if (hasTraceCollector())
-        {
-            /// Stop trace collector
-            NotifyTraceCollectorToStop();
-            trace_collector_thread.join();
-
-            /// Close trace pipe - definitely nobody needs to write there after
-            /// databases shutdown
-            trace_pipe.close();
-        }
+        /// Stop trace collector if any
+        trace_collector.reset();
     }
 
     bool hasTraceCollector()
@@ -314,9 +304,7 @@ struct ContextShared
         if (trace_log == nullptr)
             return;
 
-        trace_pipe.open();
-        trace_collector.reset(new TraceCollector(trace_log));
-        trace_collector_thread.start(*trace_collector);
+        trace_collector = std::make_unique<TraceCollector>(trace_log);
     }
 
 private:

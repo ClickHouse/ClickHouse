@@ -2,15 +2,50 @@
 
 #include <Core/Field.h>
 #include <Poco/Logger.h>
+#include <common/Pipe.h>
 #include <common/StackTrace.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <Common/Exception.h>
-#include <Common/QueryProfiler.h>
 #include <Interpreters/TraceLog.h>
 
-using namespace DB;
+namespace DB
+{
+
+LazyPipe trace_pipe;
+
+namespace ErrorCodes
+{
+    extern const int NULL_POINTER_DEREFERENCE;
+    extern const int THREAD_IS_NOT_JOINABLE;
+}
+
+TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
+    : log(&Poco::Logger::get("TraceCollector"))
+    , trace_log(trace_log)
+{
+    if (trace_log == nullptr)
+        throw Exception("Invalid trace log pointer passed", ErrorCodes::NULL_POINTER_DEREFERENCE);
+
+    trace_pipe.open();
+    thread = ThreadFromGlobalPool(&TraceCollector::run, this);
+}
+
+TraceCollector::~TraceCollector()
+{
+    if (!thread.joinable())
+        LOG_ERROR(log, "TraceCollector thread is malformed and cannot be joined");
+    else
+    {
+        TraceCollector::notifyToStop();
+        thread.join();
+    }
+
+    trace_pipe.close();
+}
 
 /**
   * Sends TraceCollector stop message
@@ -22,19 +57,11 @@ using namespace DB;
   * NOTE: TraceCollector will NOT stop immediately as there may be some data left in the pipe
   *       before stop message.
   */
-void DB::NotifyTraceCollectorToStop()
+void TraceCollector::notifyToStop()
 {
     WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
-    writeIntBinary(true, out);
+    writeChar(true, out);
     out.next();
-}
-
-TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log)
-    : log(&Poco::Logger::get("TraceCollector"))
-    , trace_log(trace_log)
-{
-    if (trace_log == nullptr)
-        throw Poco::Exception("Invalid trace log pointer passed");
 }
 
 void TraceCollector::run()
@@ -57,7 +84,7 @@ void TraceCollector::run()
         readPODBinary(timer_type, in);
 
         const auto size = stack_trace.getSize();
-        const auto& frames = stack_trace.getFrames();
+        const auto & frames = stack_trace.getFrames();
 
         Array trace;
         trace.reserve(size);
@@ -68,4 +95,6 @@ void TraceCollector::run()
 
         trace_log->add(element);
     }
+}
+
 }
