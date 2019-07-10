@@ -142,7 +142,6 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 "like",
                 [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
-                    std::cerr << "FULLTEXT INDEX IS USED FOR LIKE FUNCTION" << '\n';
                     out.function = RPNElement::FUNCTION_EQUALS;
                     out.bloom_filter = std::make_unique<BloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
@@ -156,7 +155,6 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 "notLike",
                 [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
-                    std::cerr << "FULLTEXT INDEX IS USED FOR NOT_LIKE FUNCTION" << '\n';
                     out.function = RPNElement::FUNCTION_NOT_EQUALS;
                     out.bloom_filter = std::make_unique<BloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
