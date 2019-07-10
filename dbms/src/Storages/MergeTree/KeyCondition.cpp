@@ -245,7 +245,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.get<const String&>();
+            String prefix = value.get<const String &>();
             if (prefix.empty())
                 return false;
 
