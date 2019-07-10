@@ -32,6 +32,7 @@
 
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/CheckResults.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -406,7 +407,7 @@ BlockOutputStreamPtr StorageTinyLog::write(
 }
 
 
-bool StorageTinyLog::checkData() const
+CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     return file_checker.check();
 }

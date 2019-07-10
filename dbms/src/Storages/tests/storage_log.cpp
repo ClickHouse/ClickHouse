@@ -29,6 +29,7 @@ try
     table->startup();
 
     auto context = Context::createGlobal();
+    context.makeGlobalContext();
 
     /// write into it
     {

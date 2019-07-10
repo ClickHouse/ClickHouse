@@ -41,7 +41,7 @@ struct CRC32Impl
         }
     }
 
-    static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt32> & /*res*/)
+    [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<UInt32> & /*res*/)
     {
         throw Exception("Cannot apply function CRC32 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

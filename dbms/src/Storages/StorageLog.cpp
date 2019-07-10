@@ -627,7 +627,7 @@ BlockOutputStreamPtr StorageLog::write(
     return std::make_shared<LogBlockOutputStream>(*this);
 }
 
-bool StorageLog::checkData() const
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();

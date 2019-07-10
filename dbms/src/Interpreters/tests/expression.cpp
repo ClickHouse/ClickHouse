@@ -47,6 +47,7 @@ int main(int argc, char ** argv)
         std::cerr << std::endl;
 
         Context context = Context::createGlobal();
+        context.makeGlobalContext();
         NamesAndTypesList columns
         {
             {"x", std::make_shared<DataTypeInt16>()},
