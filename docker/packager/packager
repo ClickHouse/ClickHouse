@@ -103,7 +103,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Copying binary back")
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
     result = []
     cmake_flags = ['$CMAKE_FLAGS']
 
@@ -148,6 +148,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 -DGLIBC_COMPATIBILITY=ON')
 
+    if with_coverage:
+        cmake_flags.append('-DWITH_COVERAGE=1')
+
     if version:
         result.append("VERSION_STRING='{}'".format(version))
 
@@ -180,6 +183,7 @@ if __name__ == "__main__":
     parser.add_argument("--author", default="clickhouse")
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--alien-pkgs", nargs='+', default=[])
+    parser.add_argument("--with-coverage", action="store_true")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -202,7 +206,7 @@ if __name__ == "__main__":
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
-        args.version, args.author, args.official, args.alien_pkgs)
+        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage)
     if args.package_type != "freebsd":
         run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
     else:

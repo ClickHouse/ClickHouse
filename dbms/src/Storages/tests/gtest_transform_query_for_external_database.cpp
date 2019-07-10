@@ -1,8 +1,3 @@
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#ifdef __clang__
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-    #pragma clang diagnostic ignored "-Wundef"
-#endif
 #include <gtest/gtest.h>
 
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -29,6 +24,7 @@ struct State
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");
         database->attachTable("table", StorageMemory::create("test", "table", ColumnsDescription{columns}));
+        context.makeGlobalContext();
         context.addDatabase("test", database);
         context.setCurrentDatabase("test");
     }

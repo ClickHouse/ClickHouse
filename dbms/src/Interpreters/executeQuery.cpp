@@ -151,7 +151,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     time_t current_time = time(nullptr);
 
-    context.setQueryContext(context);
+    context.makeQueryContext();
     CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
@@ -208,11 +208,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
             visitor.visit(ast);
-        }
 
-        /// Get new query after substitutions.
-        if (context.hasQueryParameters())
+            /// Get new query after substitutions.
             query = serializeAST(*ast);
+        }
 
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 

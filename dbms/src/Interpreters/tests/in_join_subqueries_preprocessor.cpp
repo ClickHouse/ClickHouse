@@ -1159,6 +1159,7 @@ bool run()
 TestResult check(const TestEntry & entry)
 {
     static DB::Context context = DB::Context::createGlobal();
+    context.makeGlobalContext();
 
     try
     {

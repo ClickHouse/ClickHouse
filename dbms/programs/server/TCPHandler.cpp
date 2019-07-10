@@ -54,7 +54,7 @@ void TCPHandler::runImpl()
     ThreadStatus thread_status;
 
     connection_context = server.context();
-    connection_context.setSessionContext(connection_context);
+    connection_context.makeSessionContext();
 
     Settings global_settings = connection_context.getSettings();
 

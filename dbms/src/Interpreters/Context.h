@@ -133,7 +133,7 @@ private:
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -344,7 +344,10 @@ public:
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
-    void setGlobalContext(Context & context_) { global_context = &context_; }
+
+    void makeQueryContext() { query_context = this; }
+    void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
