@@ -35,7 +35,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.expect(prompt)
     client1.expect(r'21.*3' + end_of_block)
     # send Ctrl-C
-    os.kill(client1.process.pid, signal.SIGINT)
+    client1.send('\x03', eol='')
     client1.expect(prompt)
     client1.send('SELECT sleep(1)')
     client1.expect(prompt)

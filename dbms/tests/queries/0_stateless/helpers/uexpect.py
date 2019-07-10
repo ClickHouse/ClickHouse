@@ -202,21 +202,3 @@ def reader(process, out, queue, kill_event):
             if e.errno == 5 and kill_event.is_set():
                 break
             raise
-
-if __name__ == '__main__':
-   io = spawn(['/bin/bash','--noediting'])
-   prompt = '\$ '
-   io.logger(sys.stdout)
-   io.timeout(2)
-   io.eol('\r')
-
-   io.expect(prompt)
-   io.send('clickhouse-client')
-   prompt = ':\) '
-   io.expect(prompt)
-   io.send('SELECT 1')
-   io.expect(prompt)
-   io.send('SHOW TABLES')
-   io.expect('.*\r\n.*')
-   io.expect(prompt)
-   io.close()

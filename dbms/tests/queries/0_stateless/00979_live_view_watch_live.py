@@ -37,7 +37,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
        client1.expect(r'%d.*%d' % (21+i, 3+i) + end_of_block)
        client2.expect(prompt)
     # send Ctrl-C
-    os.kill(client1.process.pid, signal.SIGINT)
+    client1.send('\x03', eol='')
     client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
