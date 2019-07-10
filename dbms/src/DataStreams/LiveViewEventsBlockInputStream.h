@@ -130,7 +130,7 @@ protected:
      */
     NonBlockingResult tryRead_(bool blocking)
     {
-        if (has_limit && num_updates == (Int64)limit)
+        if (has_limit && num_updates == static_cast<Int64>(limit))
         {
             return { Block(), true };
         }
