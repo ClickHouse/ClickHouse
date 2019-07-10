@@ -5,46 +5,83 @@
 #include <sstream>
 #include <atomic>
 #include <Poco/Logger.h>
+#include <Poco/Message.h>
 #include <Core/SettingsCommon.h>
 #include <Common/CurrentThread.h>
+
+#include <iostream>
 
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
 #endif
 
 using Poco::Logger;
+using Poco::Message;
 using DB::LogsLevel;
 using DB::CurrentThread;
-
 
 /// Logs a message to a specified logger with that level.
 
 #define LOG_TRACE(logger, message) do { \
-    if ((logger)->trace() || CurrentThread::getGroup()->client_logs_level >= LogsLevel::trace) {\
-    std::stringstream oss_internal_rare;    \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::trace); \
+    if (is_clients_log) {\
+        std::cerr << "CLIENTS LOG TRACE" << std::endl; \
+    }\
+    if ((logger)->trace() || is_clients_log) {\
+    std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
-    (logger)->trace(oss_internal_rare.str());}} while(false)
+    if (is_clients_log) {\
+        (logger)->force_log(oss_internal_rare.str(), Message::PRIO_TRACE); \
+    } else { \
+        (logger)->trace(oss_internal_rare.str()); \
+    }}} while(false)
 
 #define LOG_DEBUG(logger, message) do { \
-    if ((logger)->debug() || CurrentThread::getGroup()->client_logs_level >= LogsLevel::debug) {\
-    std::stringstream oss_internal_rare;    \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::debug); \
+    if (is_clients_log) {\
+        std::cerr << "CLIENTS LOG DEBUG" << std::endl; \
+    }\
+    if ((logger)->debug() || is_clients_log) {\
+    std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
-    (logger)->debug(oss_internal_rare.str());}} while(false)
+    if (is_clients_log) {\
+        (logger)->force_log(oss_internal_rare.str(), Message::PRIO_DEBUG); \
+    } else { \
+        (logger)->debug(oss_internal_rare.str()); \
+    }}} while(false)
 
 #define LOG_INFO(logger, message) do { \
-    if ((logger)->information() || CurrentThread::getGroup()->client_logs_level >= LogsLevel::information) {\
-    std::stringstream oss_internal_rare;    \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::information); \
+    if (is_clients_log) {\
+        std::cerr << "CLIENTS LOG INFORMATION" << std::endl; \
+    }\
+    if ((logger)->information() || is_clients_log) {\
+    std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
-    (logger)->information(oss_internal_rare.str());}} while(false)
+    if (is_clients_log) {\
+        (logger)->force_log(oss_internal_rare.str(), Message::PRIO_INFORMATION); \
+    } else { \
+        (logger)->information(oss_internal_rare.str()); \
+    }}} while(false)
 
 #define LOG_WARNING(logger, message) do { \
-    if ((logger)->warning() || CurrentThread::getGroup()->client_logs_level >= LogsLevel::warning) {\
-    std::stringstream oss_internal_rare;    \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::warning); \
+    if ((logger)->warning() || is_clients_log) {\
+    std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
-    (logger)->warning(oss_internal_rare.str());}} while(false)
+    if (is_clients_log) {\
+        (logger)->force_log(oss_internal_rare.str(), Message::PRIO_WARNING); \
+    } else { \
+        (logger)->warning(oss_internal_rare.str()); \
+    }}} while(false)
 
 #define LOG_ERROR(logger, message) do { \
-    if ((logger)->error() || CurrentThread::getGroup()->client_logs_level >= LogsLevel::error) {\
-    std::stringstream oss_internal_rare;    \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) && (CurrentThread::getGroup()->client_logs_level >= LogsLevel::error); \
+    if ((logger)->error() || is_clients_log) {\
+    std::stringstream oss_internal_rare; \
     oss_internal_rare << message; \
-    (logger)->error(oss_internal_rare.str());}} while(false)
+    if (is_clients_log) {\
+        (logger)->force_log(oss_internal_rare.str(), Message::PRIO_ERROR); \
+    } else { \
+        (logger)->error(oss_internal_rare.str()); \
+    }}} while(false)

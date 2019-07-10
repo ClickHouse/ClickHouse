@@ -64,7 +64,7 @@ public:
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
 
-    LogsLevel client_logs_level = LogsLevel::none;
+    std::atomic<LogsLevel> client_logs_level = LogsLevel::none;
 
     String query;
 };
@@ -134,7 +134,12 @@ public:
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
+<<<<<<< HEAD
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel client_logs_level);
+=======
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                     LogsLevel client_logs_level);
+>>>>>>> aa54091152... bugfix client logs + some tests
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
