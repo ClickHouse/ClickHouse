@@ -176,7 +176,7 @@ private:
     bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
-    bool prepareProcessor(size_t pid, Stack & stack, size_t thread_number, bool async);
+    bool prepareProcessor(size_t pid, Stack & children, Stack & parents, size_t thread_number, bool async);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);

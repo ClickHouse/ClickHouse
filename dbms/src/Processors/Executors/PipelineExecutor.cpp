@@ -237,7 +237,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stac
 
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread_number, bool async)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async)
 {
     /// In this method we have ownership on node.
     auto & node = graph[pid];
@@ -258,10 +258,10 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread
     auto add_neighbours_to_prepare_queue = [&] ()
     {
         for (auto & edge : node.backEdges)
-            tryAddProcessorToStackIfUpdated(edge, stack);
+            tryAddProcessorToStackIfUpdated(edge, parents);
 
         for (auto & edge : node.directEdges)
-            tryAddProcessorToStackIfUpdated(edge, stack);
+            tryAddProcessorToStackIfUpdated(edge, children);
     };
 
     auto try_release_ownership = [&] ()
@@ -277,7 +277,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread
                 if (!(expected == ExecStatus::Idle) || !node_.need_to_be_prepared)
                     return;
 
-            stack.push(pid);
+            children.push(pid);
         }
     };
 
@@ -326,7 +326,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & stack, size_t thread
         {
             executor_contexts[thread_number]->task_list.emplace_back(
                 node.execution_state.get(),
-                &stack
+                &parents
             );
 
             ExpandPipelineTask * desired = &executor_contexts[thread_number]->task_list.back();
@@ -425,11 +425,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
 
-    auto prepare_processor = [&](UInt64 pid, Stack & stack)
+    auto prepare_processor = [&](UInt64 pid, Stack & children, Stack & parents)
     {
         try
         {
-            return prepareProcessor(pid, stack, thread_num, false);
+            return prepareProcessor(pid, children, parents, thread_num, false);
         }
         catch (...)
         {
@@ -438,6 +438,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         }
 
         return false;
+    };
+
+    using Queue = std::queue<ExecutionState *>;
+
+    auto prepare_processors_from_queue = [&](Queue & queue, Stack & stack, Stack & children, Stack & parents)
+    {
+        while (!stack.empty() && !finished)
+        {
+            auto current_processor = stack.top();
+            stack.pop();
+
+            if (prepare_processor(current_processor, children, parents))
+                queue.push(graph[current_processor].execution_state.get());
+        }
     };
 
     while (!finished)
@@ -482,55 +496,6 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            Stopwatch processing_time_watch;
-
-            /// Try to execute neighbour processor.
-            {
-                Stack stack;
-
-                ++num_processing_executors;
-                while (auto task = expand_pipeline_task.load())
-                    doExpandPipeline(task, true);
-
-                /// Execute again if can.
-                if (!prepare_processor(state->processors_id, stack))
-                    state = nullptr;
-
-                /// Process all neighbours. Children will be on the top of stack, then parents.
-                while (!state && !stack.empty() && !finished)
-                {
-                    auto current_processor = stack.top();
-                    stack.pop();
-
-                    if (prepare_processor(current_processor, stack))
-                        state = graph[current_processor].execution_state.get();
-                }
-
-                if (!stack.empty())
-                {
-                    std::lock_guard lock(task_queue_mutex);
-
-                    while (!stack.empty() && !finished)
-                    {
-                        auto cur_state = graph[stack.top()].execution_state.get();
-                        stack.pop();
-
-                        task_queue.push(cur_state);
-                    }
-
-                    task_queue_condvar.notify_all();
-                }
-
-                --num_processing_executors;
-                while (auto task = expand_pipeline_task.load())
-                    doExpandPipeline(task, false);
-            }
-
-            processing_time_ns += processing_time_watch.elapsed();
-
-            if (!state)
-                continue;
-
             addJob(state);
 
             {
@@ -544,6 +509,53 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             if (finished)
                 break;
+
+            Stopwatch processing_time_watch;
+
+            /// Try to execute neighbour processor.
+            {
+                Stack children;
+                Stack parents;
+                Queue queue;
+
+                ++num_processing_executors;
+                while (auto task = expand_pipeline_task.load())
+                    doExpandPipeline(task, true);
+
+                /// Execute again if can.
+                if (!prepare_processor(state->processors_id, children, parents))
+                    state = nullptr;
+
+                /// Process all neighbours. Children will be on the top of stack, then parents.
+                prepare_processors_from_queue(queue, children, children, parents);
+
+                if (!state && !queue.empty())
+                {
+                    state = queue.front();
+                    queue.pop();
+                }
+
+                prepare_processors_from_queue(queue, parents, parents, parents);
+
+                if (!queue.empty())
+                {
+                    std::lock_guard lock(task_queue_mutex);
+
+                    while (!queue.empty() && !finished)
+                    {
+                        task_queue.push(queue.front());
+                        queue.pop();
+                    }
+
+                    task_queue_condvar.notify_all();
+                }
+
+                --num_processing_executors;
+                while (auto task = expand_pipeline_task.load())
+                    doExpandPipeline(task, false);
+            }
+
+            processing_time_ns += processing_time_watch.elapsed();
         }
     }
 
@@ -561,6 +573,10 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     Stack stack;
 
+    executor_contexts.reserve(num_threads);
+    for (size_t i = 0; i < num_threads; ++i)
+        executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+
     addChildlessProcessorsToStack(stack);
 
     while (!stack.empty())
@@ -568,8 +584,11 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         UInt64 proc = stack.top();
         stack.pop();
 
-        auto cur_state = graph[proc].execution_state.get();
-        task_queue.push(cur_state);
+        if (prepareProcessor(proc, stack, stack, 0, false))
+        {
+            auto cur_state = graph[proc].execution_state.get();
+            task_queue.push(cur_state);
+        }
     }
 
     ThreadPool pool(num_threads);
@@ -578,11 +597,6 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             finish();
             pool.wait()
     );
-
-    executor_contexts.reserve(num_threads);
-
-    for (size_t i = 0; i < num_threads; ++i)
-        executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
 
     auto thread_group = CurrentThread::getGroup();
 
