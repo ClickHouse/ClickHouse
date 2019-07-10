@@ -29,6 +29,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
+<<<<<<< HEAD
+=======
+
+#include <iostream>
+>>>>>>> aa54091152... bugfix client logs + some tests
 
 #include "TCPHandler.h"
 
@@ -55,7 +60,7 @@ void TCPHandler::runImpl()
     ThreadStatus thread_status;
 
     connection_context = server.context();
-    connection_context.makeSessionContext();
+    connection_context.setSessionContext(connection_context);
 
     Settings global_settings = connection_context.getSettings();
 
@@ -171,13 +176,13 @@ void TCPHandler::runImpl()
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
-            const auto client_logs_level = query_context->getSettingsRef().send_logs_level.value;
+            const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && client_logs_level != LogsLevel::none)
+                && client_logs_level.value != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
-                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef().send_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
             }
 
             query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
