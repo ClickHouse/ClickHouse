@@ -102,6 +102,7 @@ StorageFile::StorageFile(
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
             path = getTablePath(db_dir_path, table_name, format_name);
+            paths_after_globs_parsed.push_back(path);
             is_db_table = true;
             Poco::File(Poco::Path(path).parent()).createDirectories();
         }
