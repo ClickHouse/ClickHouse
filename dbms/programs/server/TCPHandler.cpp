@@ -29,11 +29,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
-<<<<<<< HEAD
-=======
-
-#include <iostream>
->>>>>>> aa54091152... bugfix client logs + some tests
 
 #include "TCPHandler.h"
 
