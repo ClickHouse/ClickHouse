@@ -18,12 +18,18 @@
 #include <limits>
 #include <ext/scope_guard.h>
 
+#include <openssl/rsa.h>
+
 
 namespace DB
 {
+
 using namespace MySQLProtocol;
+
+
 using Poco::Net::SecureStreamSocket;
 using Poco::Net::SSLManager;
+
 
 namespace ErrorCodes
 {
