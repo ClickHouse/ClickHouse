@@ -7,8 +7,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
-#include <Common/config.h>
-
+#include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
 
@@ -69,7 +68,7 @@ public:
         ADD_ALIASES,
     };
 
-    Type type;
+    Type type{};
 
     /// For ADD/REMOVE/COPY_COLUMN.
     std::string source_name;
@@ -223,6 +222,9 @@ public:
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
+
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
 
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.

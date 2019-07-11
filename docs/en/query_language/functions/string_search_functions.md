@@ -87,7 +87,7 @@ Extracts all the fragments of a string using a regular expression. If 'haystack'
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
 
-``% indicates any quantity of any bytes (including zero characters).
+`%` indicates any quantity of any bytes (including zero characters).
 
 `_` indicates any one byte.
 
@@ -108,7 +108,7 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceC
 
 ## ngramSearch(haystack, needle)
 
-Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Can be useful for fuzzy string search.
+Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` -- the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. The closer to one, the more likely `needle` is in the `haystack`. Can be useful for fuzzy string search.
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
 

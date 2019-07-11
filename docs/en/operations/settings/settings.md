@@ -11,7 +11,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Only if the FROM section uses a distributed table containing more than one shard.
-- If the subquery concerns a distributed table containing more than one shard,
+- If the subquery concerns a distributed table containing more than one shard.
 - Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
 Possible values:
@@ -114,6 +114,19 @@ Possible values:
 
 Default value: 0.
 
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
+
+Enables or disables sending of the `X-ClickHouse-Progress` HTTP response headers in an answer from `clickhouse-server`.
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
 ## input_format_allow_errors_num
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
@@ -186,20 +199,15 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
-
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
-
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
-
-Operations where you may need the extended data exchange enabled:
-
-- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
-
-For all other operations, ClickHouse doesn't apply the setting.
+When performing `INSERT` queries, replace omitted input column values with
+default values of the respective columns. This option only applies to
+[JSONEachRow](../../interfaces/formats.md#jsoneachrow) and
+[CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
+    When this option is enabled, extended table metadata are sent
+from server to client. It consumes additional computing resources on the server
+and can reduce performance.
 
 Possible values:
 
@@ -210,11 +218,16 @@ Default value: 0.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
-Enables or disables skipping of insertion of extra data.
+Enables or disables skipping insertion of extra data.
 
 When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn't insert extra data and doesn't throw an exception.
 
-Supported formats: [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames), [TSKV](../../interfaces/formats.md#tskv).
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TSKV](../../interfaces/formats.md#tskv)
 
 Possible values:
 
@@ -227,9 +240,12 @@ Default value: 0.
 
 Enables or disables checking the column order when inserting data.
 
-We recommend disabling check, if you are sure that the column order of the input data is the same as in the target table. It increases ClickHouse performance.
+To improve insert performance, we recommend disabling this check if you are sure that the column order of the input data is the same as in the target table.
 
-Supported formats: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
+Supported formats:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Possible values:
 
@@ -242,25 +258,57 @@ Default value: 1.
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
-**Possible values**
+Possible values:
 
-- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
-**Default value**: `ALL`
+Default value: `ALL`.
 
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes behavior of join operations with `ANY` strictness.
+
+!!! note "Attention"
+    This setting applies only for the [Join](../table_engines/join.md) table engine.
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+Default value: 0.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
-**Possible values**
+Possible values:
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-**Default value**: 0.
+Default value: 0.
+
+
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row, if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 ## max_block_size
@@ -547,9 +595,9 @@ This method is appropriate when you know exactly which replica is preferable.
 load_balancing = first_or_random
 ```
 
-This algorithm chooses the first replica in order or a random replica if the first one is unavailable. It is effective in cross-replication topology setups, but it useless in other configurations.
+This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
 
-The `first or random` algorithm solves the problem of the `in order` algorithm. The problem is: if one replica goes down, the next one handles twice the usual load while remaining ones handle usual traffic. When using the `first or random` algorithm, the load on replicas is leveled.
+The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, load is evenly distributed among replicas that are still available.
 
 ## prefer_localhost_replica {#settings-prefer_localhost_replica}
 
@@ -562,6 +610,9 @@ Possible values:
 
 Default value: 1.
 
+!!! warning "Warning"
+    Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+
 ## totals_mode
 
 How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
@@ -572,7 +623,7 @@ See the section "WITH TOTALS modifier".
 The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
 
-## max_parallel_replicas
+## max_parallel_replicas {#settings-max_parallel_replicas}
 
 The maximum number of replicas for each shard when executing a query.
 For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
@@ -663,12 +714,55 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## max_network_bytes {#settings-max_network_bytes}
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Data volume control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth {#settings-max_network_bandwidth}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Bandwidth control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
+
+Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
 ## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
 
 Possible values:
 
@@ -677,5 +771,22 @@ Possible values:
 
 Default value: 1.
 
+**See Also**
+
+- [Multiple JOIN](../../query_language/select.md#select-join)
+
+
+## count_distinct_implementation {#settings-count_distinct_implementation}
+
+Specifies which of the `uniq*` functions should be used for performing the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+
+Possible values:
+
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+
+Default value: `uniqExact`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

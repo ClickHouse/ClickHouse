@@ -23,6 +23,7 @@ public:
         const Context & context);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
+    ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

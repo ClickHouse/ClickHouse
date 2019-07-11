@@ -1,6 +1,6 @@
 #include "FunctionsStringRegex.h"
-#include "FunctionsStringSearch.h"
 
+#include "FunctionsStringSearch.h"
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
@@ -10,14 +10,13 @@
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
-
 #include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_HYPERSCAN
 #    if __has_include(<hs/hs.h>)
 #        include <hs/hs.h>
@@ -26,8 +25,9 @@
 #    endif
 #endif
 
+#include <Common/config.h>
 #if USE_RE2_ST
-#    include <re2_st/re2.h> // Y_IGNORE
+#    include <re2_st/re2.h>
 #else
 #    define re2_st re2
 #endif
@@ -814,7 +814,7 @@ public:
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
         const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
-        if (!column_needle->isColumnConst() || !column_replacement->isColumnConst())
+        if (!isColumnConst(*column_needle) || !isColumnConst(*column_replacement))
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();

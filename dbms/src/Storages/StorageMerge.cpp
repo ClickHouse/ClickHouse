@@ -51,9 +51,11 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{columns_},
-    name(name_), source_database(source_database_),
-    table_name_regexp(table_name_regexp_), global_context(context_)
+    : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    , name(name_)
+    , source_database(source_database_)
+    , table_name_regexp(table_name_regexp_)
+    , global_context(context_)
 {
 }
 
@@ -61,61 +63,42 @@ StorageMerge::StorageMerge(
 /// NOTE: structure of underlying tables as well as their set are not constant,
 ///       so the results of these methods may become obsolete after the call.
 
-bool StorageMerge::isVirtualColumn(const String & column_name) const
-{
-    if (column_name != "_table")
-        return false;
-
-    return !IStorage::hasColumn(column_name);
-}
-
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-    if (IStorage::hasColumn(column_name))
-        return IStorage::getColumn(column_name);
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->getColumn(column_name);
+    }
 
-    /// virtual column of the Merge table itself
-    if (column_name == "_table")
-        return { column_name, std::make_shared<DataTypeString>() };
-
-    /// virtual (and real) columns of the underlying tables
-    auto first_table = getFirstTable([](auto &&) { return true; });
-    if (first_table)
-        return first_table->getColumn(column_name);
-
-    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    return IStorage::getColumn(column_name);
 }
+
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-    if (column_name == "_table")
-        return true;
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->hasColumn(column_name);
+    }
 
-    if (IStorage::hasColumn(column_name))
-        return true;
-
-    auto first_table = getFirstTable([](auto &&) { return true; });
-    if (first_table)
-        return first_table->hasColumn(column_name);
-
-    return false;
+    return true;
 }
 
 
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto database = global_context.getDatabase(source_database);
-    auto iterator = database->getIterator(global_context);
+    auto iterator = getDatabaseIterator(global_context);
 
     while (iterator->isValid())
     {
-        if (table_name_regexp.match(iterator->name()))
-        {
-            auto & table = iterator->table();
-            if (table.get() != this && predicate(table))
-                return table;
-        }
+        auto & table = iterator->table();
+        if (table.get() != this && predicate(table))
+            return table;
 
         iterator->next();
     }
@@ -156,22 +139,17 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabasePtr database = context.getDatabase(source_database);
-    DatabaseIteratorPtr iterator = database->getIterator(context);
+    DatabaseIteratorPtr iterator = getDatabaseIterator(context);
 
     size_t selected_table_size = 0;
 
     while (iterator->isValid())
     {
-        if (table_name_regexp.match(iterator->name()))
+        auto & table = iterator->table();
+        if (table.get() != this)
         {
-            auto & table = iterator->table();
-            if (table.get() != this)
-            {
-                ++selected_table_size;
-                stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context));
-            }
-
+            ++selected_table_size;
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context));
         }
 
         iterator->next();
@@ -187,7 +165,7 @@ BlockInputStreams StorageMerge::read(
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -197,7 +175,7 @@ BlockInputStreams StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (isVirtualColumn(column_name))
+        if (column_name == "_table" && isVirtualColumn(column_name))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
@@ -223,8 +201,10 @@ BlockInputStreams StorageMerge::read(
         return createSourceStreams(
             query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
-    size_t remaining_streams = num_streams;
     size_t tables_count = selected_tables.size();
+    Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
+    num_streams *= num_streams_multiplier;
+    size_t remaining_streams = num_streams;
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
@@ -347,20 +327,17 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     return source_streams;
 }
 
+
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    auto database = global_context.getDatabase(source_database);
-    auto iterator = database->getIterator(global_context);
+    auto iterator = getDatabaseIterator(global_context);
 
     while (iterator->isValid())
     {
-        if (table_name_regexp.match(iterator->name()))
-        {
-            auto & table = iterator->table();
-            if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
-        }
+        auto & table = iterator->table();
+        if (table.get() != this)
+            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
 
         iterator->next();
     }
@@ -372,25 +349,21 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabasePtr database = global_context.getDatabase(source_database);
-    DatabaseIteratorPtr iterator = database->getIterator(global_context);
+    DatabaseIteratorPtr iterator = getDatabaseIterator(global_context);
 
     auto virtual_column = ColumnString::create();
 
     while (iterator->isValid())
     {
-        if (table_name_regexp.match(iterator->name()))
+        StoragePtr storage = iterator->table();
+
+        if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
+            throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+
+        if (storage.get() != this)
         {
-            StoragePtr storage = iterator->table();
-
-            if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
-                throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
-
-            if (storage.get() != this)
-            {
-                virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
-            }
+            virtual_column->insert(storage->getTableName());
+            selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
         }
 
         iterator->next();
@@ -408,6 +381,15 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
     return selected_tables;
 }
+
+
+DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+{
+    auto database = context.getDatabase(source_database);
+    auto table_name_match = [this](const String & table_name) { return table_name_regexp.match(table_name); };
+    return database->getIterator(global_context, table_name_match);
+}
+
 
 void StorageMerge::alter(
     const AlterCommands & params, const String & database_name, const String & table_name,

@@ -97,13 +97,14 @@ nav:
     - 'Buffer': 'operations/table_engines/buffer.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
-    
+
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
+  - 'SYSTEM': 'query_language/system.md'
   - 'Other Kinds of Queries': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'
@@ -136,6 +137,7 @@ nav:
     - 'arrayJoin': 'query_language/functions/array_join.md'
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
+    - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -186,6 +188,8 @@ nav:
     - 'Restrictions on Query Complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings Profiles': 'operations/settings/settings_profiles.md'
+    - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
+    - 'User Settings': 'operations/settings/settings_users.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'

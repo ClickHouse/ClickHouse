@@ -60,7 +60,18 @@ public:
         checkInit();
     }
 
-    JSON(const JSON & rhs) : ptr_begin(rhs.ptr_begin), ptr_end(rhs.ptr_end), level(rhs.level) {}
+    JSON(const JSON & rhs)
+    {
+        *this = rhs;
+    }
+
+    JSON & operator=(const JSON & rhs)
+    {
+        ptr_begin = rhs.ptr_begin;
+        ptr_end = rhs.ptr_end;
+        level = rhs.level;
+        return *this;
+    }
 
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }

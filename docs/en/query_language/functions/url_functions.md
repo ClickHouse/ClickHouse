@@ -12,7 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Gets the domain.
+Gets the domain. Cut scheme with size less than 16 bytes.
 
 ### domainWithoutWWW
 
@@ -66,7 +66,7 @@ Returns an array of name strings corresponding to the names of URL parameters. T
 
 ### URLHierarchy(URL)
 
-Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. Example:
+Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. 
 
 ### URLPathHierarchy(URL)
 

@@ -1,3 +1,5 @@
+#include "StorageSystemPartsColumns.h"
+
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -45,13 +46,13 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"column",                                     std::make_shared<DataTypeString>()},
-        {"type",                                       std::make_shared<DataTypeString>() },
-        {"default_kind",                               std::make_shared<DataTypeString>() },
-        {"default_expression",                         std::make_shared<DataTypeString>() },
-        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>() },
-        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>() },
-        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>() },
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>() },
+        {"type",                                       std::make_shared<DataTypeString>()},
+        {"default_kind",                               std::make_shared<DataTypeString>()},
+        {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
     }
     )
 {
@@ -99,6 +100,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         using State = MergeTreeDataPart::State;
 
         for (const auto & column : part->columns)
+
         {
             size_t j = 0;
             {

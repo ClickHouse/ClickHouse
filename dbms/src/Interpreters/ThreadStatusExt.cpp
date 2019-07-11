@@ -6,12 +6,25 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 
+#if defined(__linux__)
+#include <sys/time.h>
+#include <sys/resource.h>
+
+#include <Common/hasLinuxCapability.h>
+#endif
+
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_SET_THREAD_PRIORITY;
+}
+
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
@@ -30,7 +43,7 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     }
 }
 
-const std::string & ThreadStatus::getQueryId() const
+StringRef ThreadStatus::getQueryId() const
 {
     return query_id;
 }
@@ -39,8 +52,7 @@ void CurrentThread::defaultThreadDeleter()
 {
     if (unlikely(!current_thread))
         return;
-    ThreadStatus & thread = CurrentThread::get();
-    thread.detachQuery(true, true);
+    current_thread->detachQuery(true, true);
 }
 
 void ThreadStatus::initializeQuery()
@@ -94,6 +106,23 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         thread_group->thread_numbers.emplace_back(thread_number);
     }
 
+#if defined(__linux__)
+    /// Set "nice" value if required.
+    if (query_context)
+    {
+        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+    }
+#endif
+
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
 }
@@ -144,6 +173,18 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+
+#if defined(__linux__)
+    if (os_thread_priority)
+    {
+        LOG_TRACE(log, "Resetting nice");
+
+        if (0 != setpriority(PRIO_PROCESS, os_thread_id, 0))
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+
+        os_thread_priority = 0;
+    }
+#endif
 }
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
@@ -197,62 +238,59 @@ void CurrentThread::initializeQuery()
 {
     if (unlikely(!current_thread))
         return;
-    get().initializeQuery();
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->initializeQuery();
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    get().attachQuery(thread_group, true);
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->attachQuery(thread_group, true);
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    get().attachQuery(thread_group, false);
-    get().deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->attachQuery(thread_group, false);
+    current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
-const std::string & CurrentThread::getQueryId()
+StringRef CurrentThread::getQueryId()
 {
     if (unlikely(!current_thread))
-    {
-        const static std::string empty;
-        return empty;
-    }
-    return get().getQueryId();
+        return {};
+    return current_thread->getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
 {
     if (unlikely(!current_thread))
         return;
-    return get().attachQueryContext(query_context);
+    return current_thread->attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
 {
     if (unlikely(!current_thread))
         return;
-    get().finalizePerformanceCounters();
+    current_thread->finalizePerformanceCounters();
 }
 
 void CurrentThread::detachQuery()
 {
     if (unlikely(!current_thread))
         return;
-    get().detachQuery(false);
+    current_thread->detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
 {
     if (unlikely(!current_thread))
         return;
-    get().detachQuery(true);
+    current_thread->detachQuery(true);
 }
 
 
