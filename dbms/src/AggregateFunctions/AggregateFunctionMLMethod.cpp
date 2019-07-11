@@ -45,11 +45,11 @@ namespace
 
         /// Such default parameters were picked because they did good on some tests,
         /// though it still requires to fit parameters to achieve better result
-        auto learning_rate = Float64(0.00001);
+        auto learning_rate = Float64(0.001);
         auto l2_reg_coef = Float64(0.1);
-        UInt32 batch_size = 15;
+        UInt64 batch_size = 15;
 
-        std::string weights_updater_name = "\'SGD\'";
+        std::string weights_updater_name = "SGD";
         std::unique_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
@@ -62,12 +62,12 @@ namespace
         }
         if (parameters.size() > 2)
         {
-            batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]);
+            batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[2]);
         }
         if (parameters.size() > 3)
         {
-            weights_updater_name = applyVisitor(FieldVisitorToString(), parameters[3]);
-            if (weights_updater_name != "\'SGD\'" && weights_updater_name != "\'Momentum\'" && weights_updater_name != "\'Nesterov\'")
+            weights_updater_name = parameters[3].get<String>();
+            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov")
             {
                 throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
@@ -107,8 +107,8 @@ void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 LinearModelData::LinearModelData(
     Float64 learning_rate,
     Float64 l2_reg_coef,
-    UInt32 param_num,
-    UInt32 batch_capacity,
+    UInt64 param_num,
+    UInt64 batch_capacity,
     std::shared_ptr<DB::IGradientComputer> gradient_computer,
     std::shared_ptr<DB::IWeightsUpdater> weights_updater)
     : learning_rate(learning_rate)
@@ -235,7 +235,7 @@ void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Nesterov::update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
 {
     if (accumulated_gradient.empty())
     {
@@ -298,7 +298,7 @@ void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Momentum::update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
     if (accumulated_gradient.empty())
@@ -318,7 +318,7 @@ void Momentum::update(UInt32 batch_size, std::vector<Float64> & weights, Float64
 }
 
 void StochasticGradientDescent::update(
-    UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+    UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than  0
     for (size_t i = 0; i < weights.size(); ++i)
