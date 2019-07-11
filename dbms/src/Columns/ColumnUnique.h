@@ -300,12 +300,10 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 {
     if (is_nullable)
     {
-        static constexpr UInt8 null_flag = 1;
-        static constexpr UInt8 not_null_flag = 0;
-        static constexpr auto s = sizeof(null_flag);
+        static constexpr auto s = sizeof(UInt8);
 
-        auto pos = arena.allocContinue(sizeof(null_flag), begin);
-        auto flag = (n == getNullValueIndex() ? null_flag : not_null_flag);
+        auto pos = arena.allocContinue(s, begin);
+        auto flag = (n == getNullValueIndex() ? 1 : 0);
         memcpy(pos, &flag, s);
 
         if (n == getNullValueIndex())
