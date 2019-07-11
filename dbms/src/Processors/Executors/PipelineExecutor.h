@@ -176,6 +176,10 @@ private:
     bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
+
+    /// Prepare processor with pid number.
+    /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
+    /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
     bool prepareProcessor(size_t pid, Stack & children, Stack & parents, size_t thread_number, bool async);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
