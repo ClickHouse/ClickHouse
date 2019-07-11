@@ -178,7 +178,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
     char * pos = arena.allocContinue(sizeof(array_size), begin);
     memcpy(pos, &array_size, sizeof(array_size));
 
-    StringRef res(pos, sizeof(array_size);
+    StringRef res(pos, sizeof(array_size));
 
     for (size_t i = 0; i < array_size; ++i)
     {
