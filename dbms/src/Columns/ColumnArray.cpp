@@ -184,7 +184,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
     {
         auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin);
         res.data = value_ref.data - res.size;
-        res.data += value_ref.size;
+        res.size += value_ref.size;
     }
 
     return res;
