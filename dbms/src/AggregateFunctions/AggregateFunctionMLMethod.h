@@ -121,7 +121,7 @@ public:
         size_t row_num);
 
     /// Updates current weights according to the gradient from the last mini-batch
-    virtual void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & gradient) = 0;
+    virtual void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & gradient) = 0;
 
     /// Used during the merge of two states
     virtual void merge(const IWeightsUpdater &, Float64, Float64) {}
@@ -137,7 +137,7 @@ public:
 class StochasticGradientDescent : public IWeightsUpdater
 {
 public:
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
 };
 
 
@@ -148,7 +148,7 @@ public:
 
     Momentum(Float64 alpha) : alpha_(alpha) {}
 
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -180,7 +180,7 @@ public:
         const IColumn ** columns,
         size_t row_num) override;
 
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -205,8 +205,8 @@ public:
     LinearModelData(
         Float64 learning_rate,
         Float64 l2_reg_coef,
-        UInt32 param_num,
-        UInt32 batch_capacity,
+        UInt64 param_num,
+        UInt64 batch_capacity,
         std::shared_ptr<IGradientComputer> gradient_computer,
         std::shared_ptr<IWeightsUpdater> weights_updater);
 
@@ -228,11 +228,11 @@ private:
 
     Float64 learning_rate;
     Float64 l2_reg_coef;
-    UInt32 batch_capacity;
+    UInt64 batch_capacity;
 
-    UInt32 iter_num = 0;
+    UInt64 iter_num = 0;
     std::vector<Float64> gradient_batch;
-    UInt32 batch_size;
+    UInt64 batch_size;
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;
@@ -255,12 +255,12 @@ public:
     String getName() const override { return Name::name; }
 
     explicit AggregateFunctionMLMethod(
-        UInt32 param_num,
+        UInt64 param_num,
         std::unique_ptr<IGradientComputer> gradient_computer,
         std::string weights_updater_name,
         Float64 learning_rate,
         Float64 l2_reg_coef,
-        UInt32 batch_size,
+        UInt64 batch_size,
         const DataTypes & arguments_types,
         const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
@@ -288,16 +288,19 @@ public:
     void create(AggregateDataPtr place) const override
     {
         std::shared_ptr<IWeightsUpdater> new_weights_updater;
-        if (weights_updater_name == "\'SGD\'")
+        if (weights_updater_name == "SGD")
         {
             new_weights_updater = std::make_shared<StochasticGradientDescent>();
-        } else if (weights_updater_name == "\'Momentum\'")
+        }
+        else if (weights_updater_name == "Momentum")
         {
             new_weights_updater = std::make_shared<Momentum>();
-        } else if (weights_updater_name == "\'Nesterov\'")
+        }
+        else if (weights_updater_name == "Nesterov")
         {
             new_weights_updater = std::make_shared<Nesterov>();
-        } else
+        }
+        else
         {
             throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
         }
@@ -329,7 +332,8 @@ public:
         try
         {
             column = &dynamic_cast<ColumnVector<Float64> &>(to);
-        } catch (const std::bad_cast &)
+        }
+        catch (const std::bad_cast &)
         {
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::BAD_CAST);
@@ -349,10 +353,10 @@ public:
     const char * getHeaderFilePath() const override { return __FILE__; }
 
 private:
-    UInt32 param_num;
+    UInt64 param_num;
     Float64 learning_rate;
     Float64 l2_reg_coef;
-    UInt32 batch_size;
+    UInt64 batch_size;
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::string weights_updater_name;
 };
@@ -365,4 +369,5 @@ struct NameLogisticRegression
 {
     static constexpr auto name = "stochasticLogisticRegression";
 };
+
 }
