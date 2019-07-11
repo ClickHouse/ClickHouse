@@ -442,7 +442,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     using Queue = std::queue<ExecutionState *>;
 
-    auto prepare_processors_from_queue = [&](Queue & queue, Stack & stack, Stack & children, Stack & parents)
+    auto prepare_all_processors = [&](Queue & queue, Stack & stack, Stack & children, Stack & parents)
     {
         while (!stack.empty() && !finished)
         {
@@ -527,7 +527,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     state = nullptr;
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
-                prepare_processors_from_queue(queue, children, children, parents);
+                prepare_all_processors(queue, children, children, parents);
 
                 if (!state && !queue.empty())
                 {
@@ -535,7 +535,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     queue.pop();
                 }
 
-                prepare_processors_from_queue(queue, parents, parents, parents);
+                prepare_all_processors(queue, parents, parents, parents);
 
                 if (!queue.empty())
                 {
