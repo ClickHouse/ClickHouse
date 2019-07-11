@@ -31,4 +31,4 @@ target_compile_definitions(unwind_static PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG
 target_compile_options(unwind_static PRIVATE -fno-exceptions -funwind-tables -fno-sanitize=all -nostdinc++ -fno-rtti)
 
 find_package (Threads)
-target_link_libraries(unwind_static ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(unwind_static ${CMAKE_THREAD_LIBS_INIT} "dl")
