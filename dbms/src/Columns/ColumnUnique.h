@@ -303,7 +303,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
         static constexpr auto s = sizeof(UInt8);
 
         auto pos = arena.allocContinue(s, begin);
-        auto flag = (n == getNullValueIndex() ? 1 : 0);
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
         memcpy(pos, &flag, s);
 
         if (n == getNullValueIndex())
