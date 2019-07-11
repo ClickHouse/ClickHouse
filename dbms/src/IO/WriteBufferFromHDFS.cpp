@@ -3,9 +3,9 @@
 #if USE_HDFS
 
 #include <Poco/URI.h>
-#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
+#include <IO/WriteBufferFromHDFS.h>
 #include <IO/HDFSCommon.h>
-#include <hdfs/hdfs.h> // Y_IGNORE
+#include <hdfs/hdfs.h>
 
 
 namespace DB
@@ -92,6 +92,14 @@ void WriteBufferFromHDFS::sync()
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
 {
+    try
+    {
+        next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -128,6 +129,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*deflating_buf;
                 }
+#if USE_BROTLI
                 else if (compression_method == CompressionMethod::Brotli)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
@@ -140,6 +142,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*brotli_buf;
                 }
+#endif
 
                 else
                     throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",

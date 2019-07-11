@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-unit-test .
 FROM yandex/clickhouse-stateless-test
 
 ENV TZ=Europe/Moscow

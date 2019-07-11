@@ -131,11 +131,10 @@ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor` (устанавливается вместе с пакетом `clickhouse-client`). Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки[http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Если вы указали `compress=1` в URL, то сервер сжимает данные, которые он отправляет.
-Если вы указали `decompress=1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
+Если вы указали `compress = 1` в URL, то сервер сжимает данные, которые он отправляет.
+Если вы указали `decompress = 1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
 
-Также можно использовать стандартное [HTTP сжатие](https://en.wikipedia.org/wiki/HTTP_compression) с помощью `gzip`. Чтобы отправить запрос `POST`, сжатый с помощью `gzip`, добавьте к запросу заголовок `Content-Encoding: gzip`.
-Чтобы ClickHouse сжимал ответ на запрос с помощью `gzip`, необходимо добавить `Accept-Encoding: gzip`  к заголовкам запроса, и включить настройку ClickHouse  [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression). Вы можете настроить уровень сжатия данных с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
+Также, можно использовать [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. Чтобы ClickHouse сжимал ответ, добавьте заголовок `Accept-Encoding: compression_method`. ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): `gzip`, `br`, and `deflate`. Чтобы включить HTTP compression, используйте настройку ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression). Уровень сжатия данных для всех методов сжатия можно настроить с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
 
 Это может быть использовано для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
 

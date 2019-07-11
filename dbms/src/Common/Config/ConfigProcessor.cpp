@@ -527,7 +527,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
-        throw Poco::Exception("Error while loading config `" + path + "': from_zk includes are not allowed!");
+        throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 

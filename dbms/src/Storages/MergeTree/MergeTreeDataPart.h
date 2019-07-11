@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -105,6 +106,9 @@ struct MergeTreeDataPart
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
+
+    /// Frozen by ALTER TABLE ... FREEZE ...
+    mutable bool is_frozen = false;
 
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
@@ -243,6 +247,8 @@ struct MergeTreeDataPart
         */
     mutable std::mutex alter_mutex;
 
+    MergeTreeIndexGranularityInfo index_granularity_info;
+
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
@@ -271,7 +277,7 @@ struct MergeTreeDataPart
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column) const;
+    bool hasColumnFiles(const String & column, const IDataType & type) const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
