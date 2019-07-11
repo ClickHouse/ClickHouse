@@ -209,34 +209,6 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 }
         },
         {
-                "empty",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    std::string empty_str;
-                    stringToBloomFilter(empty_str.c_str(), empty_str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-
-        },
-        {
-                "notEmpty",
-                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText & idx)
-                {
-                    out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    std::string empty_str;
-                    stringToBloomFilter(empty_str.c_str(), empty_str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
-                }
-
-        },
-        {
                 "notIn",
                 [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
                 {
@@ -404,7 +376,7 @@ bool MergeTreeConditionFullText::getKey(const ASTPtr & node, size_t & key_column
 }
 
 bool MergeTreeConditionFullText::atomFromAST(
-    const ASTPtr & node, Block & block_with_constants, RPNElement & out)
+        const ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -412,58 +384,50 @@ bool MergeTreeConditionFullText::atomFromAST(
     {
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
+        if (args.size() != 2)
+            return false;
+
+        size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
-        std::string func_name = func->name;
 
-        if (args.size() == 1)
+        if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, out))
         {
-            if (!getKey(args[0], key_column_num))
-                return false;
+            key_arg_pos = 0;
         }
-        else if (args.size() == 2)
+        else if (KeyCondition::getConstant(args[1], block_with_constants, const_value, const_type) && getKey(args[0], key_column_num))
         {
-
-            size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
-
-            if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, out)) {
-                key_arg_pos = 0;
-            } else if (KeyCondition::getConstant(args[1], block_with_constants, const_value, const_type) &&
-                       getKey(args[0], key_column_num)) {
-                key_arg_pos = 0;
-            } else if (KeyCondition::getConstant(args[0], block_with_constants, const_value, const_type) &&
-                       getKey(args[1], key_column_num)) {
-                key_arg_pos = 1;
-            } else
-                return false;
-
-            if (const_type && const_type->getTypeId() != TypeIndex::String &&
-                const_type->getTypeId() != TypeIndex::FixedString &&
-                const_type->getTypeId() != TypeIndex::Array)
-                return false;
-
-            if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
-                return false;
-
-            else if (!index.token_extractor_func->supportLike() && (func_name == "like" || func_name == "notLike"))
-                return false;
+            key_arg_pos = 0;
+        }
+        else if (KeyCondition::getConstant(args[0], block_with_constants, const_value, const_type) && getKey(args[1], key_column_num))
+        {
+            key_arg_pos = 1;
         }
         else
             return false;
 
-        const auto atom_it = atom_map.find(func_name);
+        if (const_type && const_type->getTypeId() != TypeIndex::String
+                        && const_type->getTypeId() != TypeIndex::FixedString
+                        && const_type->getTypeId() != TypeIndex::Array)
+            return false;
+
+        if (key_arg_pos == 1 && (func->name != "equals" || func->name != "notEquals"))
+            return false;
+        else if (!index.token_extractor_func->supportLike() && (func->name == "like" || func->name == "notLike"))
+            return false;
+
+        const auto atom_it = atom_map.find(func->name);
         if (atom_it == std::end(atom_map))
             return false;
 
         out.key_column = key_column_num;
-
         return atom_it->second(out, const_value, index);
     }
     else if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
         /// Check constant like in KeyCondition
         if (const_value.getType() == Field::Types::UInt64
-        || const_value.getType() == Field::Types::Int64
-        || const_value.getType() == Field::Types::Float64)
+            || const_value.getType() == Field::Types::Int64
+            || const_value.getType() == Field::Types::Float64)
         {
             /// Zero in all types is represented in memory the same way as in UInt64.
             out.function = const_value.get<UInt64>()
