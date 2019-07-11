@@ -313,5 +313,4 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Принимает аргумент типа String. Возвращает значение типа Uint64 или Uint32.
 Дополнительные сведения см. по ссылке: [xxHash](http://cyan4973.github.io/xxHash/)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->
-
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/hash_functions/) <!--hide-->
