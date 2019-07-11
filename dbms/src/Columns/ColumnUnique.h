@@ -304,7 +304,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 
         auto pos = arena.allocContinue(s, begin);
         UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
-        memcpy(pos, &flag, s);
+        unalignedStore<UInt8>(pos, flag);
 
         if (n == getNullValueIndex())
             return StringRef(pos, s);
