@@ -23,6 +23,7 @@ add_library(common
     src/getThreadNumber.cpp
     src/argsToConfig.cpp
     src/StackTrace.cpp
+    src/jemalloc_cpp.cpp
 
     include/common/SimpleCache.h
     include/common/StackTrace.h
