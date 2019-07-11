@@ -1,6 +1,6 @@
 #include <new>
 
-#include <common/likely.h>
+#include <common/memory.h>
 #include <Common/MemoryTracker.h>
 
 /// Replace default new/delete with memory tracking versions.
@@ -8,27 +8,88 @@
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
 #if 1
 
-void * operator new (std::size_t size)
+/// new
+
+void * operator new(std::size_t size)
 {
     CurrentMemoryTracker::alloc(size);
-
-    auto * ptr = malloc(size);
-    if (likely(ptr != nullptr))
-        return ptr;
-
-    CurrentMemoryTracker::free(size);
-
-    /// @note no std::get_new_handler logic implemented
-    std::__throw_bad_alloc();
+    return Memory::newImpl(size);
 }
 
-/// Called instead of 'delete(void * ptr)' if a user-defined replacement is provided
-void operator delete (void * ptr, std::size_t size) noexcept
+void * operator new[](std::size_t size)
+{
+    CurrentMemoryTracker::alloc(size);
+    return Memory::newImpl(size);
+}
+
+void * operator new(std::size_t size, const std::nothrow_t &) noexcept
+{
+    CurrentMemoryTracker::alloc(size);
+    return Memory::newNoExept(size);
+}
+
+void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
+{
+    CurrentMemoryTracker::alloc(size);
+    return Memory::newNoExept(size);
+}
+
+/// delete
+
+#if 0
+void operator delete(void * ptr) noexcept
+{
+    Memory::deleteImpl(ptr);
+}
+
+void operator delete[](void * ptr) noexcept
+{
+    Memory::deleteImpl(ptr);
+}
+
+
+void operator delete(void * ptr, const std::nothrow_t &) noexcept
+{
+    Memory::deleteImpl(ptr);
+}
+
+void operator delete[](void * ptr, const std::nothrow_t &) noexcept
+{
+    Memory::deleteImpl(ptr);
+}
+#endif
+
+void operator delete(void * ptr, std::size_t size) noexcept
 {
     CurrentMemoryTracker::free(size);
-
-    if (likely(ptr != nullptr))
-        free(ptr);
+    Memory::deleteSized(ptr, size);
 }
+
+void operator delete[](void * ptr, std::size_t size) noexcept
+{
+    CurrentMemoryTracker::free(size);
+    Memory::deleteSized(ptr, size);
+}
+
+#else
+
+/// new
+
+void * operator new(std::size_t size) { return Memory::newImpl(size); }
+void * operator new[](std::size_t size) { return Memory::newImpl(size); }
+
+void * operator new(std::size_t size, const std::nothrow_t &) noexcept { return Memory::newNoExept(size); }
+void * operator new[](std::size_t size, const std::nothrow_t &) noexcept { return Memory::newNoExept(size); }
+
+/// delete
+
+void operator delete(void * ptr) noexcept { Memory::deleteImpl(ptr); }
+void operator delete[](void * ptr) noexcept { Memory::deleteImpl(ptr); }
+
+void operator delete(void * ptr, const std::nothrow_t &) noexcept { Memory::deleteImpl(ptr); }
+void operator delete[](void * ptr, const std::nothrow_t &) noexcept { Memory::deleteImpl(ptr); }
+
+void operator delete(void * ptr, std::size_t size) noexcept { Memory::deleteSized(ptr, size); }
+void operator delete[](void * ptr, std::size_t size) noexcept { Memory::deleteSized(ptr, size); }
 
 #endif
