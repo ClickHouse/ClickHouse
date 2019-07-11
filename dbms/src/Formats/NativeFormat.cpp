@@ -27,6 +27,7 @@ void registerOutputFormatNative(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings &)
     {
         return std::make_shared<NativeBlockOutputStream>(buf, 0, sample);

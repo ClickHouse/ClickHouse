@@ -53,10 +53,11 @@ void registerOutputFormatValues(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<ValuesRowOutputStream>(buf, settings), sample);
+            std::make_shared<ValuesRowOutputStream>(buf, settings), sample, callback);
     });
 }
 

@@ -15,6 +15,8 @@
 namespace DB
 {
 
+using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
+
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
@@ -101,7 +103,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    cppkafka::Configuration createConsumerConfiguration();
+    void updateConfiguration(cppkafka::Configuration & conf);
 
     void streamThread();
     bool streamToViews();

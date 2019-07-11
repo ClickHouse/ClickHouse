@@ -57,10 +57,11 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<JSONEachRowRowOutputStream>(buf, sample, format_settings), sample);
+            std::make_shared<JSONEachRowRowOutputStream>(buf, sample, format_settings), sample, callback);
     });
 }
 

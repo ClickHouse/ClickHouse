@@ -257,6 +257,7 @@ void registerOutputFormatPretty(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, format_settings);
@@ -266,6 +267,7 @@ void registerOutputFormatPretty(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

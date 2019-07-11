@@ -93,7 +93,8 @@ BlockInputStreamPtr FormatFactory::getInput(
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+BlockOutputStreamPtr FormatFactory::getOutput(
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
     const auto & output_getter = getCreators(name).second;
     if (!output_getter)
@@ -106,7 +107,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
       *  which only work with full columns.
       */
     return std::make_shared<MaterializingBlockOutputStream>(
-        output_getter(buf, sample, context, format_settings), sample);
+        output_getter(buf, sample, context, callback, format_settings), sample);
 }
 
 

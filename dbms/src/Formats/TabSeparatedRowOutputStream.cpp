@@ -129,10 +129,11 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, false, false, settings), sample);
+                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, false, false, settings), sample, callback);
         });
     }
 
@@ -142,10 +143,11 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample, false, false, settings), sample);
+                std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample, false, false, settings), sample, callback);
         });
     }
 
@@ -155,10 +157,11 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, false, settings), sample);
+                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, false, settings), sample, callback);
         });
     }
 
@@ -168,10 +171,11 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true, settings), sample);
+                std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true, settings), sample, callback);
         });
     }
 }

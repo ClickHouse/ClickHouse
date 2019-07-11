@@ -14,7 +14,7 @@ namespace DB
 class BlockOutputStreamFromRowOutputStream : public IBlockOutputStream
 {
 public:
-    BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_, const Block & header_);
+    BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_, const Block & header_, FormatFactory::WriteCallback callback);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

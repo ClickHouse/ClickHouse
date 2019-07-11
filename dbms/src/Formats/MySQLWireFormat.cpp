@@ -10,6 +10,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context & context,
+        FormatFactory::WriteCallback,
         const FormatSettings &)
     {
         return std::make_shared<MySQLWireBlockOutputStream>(buf, sample, const_cast<Context &>(context));

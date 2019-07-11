@@ -123,10 +123,11 @@ void registerOutputFormatCSV(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<CSVRowOutputStream>(buf, sample, with_names, format_settings), sample);
+                std::make_shared<CSVRowOutputStream>(buf, sample, with_names, format_settings), sample, callback);
         });
     }
 }

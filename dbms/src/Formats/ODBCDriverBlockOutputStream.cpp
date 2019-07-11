@@ -65,6 +65,7 @@ void registerOutputFormatODBCDriver(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<ODBCDriverBlockOutputStream>(buf, sample, format_settings);

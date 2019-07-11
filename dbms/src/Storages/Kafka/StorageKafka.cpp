@@ -14,6 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaBlockInputStream.h>
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -137,7 +138,7 @@ BlockInputStreams StorageKafka::read(
 
 
 BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context &) {
-    return std::make_shared<KafkaBlockOutputStream>();
+    return std::make_shared<KafkaBlockOutputStream>(*this);
 }
 
 
@@ -196,8 +197,29 @@ void StorageKafka::updateDependencies()
 
 BufferPtr StorageKafka::createBuffer()
 {
+    cppkafka::Configuration conf;
+
+    LOG_TRACE(log, "Setting brokers: " << brokers);
+    conf.set("metadata.broker.list", brokers);
+
+    LOG_TRACE(log, "Setting Group ID: " << group << " Client ID: clickhouse");
+    conf.set("group.id", group);
+
+    conf.set("client.id", VERSION_FULL);
+
+    // If no offset stored for this group, read all messages from the start
+    conf.set("auto.offset.reset", "smallest");
+
+    // We manually commit offsets after a stream successfully finished
+    conf.set("enable.auto.commit", "false");
+
+    // Ignore EOF messages
+    conf.set("enable.partition.eof", "false");
+
+    updateConfiguration(conf);
+
     // Create a consumer and subscribe to topics
-    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+    auto consumer = std::make_shared<cppkafka::Consumer>(conf);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
@@ -240,8 +262,7 @@ void StorageKafka::pushBuffer(BufferPtr buffer)
     semaphore.set();
 }
 
-
-cppkafka::Configuration StorageKafka::createConsumerConfiguration()
+ProducerPtr StorageKafka::createProducer()
 {
     cppkafka::Configuration conf;
 
@@ -253,18 +274,14 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
 
     conf.set("client.id", VERSION_FULL);
 
-    // If no offset stored for this group, read all messages from the start
-    conf.set("auto.offset.reset", "smallest");
+    // TODO: fill required settings
 
-    // We manually commit offsets after a stream successfully finished
-    conf.set("enable.auto.commit", "false");
+    return std::make_shared<cppkafka::Producer>(conf);
+}
 
-    // Ignore EOF messages
-    conf.set("enable.partition.eof", "false");
 
-    // for debug logs inside rdkafka
-    // conf.set("debug", "consumer,cgrp,topic,fetch");
-
+void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
+{
     // Update consumer configuration from the configuration
     const auto & config = global_context.getConfigRef();
     if (config.has(CONFIG_PREFIX))
@@ -277,8 +294,6 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
-
-    return conf;
 }
 
 bool StorageKafka::checkDependencies(const String & current_database_name, const String & current_table_name)

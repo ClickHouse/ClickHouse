@@ -5,8 +5,11 @@
 namespace DB
 {
 
-BlockOutputStreamFromRowOutputStream::BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_, const Block & header_)
-    : row_output(row_output_), header(header_) {}
+BlockOutputStreamFromRowOutputStream::BlockOutputStreamFromRowOutputStream(
+    RowOutputStreamPtr row_output_, const Block & header_, FormatFactory::WriteCallback callback)
+    : row_output(row_output_), header(header_), write_single_row_callback(callback)
+{
+}
 
 
 void BlockOutputStreamFromRowOutputStream::write(const Block & block)
@@ -20,7 +23,7 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
         row_output->write(block, i);
 
         if (write_single_row_callback)
-            write_singel_row_callback();
+            write_single_row_callback();
     }
 }
 

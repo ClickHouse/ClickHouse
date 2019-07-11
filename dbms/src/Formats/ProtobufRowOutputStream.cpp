@@ -7,6 +7,7 @@
 
 #include <Core/Block.h>
 #include <Formats/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
 #include <google/protobuf/descriptor.h>
@@ -35,10 +36,14 @@ void ProtobufRowOutputStream::write(const Block & block, size_t row_num)
 void registerOutputFormatProtobuf(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "Protobuf", [](WriteBuffer & buf, const Block & header, const Context & context, const FormatSettings &)
-        {
+        "Protobuf",
+        [](WriteBuffer & buf,
+           const Block & header,
+           const Context & context,
+           FormatFactory::WriteCallback callback,
+           const FormatSettings &) {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<ProtobufRowOutputStream>(buf, header, FormatSchemaInfo(context, "Protobuf")), header);
+                std::make_shared<ProtobufRowOutputStream>(buf, header, FormatSchemaInfo(context, "Protobuf")), header, callback);
         });
 }
 

@@ -236,10 +236,11 @@ void registerOutputFormatJSON(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<JSONRowOutputStream>(buf, sample, format_settings), sample);
+            std::make_shared<JSONRowOutputStream>(buf, sample, format_settings), sample, callback);
     });
 }
 

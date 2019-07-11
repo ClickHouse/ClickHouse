@@ -57,20 +57,22 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<BinaryRowOutputStream>(buf, sample, false, false), sample);
+            std::make_shared<BinaryRowOutputStream>(buf, sample, false, false), sample, callback);
     });
 
     factory.registerOutputFormat("RowBinaryWithNamesAndTypes", [](
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<BinaryRowOutputStream>(buf, sample, true, true), sample);
+            std::make_shared<BinaryRowOutputStream>(buf, sample, true, true), sample, callback);
     });
 }
 

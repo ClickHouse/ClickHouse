@@ -425,7 +425,7 @@ void ParquetBlockOutputStream::writeSuffix()
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context & /*context*/, const FormatSettings & format_settings)
+        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context &, FormatFactory::WriteCallback, const FormatSettings & format_settings)
         {
             BlockOutputStreamPtr impl = std::make_shared<ParquetBlockOutputStream>(buf, sample, format_settings);
             auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.parquet.row_group_size, 0);

@@ -11,6 +11,7 @@ void registerOutputFormatNull(FormatFactory & factory)
         WriteBuffer &,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings &)
     {
         return std::make_shared<NullBlockOutputStream>(sample);
