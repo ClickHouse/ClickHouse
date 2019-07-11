@@ -1779,6 +1779,11 @@ BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer &
     return FormatFactory::instance().getOutput(name, buf, sample, *this);
 }
 
+OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
+}
+
 
 time_t Context::getUptimeSeconds() const
 {
