@@ -178,11 +178,16 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
     char * pos = arena.allocContinue(sizeof(array_size), begin);
     memcpy(pos, &array_size, sizeof(array_size));
 
-    size_t values_size = 0;
-    for (size_t i = 0; i < array_size; ++i)
-        values_size += getData().serializeValueIntoArena(offset + i, arena, begin).size;
+    StringRef res(pos, sizeof(array_size);
 
-    return StringRef(begin, sizeof(array_size) + values_size);
+    for (size_t i = 0; i < array_size; ++i)
+    {
+        auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.data += value_ref.size;
+    }
+
+    return res;
 }
 
 
