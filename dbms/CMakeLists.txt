@@ -90,6 +90,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # Enable C++14 sized global deallocation functions. It should be anabled by setting -std=c++14
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+endif ()
+
 add_subdirectory (src)
 
 set(dbms_headers)

@@ -28,7 +28,7 @@ void * handleOOM(std::size_t size, bool nothrow)
     }
 
     if (ptr == nullptr && !nothrow)
-        std::__throw_bad_alloc();
+        throw std::bad_alloc{};
     return ptr;
 }
 
