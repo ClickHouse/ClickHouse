@@ -14,7 +14,7 @@
     #define ALWAYS_INLINE __forceinline
     #define NO_INLINE static __declspec(noinline)
 #else
-    #define ALWAYS_INLINE __attribute__((__always_inline__))
+    #define ALWAYS_INLINE inline __attribute__((__always_inline__))
     #define NO_INLINE __attribute__((__noinline__))
 #endif
 
@@ -23,7 +23,7 @@ namespace JeMalloc
 
 void * handleOOM(std::size_t size, bool nothrow);
 
-ALWAYS_INLINE inline void * newImpl(std::size_t size)
+ALWAYS_INLINE void * newImpl(std::size_t size)
 {
     void * ptr = je_malloc(size);
     if (likely(ptr != nullptr))
@@ -32,7 +32,7 @@ ALWAYS_INLINE inline void * newImpl(std::size_t size)
     return handleOOM(size, false);
 }
 
-ALWAYS_INLINE inline void * newNoExept(std::size_t size) noexcept
+ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
     void * ptr = je_malloc(size);
     if (likely(ptr != nullptr))
@@ -41,12 +41,12 @@ ALWAYS_INLINE inline void * newNoExept(std::size_t size) noexcept
     return handleOOM(size, true);
 }
 
-ALWAYS_INLINE inline void deleteImpl(void * ptr) noexcept
+ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
     je_free(ptr);
 }
 
-ALWAYS_INLINE inline void deleteSized(void * ptr, std::size_t size) noexcept
+ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
     if (unlikely(ptr == nullptr))
         return;
@@ -66,27 +66,27 @@ namespace Memory
 namespace Memory
 {
 
-ALWAYS_INLINE inline void * newImpl(std::size_t size)
+ALWAYS_INLINE void * newImpl(std::size_t size)
 {
     auto * ptr = malloc(size);
     if (likely(ptr != nullptr))
         return ptr;
 
     /// @note no std::get_new_handler logic implemented
-    std::__throw_bad_alloc();
+    throw std::bad_alloc{};
 }
 
-ALWAYS_INLINE inline void * newNoExept(std::size_t size) noexcept
+ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
     return malloc(size);
 }
 
-ALWAYS_INLINE inline void deleteImpl(void * ptr) noexcept
+ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
     free(ptr);
 }
 
-ALWAYS_INLINE inline void deleteSized(void * ptr, std::size_t size) noexcept
+ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {
     free(ptr);
 }
