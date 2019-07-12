@@ -15,8 +15,8 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `attr_name` — Name of the column of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md) or [Tuple](../../data_types/tuple.md)-type value depending on the dictionary configuration.
-- `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returns the value in the data type configured for the `attr_name` attribute.
+- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md) or [Tuple](../../data_types/tuple.md)-type value depending on the dictionary configuration.
+- `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
@@ -102,7 +102,7 @@ dictHas('dict_name', id)
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md)-type value.
+- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
@@ -122,7 +122,7 @@ dictGetHierarchy('dict_name', id)
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md)-type value.
+- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
@@ -134,13 +134,15 @@ Type: Array(UInt64).
 
 Checks the ancestor of a key in the hierarchical dictionary.
 
-`dictIsIn ('dict_name', child_id_expr, ancestor_id_expr)`
+```
+dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
+```
 
 **Parameters**
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `child_id_expr` — Key to be checked. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md)-type value.
-- `ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md)-type value.
+- `child_id_expr` — Key to be checked. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
+- `ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
 
 **Returned value**
 
@@ -176,8 +178,8 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 - `dict_name` — Name of the dictionary. [String literal](../syntax.md#syntax-string-literal).
 - `attr_name` — Name of the column of the dictionary. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returns a [UInt64](../../data_types/int_uint.md)-type value.
-- `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returns a value in the data type configured for the `attr_name` attribute.
+- `id_expr` — Key value. [Expression](../syntax.md#syntax-expressions) returning a [UInt64](../../data_types/int_uint.md)-type value.
+- `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` key. [Expression](../syntax.md#syntax-expressions) returning a value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
