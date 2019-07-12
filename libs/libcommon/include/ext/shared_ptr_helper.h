@@ -12,7 +12,7 @@ namespace ext
   *
   * Downsides:
   * - your class cannot be final;
-  * - bad compilation error messages;
+  * - awful compilation error messages;
   * - bad code navigation.
   * - different dynamic type of created object, you cannot use typeid.
   */

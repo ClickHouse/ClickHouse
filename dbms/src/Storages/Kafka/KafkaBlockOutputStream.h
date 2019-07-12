@@ -1,13 +1,14 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <Interpreters/Context.h>
 #include <Storages/Kafka/StorageKafka.h>
 
 namespace DB {
 
 class KafkaBlockOutputStream : public IBlockOutputStream {
 public:
-    explicit KafkaBlockOutputStream(StorageKafka & storage_);
+    explicit KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_);
     ~KafkaBlockOutputStream() override;
 
     Block getHeader() const override;
@@ -20,6 +21,9 @@ public:
 
 private:
     StorageKafka & storage;
+    Context context;
+    ProducerBufferPtr buffer;
+    BlockOutputStreamPtr child;
 };
 
 } // namespace DB

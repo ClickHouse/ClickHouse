@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
+using ConsumerBufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer

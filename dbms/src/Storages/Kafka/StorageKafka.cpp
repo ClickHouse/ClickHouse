@@ -103,7 +103,7 @@ StorageKafka::StorageKafka(
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
 {
-    task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 }
 
@@ -137,8 +137,10 @@ BlockInputStreams StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context &) {
-    return std::make_shared<KafkaBlockOutputStream>(*this);
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context) {
+    if (topics.size() > 1)
+        throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
+    return std::make_shared<KafkaBlockOutputStream>(*this, context);
 }
 
 
@@ -146,10 +148,9 @@ void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        // Make buffer available
         try
         {
-            pushBuffer(createBuffer());
+            pushReadBuffer(createReadBuffer());
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -171,7 +172,7 @@ void StorageKafka::shutdown()
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto buffer = claimBuffer();
+        auto buffer = popReadBuffer();
         // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
@@ -195,27 +196,63 @@ void StorageKafka::updateDependencies()
 }
 
 
-BufferPtr StorageKafka::createBuffer()
+void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
+{
+    std::lock_guard lock(mutex);
+    buffers.push_back(buffer);
+    semaphore.set();
+}
+
+
+ConsumerBufferPtr StorageKafka::popReadBuffer()
+{
+    return popReadBuffer(std::chrono::milliseconds::zero());
+}
+
+
+ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
+{
+    // Wait for the first free buffer
+    if (timeout == std::chrono::milliseconds::zero())
+        semaphore.wait();
+    else
+    {
+        if (!semaphore.tryWait(timeout.count()))
+            return nullptr;
+    }
+
+    // Take the first available buffer from the list
+    std::lock_guard lock(mutex);
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
+}
+
+
+ProducerBufferPtr StorageKafka::createWriteBuffer()
 {
     cppkafka::Configuration conf;
-
-    LOG_TRACE(log, "Setting brokers: " << brokers);
     conf.set("metadata.broker.list", brokers);
-
-    LOG_TRACE(log, "Setting Group ID: " << group << " Client ID: clickhouse");
     conf.set("group.id", group);
-
     conf.set("client.id", VERSION_FULL);
+    // TODO: fill required settings
+    updateConfiguration(conf);
 
-    // If no offset stored for this group, read all messages from the start
-    conf.set("auto.offset.reset", "smallest");
+    auto producer = std::make_shared<cppkafka::Producer>(conf);
 
-    // We manually commit offsets after a stream successfully finished
-    conf.set("enable.auto.commit", "false");
+    return std::make_shared<WriteBufferToKafkaProducer>(producer, topics[0], 1, 1024);
+}
 
-    // Ignore EOF messages
-    conf.set("enable.partition.eof", "false");
 
+ConsumerBufferPtr StorageKafka::createReadBuffer()
+{
+    cppkafka::Configuration conf;
+    conf.set("metadata.broker.list", brokers);
+    conf.set("group.id", group);
+    conf.set("client.id", VERSION_FULL);
+    conf.set("auto.offset.reset", "smallest"); // If no offset stored for this group, read all messages from the start
+    conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
+    conf.set("enable.partition.eof", "false"); // Ignore EOF messages
     updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
@@ -230,53 +267,6 @@ BufferPtr StorageKafka::createBuffer()
 
     return std::make_shared<DelimitedReadBuffer>(
         std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
-}
-
-BufferPtr StorageKafka::claimBuffer()
-{
-    return tryClaimBuffer(-1L);
-}
-
-BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
-{
-    // Wait for the first free buffer
-    if (wait_ms >= 0)
-    {
-        if (!semaphore.tryWait(wait_ms))
-            return nullptr;
-    }
-    else
-        semaphore.wait();
-
-    // Take the first available buffer from the list
-    std::lock_guard lock(mutex);
-    auto buffer = buffers.back();
-    buffers.pop_back();
-    return buffer;
-}
-
-void StorageKafka::pushBuffer(BufferPtr buffer)
-{
-    std::lock_guard lock(mutex);
-    buffers.push_back(buffer);
-    semaphore.set();
-}
-
-ProducerPtr StorageKafka::createProducer()
-{
-    cppkafka::Configuration conf;
-
-    LOG_TRACE(log, "Setting brokers: " << brokers);
-    conf.set("metadata.broker.list", brokers);
-
-    LOG_TRACE(log, "Setting Group ID: " << group << " Client ID: clickhouse");
-    conf.set("group.id", group);
-
-    conf.set("client.id", VERSION_FULL);
-
-    // TODO: fill required settings
-
-    return std::make_shared<cppkafka::Producer>(conf);
 }
 
 
@@ -323,7 +313,7 @@ bool StorageKafka::checkDependencies(const String & current_database_name, const
     return true;
 }
 
-void StorageKafka::streamThread()
+void StorageKafka::threadFunc()
 {
     try
     {
