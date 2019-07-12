@@ -29,6 +29,7 @@
 
 #include <Parsers/queryToString.h>
 #include <boost/algorithm/string.hpp>
+#include "ASTColumnsClause.h"
 
 
 namespace DB
@@ -1168,6 +1169,25 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+bool ParserColumnsClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword columns("COLUMNS");
+    ParserStringLiteral regex;
+
+    if (!columns.ignore(pos, expected))
+        return false;
+
+    ASTPtr regex_node;
+    if (!regex.parse(pos, regex_node, expected))
+        return false;
+
+    auto res = std::make_shared<ASTColumnsClause>();
+    res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+    res->children.push_back(regex_node);
+    node = std::move(res);
+    return true;
+}
+
 bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     if (pos->type == TokenType::Asterisk)
@@ -1265,6 +1285,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
+        || ParserColumnsClause().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected);
 }
