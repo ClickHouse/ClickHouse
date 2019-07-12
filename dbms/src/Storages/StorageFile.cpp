@@ -24,7 +24,7 @@
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
-#include <iostream>
+
 
 namespace DB
 {
@@ -150,13 +150,10 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-            if (storage.paths_after_globs_parsed.size() > 1)
-                read_buf = std::make_unique<ReadBufferFromFile>(storage.paths_after_globs_parsed[num_of_path]);
-            else
-                read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+            read_buf = std::make_unique<ReadBufferFromFile>(storage.paths_after_globs_parsed[num_of_path]);     /// if do not using fd, paths.size > 0
         }
 
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);     // need here?
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -204,8 +201,7 @@ BlockInputStreams StorageFile::read(
     result.reserve(paths_after_globs_parsed.size());
     const ColumnsDescription & columns = getColumns();
     auto column_defaults = columns.getDefaults();
-
-    for (size_t i = 0; i < paths_after_globs_parsed.size(); ++i)
+    for (size_t i = 0; i < paths_after_globs_parsed.size() || i < 1; ++i)   /// if using fd paths are empty because path is empty
     {
         BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, i);
         if (column_defaults.empty())
