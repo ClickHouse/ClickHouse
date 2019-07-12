@@ -84,7 +84,7 @@ ClickHouse поддерживает следующие виды ключей:
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 
-## Атрибуты
+## Атрибуты {#ext_dict_structure-attributes}
 
 Пример конфигурации:
 
