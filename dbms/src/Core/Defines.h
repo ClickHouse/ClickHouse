@@ -108,6 +108,14 @@
     #define THREAD_SANITIZER 1
 #endif
 
+#if defined(__has_feature)
+    #if __has_feature(memory_sanitizer)
+        #define MEMORY_SANITIZER 1
+    #endif
+#elif defined(__MEMORY_SANITIZER__)
+    #define MEMORY_SANITIZER 1
+#endif
+
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
 /// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
 /// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
