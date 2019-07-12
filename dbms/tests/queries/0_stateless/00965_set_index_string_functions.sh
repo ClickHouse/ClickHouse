@@ -51,16 +51,3 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE multiSearchAny(s, ['data
 $CLICKHOUSE_CLIENT --query="SELECT * FROM set_idx WHERE multiSearchAny(s, ['data', 'base']) FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE set_idx;"
-
-
-
-
-
-
-
-
-
-
-
-
-
