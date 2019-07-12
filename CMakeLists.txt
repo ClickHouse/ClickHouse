@@ -182,6 +182,11 @@ else ()
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+endif ()
+
 option(WITH_COVERAGE "Build with coverage." 0)
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
