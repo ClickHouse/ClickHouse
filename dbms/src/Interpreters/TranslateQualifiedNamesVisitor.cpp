@@ -17,6 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <iostream>
+#include "../Parsers/ASTColumnsClause.h"
 
 
 namespace DB
@@ -166,7 +167,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>())
+            if (child->as<ASTAsterisk>() || child->as<ASTColumnsClause>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
@@ -201,6 +202,23 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     {
                         String table_name = table.getQualifiedNamePrefix(false);
                         addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk));
+                    }
+                }
+
+                first_table = false;
+            }
+        }
+        else if (const auto * asterisk_pattern = child->as<ASTColumnsClause>())
+        {
+            bool first_table = true;
+            for (const auto & [table, table_columns] : tables_with_columns)
+            {
+                for (const auto & column_name : table_columns)
+                {
+                    if (asterisk_pattern->isColumnMatching(column_name) && (first_table || !data.join_using_columns.count(column_name)))
+                    {
+                        String table_name = table.getQualifiedNamePrefix(false);
+                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
                     }
                 }
 

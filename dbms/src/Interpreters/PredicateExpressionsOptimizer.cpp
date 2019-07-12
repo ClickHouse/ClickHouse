@@ -24,6 +24,7 @@
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <Functions/FunctionFactory.h>
+#include "../Parsers/ASTColumnsClause.h"
 
 namespace DB
 {
@@ -412,7 +413,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     for (const auto & projection_column : select_query->select()->children)
     {
-        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsClause>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -483,8 +484,20 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
-            for (size_t idx = 0; idx < block.columns(); idx++)
-                projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsClause>())
+            {
+                for (size_t idx = 0; idx < block.columns(); idx++)
+                {
+                    auto & col = block.getByPosition(idx);
+                    if (asterisk_pattern->isColumnMatching(col.name))
+                        projection_columns.emplace_back(std::make_shared<ASTIdentifier>(col.name));
+                }
+            }
+            else
+            {
+                for (size_t idx = 0; idx < block.columns(); idx++)
+                    projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            }
         }
     }
     return projection_columns;
