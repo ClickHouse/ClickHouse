@@ -85,7 +85,10 @@ void MemoryTracker::alloc(Int64 size)
     if (unlikely(fault_probability && drand48() < fault_probability))
     {
         free(size);
-#if 0
+
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto untrack_lock = blocker.cancel();
+
         std::stringstream message;
         message << "Memory tracker";
         if (description)
@@ -95,15 +98,15 @@ void MemoryTracker::alloc(Int64 size)
             << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-#else
-        throw DB::Exception("Memory limit exceeded", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-#endif
     }
 
     if (unlikely(current_limit && will_be > current_limit))
     {
         free(size);
-#if 0
+
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto untrack_lock = blocker.cancel();
+
         std::stringstream message;
         message << "Memory limit";
         if (description)
@@ -113,9 +116,6 @@ void MemoryTracker::alloc(Int64 size)
             << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-#else
-        throw DB::Exception("Memory limit exceeded", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-#endif
     }
 
     auto peak_old = peak.load(std::memory_order_relaxed);
