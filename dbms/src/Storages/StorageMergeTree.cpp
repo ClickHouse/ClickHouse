@@ -282,7 +282,7 @@ void StorageMergeTree::alter(
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
+    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 

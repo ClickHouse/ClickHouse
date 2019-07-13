@@ -121,7 +121,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    setPrimaryKeyIndicesAndColumns(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
+    setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
     setConstraints(constraints_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
@@ -232,7 +232,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKeyIndicesAndColumns(
+void MergeTreeData::setProperties(
     const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
     const ColumnsDescription & new_columns, const IndicesDescription & indices_description,
     const ConstraintsDescription & constraints_description, bool only_check)
@@ -1262,7 +1262,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
     }
 
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
+    setProperties(new_order_by_ast, new_primary_key_ast,
             new_columns, new_indices, new_constraints, /* only_check = */ true);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
