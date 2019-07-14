@@ -70,7 +70,7 @@ if (ENABLE_EMBEDDED_COMPILER)
     else()
         set (LLVM_FOUND 1)
         set (USE_EMBEDDED_COMPILER 1)
-        set (LLVM_VERSION "7.0.0bundled")
+        set (LLVM_VERSION "9.0.0bundled")
         set (LLVM_INCLUDE_DIRS
             ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
             ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include

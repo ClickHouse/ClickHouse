@@ -30,9 +30,12 @@
 #include <llvm/IR/Mangler.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/Core.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
 #include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
@@ -122,105 +125,40 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::TargetOptions options;
     return target->createTargetMachine(
         triple, cpu, features.getString(), options, llvm::None,
-#if LLVM_VERSION_MAJOR >= 6
         llvm::None, llvm::CodeGenOpt::Default, /*jit=*/true
-#else
-        llvm::CodeModel::Default, llvm::CodeGenOpt::Default
-#endif
     );
 }
 
-#if LLVM_VERSION_MAJOR >= 7
-auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
-{
-#if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
-    // REMOVE AFTER contrib/llvm upgrade
-    auto flags = [&](llvm::orc::SymbolFlagsMap & flags, const llvm::orc::SymbolNameSet & symbols)
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols)
-        {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags.emplace(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
-        }
-        return missing;
-    };
-#else
-    // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
-    auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
-    {
-        llvm::orc::SymbolFlagsMap flags_map;
-        for (const auto & symbol : symbols)
-        {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags_map.emplace(symbol, resolved->begin()->second);
-        }
-        return flags_map;
-    };
-#endif
 
-    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols_set)
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols_set)
-        {
-            auto resolved = jsr.lookup({*symbol});
-            if (resolved && resolved->size())
-                query->resolve(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
-        }
-        return missing;
-    };
-    return llvm::orc::createSymbolResolver(flags, symbols);
-}
-#endif
-
-#if LLVM_VERSION_MAJOR >= 7
 using ModulePtr = std::unique_ptr<llvm::Module>;
-#else
-using ModulePtr = std::shared_ptr<llvm::Module>;
-#endif
+
 
 struct LLVMContext
 {
-    std::shared_ptr<llvm::LLVMContext> context;
-#if LLVM_VERSION_MAJOR >= 7
+    std::shared_ptr<llvm::LLVMContext> context {std::make_shared<llvm::LLVMContext>()};
     llvm::orc::ExecutionSession execution_session;
-#endif
-    ModulePtr module;
-    std::unique_ptr<llvm::TargetMachine> machine;
-    std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
-    llvm::orc::RTDyldObjectLinkingLayer object_layer;
-    llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
-    llvm::DataLayout layout;
-    llvm::IRBuilder<> builder;
+    ModulePtr module {std::make_unique<llvm::Module>("jit", *context)};
+    std::unique_ptr<llvm::TargetMachine> machine {getNativeMachine()};
+    std::shared_ptr<llvm::SectionMemoryManager> memory_manager {std::make_shared<llvm::SectionMemoryManager>()};
+
+    llvm::orc::RTDyldObjectLinkingLayer object_layer
+    {
+        execution_session,
+        [] { return std::make_unique<llvm::SectionMemoryManager>(); }
+    };
+
+    llvm::orc::IRCompileLayer compile_layer
+    {
+        execution_session,
+        object_layer,
+        llvm::orc::SimpleCompiler(*machine)
+    };
+
+    llvm::DataLayout layout {machine->createDataLayout()};
+    llvm::IRBuilder<> builder {*context};
     std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
-        : context(std::make_shared<llvm::LLVMContext>())
-#if LLVM_VERSION_MAJOR >= 7
-        , module(std::make_unique<llvm::Module>("jit", *context))
-#else
-        , module(std::make_shared<llvm::Module>("jit", *context))
-#endif
-        , machine(getNativeMachine())
-        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
-#if LLVM_VERSION_MAJOR >= 7
-        , object_layer(execution_session, [this](llvm::orc::VModuleKey)
-        {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
-        })
-#else
-        , object_layer([this]() { return memory_manager; })
-#endif
-        , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
-        , layout(machine->createDataLayout())
-        , builder(*context)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
@@ -231,39 +169,36 @@ struct LLVMContext
     {
         if (!module->size())
             return;
-        llvm::PassManagerBuilder pass_manager_builder;
-        llvm::legacy::PassManager mpm;
-        llvm::legacy::FunctionPassManager fpm(module.get());
-        pass_manager_builder.OptLevel = 3;
-        pass_manager_builder.SLPVectorize = true;
-        pass_manager_builder.LoopVectorize = true;
-        pass_manager_builder.RerollLoops = true;
-        pass_manager_builder.VerifyInput = true;
-        pass_manager_builder.VerifyOutput = true;
-        machine->adjustPassManager(pass_manager_builder);
-        fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+
+        llvm::FunctionAnalysisManager function_analysis_manager;
+        llvm::ModuleAnalysisManager module_analysis_manager;
+
+        llvm::PassBuilder pass_builder(machine.get());
+
+        llvm::FunctionPassManager function_pass_manager = pass_builder.buildFunctionSimplificationPipeline(
+            llvm::PassBuilder::OptimizationLevel::O3, llvm::PassBuilder::ThinLTOPhase::None);
+
+        llvm::ModulePassManager module_pass_manager = pass_builder.buildModuleSimplificationPipeline(
+            llvm::PassBuilder::OptimizationLevel::O3, llvm::PassBuilder::ThinLTOPhase::None);
+
+/*        fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
         mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
         pass_manager_builder.populateFunctionPassManager(fpm);
-        pass_manager_builder.populateModulePassManager(mpm);
-        fpm.doInitialization();
+        pass_manager_builder.populateModulePassManager(mpm);*/
+//        fpm.doInitialization();
         for (auto & function : *module)
-            fpm.run(function);
-        fpm.doFinalization();
-        mpm.run(*module);
+            function_pass_manager.run(function, function_analysis_manager);
+//        fpm.doFinalization();
+        module_pass_manager.run(*module, module_analysis_manager);
 
         std::vector<std::string> functions;
         functions.reserve(module->size());
         for (const auto & function : *module)
             functions.emplace_back(function.getName());
 
-#if LLVM_VERSION_MAJOR >= 7
-        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
+/*        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#else
-        if (!compile_layer.addModule(module, memory_manager))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#endif
+            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);*/
 
         for (const auto & name : functions)
         {
@@ -271,13 +206,13 @@ struct LLVMContext
             llvm::raw_string_ostream mangled_name_stream(mangled_name);
             llvm::Mangler::getNameWithPrefix(mangled_name_stream, name, layout);
             mangled_name_stream.flush();
-            auto symbol = compile_layer.findSymbol(mangled_name, false);
+            auto symbol = execution_session.lookup({&execution_session.getMainJITDylib()}, mangled_name);
             if (!symbol)
                 continue; /// external function (e.g. an intrinsic that calls into libc)
-            auto address = symbol.getAddress();
+            auto address = symbol->getAddress();
             if (!address)
                 throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
-            symbols[name] = reinterpret_cast<void *>(*address);
+            symbols[name] = reinterpret_cast<void *>(address);
         }
     }
 };
