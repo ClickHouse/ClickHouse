@@ -154,8 +154,8 @@ public:
 class PacketPayloadReadBuffer : public ReadBuffer
 {
 public:
-    PacketPayloadReadBuffer(ReadBuffer & in, size_t & sequence_id): ReadBuffer(in.position(), 0), in(in), sequence_id(sequence_id) {
-        nextImpl();
+    PacketPayloadReadBuffer(ReadBuffer & in, size_t & sequence_id): ReadBuffer(in.position(), 0), in(in), sequence_id(sequence_id)
+    {
     }
 
 private:
@@ -645,7 +645,7 @@ class LengthEncodedNumber : public WritePacket
 {
     uint64_t value;
 public:
-    LengthEncodedNumber(uint64_t value): value(value)
+    explicit LengthEncodedNumber(uint64_t value): value(value)
     {
     }
 
@@ -657,20 +657,18 @@ public:
 
 class ResultsetRow : public WritePacket
 {
-    std::vector<Vector> columns;
+    std::vector<String> columns;
 public:
-    ResultsetRow()
-    {
-    }
+    ResultsetRow() = default;
 
-    void appendColumn(Vector value)
+    void appendColumn(String & value)
     {
         columns.emplace_back(std::move(value));
     }
 
     void writePayload(WriteBuffer & buffer) const override
     {
-        for (const Vector & column : columns)
+        for (const String & column : columns)
             writeLengthEncodedString(column, buffer);
     }
 };
