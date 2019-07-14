@@ -200,6 +200,47 @@ private:
 };
 
 
+class Adam : public IWeightsUpdater
+{
+public:
+    Adam()
+    {
+        beta1_powered_ = beta1_;
+        beta2_powered_ = beta2_;
+    }
+
+    void add_to_batch(
+            std::vector<Float64> & batch_gradient,
+            IGradientComputer & gradient_computer,
+            const std::vector<Float64> & weights,
+            Float64 bias,
+            Float64 learning_rate,
+            Float64 l2_reg_coef,
+            Float64 target,
+            const IColumn ** columns,
+            size_t row_num) override;
+
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+
+    virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
+
+    void write(WriteBuffer & buf) const override;
+
+    void read(ReadBuffer & buf) override;
+
+private:
+    /// beta1 and beta2 hyperparameters have such recommended values
+    const Float64 beta1_ = 0.9;
+    const Float64 beta2_ = 0.999;
+    const Float64 eps_ = 0.000001;
+    Float64 beta1_powered_;
+    Float64 beta2_powered_;
+    
+    std::vector<Float64> average_gradient;
+    std::vector<Float64> average_squared_gradient;
+};
+
+
 /** LinearModelData is a class which manages current state of learning
   */
 class LinearModelData
@@ -303,6 +344,8 @@ public:
             new_weights_updater = std::make_shared<Momentum>();
         else if (weights_updater_name == "Nesterov")
             new_weights_updater = std::make_shared<Nesterov>();
+        else if (weights_updater_name == "Adam")
+            new_weights_updater = std::make_shared<Adam>();
         else
             throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
 

@@ -67,7 +67,7 @@ namespace
         if (parameters.size() > 3)
         {
             weights_updater_name = parameters[3].safeGet<String>();
-            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov")
+            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov" && weights_updater_name != "Adam")
                 throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -191,6 +191,7 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     update_state();
     /// can't update rhs state because it's constant
 
+    /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
     Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
     for (size_t i = 0; i < weights.size(); ++i)
@@ -219,6 +220,92 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     }
 }
 
+/// Weights updaters
+
+void Adam::write(WriteBuffer & buf) const
+{
+    writeBinary(average_gradient, buf);
+    writeBinary(average_squared_gradient, buf);
+}
+
+void Adam::read(ReadBuffer & buf)
+{
+    readBinary(average_gradient, buf);
+    readBinary(average_squared_gradient, buf);
+}
+
+void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
+{
+    auto & adam_rhs = static_cast<const Adam &>(rhs);
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty() ||
+                adam_rhs.average_gradient.size() != adam_rhs.average_squared_gradient.size())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
+    }
+
+    for (size_t i = 0; i < average_gradient.size(); ++i)
+    {
+        average_gradient[i] = average_gradient[i] * frac + adam_rhs.average_gradient[i] * rhs_frac;
+        average_squared_gradient[i] = average_squared_gradient[i] * frac + adam_rhs.average_squared_gradient[i] * rhs_frac;
+    }
+    beta1_powered_ *= adam_rhs.beta1_powered_;
+    beta2_powered_ *= adam_rhs.beta2_powered_;
+}
+
+void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+{
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(batch_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
+
+    /// batch_gradient already includes learning_rate - bad for squared gradient
+    for (size_t i = 0; i != average_gradient.size(); ++i)
+    {
+        Float64 normed_gradient = batch_gradient[i] / batch_size;
+        average_gradient[i] = beta1_ * average_gradient[i] + (1 - beta1_) * normed_gradient;
+        average_squared_gradient[i] = beta2_ * average_squared_gradient[i] +
+                (1 - beta2_) * normed_gradient * normed_gradient;
+    }
+
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        weights[i] += average_gradient[i] /
+                ((1 - beta1_powered_) * (sqrt(average_squared_gradient[i] / (1 - beta2_powered_)) + eps_));
+    }
+    bias += average_gradient[weights.size()] /
+            ((1 - beta1_powered_) * (sqrt(average_squared_gradient[weights.size()] / (1 - beta2_powered_)) + eps_));
+
+    beta1_powered_ *= beta1_;
+    beta2_powered_ *= beta2_;
+}
+
+void Adam::add_to_batch(
+        std::vector<Float64> & batch_gradient,
+        IGradientComputer & gradient_computer,
+        const std::vector<Float64> & weights,
+        Float64 bias,
+        Float64 learning_rate,
+        Float64 l2_reg_coef,
+        Float64 target,
+        const IColumn ** columns,
+        size_t row_num)
+{
+    if (average_gradient.empty())
+    {
+        average_gradient.resize(batch_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
+    gradient_computer.compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
+}
 
 void Nesterov::read(ReadBuffer & buf)
 {
@@ -233,6 +320,9 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
+    if (accumulated_gradient.empty())
+        accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
+
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
         accumulated_gradient[i] = accumulated_gradient[i] * frac + nesterov_rhs.accumulated_gradient[i] * rhs_frac;
@@ -345,6 +435,8 @@ void IWeightsUpdater::add_to_batch(
 {
     gradient_computer.compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
 }
+
+/// Gradient computers
 
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
