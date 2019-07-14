@@ -245,6 +245,7 @@ public:
         Vector payload;
         WriteBufferFromVector buffer(payload);
         packet.writePayload(buffer);
+        buffer.finish();
         size_t pos = 0;
         do
         {
@@ -360,7 +361,6 @@ public:
 
     void readPayload(Vector && payload) override
     {
-        std::cerr << PacketSender::packetToText(payload) << std::endl;
         tracker.alloc(payload.size());
         ReadBufferFromMemory buffer(payload.data(), payload.size());
 

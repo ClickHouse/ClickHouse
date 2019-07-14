@@ -54,7 +54,7 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
         size_t count = std::min(n, buf.available());
         memset(buf.position(), c, count);
         n -= count;
-        buf.position() += buf.available();
+        buf.position() += count;
     }
 }
 

@@ -360,18 +360,19 @@ void MySQLHandler::comQuery(Vector && payload)
     };
 
     // MariaDB client starts session with that query
-    String select_version = "select @@version_comment limit 1";
+    const String select_version = "\x03select @@version_comment limit 1";
 
     // Translate query from MySQL to ClickHouse.
     // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
-    if (payload.size() > 1 && String(payload.data() + 1, payload.data() - 1) == select_version)
+    if (payload == Vector(select_version.data(), select_version.data() + select_version.size()))
     {
-        payload.clear();
-        WriteBufferFromVector buffer(payload);
-        writeString(select_version, buffer);
+        const char select_empty[] = "\x03select ''";
+        payload = Vector(select_empty, select_empty + strlen(select_empty));
     }
 
-    ReadBufferFromMemory buf(payload.data() + 1, payload.size() - 1);
+    ReadBufferFromMemory buf(payload.data(), payload.size());
+    buf.ignore(); // Command byte
+
     executeQuery(buf, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
