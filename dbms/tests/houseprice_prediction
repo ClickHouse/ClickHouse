@@ -1,0 +1,15 @@
+
+Running 2 stateless tests.
+
+00945_bloom_filter_index:                                               [ OK ]
+00945_ml_test:                                                          [ FAIL ] - result differs with reference:
+--- /home/alex/CH/ClickHouse/dbms/tests/queries/0_stateless/00945_ml_test.reference	2019-04-08 23:40:05.119248908 +0300
++++ /home/alex/CH/ClickHouse/dbms/tests/queries/0_stateless/00945_ml_test.stdout	2019-07-14 23:32:42.876977617 +0300
+@@ -1,4 +0,0 @@
+-0
+-1
+-1
+-0
+
+
+Having 1 errors! 1 tests passed. 0 tests skipped.
