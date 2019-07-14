@@ -23,13 +23,13 @@ private:
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::HandshakeResponse &);
 
-    void comQuery(MySQLProtocol::Vector && payload);
+    void comQuery(ReadBuffer & payload);
 
-    void comFieldList(MySQLProtocol::Vector && payload);
+    void comFieldList(ReadBuffer & payload);
 
     void comPing();
 
-    void comInitDB(MySQLProtocol::Vector && payload);
+    void comInitDB(ReadBuffer & payload);
 
     static String generateScramble();
 

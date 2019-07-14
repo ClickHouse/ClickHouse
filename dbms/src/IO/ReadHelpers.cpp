@@ -202,7 +202,6 @@ void readNullTerminated(Vector & s, ReadBuffer & buf)
         char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
-
         buf.position() = next_pos;
 
         if (buf.hasPendingData())
