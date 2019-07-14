@@ -121,24 +121,6 @@ enum ColumnType
 };
 
 
-// For tracking memory of packets with String fields.
-class PacketMemoryTracker
-{
-    Int64 allocated = 0;
-public:
-    void alloc(Int64 size)
-    {
-        CurrentMemoryTracker::alloc(allocated);
-        allocated = size;
-    }
-
-    ~PacketMemoryTracker()
-    {
-        CurrentMemoryTracker::free(allocated);
-    }
-};
-
-
 using Vector = PODArray<char>;
 
 
@@ -163,9 +145,76 @@ class ReadPacket
 public:
     ReadPacket() = default;
     ReadPacket(ReadPacket &&) = default;
-    virtual void readPayload(Vector && payload) = 0;
+    virtual void readPayload(ReadBuffer & buf) = 0;
 
     virtual ~ReadPacket() = default;
+};
+
+
+class PacketPayloadReadBuffer : public ReadBuffer
+{
+public:
+    PacketPayloadReadBuffer(ReadBuffer & in, size_t & sequence_id): ReadBuffer(in.position(), 0), in(in), sequence_id(sequence_id) {
+        nextImpl();
+    }
+
+private:
+    ReadBuffer & in;
+    size_t & sequence_id;
+    const size_t max_packet_size = MAX_PACKET_LENGTH;
+
+    // Size of packet which is being read now.
+    size_t payload_length = 0;
+
+    // Offset in packet payload.
+    size_t offset = 0;
+protected:
+    bool nextImpl() override
+    {
+        if (payload_length == 0 || (payload_length == max_packet_size && offset == payload_length))
+        {
+            working_buffer.resize(0);
+            offset = 0;
+            payload_length = 0;
+            in.readStrict(reinterpret_cast<char *>(&payload_length), 3);
+
+            if (payload_length > max_packet_size)
+            {
+                std::ostringstream tmp;
+                tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
+                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            }
+            else if (payload_length == 0)
+            {
+                return false;
+            }
+
+            size_t packet_sequence_id = 0;
+            in.read(reinterpret_cast<char &>(packet_sequence_id));
+            if (packet_sequence_id != sequence_id)
+            {
+                std::ostringstream tmp;
+                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << sequence_id << '.';
+                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            }
+            sequence_id++;
+        }
+        else if (offset == payload_length)
+        {
+            return false;
+        }
+
+        in.nextIfAtEnd();
+        working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end());
+        size_t count = std::min(in.available(), payload_length - offset);
+        working_buffer.resize(count);
+        in.ignore(count);
+
+        offset += count;
+        pos = working_buffer.begin();
+
+        return true;
+    }
 };
 
 
@@ -196,46 +245,15 @@ public:
     {
     }
 
-  Vector receivePacketPayload()
+    PacketPayloadReadBuffer getPayload()
     {
-        Vector result;
-        WriteBufferFromVector<Vector> buf(result);
-
-        size_t payload_length = 0;
-        size_t packet_sequence_id = 0;
-
-        // packets which are larger than or equal to 16MB are splitted
-        do
-        {
-            in->readStrict(reinterpret_cast<char *>(&payload_length), 3);
-
-            if (payload_length > max_packet_size)
-            {
-                std::ostringstream tmp;
-                tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
-                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-            }
-
-            in->readStrict(reinterpret_cast<char *>(&packet_sequence_id), 1);
-
-            if (packet_sequence_id != sequence_id)
-            {
-                std::ostringstream tmp;
-                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << sequence_id << '.';
-                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-            }
-            sequence_id++;
-
-            copyData(*in, static_cast<WriteBuffer &>(buf), payload_length);
-        } while (payload_length == max_packet_size);
-
-        return result;
+        return PacketPayloadReadBuffer(*in, sequence_id);
     }
 
     void receivePacket(ReadPacket & packet)
     {
-        auto payload = receivePacketPayload();
-        packet.readPayload(std::move(payload));
+        auto payload = getPayload();
+        packet.readPayload(payload);
     }
 
     template<class T>
@@ -336,12 +354,11 @@ public:
     uint32_t max_packet_size;
     uint8_t character_set;
 
-    void readPayload(Vector && s) override
+    void readPayload(ReadBuffer & buf) override
     {
-        ReadBufferFromMemory buffer(s.data(), s.size());
-        buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
-        buffer.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
-        buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
+        buf.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
+        buf.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
+        buf.readStrict(reinterpret_cast<char *>(&character_set), 1);
     }
 };
 
@@ -355,48 +372,44 @@ public:
     String auth_response;
     String database;
     String auth_plugin_name;
-    PacketMemoryTracker tracker;
 
     HandshakeResponse() = default;
 
-    void readPayload(Vector && payload) override
+    void readPayload(ReadBuffer & payload) override
     {
-        tracker.alloc(payload.size());
-        ReadBufferFromMemory buffer(payload.data(), payload.size());
+        payload.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
+        payload.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
+        payload.readStrict(reinterpret_cast<char *>(&character_set), 1);
+        payload.ignore(23);
 
-        buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 4);
-        buffer.readStrict(reinterpret_cast<char *>(&max_packet_size), 4);
-        buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
-        buffer.ignore(23);
-
-        readNullTerminated(username, buffer);
+        readNullTerminated(username, payload);
 
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
-            auto len = readLengthEncodedNumber(buffer);
+            auto len = readLengthEncodedNumber(payload);
             auth_response.resize(len);
-            buffer.readStrict(auth_response.data(), len);
+            payload.readStrict(auth_response.data(), len);
         }
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
             char len;
-            buffer.readStrict(len);
+            payload.readStrict(len);
             auth_response.resize(static_cast<unsigned int>(len));
-            buffer.readStrict(auth_response.data(), len);
+            payload.readStrict(auth_response.data(), len);
         }
         else
         {
-            readNullTerminated(auth_response, buffer);
+            readNullTerminated(auth_response, payload);
         }
 
         if (capability_flags & CLIENT_CONNECT_WITH_DB)
         {
-            readNullTerminated(database, buffer);
+            readNullTerminated(database, payload);
         }
 
         if (capability_flags & CLIENT_PLUGIN_AUTH)
         {
-            readNullTerminated(auth_plugin_name, buffer);
+            readNullTerminated(auth_plugin_name, payload);
         }
     }
 };
@@ -424,12 +437,10 @@ class AuthSwitchResponse : public ReadPacket
 {
 public:
     String value;
-    PacketMemoryTracker tracker;
 
-    void readPayload(Vector && payload) override
+    void readPayload(ReadBuffer & payload) override
     {
-        tracker.alloc(payload.size());
-        value.assign(payload.data(), payload.size());
+        readStringUntilEOF(value, payload);
     }
 };
 
@@ -450,16 +461,11 @@ public:
 class NullTerminatedString : public ReadPacket
 {
 public:
-    Vector value;
+    String value;
 
-    void readPayload(Vector && payload) override
+    void readPayload(ReadBuffer & payload) override
     {
-        if (payload.empty() || payload.back() != 0)
-        {
-            throw ProtocolError("String is not null terminated.", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
-        }
-        value = std::move(payload);
-        value.pop_back();
+        readNullTerminated(value, payload);
     }
 };
 
@@ -486,7 +492,7 @@ public:
         , warnings(warnings)
         , status_flags(status_flags)
         , session_state_changes(std::move(session_state_changes))
-        , info(info)
+        , info(std::move(info))
     {
     }
 
@@ -627,13 +633,11 @@ class ComFieldList : public ReadPacket
 public:
     String table, field_wildcard;
 
-    void readPayload(Vector && payload) override
+    void readPayload(ReadBuffer & payload) override
     {
-        ReadBufferFromMemory buffer(payload.data(), payload.size());
-        buffer.ignore(1); // command byte
-        readNullTerminated(table, buffer);
-        field_wildcard.assign(payload.data() + table.size() + 2);
-        readStringUntilEOFInto(field_wildcard, buffer);
+        // Command byte has been already read from payload.
+        readNullTerminated(table, payload);
+        readStringUntilEOF(field_wildcard, payload);
     }
 };
 

@@ -105,9 +105,12 @@ void MySQLHandler::run()
         while (true)
         {
             packet_sender->resetSequenceId();
-            Vector payload = packet_sender->receivePacketPayload();
-            int command = payload[0];
-            LOG_DEBUG(log, "Received command: " << std::to_string(command) << ". Connection id: " << connection_id << ".");
+            PacketPayloadReadBuffer payload = packet_sender->getPayload();
+
+            unsigned char command = 0;
+            payload.readStrict(reinterpret_cast<char &>(command));
+
+            LOG_DEBUG(log, "Received command: " << static_cast<int>(command) << ". Connection id: " << connection_id << ".");
             try
             {
                 switch (command)
@@ -115,13 +118,13 @@ void MySQLHandler::run()
                     case COM_QUIT:
                         return;
                     case COM_INIT_DB:
-                        comInitDB(std::move(payload));
+                        comInitDB(payload);
                         break;
                     case COM_QUERY:
-                        comQuery(std::move(payload));
+                        comQuery(payload);
                         break;
                     case COM_FIELD_LIST:
-                        comFieldList(std::move(payload));
+                        comFieldList(payload);
                         break;
                     case COM_PING:
                         comPing();
@@ -181,10 +184,9 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
     {
         read_bytes(packet_size); /// Reading rest SSLRequest.
         SSLRequest ssl_request;
-        Vector payload;
-        WriteBufferFromVector buffer(payload);
-        buffer.write(buf + PACKET_HEADER_SIZE, pos - PACKET_HEADER_SIZE);
-        ssl_request.readPayload(std::move(payload));
+        ReadBufferFromMemory payload(buf, pos);
+        payload.ignore(PACKET_HEADER_SIZE);
+        ssl_request.readPayload(payload);
         connection_context.client_capabilities = ssl_request.capability_flags;
         connection_context.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
         secure_connection = true;
@@ -200,12 +202,12 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
     {
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
-        Vector packet_data;
-        WriteBufferFromVector buf_for_handshake_response(packet_data);
+        WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf, pos);
         copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
-        Vector payload(Vector::const_iterator(packet_data.data() + PACKET_HEADER_SIZE), const_cast<const Vector &>(packet_data).end());
-        packet.readPayload(std::move(payload));
+        ReadBufferFromString payload(buf_for_handshake_response.str());
+        payload.ignore(PACKET_HEADER_SIZE);
+        packet.readPayload(payload);
         packet_sender->sequence_id++;
     }
 }
@@ -323,18 +325,19 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     }
 }
 
-void MySQLHandler::comInitDB(Vector && payload)
+void MySQLHandler::comInitDB(ReadBuffer & payload)
 {
-    String database(payload.data() + 1, payload.size() - 1);
+    String database;
+    readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to " << database);
     connection_context.setCurrentDatabase(database);
     packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }
 
-void MySQLHandler::comFieldList(Vector && payload)
+void MySQLHandler::comFieldList(ReadBuffer & payload)
 {
     ComFieldList packet;
-    packet.readPayload(std::move(payload));
+    packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
     StoragePtr tablePtr = connection_context.getTable(database, packet.table);
     for (const NameAndTypePair & column: tablePtr->getColumns().getAll())
@@ -352,28 +355,15 @@ void MySQLHandler::comPing()
     packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
-void MySQLHandler::comQuery(Vector && payload)
+void MySQLHandler::comQuery(ReadBuffer & payload)
 {
     bool with_output = false;
     std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
         with_output = true;
     };
 
-    // MariaDB client starts session with that query
-    const String select_version = "\x03select @@version_comment limit 1";
+    executeQuery(payload, *out, true, connection_context, set_content_type, nullptr);
 
-    // Translate query from MySQL to ClickHouse.
-    // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
-    if (payload == Vector(select_version.data(), select_version.data() + select_version.size()))
-    {
-        const char select_empty[] = "\x03select ''";
-        payload = Vector(select_empty, select_empty + strlen(select_empty));
-    }
-
-    ReadBufferFromMemory buf(payload.data(), payload.size());
-    buf.ignore(); // Command byte
-
-    executeQuery(buf, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
