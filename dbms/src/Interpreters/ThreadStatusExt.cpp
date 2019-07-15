@@ -32,8 +32,6 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
-    query_id = query_context->getCurrentQueryId();
-
     if (thread_group)
     {
         std::lock_guard lock(thread_group->mutex);
@@ -105,6 +103,9 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_numbers.emplace_back(thread_number);
     }
+
+    if (query_context)
+        query_id = query_context->getCurrentQueryId();
 
 #if defined(__linux__)
     /// Set "nice" value if required.
