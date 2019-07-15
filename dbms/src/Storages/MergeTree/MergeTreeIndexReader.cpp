@@ -10,7 +10,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         part->getFullPath() + index->getFileName(), ".idx", marks_count,
         all_mark_ranges, nullptr, false, nullptr,
         part->getFileSizeOrZero(index->getFileName() + ".idx"), 0, DBMS_DEFAULT_BUFFER_SIZE,
-        &part->storage.index_granularity_info,
+        &part->index_granularity_info,
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE)
 {
     stream.seekToStart();

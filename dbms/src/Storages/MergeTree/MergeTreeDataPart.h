@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -245,6 +246,8 @@ struct MergeTreeDataPart
         *  unblocking, block it for writing.
         */
     mutable std::mutex alter_mutex;
+
+    MergeTreeIndexGranularityInfo index_granularity_info;
 
     ~MergeTreeDataPart();
 

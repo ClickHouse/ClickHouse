@@ -31,6 +31,7 @@ try
     DateLUT::instance();
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     context.setPath("./");
 

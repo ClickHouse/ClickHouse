@@ -1,10 +1,14 @@
 # Formats for input and output data {#formats}
 
-ClickHouse can accept (`INSERT`) and return (`SELECT`) data in various formats.
+ClickHouse can accept and return data in various formats. A format supported
+for input can be used to parse the data provided to `INSERT`s, to perform
+`SELECT`s from a file-backed table such as File, URL or HDFS, or to read an
+external dictionary. A format supported for output can be used to arrange the
+results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
-The table below lists supported formats and how they can be used in `INSERT` and `SELECT` queries.
+The supported formats are:
 
-| Format | INSERT | SELECT |
+| Format | Input | Output |
 | ------- | -------- | -------- |
 | [TabSeparated](#tabseparated) | ✔ | ✔ |
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
@@ -165,8 +169,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
-Empty unquoted input values are replaced with default values for the respective
-columns, if
+Empty unquoted input values are replaced with default values for the respective columns, if
 [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 is enabled.
 

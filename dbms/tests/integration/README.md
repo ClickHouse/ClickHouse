@@ -12,7 +12,7 @@ You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python-pip libpq-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal kafka-python protobuf pytest-timeout`
 
