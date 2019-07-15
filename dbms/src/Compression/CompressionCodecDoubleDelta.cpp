@@ -38,11 +38,10 @@ Int64 getMaxValueForByteSize(UInt8 byte_size)
             return std::numeric_limits<Int32>::max();
         case sizeof(UInt64):
             return std::numeric_limits<Int64>::max();
-    default:
-        assert(false && "only 1,2,4 and 8 data sizes are supported");
+        default:
+            assert(false && "only 1, 2, 4 and 8 data sizes are supported");
     }
-
-    return std::numeric_limits<Int64>::max();
+    __builtin_unreachable();
 }
 
 struct WriteSpec
