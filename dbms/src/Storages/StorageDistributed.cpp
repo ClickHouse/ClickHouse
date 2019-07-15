@@ -189,7 +189,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : IStorage{columns_}, table_name(table_name),
+    : IStorage{columns_}, table_name(table_name), database_name(database_name),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
@@ -343,7 +343,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & database_name, const String & current_table_name,
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
     const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
@@ -351,7 +351,7 @@ void StorageDistributed::alter(
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

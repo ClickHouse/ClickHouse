@@ -52,7 +52,8 @@ public:
     };
 
     std::string getName() const override { return "Buffer"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
@@ -71,7 +72,7 @@ public:
     void shutdown() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
@@ -94,7 +95,8 @@ public:
         const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
-    String name;
+    String table_name;
+    String database_name;
 
     Context global_context;
 
@@ -138,7 +140,7 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & name_, const ColumnsDescription & columns_,
+    StorageBuffer(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
