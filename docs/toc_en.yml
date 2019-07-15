@@ -61,6 +61,10 @@ nav:
     - 'IPv4': 'data_types/domains/ipv4.md'
     - 'IPv6': 'data_types/domains/ipv6.md'
 
+- 'Database Engines':
+    - 'Introduction': 'database_engines/index.md'
+    - 'MySQL': 'database_engines/mysql.md'
+
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'
   - 'MergeTree Family':

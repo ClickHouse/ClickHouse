@@ -77,8 +77,6 @@
 #define HAVE_PTHREAD_SETNAME_GNU 1
 // python
 //#define HAVE_PYTHON 1
-// C11 threads
-#if (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_THREADS__)
-#  define WITH_C11THREADS 1
-#endif
+// disable C11 threads for compatibility with old libc
+#define WITH_C11THREADS 0
 #endif /* _CONFIG_H_ */
