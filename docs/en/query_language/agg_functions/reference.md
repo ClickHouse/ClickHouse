@@ -674,19 +674,19 @@ Optional parameters:
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
-Calculates the moving sum of the input values.
+Calculates the moving sum of input values.
 
 ```
-groupArrayMovingSum(column_for_summing)
-groupArrayMovingSum(window_size)(column_for_summing)
+groupArrayMovingSum(numbers_for_summing)
+groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the column size.
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `column_for_summing` — Column name. The column should have the numeric or [Decimal](../../data_types/decimal.md) data type.
-- `window_size` — Size of the sample window.
+- `numbers_for_summing` — [Expression](../syntax.md#expressions) resulting with a value in a numeric data type.
+- `window_size` — Size of the calculation window.
 
 **Returned values**
 
@@ -696,86 +696,120 @@ The function can take the window size as a parameter. If it not specified, the f
 
 The sample table:
 
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
 ```text
-┌─a─┐
-│ 3 │
-│ 4 │
-│ 5 │
-│ 6 │
-└───┘
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
 ```
 
 The queries:
 
 ```sql
-SELECT groupArrayMovingSum(a) FROM b
+SELECT
+    groupArrayMovingSum(int) AS I,
+    groupArrayMovingSum(float) AS F,
+    groupArrayMovingSum(dec) AS D
+FROM t
 ```
 ```text
-┌─groupArrayMovingSum(a)─┐
-│ [3,7,12,18]            │
-└────────────────────────┘
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 ```sql
-SELECT groupArrayMovingSum(2)(a) FROM b
+SELECT
+    groupArrayMovingSum(2)(int) AS I,
+    groupArrayMovingSum(2)(float) AS F,
+    groupArrayMovingSum(2)(dec) AS D
+FROM t
 ```
 ```text
-┌─groupArrayMovingSum(2)(a)─┐
-│ [3,7,9,11]                │
-└───────────────────────────┘
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
 ## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
-Calculates the moving average of the input values.
+Calculates the moving average of input values.
 
 ```
-groupArrayMovingAvg(column_for_summing)
-groupArrayMovingAvg(window_size)(column_for_summing)
+groupArrayMovingAvg(numbers_for_summing)
+groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the column size.
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `column_for_summing` — Column name. The column should have the numeric or [Decimal](../../data_types/decimal.md) data type.
-- `window_size` — Size of the sample window.
+- `numbers_for_summing` — [Expression](../syntax.md#expressions) resulting with a value in a numeric data type.
+- `window_size` — Size of the calculation window.
 
 **Returned values**
 
 - Array of the same size and type as the input data.
 
-For integer numbers, the function truncates the decimal part of average values.
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
 
 **Example**
 
 The sample table `b`:
 
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
 ```text
-┌─a─┐
-│ 3 │
-│ 4 │
-│ 5 │
-│ 6 │
-└───┘
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
 ```
 
 The queries:
 
 ```sql
-SELECT groupArrayMovingAvg(a) FROM b
+SELECT
+    groupArrayMovingAvg(int) AS I,
+    groupArrayMovingAvg(float) AS F,
+    groupArrayMovingAvg(dec) AS D
+FROM t
 ```
 ```text
-┌─groupArrayMovingAvg(a)─┐
-│ [0,1,3,4]              │
-└────────────────────────┘
+┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
+│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
+└───────────┴─────────────────────────────────────┴───────────────────────┘
 ```
 ```sql
-SELECT groupArrayMovingAvg(2)(a) FROM b
+SELECT
+    groupArrayMovingAvg(2)(int) AS I,
+    groupArrayMovingAvg(2)(float) AS F,
+    groupArrayMovingAvg(2)(dec) AS D
+FROM t
 ```
 ```text
-┌─groupArrayMovingAvg(2)(a)─┐
-│ [1,3,4,5]                 │
-└───────────────────────────┘
+┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
+│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
+└───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
