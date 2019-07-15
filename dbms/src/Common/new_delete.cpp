@@ -8,30 +8,61 @@
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
 #if 1
 
+namespace Memory
+{
+
+ALWAYS_INLINE void * trackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]]) noexcept
+{
+#ifdef USE_JEMALLOC
+    if (likely(ptr != nullptr))
+        CurrentMemoryTracker::alloc(sallocx(ptr, 0));
+#else
+    CurrentMemoryTracker::alloc(size);
+#endif
+
+    return ptr;
+}
+
+ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]]) noexcept
+{
+#ifdef USE_JEMALLOC
+    if (likely(ptr != nullptr))
+        CurrentMemoryTracker::free(sallocx(ptr, 0));
+#endif
+}
+
+ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]]) noexcept
+{
+#ifdef USE_JEMALLOC
+    if (likely(ptr != nullptr))
+        CurrentMemoryTracker::free(sallocx(ptr, 0));
+#else
+    CurrentMemoryTracker::free(size);
+#endif
+}
+
+}
+
 /// new
 
 void * operator new(std::size_t size)
 {
-    CurrentMemoryTracker::alloc(size);
-    return Memory::newImpl(size);
+    return Memory::trackMemory(Memory::newImpl(size), size);
 }
 
 void * operator new[](std::size_t size)
 {
-    CurrentMemoryTracker::alloc(size);
-    return Memory::newImpl(size);
+    return Memory::trackMemory(Memory::newImpl(size), size);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    CurrentMemoryTracker::alloc(size);
-    return Memory::newNoExept(size);
+    return Memory::trackMemory(Memory::newNoExept(size), size);
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    CurrentMemoryTracker::alloc(size);
-    return Memory::newNoExept(size);
+    return Memory::trackMemory(Memory::newNoExept(size), size);
 }
 
 /// delete
@@ -46,23 +77,25 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 
 void operator delete(void * ptr) noexcept
 {
+    Memory::untrackMemory(ptr);
     Memory::deleteImpl(ptr);
 }
 
 void operator delete[](void * ptr) noexcept
 {
+    Memory::untrackMemory(ptr);
     Memory::deleteImpl(ptr);
 }
 
 void operator delete(void * ptr, std::size_t size) noexcept
 {
-    CurrentMemoryTracker::free(size);
+    Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
 }
 
 void operator delete[](void * ptr, std::size_t size) noexcept
 {
-    CurrentMemoryTracker::free(size);
+    Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
 }
 
