@@ -1,7 +1,0 @@
-<yandex>
-        <macros>
-                <cluster>test_cluster</cluster>
-                <shard>0</shard>
-                <replica>ch1</replica>
-        </macros>
-</yandex>
