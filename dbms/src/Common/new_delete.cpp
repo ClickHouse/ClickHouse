@@ -11,34 +11,47 @@
 namespace Memory
 {
 
-ALWAYS_INLINE void * trackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]]) noexcept
+ALWAYS_INLINE void trackMemory(std::size_t size)
 {
-#ifdef USE_JEMALLOC
-    if (likely(ptr != nullptr))
-        CurrentMemoryTracker::alloc(sallocx(ptr, 0));
+#if USE_JEMALLOC
+    /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
+    /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
+    CurrentMemoryTracker::alloc(nallocx(size, 0));
 #else
     CurrentMemoryTracker::alloc(size);
 #endif
-
-    return ptr;
 }
 
-ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]]) noexcept
+ALWAYS_INLINE bool trackMemoryNoExept(std::size_t size) noexcept
 {
-#ifdef USE_JEMALLOC
-    if (likely(ptr != nullptr))
-        CurrentMemoryTracker::free(sallocx(ptr, 0));
-#endif
+    try
+    {
+        if (likely(size != 0))
+            trackMemory(size);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
 }
 
-ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]]) noexcept
+ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
 {
-#ifdef USE_JEMALLOC
-    if (likely(ptr != nullptr))
-        CurrentMemoryTracker::free(sallocx(ptr, 0));
+    try
+    {
+#if USE_JEMALLOC
+        /// @note It's also possible to use je_malloc_usable_size() here.
+        if (likely(ptr != nullptr))
+            CurrentMemoryTracker::free(sallocx(ptr, 0));
 #else
-    CurrentMemoryTracker::free(size);
+        if (size)
+            CurrentMemoryTracker::free(size);
 #endif
+    }
+    catch (...)
+    {}
 }
 
 }
@@ -47,22 +60,28 @@ ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [
 
 void * operator new(std::size_t size)
 {
-    return Memory::trackMemory(Memory::newImpl(size), size);
+    Memory::trackMemory(size);
+    return Memory::newImpl(size);
 }
 
 void * operator new[](std::size_t size)
 {
-    return Memory::trackMemory(Memory::newImpl(size), size);
+    Memory::trackMemory(size);
+    return Memory::newImpl(size);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    return Memory::trackMemory(Memory::newNoExept(size), size);
+    if (likely(Memory::trackMemoryNoExept(size)))
+        return Memory::newNoExept(size);
+    return nullptr;
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    return Memory::trackMemory(Memory::newNoExept(size), size);
+    if (likely(Memory::trackMemoryNoExept(size)))
+        return Memory::newNoExept(size);
+    return nullptr;
 }
 
 /// delete
