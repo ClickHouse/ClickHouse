@@ -1,14 +1,11 @@
 #pragma once
 
+#include <new>
+#include <common/likely.h>
+
 #if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
 #endif
-
-#if USE_JEMALLOC
-
-#include <new>
-#include <jemalloc/jemalloc.h>
-#include <common/likely.h>
 
 #if defined(_MSC_VER)
     #define ALWAYS_INLINE __forceinline
@@ -18,6 +15,10 @@
     #define NO_INLINE __attribute__((__noinline__))
 #endif
 
+#if USE_JEMALLOC
+
+#include <jemalloc/jemalloc.h>
+
 namespace JeMalloc
 {
 
@@ -25,7 +26,7 @@ void * handleOOM(std::size_t size, bool nothrow);
 
 ALWAYS_INLINE void * newImpl(std::size_t size)
 {
-    void * ptr = je_malloc(size);
+    void * ptr = malloc(size);
     if (likely(ptr != nullptr))
         return ptr;
 
@@ -34,7 +35,7 @@ ALWAYS_INLINE void * newImpl(std::size_t size)
 
 ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 {
-    void * ptr = je_malloc(size);
+    void * ptr = malloc(size);
     if (likely(ptr != nullptr))
         return ptr;
 
@@ -43,7 +44,7 @@ ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
 
 ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
 {
-    je_free(ptr);
+    free(ptr);
 }
 
 ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
@@ -51,7 +52,7 @@ ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
     if (unlikely(ptr == nullptr))
         return;
 
-    je_sdallocx(ptr, size, 0);
+    sdallocx(ptr, size, 0);
 }
 
 }
@@ -86,7 +87,7 @@ ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
     free(ptr);
 }
 
-ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
+ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]]) noexcept
 {
     free(ptr);
 }
