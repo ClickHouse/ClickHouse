@@ -274,9 +274,12 @@ void WriteBufferAIO::prepare()
     /// Region of the disk in which we want to write data.
     const off_t region_begin = pos_in_file;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
     if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
         (pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(flush_buffer.offset()))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
+#pragma GCC diagnostic pop
 
     const off_t region_end = pos_in_file + flush_buffer.offset();
     const size_t region_size = region_end - region_begin;
