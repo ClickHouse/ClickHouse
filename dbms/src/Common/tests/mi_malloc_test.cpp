@@ -1,3 +1,10 @@
+#include <map>
+#include <vector>
+#include <cstdint>
+#include <random>
+#include <stdexcept>
+#include <iostream>
+
 #include <Common/config.h>
 
 //#undef USE_MIMALLOC
@@ -14,13 +21,6 @@
 #include <stdlib.h>
 
 #endif
-
-#include <map>
-#include <vector>
-#include <cstdint>
-#include <random>
-#include <stdexcept>
-#include <iostream>
 
 
 size_t total_size{0};
