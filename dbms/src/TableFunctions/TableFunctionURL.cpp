@@ -9,7 +9,7 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format, const Block & sample_block, Context & global_context) const
 {
     Poco::URI uri(source);
-    return StorageURL::create(uri, getName(), format, ColumnsDescription{sample_block.getNamesAndTypesList()}, global_context);
+    return StorageURL::create(uri, getDatabaseName(), getName(), format, ColumnsDescription{sample_block.getNamesAndTypesList()}, global_context);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
