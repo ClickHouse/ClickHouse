@@ -1,6 +1,8 @@
 #include <Core/Types.h>
 #include <Functions/GeoUtils.h>
 
+#include <tuple>
+
 namespace
 {
 
@@ -36,6 +38,10 @@ const UInt8 geohash_base32_decode_lookup_table[256] = {
 const size_t BITS_PER_SYMBOL = 5;
 const size_t MAX_PRECISION = 12;
 const size_t MAX_BITS = MAX_PRECISION * BITS_PER_SYMBOL * 1.5;
+const Float64 LON_MIN = -180;
+const Float64 LON_MAX = 180;
+const Float64 LAT_MIN = -90;
+const Float64 LAT_MAX = 90;
 
 using Encoded = std::array<UInt8, MAX_BITS>;
 
@@ -187,24 +193,57 @@ inline Encoded base32Decode(const char * encoded_string, size_t encoded_length)
     return result;
 }
 
-}
-
-namespace DB
+inline Float64 getMaxSpan(CoordType type)
 {
-
-namespace GeoUtils
-{
-
-size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out)
-{
-    if (precision == 0 || precision > MAX_PRECISION)
+    if (type == LONGITUDE)
     {
-        precision = MAX_PRECISION;
+        return LON_MAX - LON_MIN;
     }
 
+    return LAT_MAX - LAT_MIN;
+}
+
+inline Float64 getSpan(UInt8 precision, CoordType type)
+{
+    const auto bits = singleCoordBitsPrecision(precision, type);
+    // since every bit of precision divides span by 2, divide max span by 2^bits.
+    return ldexp(getMaxSpan(type), -1 * bits);
+}
+
+inline std::tuple<UInt64, Float64, Float64> geohashCoverAreaWithBoxesPrologue(Float64 longitude_min,
+                                              Float64 latitude_min,
+                                              Float64 & longitude_max,
+                                              Float64 & latitude_max,
+                                              UInt8 & precision)
+{
+    precision = DB::GeoUtils::geohashPrecision(precision);
+
+    if (longitude_max < longitude_min || latitude_max < latitude_min)
+    {
+        return {0, 0.0, 0.0};
+    }
+
+    const auto lon_step = getSpan(precision, LONGITUDE);
+    const auto lat_step = getSpan(precision, LATITUDE);
+
+    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
+    longitude_min = floor(longitude_min / lon_step) * lon_step;
+    latitude_min = floor(latitude_min / lat_step) * lat_step;
+    longitude_max = ceil(longitude_max / lon_step) * lon_step;
+    latitude_max = ceil(latitude_max / lat_step) * lat_step;
+    const auto lon_span = longitude_max - longitude_min;
+    const auto lat_span = latitude_max - latitude_min;
+
+    return {static_cast<size_t>(ceil((lon_span)/lon_step * (lat_span)/lat_step)),
+            lon_step,
+            lat_step};
+}
+
+inline size_t geohashEncodeImpl(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
+{
     const Encoded combined = merge(
-                encodeCoordinate(longitude, -180, 180, singleCoordBitsPrecision(precision, LONGITUDE)),
-                encodeCoordinate(latitude, -90, 90, singleCoordBitsPrecision(precision, LATITUDE)),
+                encodeCoordinate(longitude, LON_MIN, LON_MAX, singleCoordBitsPrecision(precision, LONGITUDE)),
+                encodeCoordinate(latitude, LAT_MIN, LAT_MAX, singleCoordBitsPrecision(precision, LATITUDE)),
                 precision);
 
     base32Encode(combined, precision, out);
@@ -212,9 +251,30 @@ size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char 
     return precision;
 }
 
+}
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace GeoUtils
+{
+
+const UInt8 GEOHASH_MAX_PRECISION = MAX_PRECISION;
+
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
+{
+    precision = DB::GeoUtils::geohashPrecision(precision);
+    return geohashEncodeImpl(longitude, latitude, geohashPrecision(precision), out);
+}
+
 void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude)
 {
-    const UInt8 precision = std::min(encoded_len, MAX_PRECISION);
+    const UInt8 precision = std::min(encoded_len, static_cast<size_t>(GEOHASH_MAX_PRECISION));
     if (precision == 0)
     {
         return;
@@ -223,8 +283,45 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     Encoded lat_encoded, lon_encoded;
     std::tie(lon_encoded, lat_encoded) = split(base32Decode(encoded_string, precision), precision);
 
-    *longitude = decodeCoordinate(lon_encoded, -180, 180, singleCoordBitsPrecision(precision, LONGITUDE));
-    *latitude = decodeCoordinate(lat_encoded, -90, 90, singleCoordBitsPrecision(precision, LATITUDE));
+    *longitude = decodeCoordinate(lon_encoded, LON_MIN, LON_MAX, singleCoordBitsPrecision(precision, LONGITUDE));
+    *latitude = decodeCoordinate(lat_encoded, LAT_MIN, LAT_MAX, singleCoordBitsPrecision(precision, LATITUDE));
+}
+
+UInt64 geohashEstimateCoverAreaWithBoxesItems(const Float64 longitude_min,
+                                              const Float64 latitude_min,
+                                              Float64 longitude_max,
+                                              Float64 latitude_max,
+                                              UInt8 precision)
+{
+    return std::get<0>(geohashCoverAreaWithBoxesPrologue(longitude_min, latitude_min, longitude_max, latitude_max, precision));
+}
+
+UInt64 geohashCoverAreaWithBoxes(const Float64 longitude_min,
+                                 const Float64 latitude_min,
+                                 Float64 longitude_max,
+                                 Float64 latitude_max,
+                                 UInt8 precision,
+                                 char * out)
+{
+    // a hack to silence warning on estimited_items.
+    [[maybe_unused]] const auto [estimated_items, lon_step, lat_step] = geohashCoverAreaWithBoxesPrologue(
+            longitude_min, latitude_min, longitude_max, latitude_max, precision);
+
+    UInt64 items = 0;
+    for (auto lon = longitude_min; lon < longitude_max; lon += lon_step)
+    {
+        for (auto lat = latitude_min; lat < latitude_max; lat += lat_step)
+        {
+            size_t l = geohashEncodeImpl(lon, lat, precision, out);
+            out += l;
+            *out = '\0';
+            ++out;
+
+            ++items;
+        }
+    }
+
+    return items;
 }
 
 }

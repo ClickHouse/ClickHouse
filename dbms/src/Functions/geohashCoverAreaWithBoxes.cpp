@@ -1,0 +1,172 @@
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/GeoUtils.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+
+#include <memory>
+#include <string>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+class FunctionGeohashCoverAreaWithBoxes : public IFunction
+{
+public:
+    static constexpr auto name = "geohashCoverAreaWithBoxes";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashCoverAreaWithBoxes>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 5; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        validateArgumentType(*this, arguments, 0, isFloat, "float");
+        validateArgumentType(*this, arguments, 1, isFloat, "float");
+        validateArgumentType(*this, arguments, 2, isFloat, "float");
+        validateArgumentType(*this, arguments, 3, isFloat, "float");
+        validateArgumentType(*this, arguments, 4, isUInt8, "integer");
+
+        if (!(isSame(arguments[0], arguments[1]) &&
+              isSame(arguments[0], arguments[2]) &&
+              isSame(arguments[0], arguments[3])))
+        {
+            throw Exception("Illegal type of argument of " + getName() +
+                            " all coordinate arguments must have the same type, instead they are:" +
+                            arguments[0]->getName() + ", " +
+                            arguments[1]->getName() + ", " +
+                            arguments[2]->getName() + ", " +
+                            arguments[3]->getName() + ".",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    template <typename LonAndLatType, typename PrecisionType>
+    bool tryExecute(const IColumn * lon_min_column,
+                    const IColumn * lat_min_column,
+                    const IColumn * lon_max_column,
+                    const IColumn * lat_max_column,
+                    const IColumn * precision_column,
+                    ColumnPtr & result)
+    {
+        static constexpr size_t max_array_size = 10'000'000;
+
+        const auto * lon_min = checkAndGetColumn<ColumnVector<LonAndLatType>>(lon_min_column);
+        const auto * lat_min = checkAndGetColumn<ColumnVector<LonAndLatType>>(lat_min_column);
+        const auto * lon_max = checkAndGetColumn<ColumnVector<LonAndLatType>>(lon_max_column);
+        const auto * lat_max = checkAndGetColumn<ColumnVector<LonAndLatType>>(lat_max_column);
+        auto * precision = checkAndGetColumn<ColumnVector<PrecisionType>>(precision_column);
+        if (precision == nullptr)
+        {
+            precision = checkAndGetColumnConstData<ColumnVector<PrecisionType>>(precision_column);
+        }
+
+        if (!lon_min || !lat_min || !lon_max || !lat_max || !precision)
+            return false;
+
+        const size_t total_rows = lat_min->size();
+
+        auto col_res = ColumnArray::create(ColumnString::create());
+        ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        ColumnString::Chars & res_strings_chars = res_strings.getChars();
+        ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
+
+        for (size_t row = 0; row < total_rows; ++row)
+        {
+            const Float64 lon_min_value = lon_min->getElement(row);
+            const Float64 lat_min_value = lat_min->getElement(row);
+            const Float64 lon_max_value = lon_max->getElement(row);
+            const Float64 lat_max_value = lat_max->getElement(row);
+            const PrecisionType precision_value = GeoUtils::geohashPrecision(precision->getElement(row % precision->size()));
+
+            const auto estimated_array_size = GeoUtils::geohashEstimateCoverAreaWithBoxesItems(
+                        lon_min_value, lat_min_value, lon_max_value, lat_max_value, precision_value);
+
+            if (estimated_array_size > max_array_size)
+            {
+                throw Exception{getName() + " would produce " + std::to_string(estimated_array_size) +
+                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_array_size),
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            }
+
+            res_strings_offsets.reserve(res_strings_offsets.size() + estimated_array_size);
+            res_strings_chars.resize(res_strings_chars.size() + estimated_array_size * (precision_value + 1));
+            const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
+            char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
+
+            const auto actual_array_size = GeoUtils::geohashCoverAreaWithBoxes(
+                        lon_min_value, lat_min_value, lon_max_value, lat_max_value, precision_value, out);
+
+            for (UInt8 i = 1; i <= actual_array_size ; ++i)
+            {
+                res_strings_offsets.push_back(starting_offset + (precision_value + 1) * i);
+            }
+
+            res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + actual_array_size);
+        }
+        if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
+        {
+            throw Exception("String column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
+        {
+            throw Exception("Arrary column size mismatch (internal logical error)"
+                            + std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size())
+                            , ErrorCodes::LOGICAL_ERROR);
+        }
+
+        result = std::move(col_res);
+        return true;
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
+        const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
+        const IColumn * lon_max = block.getByPosition(arguments[2]).column.get();
+        const IColumn * lat_max = block.getByPosition(arguments[3]).column.get();
+        const IColumn * prec =    block.getByPosition(arguments[4]).column.get();
+        ColumnPtr & res = block.getByPosition(result).column;
+
+        if (tryExecute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res) ||
+            tryExecute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res))
+            return;
+
+        std::string arguments_description;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (i != 0)
+                arguments_description += ", ";
+            arguments_description += block.getByPosition(arguments[i]).column->getName();
+        }
+
+        throw Exception("Unsupported argument types for function " + getName() + " : " +
+                        arguments_description,
+                        ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+void registerFunctionGeohashCoverAreaWithBoxes(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionGeohashCoverAreaWithBoxes>();
+}
+
+}
