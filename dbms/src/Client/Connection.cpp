@@ -73,7 +73,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(current_resolved_address, timeouts.connection_timeout);
+        socket->connect(*current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -533,12 +533,9 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
-Poco::Net::SocketAddress Connection::getResolvedAddress() const
+std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 {
-    if (connected)
-        return current_resolved_address;
-
-    return DNSResolver::instance().resolveAddress(host, port);
+    return current_resolved_address;
 }
 
 
@@ -595,7 +592,9 @@ Connection::Packet Connection::receivePacket()
 
         switch (res.type)
         {
-            case Protocol::Server::Data:
+            case Protocol::Server::Data: [[fallthrough]];
+            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
 
@@ -609,16 +608,6 @@ Connection::Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileInfo:
                 res.profile_info = receiveProfileInfo();
-                return res;
-
-            case Protocol::Server::Totals:
-                /// Block with total values is passed in same form as ordinary block. The only difference is packed id.
-                res.block = receiveData();
-                return res;
-
-            case Protocol::Server::Extremes:
-                /// Same as above.
-                res.block = receiveData();
                 return res;
 
             case Protocol::Server::Log:
@@ -720,11 +709,14 @@ void Connection::initBlockLogsInput()
 void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
-    description = host + ":" + toString(resolved_address.port());
-    auto ip_address = resolved_address.host().toString();
+    description = host + ":" + toString(port);
 
-    if (host != ip_address)
-        description += ", " + ip_address;
+    if (resolved_address)
+    {
+        auto ip_address = resolved_address->host().toString();
+        if (host != ip_address)
+            description += ", " + ip_address;
+    }
 }
 
 

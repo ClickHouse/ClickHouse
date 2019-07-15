@@ -70,6 +70,5 @@ RUN apt-get --allow-unauthenticated update -y \
             gperf \
             alien
 
-
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

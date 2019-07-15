@@ -108,7 +108,7 @@ private:
     {
         const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
-        if (!column.isColumnConst())
+        if (!isColumnConst(column))
             throw Exception(
                 which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
