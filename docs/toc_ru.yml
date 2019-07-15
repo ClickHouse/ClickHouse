@@ -62,6 +62,10 @@ nav:
     - 'IPv4': 'data_types/domains/ipv4.md'
     - 'IPv6': 'data_types/domains/ipv6.md'
 
+- 'Движки баз данных':
+    - 'Введение': 'database_engines/index.md'
+    - 'MySQL': 'database_engines/mysql.md'
+
 - 'Движки таблиц':
   - 'Введение': 'operations/table_engines/index.md'
   - 'Семейство MergeTree':
