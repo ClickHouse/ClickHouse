@@ -45,12 +45,9 @@ void MySQLWireBlockOutputStream::write(const Block & block)
         ResultsetRow row_packet;
         for (const ColumnWithTypeAndName & column : block)
         {
-            Vector column_value;
-            WriteBufferFromVector ostr(column_value);
+            WriteBufferFromOwnString ostr;
             column.type->serializeAsText(*column.column.get(), i, ostr, format_settings);
-            ostr.finish();
-
-            row_packet.appendColumn(std::move(column_value));
+            row_packet.appendColumn(std::move(ostr.str()));
         }
         packet_sender->sendPacket(row_packet);
     }

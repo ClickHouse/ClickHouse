@@ -211,9 +211,20 @@ protected:
         in.ignore(count);
 
         offset += count;
-        pos = working_buffer.begin();
 
         return true;
+    }
+};
+
+
+class PacketPayloadWriteBuffer : public WriteBuffer
+{
+private:
+
+protected:
+    void nextImpl() override
+    {
+
     }
 };
 
@@ -661,7 +672,7 @@ class ResultsetRow : public WritePacket
 public:
     ResultsetRow() = default;
 
-    void appendColumn(String & value)
+    void appendColumn(String && value)
     {
         columns.emplace_back(std::move(value));
     }
