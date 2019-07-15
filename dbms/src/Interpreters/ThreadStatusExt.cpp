@@ -29,6 +29,7 @@ namespace ErrorCodes
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
+    query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
@@ -270,7 +271,7 @@ void CurrentThread::attachQueryContext(Context & query_context)
 {
     if (unlikely(!current_thread))
         return;
-    return current_thread->attachQueryContext(query_context);
+    current_thread->attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
