@@ -10,7 +10,7 @@ using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 class SourceFromInputStream : public ISource
 {
 public:
-    explicit SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info = false);
+    explicit SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_, bool async_);
     String getName() const override { return "SourceFromInputStream"; }
 
     Status prepare() override;

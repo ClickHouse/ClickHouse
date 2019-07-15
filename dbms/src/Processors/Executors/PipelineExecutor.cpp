@@ -149,7 +149,7 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-void PipelineExecutor::addJob(ExecutionState * execution_state)
+void PipelineExecutor::addJob(ExecutionState * execution_state, bool async)
 {
     auto job = [execution_state]()
     {
@@ -168,6 +168,7 @@ void PipelineExecutor::addJob(ExecutionState * execution_state)
     };
 
     execution_state->job = std::move(job);
+    execution_state->async = async;
 }
 
 void PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
@@ -310,11 +311,38 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
         }
         case IProcessor::Status::Async:
         {
-            throw Exception("Async is temporary not supported.", ErrorCodes::LOGICAL_ERROR);
+            node.status = ExecStatus::Async;
+            addJob(node.execution_state.get(), true);
 
-//            node.status = ExecStatus::Executing;
-//            addAsyncJob(pid);
-//            break;
+            {
+                std::lock_guard lock(task_queue_mutex);
+
+                /// Have to take lock to increment this variable.
+                /// Cant't make it atomic because of spurious wakeup.
+                ++num_tasks_in_async_pool;
+            }
+
+            async_pool->schedule([this, state = node.execution_state.get()]()
+            {
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                );
+
+                state->job();
+
+                {
+                    std::lock_guard lock(task_queue_mutex);
+                    task_queue.push(state);
+                    --num_tasks_in_async_pool;
+                }
+                task_queue_condvar.notify_one();
+            });
+
+            break;
         }
         case IProcessor::Status::Wait:
         {
@@ -472,7 +500,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             ++num_waiting_threads;
 
-            if (num_waiting_threads == num_threads)
+            if (num_waiting_threads == num_threads && num_tasks_in_async_pool == 0)
             {
                 finished = true;
                 lock.unlock();
@@ -496,13 +524,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            addJob(state);
-
+            /// If state has async flag, it was already executed in async pool.
+            /// Will only need to prepare it.
+            if (!state->async)
             {
-                Stopwatch execution_time_watch;
-                state->job();
-                execution_time_ns += execution_time_watch.elapsed();
+                addJob(state, false);
+
+                {
+                    Stopwatch execution_time_watch;
+                    state->job();
+                    execution_time_ns += execution_time_watch.elapsed();
+                }
             }
+            else
+                state->async = false;
 
             if (state->exception)
                 finish();
@@ -577,32 +612,48 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     for (size_t i = 0; i < num_threads; ++i)
         executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
 
+    thread_group = CurrentThread::getGroup();
+
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
+    ThreadsData threads;
+    threads.reserve(num_threads);
+
+    async_pool = std::make_unique<ThreadPool>(num_threads, num_threads, 0);
+    bool finished_flag = false;
+
+    SCOPE_EXIT(
+            if (!finished_flag)
+            {
+                finish();
+
+                for (auto & thread : threads)
+                    thread.join();
+
+                async_pool->wait();
+            }
+    );
+
     addChildlessProcessorsToStack(stack);
 
-    while (!stack.empty())
     {
-        UInt64 proc = stack.top();
-        stack.pop();
+        std::lock_guard lock(task_queue_mutex);
 
-        if (prepareProcessor(proc, stack, stack, 0, false))
+        while (!stack.empty())
         {
-            auto cur_state = graph[proc].execution_state.get();
-            task_queue.push(cur_state);
+            UInt64 proc = stack.top();
+            stack.pop();
+
+            if (prepareProcessor(proc, stack, stack, 0, false))
+            {
+                auto cur_state = graph[proc].execution_state.get();
+                task_queue.push(cur_state);
+            }
         }
     }
 
-    ThreadPool pool(num_threads);
-
-    SCOPE_EXIT(
-            finish();
-            pool.wait()
-    );
-
-    auto thread_group = CurrentThread::getGroup();
-
     for (size_t i = 0; i < num_threads; ++i)
     {
-        pool.schedule([this, thread_group, thread_num = i, num_threads]
+        threads.emplace_back([this, thread_num = i, num_threads]
         {
             /// ThreadStatus thread_status;
 
@@ -618,7 +669,12 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         });
     }
 
-    pool.wait();
+    for (auto & thread : threads)
+        thread.join();
+
+    async_pool->wait();
+
+    finished_flag = true;
 }
 
 String PipelineExecutor::dumpPipeline() const

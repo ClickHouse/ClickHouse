@@ -4,8 +4,8 @@
 namespace DB
 {
 
-ISource::ISource(Block header)
-    : IProcessor({}, {std::move(header)}), output(outputs.front())
+ISource::ISource(Block header, bool async)
+    : IProcessor({}, {std::move(header)}), output(outputs.front()), async(async)
 {
 }
 
@@ -25,7 +25,8 @@ ISource::Status ISource::prepare()
         return Status::PortFull;
 
     if (!has_input)
-        return Status::Ready;
+        return async ? Status::Async
+                     : Status::Ready;
 
     output.pushData(std::move(current_chunk));
     has_input = false;

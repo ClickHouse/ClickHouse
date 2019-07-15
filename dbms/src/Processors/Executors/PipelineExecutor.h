@@ -74,6 +74,7 @@ private:
     {
         std::exception_ptr exception;
         std::function<void()> job;
+        bool async = false;
 
         IProcessor * processor;
         UInt64 processors_id;
@@ -135,6 +136,7 @@ private:
 
     /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
     size_t num_waiting_threads = 0;
+    size_t num_tasks_in_async_pool = 0;
 
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
@@ -162,6 +164,9 @@ private:
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
 
+    std::unique_ptr<ThreadPool> async_pool;
+    ThreadGroupStatusPtr thread_group;
+
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
     ProcessorsMap processors_map;
@@ -174,8 +179,7 @@ private:
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
     bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
-    static void addJob(ExecutionState * execution_state);
-    // TODO: void addAsyncJob(UInt64 pid);
+    static void addJob(ExecutionState * execution_state, bool async);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.

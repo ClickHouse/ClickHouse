@@ -673,7 +673,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (prepared_input)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(prepared_input)});
+                pipeline.init({std::make_shared<SourceFromInputStream>(prepared_input, false, false)});
             else
                 pipeline.streams.push_back(prepared_input);
         }
@@ -778,7 +778,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                     if constexpr (pipeline_with_processors)
                     {
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream), false, false);
                         pipeline.addDelayedStream(source);
                     }
                     else
@@ -1339,7 +1339,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             for (auto & stream : streams)
             {
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
-                auto source = std::make_shared<SourceFromInputStream>(stream, force_add_agg_info);
+                auto source = std::make_shared<SourceFromInputStream>(stream, force_add_agg_info, true);
 
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();

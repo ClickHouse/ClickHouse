@@ -32,7 +32,7 @@ public:
     String getName() const override { return "Numbers"; }
 
     NumbersSource(UInt64 start_number, unsigned sleep_useconds)
-        : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
+        : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}), false),
         current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
