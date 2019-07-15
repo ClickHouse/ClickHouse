@@ -103,12 +103,13 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     auto pos = arena.allocContinue(s, begin);
     memcpy(pos, &arr[n], s);
 
-    size_t nested_size = 0;
+    if (arr[n])
+        return StringRef(pos, s);
 
-    if (arr[n] == 0)
-        nested_size = getNestedColumn().serializeValueIntoArena(n, arena, begin).size;
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
-    return StringRef{begin, s + nested_size};
+    /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+    return StringRef(nested_ref.data - s, nested_ref.size + s);
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
