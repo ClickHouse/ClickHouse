@@ -300,7 +300,6 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
 
     if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        # TODO: Allow to use non-static library as well.
         if (USE_STATIC_LIBRARIES)
             set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
