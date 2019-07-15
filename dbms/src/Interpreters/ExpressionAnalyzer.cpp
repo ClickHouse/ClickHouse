@@ -279,12 +279,14 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
     set->setHeader(res.in->getHeader());
 
+    res.in->readPrefix();
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
             return;
     }
+    res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }

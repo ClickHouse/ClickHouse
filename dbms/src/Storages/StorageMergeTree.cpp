@@ -177,7 +177,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -185,6 +185,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     path = new_path_to_db;
     table_name = new_table_name;
+    database_name = new_database_name;
     full_path = new_full_path;
 
     /// NOTE: Logger names are not updated.
