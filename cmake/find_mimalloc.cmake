@@ -8,6 +8,8 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include/mimalloc.h")
 endif ()
 
 if (ENABLE_MIMALLOC)
+    message (FATAL_ERROR "Mimalloc is not production ready. (Disable with cmake -D ENABLE_MIMALLOC=0). If you want to use mimalloc, you must manually remove this message.")
+
     set (MIMALLOC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/mimalloc/include)
     set (USE_MIMALLOC 1)
     set (MIMALLOC_LIBRARY mimalloc-static)
