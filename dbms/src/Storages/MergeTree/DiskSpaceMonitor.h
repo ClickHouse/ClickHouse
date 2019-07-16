@@ -37,30 +37,32 @@ namespace ErrorCodes
 class Disk
 {
 public:
-    class SpaceInformation {
+    class SpaceInformation
+    {
         struct statvfs fs;
         UInt64 keep_free_space_bytes;
 
     public:
-        SpaceInformation(const Disk & disk) {
+        SpaceInformation(const Disk & disk)
+        {
             if (statvfs(disk.path.c_str(), &fs) != 0)
                 throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
             keep_free_space_bytes = disk.keep_free_space_bytes;
         }
 
-        UInt64 getTotalSpace() {
+        UInt64 getTotalSpace()
+        {
             UInt64 size = fs.f_blocks * fs.f_bsize;
-            if (size < keep_free_space_bytes) {
+            if (size < keep_free_space_bytes)
                 return 0;
-            }
             return size - keep_free_space_bytes;
         }
 
-        UInt64 getAvailableSpace() {
+        UInt64 getAvailableSpace()
+        {
             UInt64 size = fs.f_bfree * fs.f_bsize;
-            if (size < keep_free_space_bytes) {
+            if (size < keep_free_space_bytes)
                 return 0;
-            }
             return size - keep_free_space_bytes;
         }
     };
@@ -88,7 +90,8 @@ public:
         return keep_free_space_bytes;
     }
 
-    auto getSpaceInformation() const {
+    auto getSpaceInformation() const
+    {
         return SpaceInformation(*this);
     }
 

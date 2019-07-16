@@ -263,8 +263,11 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 }
 
 
+/// Contains minimal number of greatest elems, which sum is greater then required
+/// If there are not enough elems contains all.
 template <class Elem>
-class MinSumMinElems {
+class MinSumMinElems
+{
     std::set<std::pair<UInt64, Elem>> elems;
     UInt64 min_sum;
     UInt64 cur_sum = 0;
@@ -274,7 +277,8 @@ public:
 
     void add(Elem elem, UInt64 size)
     {
-        if (cur_sum < min_sum) {
+        if (cur_sum < min_sum)
+        {
             elems.emplace(size, elem);
             cur_sum += size;
             return;
@@ -291,8 +295,9 @@ public:
         }
     }
 
-    /// Returns ordered by size elems
-    auto getElems() {
+    /// Returns elems ordered by size
+    auto getElems()
+    {
         std::vector<Elem> res;
         for (const auto & elem : elems)
         {
@@ -331,9 +336,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
         if (!can_move(part, nullptr))
             continue;
         auto to_insert = need_to_move.find(part->disk);
-        if (to_insert != need_to_move.end()) {
+        if (to_insert != need_to_move.end())
             to_insert->second.add(part, part->bytes_on_disk);
-        }
     }
 
     for (auto && move : need_to_move)
@@ -342,7 +346,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
         for (auto && part : move.second.getElems())
         {
             auto reservation = policy->reserve(part->bytes_on_disk, volume_priority);
-            if (!reservation) {
+            if (!reservation)
+            {
                 /// Next parts to move from this disk has greater size and same min volume priority
                 /// There are no space for thems
                 /// But it can be possible to move data from other disks
@@ -1251,7 +1256,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     return new_data_part;
 }
 
-MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::cloneParts(const MergeTreeMovingParts & parts) {
+MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::cloneParts(const MergeTreeMovingParts & parts)
+{
     MergeTreeData::DataPartsVector res;
     for (auto && move : parts)
     {
