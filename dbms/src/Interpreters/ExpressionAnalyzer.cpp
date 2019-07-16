@@ -1041,6 +1041,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
     {
+        /// We will find a column with minimum compressed size. Because it is the column that is cheapest to read.
         size_t min_data_compressed = 0;
         String min_column_name;
         if (storage)
@@ -1058,6 +1059,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         if (min_data_compressed > 0)
             required.insert(min_column_name);
         else
+            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
 
