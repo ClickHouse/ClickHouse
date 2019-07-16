@@ -117,6 +117,8 @@ private:
     bool getKey(const ASTPtr & node, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
+    static bool createFunctionEqualsCondition(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx);
+
     static const AtomMap atom_map;
 
     const MergeTreeIndexFullText & index;
