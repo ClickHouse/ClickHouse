@@ -361,7 +361,17 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         with_output = true;
     };
 
-    executeQuery(payload, *out, true, connection_context, set_content_type, nullptr);
+    ReadBufferFromString empty_select(std::string("select ''"));
+
+    bool should_replace = false;
+    // Translate query from MySQL to ClickHouse.
+    // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
+    if (std::string(payload.position(), payload.buffer().end()) == "select @@version_comment limit 1")  // MariaDB client starts session with that query
+    {
+        should_replace = true;
+    }
+
+    executeQuery(should_replace ? empty_select : payload, *out, true, connection_context, set_content_type, nullptr);
 
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
