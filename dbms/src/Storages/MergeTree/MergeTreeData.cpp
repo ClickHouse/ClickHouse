@@ -747,8 +747,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto disks = storage_policy->getDisks();
 
-    for (auto disk_ptr : disks)
+    /// Reversed order to load part from low priority disks firstly.
+    /// Used for keep part on low priority disk if duplication found
+    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
+        auto disk_ptr = *disk_it;
         for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
         {
             /// Skip temporary directories.
@@ -861,8 +864,25 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
         part->state = DataPartState::Committed;
 
-        if (!data_parts_indexes.insert(part).second)
+        auto [part_ptr, insertion_complete] = data_parts_indexes.insert(part);
+
+        if (!insertion_complete)
+        {
+            if (*part_ptr)
+            {
+                if ((*part_ptr)->name == part->name)
+                {
+                    /// Same parts. Checking if them are equal
+                    part->checksums.checkEqual((*part_ptr)->checksums, true);
+
+                    /// Duplication on greater priority disk. Do not add this part.
+                    LOG_DEBUG(log, "Found equal part. Moving to detach (" << part->name << " on " << part->getFullPath() << ")");
+                    part->renameToDetached("");
+                    continue;
+                }
+            }
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+        }
     }
 
     if (has_non_adaptive_parts && has_adaptive_parts && !settings.enable_mixed_granularity_parts)
