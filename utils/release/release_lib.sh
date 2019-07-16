@@ -228,7 +228,7 @@ function make_rpm {
     TARGET=noarch
     deb_unpack
     mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
-    echo "Requires: clickhouse-common-static" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
     echo "Requires: tzdata" >> ${PACKAGE}-$VERSION_FULL-2.spec
     echo "Requires: initscripts" >> ${PACKAGE}-$VERSION_FULL-2.spec
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
@@ -239,7 +239,7 @@ function make_rpm {
     TARGET=noarch
     deb_unpack
     mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
-    echo "Requires: clickhouse-common-static" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 
