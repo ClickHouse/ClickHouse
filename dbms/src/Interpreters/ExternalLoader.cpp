@@ -528,16 +528,48 @@ public:
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
-        std::lock_guard lock{mutex};
-        TimePoint now = std::chrono::system_clock::now();
-        for (auto & [name, info] : infos)
-            if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+        std::unordered_map<LoadablePtr, bool> is_modified_map;
+
+        {
+            std::lock_guard lock{mutex};
+            TimePoint now = std::chrono::system_clock::now();
+            for (const auto & name_and_info : infos)
             {
-                if (info.loaded() && !is_object_modified(info.object))
-                    info.next_update_time = calculate_next_update_time(info.object, info.error_count);
-                else
-                    startLoading(name, info);
+                const auto & info = name_and_info.second;
+                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                    is_modified_map.emplace(info.object, true);
             }
+        }
+
+        /// The `mutex` should be unlocked while we're calling the function is_object_modified().
+        for (auto & [object, is_modified_flag] : is_modified_map)
+        {
+            try
+            {
+                is_modified_flag = is_object_modified(object);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getName() + "' was modified");
+            }
+        }
+
+        {
+            std::lock_guard lock{mutex};
+            TimePoint now = std::chrono::system_clock::now();
+            for (auto & [name, info] : infos)
+                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                {
+                    auto it = is_modified_map.find(info.object);
+                    if (it == is_modified_map.end())
+                        continue; /// Object has been just added, it can be simply omitted from this update of outdated.
+                    bool is_modified_flag = it->second;
+                    if (info.loaded() && !is_modified_flag)
+                        info.next_update_time = calculate_next_update_time(info.object, info.error_count);
+                    else
+                        startLoading(name, info);
+                }
+        }
     }
 
 private:
