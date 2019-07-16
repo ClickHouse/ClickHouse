@@ -33,7 +33,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -60,7 +59,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -87,7 +85,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -120,14 +117,18 @@ public:
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
         size_t row_num);
 
     /// Updates current weights according to the gradient from the last mini-batch
-    virtual void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & gradient) = 0;
+    virtual void update(
+        UInt64 batch_size,
+        std::vector<Float64> & weights,
+        Float64 & bias,
+        Float64 learning_rate,
+        const std::vector<Float64> & gradient) = 0;
 
     /// Used during the merge of two states
     virtual void merge(const IWeightsUpdater &, Float64, Float64) {}
@@ -143,7 +144,7 @@ public:
 class StochasticGradientDescent : public IWeightsUpdater
 {
 public:
-    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 };
 
 
@@ -154,7 +155,7 @@ public:
 
     Momentum(Float64 alpha) : alpha_(alpha) {}
 
-    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -180,13 +181,12 @@ public:
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
         size_t row_num) override;
 
-    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -195,7 +195,7 @@ public:
     void read(ReadBuffer & buf) override;
 
 private:
-    Float64 alpha_{0.1};
+    const Float64 alpha_ = 0.9;
     std::vector<Float64> accumulated_gradient;
 };
 
@@ -214,13 +214,12 @@ public:
             IGradientComputer & gradient_computer,
             const std::vector<Float64> & weights,
             Float64 bias,
-            Float64 learning_rate,
             Float64 l2_reg_coef,
             Float64 target,
             const IColumn ** columns,
             size_t row_num) override;
 
-    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -235,7 +234,7 @@ private:
     const Float64 eps_ = 0.000001;
     Float64 beta1_powered_;
     Float64 beta2_powered_;
-    
+
     std::vector<Float64> average_gradient;
     std::vector<Float64> average_squared_gradient;
 };
