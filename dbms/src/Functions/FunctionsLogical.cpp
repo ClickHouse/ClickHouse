@@ -91,6 +91,49 @@ void convertColumnToUInt8(const IColumn * column, UInt8Container & res)
 }
 
 
+///  TODO: Add a good comment here about what this is
+using ValueGetter = std::function<Ternary::ResultType (size_t)>;
+
+template <typename ... Types>
+struct ValueGetterBuilderImpl;
+
+template <typename Type, typename ...Types>
+struct ValueGetterBuilderImpl<Type, Types...>
+{
+    static ValueGetter build(const IColumn * x)
+    {
+        if (const auto nullable_column = typeid_cast<const ColumnNullable *>(x))
+        {
+            if (const auto nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
+            {
+                return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
+                { return Ternary::makeValue(column_data[i], null_data[i]); };
+            }
+            else
+                return ValueGetterBuilderImpl<Types...>::build(x);
+        }
+        else if (const auto column = typeid_cast<const ColumnVector<Type> *>(x))
+            return [&column_data = column->getData()](size_t i) { return Ternary::makeValue(column_data[i]); };
+        else
+            return ValueGetterBuilderImpl<Types...>::build(x);
+    }
+};
+
+template <>
+struct ValueGetterBuilderImpl<>
+{
+    static ValueGetter build(const IColumn * x)
+    {
+        throw Exception(
+                std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
+                ErrorCodes::LOGICAL_ERROR);
+    }
+};
+
+using ValueGetterBuilder =
+        ValueGetterBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+
+
 template <typename Op, size_t N>
 class AssociativeApplierImpl
 {
@@ -162,48 +205,6 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
 }
 
 
-///  TODO: Add a good comment here about what this is
-using TValueGetter = std::function<Ternary::ResultType (size_t)>;
-
-template <typename ... Types>
-struct ValueGetterBuilderImpl;
-
-template <typename Type, typename ...Types>
-struct ValueGetterBuilderImpl<Type, Types...>
-{
-    static TValueGetter build(const IColumn * x)
-    {
-        if (const auto nullable_column = typeid_cast<const ColumnNullable *>(x))
-        {
-            if (const auto nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
-            {
-                return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
-                { return Ternary::makeValue(column_data[i], null_data[i]); };
-            }
-            else
-                return ValueGetterBuilderImpl<Types...>::build(x);
-        }
-        else if (const auto column = typeid_cast<const ColumnVector<Type> *>(x))
-            return [&column_data = column->getData()](size_t i) { return Ternary::makeValue(column_data[i]); };
-        else
-            return ValueGetterBuilderImpl<Types...>::build(x);
-    }
-};
-
-template <>
-struct ValueGetterBuilderImpl<>
-{
-    static TValueGetter build(const IColumn * x)
-    {
-        throw Exception(
-                std::string("Unknown numeric column of type: ") + demangle(typeid(x).name()),
-                ErrorCodes::LOGICAL_ERROR);
-    }
-};
-
-using ValueGetterBuilder =
-        ValueGetterBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
-
 template <typename Op, size_t N>
 class AssociativeGenericApplierImpl
 {
@@ -229,7 +230,7 @@ public:
     }
 
 private:
-    const TValueGetter val_getter;
+    const ValueGetter val_getter;
     const AssociativeGenericApplierImpl<Op, N - 1> next;
 };
 
@@ -251,8 +252,8 @@ public:
     }
 
 private:
-    const TValueGetter val_getter_L;
-    const TValueGetter val_getter_R;
+    const ValueGetter val_getter_L;
+    const ValueGetter val_getter_R;
 };
 
 template <typename Op>
@@ -268,7 +269,7 @@ public:
     inline ResultValueType apply(const size_t i) const { return val_getter(i); }
 
 private:
-    const TValueGetter val_getter;
+    const ValueGetter val_getter;
 };
 
 
