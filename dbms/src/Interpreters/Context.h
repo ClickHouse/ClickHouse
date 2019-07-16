@@ -491,7 +491,7 @@ public:
         size_t max_packet_size = 0;
     } MySQLState;
 
-    struct MySQLWireContext mysql;
+    MySQLWireContext mysql;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
