@@ -1,15 +1,10 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
+#include <Core/Types.h>
+#include <Core/Defines.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
 #include <type_traits>
 
 
@@ -23,174 +18,74 @@
 #endif
 
 
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_COLUMN;
-}
-
-
-// TODO: This comment is to be rewritten
-/** Behaviour in presence of NULLs:
+    /// TODO: Is it okay to reference this URL???
+/** Logical functions AND, OR, XOR and NOT support three-valued (or ternary) logic
+  * https://en.wikibooks.org/wiki/Structured_Query_Language/NULLs_and_the_Three_Valued_Logic
   *
-  * Functions AND, XOR, NOT use default implementation for NULLs:
-  * - if one of arguments is Nullable, they return Nullable result where NULLs are returned when at least one argument was NULL.
+  * Functions XOR and NOT rely on "default implementation for NULLs":
+  *   - if any of the arguments is of Nullable type, the return value type is Nullable
+  *   - if any of the arguments is NULL, the return value is NULL
   *
-  * But function OR is different.
-  * It always return non-Nullable result and NULL are equivalent to 0 (false).
-  * For example, 1 OR NULL returns 1, not NULL.
+  * Functions AND and OR provide their own special implementations for ternary logic
   */
 
-using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
-using Columns3vPtrs = std::vector<ColumnUInt8::MutablePtr>;
-
-namespace {
-namespace Trivalent
+namespace DB
 {
-    const UInt8 False = 0;
-    const UInt8 True = -1;
-    const UInt8 Null = 1;
-}
-
-inline UInt8 toTrivalent(bool value, bool is_null = false)
+namespace FunctionsLogicalDetail
 {
-    if (is_null)
-        return Trivalent::Null;
-    return value ? Trivalent::True : Trivalent::False;
-}
-
-MutableColumnPtr makeColumnFromTrivalentData(const UInt8Container & trivalent_data, bool is_nullable)
+namespace Ternary
 {
-    const size_t rows_count = trivalent_data.size();
+    using ResultType = UInt8;
 
-    auto new_column = ColumnUInt8::create(rows_count);
-    for (size_t i = 0; i < rows_count; ++i)
-        new_column->getData()[i] = (trivalent_data[i] == Trivalent::True);
+    /// TODO: Provide this with a comment about why this representation is used?
+    static constexpr UInt8 False = 0;
+    static constexpr UInt8 True = -1;
+    static constexpr UInt8 Null = 1;
 
-    if (!is_nullable)
-        return new_column;
-
-    auto null_column = ColumnUInt8::create(rows_count);
-    for (size_t i = 0; i < rows_count; ++i)
-        null_column->getData()[i] = (trivalent_data[i] == Trivalent::Null);
-
-    return ColumnNullable::create(std::move(new_column), std::move(null_column));
-}
-
-template <typename T>
-bool convertTypeToTrivalent(const IColumn * column, ConstNullMapPtr null_map_ptr, UInt8Container & res)
-{
-    auto col = checkAndGetColumn<ColumnVector<T>>(column);
-    if (!col)
-        return false;
-
-    const size_t n = res.size();
-    const auto & vec = col->getData();
-
-    if (null_map_ptr != nullptr)
+    template <typename T>
+    inline ResultType makeValue(T value)
     {
-        for (size_t i = 0; i < n; ++i)
-            res[i] = toTrivalent(!!vec[i], (*null_map_ptr)[i]);
+        return value != 0 ? Ternary::True : Ternary::False;
     }
-    else
+    template <typename T>
+    inline ResultType makeValue(T value, bool is_null)
     {
-        for (size_t i = 0; i < n; ++i)
-            res[i] = toTrivalent(!!vec[i]);
+        if (is_null)
+            return Ternary::Null;
+        return makeValue(value);
     }
-
-    return true;
 }
 
-ColumnUInt8::MutablePtr columnTrivalentFromColumnVector(const IColumn * column)
-{
-    ConstNullMapPtr null_map_ptr = nullptr;
-    if (const auto column_nullable = checkAndGetColumn<ColumnNullable>(column))
-    {
-        null_map_ptr = &column_nullable->getNullMapData();
-        column = column_nullable->getNestedColumnPtr().get();
-    }
-
-    auto result_column = ColumnUInt8::create(column->size());
-    auto & result_data = result_column->getData();
-
-    if (!convertTypeToTrivalent<Int8>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<Int16>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<Int32>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<Int64>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<UInt8>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<UInt16>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<UInt32>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<UInt64>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<Float32>(column, null_map_ptr, result_data) &&
-        !convertTypeToTrivalent<Float64>(column, null_map_ptr, result_data))
-        throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-
-    return result_column;
-}
-}
 
 struct AndImpl
 {
-    static inline constexpr bool isSaturable()
-    {
-        return true;
-    }
+    using ResultType = UInt8;
 
-    static inline constexpr bool isSaturatedValue(UInt8 a)
-    {
-        return a == Trivalent::False;
-    }
-
-    static inline constexpr UInt8 apply(UInt8 a, UInt8 b)
-    {
-        return a & b;
-    }
-
+    static inline constexpr bool isSaturable() { return true; }
+    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::False; }
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct OrImpl
 {
-    static inline constexpr bool isSaturable()
-    {
-        return true;
-    }
+    using ResultType = UInt8;
 
-    static inline constexpr bool isSaturatedValue(UInt8 a)
-    {
-        return a == Trivalent::True;
-    }
-
-    static inline constexpr UInt8 apply(UInt8 a, UInt8 b)
-    {
-        return a | b;
-    }
-
+    static inline constexpr bool isSaturable() { return true; }
+    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::True; }
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
 
 struct XorImpl
 {
-    static inline constexpr bool isSaturable()
-    {
-        return false;
-    }
+    using ResultType = UInt8;
 
-    static inline constexpr bool isSaturatedValue(bool)
-    {
-        return false;
-    }
+    static inline constexpr bool isSaturable() { return false; }
+    static inline constexpr bool isSaturatedValue(bool) { return false; }
 
-    static inline constexpr UInt8 apply(UInt8 a, UInt8 b)
-    {
-        return (a != b) ? Trivalent::True : Trivalent::False;
-    }
+    /// TODO: Provide this with a comment about why this is correct!
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return (a != b) ? Ternary::True : Ternary::False; }
 
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
@@ -207,7 +102,7 @@ struct NotImpl
 {
     using ResultType = UInt8;
 
-    static inline UInt8 apply(A a)
+    static inline ResultType apply(A a)
     {
         return !a;
     }
@@ -220,209 +115,12 @@ struct NotImpl
 #endif
 };
 
-/*
-template <typename Op, size_t N>
-struct AssociativeOperationImpl
-{
-    /// Erases the N last columns from `in` (if there are less, then all) and puts into `result` their combination.
-    static void NO_INLINE execute(UInt8ColumnPtrs & in, UInt8Container & result)
-    {
-        if (N > in.size())
-        {
-            AssociativeOperationImpl<Op, N - 1>::execute(in, result);
-            return;
-        }
-
-        AssociativeOperationImpl<Op, N - 1> operation(in);
-        in.erase(in.end() - N, in.end());
-
-        const size_t n = result.size();
-        if (Op::isSaturable())
-        {
-            for (size_t i = 0; i < n; ++i)
-                result[i] = Op::isSaturatedValue(result[i]) ? result[i] : Op::apply(result[i], operation.apply(i));
-        }
-        else
-        {
-            for (size_t i = 0; i < n; ++i)
-                result[i] = Op::apply(result[i], operation.apply(i));
-        }
-    }
-
-    const UInt8Container & vec;
-    AssociativeOperationImpl<Op, N - 1> continuation;
-
-    /// Remembers the last N columns from `in`.
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
-        : vec(in[in.size() - N]->getData()), continuation(in) {}
-
-    /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline UInt8 applySaturable(size_t i) const
-    {
-        return Op::isSaturatedValue(vec[i]) ? vec[i] : Op::apply(vec[i], continuation.applySaturable(i));
-    }
-    inline UInt8 apply(size_t i) const
-    {
-        return Op::apply(vec[i], continuation.apply(i));
-    }
-};
-
-template <typename Op>
-struct AssociativeOperationImpl<Op, 1>
-{
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
-    {
-        if (in.size() != 1)
-        {
-            throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        AssociativeOperationImpl<Op, 1> operation(in);
-
-        const size_t n = result.size();
-        for (size_t i = 0; i < n; ++i)
-            result[i] = Op::apply(result[i], in[0]);
-
-        in.clear();
-    }
-
-    const UInt8Container & vec;
-
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
-        : vec(in.back()->getData()) {}
-
-    inline UInt8 apply(size_t i) const
-    {
-        return vec[i];
-    }
-};
-*/
-
-template <typename Op, size_t N>
-struct AssociativeOperationImpl
-{
-    /// Erases the N last columns from `in` (if there are less, then all) and puts into `result` their combination.
-    static void NO_INLINE execute(Columns3vPtrs & in, UInt8Container & result)
-    {
-        if (N > in.size())
-        {
-            AssociativeOperationImpl<Op, N - 1>::execute(in, result);
-            return;
-        }
-
-        AssociativeOperationImpl<Op, N> operation(in);
-        in.erase(in.end() - N, in.end());
-
-        size_t n = result.size();
-        for (size_t i = 0; i < n; ++i)
-            result[i] = operation.apply(result[i], i);
-
-    }
-
-    const UInt8Container & vec;
-    AssociativeOperationImpl<Op, N - 1> continuation;
-
-    /// Remembers the last N columns from `in`.
-    AssociativeOperationImpl(Columns3vPtrs & in)
-        : vec(in[in.size() - N]->getData()), continuation(in) {}
-
-    /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline UInt8 apply(UInt8 a, size_t i) const
-    {
-        if (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, continuation.apply(vec[i], i));
-        else
-            return Op::apply(a, continuation.apply(vec[i], i));
-    }
-};
-
-template <typename Op>
-struct AssociativeOperationImpl<Op, 1>
-{
-    static void execute(Columns3vPtrs & in, UInt8Container & result)
-    {
-        if (in.size() != 1)
-        {
-            throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        AssociativeOperationImpl<Op, 1> operation(in);
-
-        const size_t n = result.size();
-        for (size_t i = 0; i < n; ++i)
-            result[i] = operation.apply(result[i], i);
-
-        in.clear();
-    }
-
-    const UInt8Container & vec;
-
-    AssociativeOperationImpl(Columns3vPtrs & in)
-        : vec(in.back()->getData()) {}
-
-    inline UInt8 apply(UInt8 a, size_t i) const
-    {
-        return Op::apply(a, vec[i]);
-    }
-};
-
-template <typename Op>
-UInt8Container associativeOperationApplyAll(Columns3vPtrs & args)
-{
-    if (args.size() < 2)
-        return {};
-
-    UInt8Container result_data = std::move(args.back()->getData());
-    args.pop_back();
-
-    /// Effeciently combine all the columns of the correct type.
-    while (args.size() > 0)
-    {
-        /// With a large block size, combining 10 columns per pass is the fastest.
-        /// When small - more, is faster.
-        AssociativeOperationImpl<Op, 10>::execute(args, result_data);
-    }
-
-    return result_data;
-}
-
-
 template <typename Impl, typename Name>
 class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); }
-
-private:
-    static bool extractConstColumnsTrivalent(ColumnRawPtrs & in, UInt8 & res_3v)
-    {
-        bool has_res = false;
-        for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
-        {
-            if (!in[i]->isColumnConst())
-                continue;
-
-            const auto field_value = (*in[i])[0];
-
-            UInt8 value_3v = field_value.isNull()
-                    ? toTrivalent(false, true)
-                    : toTrivalent(applyVisitor(FieldVisitorConvertToNumber<bool>(), field_value));
-
-            if (has_res)
-            {
-                res_3v = Impl::apply(res_3v, value_3v);
-            }
-            else
-            {
-                res_3v = value_3v;
-                has_res = true;
-            }
-
-            in.erase(in.begin() + i);
-        }
-        return has_res;
-    }
 
 public:
     String getName() const override
@@ -436,85 +134,13 @@ public:
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 2)
-            throw Exception("Number of arguments for function \"" + getName() + "\" should be at least 2: passed "
-                + toString(arguments.size()),
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-        bool has_nullable_arguments = false;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const auto & arg_type = arguments[i];
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) override;
 
-            if (!has_nullable_arguments)
-                has_nullable_arguments = arg_type->isNullable();
-
-            if (!(isNativeNumber(arg_type)
-                || (Impl::specialImplementationForNulls() && (arg_type->onlyNull() || isNativeNumber(removeNullable(arg_type))))))
-                throw Exception("Illegal type ("
-                    + arg_type->getName()
-                    + ") of " + toString(i + 1) + " argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        /// Put this check inside the loop
-        if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-            throw Exception(
-                "Function \"" + getName() + "\" does not support Nullable arguments",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        auto result_type = std::make_shared<DataTypeUInt8>();
-        return has_nullable_arguments
-                ? makeNullable(result_type)
-                : result_type;
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) override
-    {
-        auto & result_info = block.getByPosition(result_index);
-
-        ColumnRawPtrs args_in;
-        for (const auto arg_index : arguments)
-        {
-            const auto & arg_info = block.getByPosition(arg_index);
-            args_in.push_back(arg_info.column.get());
-        }
-
-        /// Combine all constant columns into a single value.
-        UInt8 const_3v_value = 0;
-        bool has_consts = extractConstColumnsTrivalent(args_in, const_3v_value);
-
-        /// If this value uniquely determines result, return it.
-        if (has_consts && (args_in.empty() || (Impl::isSaturable() && Impl::isSaturatedValue(const_3v_value))))
-        {
-            result_info.column = ColumnConst::create(
-                makeColumnFromTrivalentData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
-                input_rows_count
-            );
-            return;
-        }
-
-        // TODO: What if arguments are duplicated?
-
-        /// Prepare Trivalent representation for all columns
-        Columns3vPtrs args_in_3v;
-        if (has_consts)
-            args_in_3v.push_back(ColumnUInt8::create(input_rows_count, const_3v_value));
-        for (const auto arg_column_ptr : args_in)
-            args_in_3v.push_back(columnTrivalentFromColumnVector(arg_column_ptr));
-
-        const auto result_data = associativeOperationApplyAll<Impl>(args_in_3v);
-
-        result_info.column = makeColumnFromTrivalentData(result_data, result_info.type->isNullable());
-    }
-
-    /// TODO: Rework this part !!!
-    /// TODO: Rework this part !!!
-    /// TODO: Rework this part !!!
+    /// TODO: Revisit this part !!!
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &) const override { return true; }
+    bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
@@ -553,52 +179,12 @@ public:
 };
 
 
-template <typename A, typename Op>
-struct UnaryOperationImpl
-{
-    using ResultType = typename Op::ResultType;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
-
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
-    {
-        size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::apply(a[i]);
-    }
-
-    static void constant(A a, ResultType & c)
-    {
-        c = Op::apply(a);
-    }
-};
-
-
 template <template <typename> class Impl, typename Name>
 class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); }
-
-private:
-    template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            auto col_res = ColumnUInt8::create();
-
-            typename ColumnUInt8::Container & vec_res = col_res->getData();
-            vec_res.resize(col->getData().size());
-            UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
-
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
-        }
-
-        return false;
-    }
 
 public:
     String getName() const override
@@ -608,35 +194,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isNativeNumber(arguments[0]))
-            throw Exception("Illegal type ("
-                + arguments[0]->getName()
-                + ") of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
-    {
-        if (!(executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-    }
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override;
 
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return true; }
@@ -649,15 +211,16 @@ public:
 #endif
 };
 
+}
 
 struct NameAnd { static constexpr auto name = "and"; };
 struct NameOr { static constexpr auto name = "or"; };
 struct NameXor { static constexpr auto name = "xor"; };
 struct NameNot { static constexpr auto name = "not"; };
 
-using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
-using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>;
-using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
-using FunctionNot = FunctionUnaryLogical<NotImpl, NameNot>;
+using FunctionAnd = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::AndImpl, NameAnd>;
+using FunctionOr = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::OrImpl, NameOr>;
+using FunctionXor = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::XorImpl, NameXor>;
+using FunctionNot = FunctionsLogicalDetail::FunctionUnaryLogical<FunctionsLogicalDetail::NotImpl, NameNot>;
 
 }
