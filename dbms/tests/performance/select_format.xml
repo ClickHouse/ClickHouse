@@ -1,5 +1,4 @@
 <test>
-    <name>test_select_format</name>
     <type>loop</type>
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
@@ -19,6 +18,9 @@
         <min_time/>
     </main_metric>
 
+    <settings>
+        <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>
+    </settings>
 
     <substitutions>
         <substitution>
@@ -26,10 +28,7 @@
             <values>
                 <value>TabSeparated</value>
                 <value>TabSeparatedRaw</value>
-                <value>TabSeparatedWithNames</value>
-                <value>TabSeparatedWithNamesAndTypes</value>
                 <value>CSV</value>
-                <value>CSVWithNames</value>
                 <value>Values</value>
                 <value>Vertical</value>
                 <value>JSON</value>
@@ -40,9 +39,12 @@
                 <value>PrettyCompact</value>
                 <value>PrettyCompactMonoBlock</value>
                 <value>PrettyNoEscapes</value>
+                <value>PrettySpace</value>
                 <value>RowBinary</value>
                 <value>Native</value>
                 <value>XML</value>
+                <value>ODBCDriver2</value>
+                <value>MySQLWire</value>
             </values>
         </substitution>
     </substitutions>

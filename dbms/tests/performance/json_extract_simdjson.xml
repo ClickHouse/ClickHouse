@@ -1,5 +1,4 @@
 <test>
-    <name>json_extract_simdjson</name>
     <type>once</type>
 
     <preconditions>

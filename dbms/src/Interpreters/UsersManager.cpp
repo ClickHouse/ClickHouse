@@ -8,7 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
-#include <Common/config.h>
+#include "config_core.h"
 #if USE_SSL
 #   include <openssl/sha.h>
 #endif

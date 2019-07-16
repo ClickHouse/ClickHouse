@@ -9,6 +9,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -46,6 +47,10 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"engine",                                     std::make_shared<DataTypeString>()},
         {"disk_name",                                  std::make_shared<DataTypeString>()}, ///@TODO_IGR ASK is is OK?
         {"path",                                       std::make_shared<DataTypeString>()},
+
+        {"hash_of_all_files",                          std::make_shared<DataTypeString>()},
+        {"hash_of_uncompressed_files",                 std::make_shared<DataTypeString>()},
+        {"uncompressed_hash_of_compressed_files",      std::make_shared<DataTypeString>()}
     }
     )
 {
@@ -109,6 +114,18 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
 
         if (has_state_column)
             columns[i++]->insert(part->stateString());
+
+        MinimalisticDataPartChecksums helper;
+        helper.computeTotalChecksums(part->checksums);
+
+        auto checksum = helper.hash_of_all_files;
+        columns[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        checksum = helper.hash_of_uncompressed_files;
+        columns[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        checksum = helper.uncompressed_hash_of_compressed_files;
+        columns[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
     }
 }
 

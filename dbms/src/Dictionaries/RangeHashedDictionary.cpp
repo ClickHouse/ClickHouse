@@ -39,7 +39,7 @@ const DB::IColumn & unwrapNullableColumn(const DB::IColumn & column)
     return column;
 }
 
-} // namespace
+}
 
 namespace DB
 {

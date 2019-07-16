@@ -68,6 +68,8 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
+    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+
 private:
     BackgroundProcessingPool & background_pool;
 

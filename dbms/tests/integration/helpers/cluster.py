@@ -114,7 +114,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -134,7 +134,8 @@ class ClickHouseCluster:
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address)
+            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address,
+            with_installed_binary=with_installed_binary)
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
@@ -338,30 +339,32 @@ class ClickHouseCluster:
 
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
+        common_opts = ['up', '-d', '--force-recreate']
+
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess_check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_zookeeper_cmd + common_opts)
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
             self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            subprocess_check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_mysql_cmd + common_opts)
             self.wait_mysql_to_start(120)
 
         if self.with_postgres and self.base_postgres_cmd:
-            subprocess_check_call(self.base_postgres_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_postgres_cmd + common_opts)
             self.wait_postgres_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
         if self.with_hdfs and self.base_hdfs_cmd:
-            subprocess_check_call(self.base_hdfs_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_hdfs_cmd + common_opts)
             self.wait_hdfs_to_start(120)
 
         if self.with_mongo and self.base_mongo_cmd:
-            subprocess_check_call(self.base_mongo_cmd + ['up', '-d', '--force-recreate'])
+            subprocess_check_call(self.base_mongo_cmd + common_opts)
             self.wait_mongo_to_start(30)
 
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
@@ -425,11 +428,11 @@ services:
         image: {image}
         hostname: {hostname}
         volumes:
-            - {binary_path}:/usr/bin/clickhouse:ro
-            - {odbc_bridge_bin_path}:/usr/bin/clickhouse-odbc-bridge:ro
             - {configs_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
+            {binary_volume}
+            {odbc_bridge_volume}
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
         cap_add:
@@ -453,7 +456,7 @@ class ClickHouseInstance:
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -494,6 +497,7 @@ class ClickHouseInstance:
         self.stay_alive = stay_alive
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
+        self.with_installed_binary = with_installed_binary
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
@@ -533,7 +537,7 @@ class ClickHouseInstance:
 
         self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
         time.sleep(stop_start_wait_sec)
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user='root')
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()
@@ -556,7 +560,38 @@ class ClickHouseInstance:
             encoded_data = base64.b64encode(data)
             self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
 
+    def get_process_pid(self, process_name):
+        output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])
+        if output:
+            try:
+                pid = int(output.split('\n')[0].strip())
+                return pid
+            except:
+                return None
+        return None
 
+
+    def restart_with_latest_version(self, stop_start_wait_sec=10, callback_onstop=None, signal=15):
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
+        if callback_onstop:
+            callback_onstop(self)
+        self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
+        from helpers.test_tools import assert_eq_with_retry
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
     def get_docker_handle(self):
         return self.docker_client.containers.get(self.docker_id)
@@ -656,6 +691,9 @@ class ClickHouseInstance:
                     if key != "DSN":
                         f.write(key + "=" + value + "\n")
 
+    def replace_config(self, path_to_config, replacement):
+        self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 
@@ -750,13 +788,21 @@ class ClickHouseInstance:
             if self.ipv6_address is not None:
                 ipv6_address = "ipv6_address: " + self.ipv6_address
 
+        if not self.with_installed_binary:
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
+            odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/bin/clickhouse-odbc-bridge"
+        else:
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
+            odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
+
+
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
                 name=self.name,
                 hostname=self.hostname,
-                binary_path=self.server_bin_path,
-                odbc_bridge_bin_path=self.odbc_bridge_bin_path,
+                binary_volume=binary_volume,
+                odbc_bridge_volume=odbc_bridge_volume,
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,

@@ -1,10 +1,11 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufReader.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <boost/numeric/conversion/cast.hpp>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Formats/ProtobufReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -41,7 +42,7 @@ namespace
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 
-    void unknownFormat()
+    [[noreturn]] void unknownFormat()
     {
         throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
     }

@@ -19,6 +19,7 @@ class StorageSystemStoragePolicies : public ext::shared_ptr_helper<StorageSystem
 public:
     std::string getName() const override { return "SystemStoragePolicies"; }
     std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
             const Names & column_names,

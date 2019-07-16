@@ -8,6 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
+#include <Storages/CheckResults.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -50,6 +51,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>
 public:
     IStorage() = default;
     explicit IStorage(ColumnsDescription columns_);
+    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -60,7 +62,7 @@ public:
 
     /// The name of the table.
     virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const { return {}; }  // FIXME: should be an abstract method!
+    virtual std::string getDatabaseName() const = 0;
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -82,20 +84,18 @@ public:
 
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    const ColumnsDescription & getColumns() const;
-    void setColumns(ColumnsDescription columns_);
-
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
     const IndicesDescription & getIndices() const;
-    void setIndices(IndicesDescription indices_);
 
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
     virtual NameAndTypePair getColumn(const String & column_name) const;
     virtual bool hasColumn(const String & column_name) const;
 
-    Block getSampleBlock() const;
-    Block getSampleBlockNonMaterialized() const;
-    Block getSampleBlockForColumns(const Names & column_names) const; /// including virtual and alias columns.
+    Block getSampleBlock() const; /// ordinary + materialized.
+    Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
+    Block getSampleBlockNonMaterialized() const; /// ordinary.
+    Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
@@ -112,8 +112,17 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+protected: /// still thread-unsafe part.
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    void setIndices(IndicesDescription indices_);
+
+    /// Returns whether the column is virtual - by default all columns are real.
+    /// Initially reserved virtual column name may be shadowed by real column.
+    virtual bool isVirtualColumn(const String & column_name) const;
+
 private:
-    ColumnsDescription columns;
+    ColumnsDescription columns; /// combined real and virtual columns
+    const ColumnsDescription virtuals = {};
     IndicesDescription indices;
 
 public:
@@ -283,7 +292,7 @@ public:
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */) const { return false; }
 
     /// Checks validity of the data
-    virtual bool checkData() const { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
+    virtual CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -330,12 +339,6 @@ public:
 
     /// Returns storage policy if table supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
-
-protected:
-    /// Returns whether the column is virtual - by default all columns are real.
-    /// Initially reserved virtual column name may be shadowed by real column.
-    /// Returns false even for non-existent non-virtual columns.
-    virtual bool isVirtualColumn(const String & /* column_name */) const { return false; }
 
 private:
     /// You always need to take the next three locks in this order.

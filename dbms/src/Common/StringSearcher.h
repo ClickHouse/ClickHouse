@@ -329,8 +329,7 @@ class StringSearcher<false, true> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
+    const UInt8 * const needle_end;
     /// lower and uppercase variants of the first character in `needle`
     UInt8 l{};
     UInt8 u{};
@@ -345,7 +344,7 @@ private:
 
 public:
     StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -430,7 +429,7 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        if (0 == needle_size)
+        if (needle == needle_end)
             return haystack;
 
         while (haystack < haystack_end)
@@ -528,8 +527,7 @@ class StringSearcher<true, ASCII> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
+    const UInt8 * const needle_end;
     /// first character in `needle`
     UInt8 first{};
 
@@ -543,7 +541,7 @@ private:
 
 public:
     StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -616,7 +614,7 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        if (0 == needle_size)
+        if (needle == needle_end)
             return haystack;
 
         while (haystack < haystack_end)
@@ -715,10 +713,9 @@ using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 struct LibCASCIICaseSensitiveStringSearcher
 {
     const char * const needle;
-    const size_t needle_size;
 
-    LibCASCIICaseSensitiveStringSearcher(const char * const needle, const size_t needle_size)
-        : needle(needle), needle_size(needle_size) {}
+    LibCASCIICaseSensitiveStringSearcher(const char * const needle, const size_t /* needle_size */)
+        : needle(needle) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
@@ -737,10 +734,9 @@ struct LibCASCIICaseSensitiveStringSearcher
 struct LibCASCIICaseInsensitiveStringSearcher
 {
     const char * const needle;
-    const size_t needle_size;
 
-    LibCASCIICaseInsensitiveStringSearcher(const char * const needle, const size_t needle_size)
-        : needle(needle), needle_size(needle_size) {}
+    LibCASCIICaseInsensitiveStringSearcher(const char * const needle, const size_t /* needle_size */)
+        : needle(needle) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
