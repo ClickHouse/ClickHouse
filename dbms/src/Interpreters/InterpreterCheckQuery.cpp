@@ -46,7 +46,7 @@ BlockIO InterpreterCheckQuery::execute()
     Block block;
     if (context.getSettingsRef().check_query_single_value_result)
     {
-        bool result = std::all_of(check_results.begin(), check_results.end(), [](const CheckResult & res ) { return res.success; });
+        bool result = std::all_of(check_results.begin(), check_results.end(), [] (const CheckResult & res) { return res.success; });
         auto column = ColumnUInt8::create();
         column->insertValue(UInt64(result));
         block = Block{{std::move(column), std::make_shared<DataTypeUInt8>(), "result"}};
