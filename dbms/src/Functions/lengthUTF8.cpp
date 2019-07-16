@@ -48,7 +48,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

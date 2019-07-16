@@ -7,6 +7,7 @@
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/joinDispatch.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -24,10 +25,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 StorageJoin::StorageJoin(
     const String & path_,
-    const String & name_,
+    const String & database_name_,
+    const String & table_name_,
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
@@ -35,7 +36,7 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     bool overwrite)
-    : StorageSetOrJoinBase{path_, name_, columns_}
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -160,6 +161,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         return StorageJoin::create(
             args.data_path,
+            args.database_name,
             args.table_name,
             key_names,
             join_use_nulls.value,
@@ -230,9 +232,8 @@ protected:
             return Block();
 
         Block block;
-        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
-            ;
-        else
+        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
+                [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
         return block;
     }

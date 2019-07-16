@@ -28,7 +28,7 @@ String PacketSender::packetToText(const String & payload)
 
 uint64_t readLengthEncodedNumber(ReadBuffer & ss)
 {
-    char c;
+    char c{};
     uint64_t buf = 0;
     ss.readStrict(c);
     auto cc = static_cast<uint8_t>(c);

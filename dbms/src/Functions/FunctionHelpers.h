@@ -23,22 +23,9 @@ const Type * checkAndGetDataType(const IDataType * data_type)
 }
 
 template <typename Type>
-const Type * checkAndGetColumn(const IColumn * column)
-{
-    return typeid_cast<const Type *>(column);
-}
-
-template <typename Type>
-bool checkColumn(const IColumn * column)
-{
-    return checkAndGetColumn<Type>(column);
-}
-
-
-template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
-    if (!column || !column->isColumnConst())
+    if (!column || !isColumnConst(*column))
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);

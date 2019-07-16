@@ -27,10 +27,11 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
+    const String & database_name_,
     const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_)
+    : IStorage{columns_}, table_name(table_name_), database_name(database_name_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -101,7 +102,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_name, args.query, args.columns);
+        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
     });
 }
 

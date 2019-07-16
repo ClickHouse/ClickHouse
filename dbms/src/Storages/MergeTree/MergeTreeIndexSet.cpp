@@ -276,7 +276,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     const NullMap * null_map = nullptr;
 
-    if (auto * col_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
@@ -411,7 +411,10 @@ static bool checkAtomName(const String & name)
             "greaterOrEquals",
             "in",
             "notIn",
-            "like"
+            "like",
+            "startsWith",
+            "endsWith",
+            "multiSearchAny"
             };
     return atoms.find(name) != atoms.end();
 }

@@ -130,7 +130,7 @@ public:
         auto column_result = block.getByPosition(result).type->createColumn();
         auto out_untyped = column_result.get();
 
-        if (!centroids_array_untyped->isColumnConst())
+        if (!isColumnConst(*centroids_array_untyped))
             throw Exception{"Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         executeImplTyped(in_untyped, out_untyped, centroids_array_untyped);
