@@ -27,7 +27,8 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
     if (!claimed)
         return;
 
-    if (broken){
+    if (broken)
+    {
         buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
         buffer->reset();
     }
