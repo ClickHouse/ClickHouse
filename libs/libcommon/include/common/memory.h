@@ -7,6 +7,16 @@
 #include <common/config_common.h>
 #endif
 
+#if USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+
+#if JEMALLOC_VERSION_MAJOR < 4
+    #undef USE_JEMALLOC
+    #define USE_JEMALLOC 0
+    #include <cstdlib>
+#endif
+#endif
+
 #if defined(_MSC_VER)
     #define ALWAYS_INLINE __forceinline
     #define NO_INLINE static __declspec(noinline)
@@ -16,8 +26,6 @@
 #endif
 
 #if USE_JEMALLOC
-
-#include <jemalloc/jemalloc.h>
 
 namespace JeMalloc
 {

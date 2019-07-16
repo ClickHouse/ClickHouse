@@ -17,6 +17,7 @@ namespace DB
 
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+/// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
 static constexpr Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
 
