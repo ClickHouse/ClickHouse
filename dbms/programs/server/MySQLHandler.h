@@ -49,11 +49,11 @@ private:
     RSA & public_key;
     RSA & private_key;
 
+    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
     bool secure_connection = false;
-    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 
 }
