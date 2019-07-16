@@ -352,6 +352,7 @@ public:
 
     StoragePolicy(const String & name_, Volumes volumes_) : volumes(std::move(volumes_)), name(name_) { }
 
+    /// Returns disks ordered by volumes priority
     Disks getDisks() const;
 
     DiskPtr getAnyDisk() const;
