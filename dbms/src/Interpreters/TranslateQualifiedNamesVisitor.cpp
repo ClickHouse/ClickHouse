@@ -16,8 +16,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <iostream>
-#include "../Parsers/ASTColumnsClause.h"
+#include <Parsers/ASTColumnsClause.h>
 
 
 namespace DB

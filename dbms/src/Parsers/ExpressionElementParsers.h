@@ -73,12 +73,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-/** COLUMNS '<regular expression>'
+/** COLUMNS('<regular expression>')
   */
 class ParserColumnsClause : public IParserBase
 {
 protected:
-    const char * getName() const { return "COLUMNS clause"; }
+    const char * getName() const { return "COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
