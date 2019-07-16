@@ -1040,7 +1040,24 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
-        required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    {
+        size_t min_data_compressed = 0;
+        String min_column_name;
+        if (storage)
+        {
+            auto column_sizes = storage->getColumnSizes();
+            for (auto & [column_name, column_size] : column_sizes)
+                if (min_data_compressed == 0 || min_data_compressed > column_size.data_compressed)
+                {
+                    min_data_compressed = column_size.data_compressed;
+                    min_column_name = column_name;
+                }
+        }
+        if (min_data_compressed > 0)
+            required.insert(min_column_name);
+        else
+            required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    }
 
     NameSet unknown_required_source_columns = required;
 

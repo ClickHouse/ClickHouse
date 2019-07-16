@@ -82,6 +82,8 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
