@@ -385,7 +385,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data, having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -393,13 +393,13 @@ For example, consider the following table:
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data by the following way:
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
 
 ```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-If you try to insert hierarchical JSON object, such as:
+To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ```json
 {
@@ -410,7 +410,7 @@ If you try to insert hierarchical JSON object, such as:
 }
 ```
 
-Then ClickHouse returns an exception, unless the case, when `input_format_import_nested_json=1`.
+Without this setting ClickHouse throws the exception.
 
 ```sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
