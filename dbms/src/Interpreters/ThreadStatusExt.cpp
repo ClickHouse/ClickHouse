@@ -29,10 +29,9 @@ namespace ErrorCodes
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
+    query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
-
-    query_id = query_context->getCurrentQueryId();
 
     if (thread_group)
     {
@@ -105,6 +104,9 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_numbers.emplace_back(thread_number);
     }
+
+    if (query_context)
+        query_id = query_context->getCurrentQueryId();
 
 #if defined(__linux__)
     /// Set "nice" value if required.
@@ -269,7 +271,7 @@ void CurrentThread::attachQueryContext(Context & query_context)
 {
     if (unlikely(!current_thread))
         return;
-    return current_thread->attachQueryContext(query_context);
+    current_thread->attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()

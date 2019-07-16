@@ -411,7 +411,10 @@ static bool checkAtomName(const String & name)
             "greaterOrEquals",
             "in",
             "notIn",
-            "like"
+            "like",
+            "startsWith",
+            "endsWith",
+            "multiSearchAny"
             };
     return atoms.find(name) != atoms.end();
 }
