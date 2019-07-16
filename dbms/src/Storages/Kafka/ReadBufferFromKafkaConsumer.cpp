@@ -74,6 +74,11 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
+
+    messages.clear();
+    current = messages.begin();
+    BufferBase::set(nullptr, 0, 0);
+
     consumer->unsubscribe();
 }
 
