@@ -17,60 +17,8 @@
 #endif
 #endif
 
-#if defined(_MSC_VER)
-    #define ALWAYS_INLINE __forceinline
-    #define NO_INLINE static __declspec(noinline)
-#else
-    #define ALWAYS_INLINE inline __attribute__((__always_inline__))
-    #define NO_INLINE __attribute__((__noinline__))
-#endif
-
-#if USE_JEMALLOC
-
-namespace JeMalloc
-{
-
-void * handleOOM(std::size_t size, bool nothrow);
-
-ALWAYS_INLINE void * newImpl(std::size_t size)
-{
-    void * ptr = malloc(size);
-    if (likely(ptr != nullptr))
-        return ptr;
-
-    return handleOOM(size, false);
-}
-
-ALWAYS_INLINE void * newNoExept(std::size_t size) noexcept
-{
-    void * ptr = malloc(size);
-    if (likely(ptr != nullptr))
-        return ptr;
-
-    return handleOOM(size, true);
-}
-
-ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
-{
-    free(ptr);
-}
-
-ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
-{
-    if (unlikely(ptr == nullptr))
-        return;
-
-    sdallocx(ptr, size, 0);
-}
-
-}
-
-namespace Memory
-{
-    using namespace JeMalloc;
-}
-
-#else
+#define ALWAYS_INLINE inline __attribute__((__always_inline__))
+#define NO_INLINE __attribute__((__noinline__))
 
 namespace Memory
 {
@@ -95,11 +43,23 @@ ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
     free(ptr);
 }
 
+#if USE_JEMALLOC
+
+ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
+{
+    if (unlikely(ptr == nullptr))
+        return;
+
+    sdallocx(ptr, size, 0);
+}
+
+#else
+
 ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unused]]) noexcept
 {
     free(ptr);
 }
 
-}
-
 #endif
+
+}

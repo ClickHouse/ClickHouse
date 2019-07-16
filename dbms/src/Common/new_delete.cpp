@@ -16,7 +16,8 @@ ALWAYS_INLINE void trackMemory(std::size_t size)
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
     /// @note je_mallocx() != je_malloc(). It's expected they don't differ much in allocation logic.
-    CurrentMemoryTracker::alloc(nallocx(size, 0));
+    if (likely(size != 0))
+        CurrentMemoryTracker::alloc(nallocx(size, 0));
 #else
     CurrentMemoryTracker::alloc(size);
 #endif
@@ -26,8 +27,7 @@ ALWAYS_INLINE bool trackMemoryNoExept(std::size_t size) noexcept
 {
     try
     {
-        if (likely(size != 0))
-            trackMemory(size);
+        trackMemory(size);
     }
     catch (...)
     {
