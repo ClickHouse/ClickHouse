@@ -14,7 +14,12 @@ using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 class WriteBufferToKafkaProducer : public WriteBuffer
 {
 public:
-    WriteBufferToKafkaProducer(ProducerPtr producer_, const std::string & topic_, size_t rows_per_message, size_t chunk_size_);
+    WriteBufferToKafkaProducer(
+        ProducerPtr producer_,
+        const std::string & topic_,
+        size_t rows_per_message,
+        size_t chunk_size_,
+        std::chrono::milliseconds poll_timeout);
     ~WriteBufferToKafkaProducer() override;
 
     void count_row();
@@ -27,6 +32,7 @@ private:
     const std::string topic;
     const size_t max_rows;
     const size_t chunk_size;
+    const std::chrono::milliseconds timeout;
 
     size_t rows = 0;
     std::list<std::string> chunks;
