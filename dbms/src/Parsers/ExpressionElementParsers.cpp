@@ -1177,9 +1177,17 @@ bool ParserColumnsClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!columns.ignore(pos, expected))
         return false;
 
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
     ASTPtr regex_node;
     if (!regex.parse(pos, regex_node, expected))
         return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
 
     auto res = std::make_shared<ASTColumnsClause>();
     res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
@@ -1187,6 +1195,7 @@ bool ParserColumnsClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     node = std::move(res);
     return true;
 }
+
 
 bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
@@ -1282,10 +1291,10 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserLeftExpression().parse(pos, node, expected)
         || ParserRightExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)
+        || ParserColumnsClause().parse(pos, node, expected) /// before ParserFunction because it can be also parsed as a function.
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserColumnsClause().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected);
 }

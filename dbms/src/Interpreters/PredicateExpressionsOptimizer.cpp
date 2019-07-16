@@ -15,6 +15,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTColumnsClause.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -24,7 +25,7 @@
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <Functions/FunctionFactory.h>
-#include "../Parsers/ASTColumnsClause.h"
+
 
 namespace DB
 {
@@ -267,7 +268,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(con
                     continue;
                 }
             }
-            idx++;
+            ++idx;
         }
     }
     return predicate_expressions;
@@ -486,7 +487,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             const auto block = storage->getSampleBlock();
             if (const auto * asterisk_pattern = asterisk->as<ASTColumnsClause>())
             {
-                for (size_t idx = 0; idx < block.columns(); idx++)
+                for (size_t idx = 0; idx < block.columns(); ++idx)
                 {
                     auto & col = block.getByPosition(idx);
                     if (asterisk_pattern->isColumnMatching(col.name))
@@ -495,7 +496,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             }
             else
             {
-                for (size_t idx = 0; idx < block.columns(); idx++)
+                for (size_t idx = 0; idx < block.columns(); ++idx)
                     projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
             }
         }

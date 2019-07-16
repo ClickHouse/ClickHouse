@@ -4,7 +4,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include "../Parsers/ASTColumnsClause.h"
+#include <Parsers/ASTColumnsClause.h>
 
 namespace DB
 {
