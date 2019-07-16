@@ -21,7 +21,8 @@ public:
         return typeid_cast<BufferType *>(buffer.get());
     }
 
-    void reset(){
+    void reset()
+    {
         BufferBase::set(nullptr, 0, 0);
     }
 
