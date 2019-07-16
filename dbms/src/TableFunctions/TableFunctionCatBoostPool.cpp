@@ -45,7 +45,7 @@ StoragePtr TableFunctionCatBoostPool::executeImpl(const ASTPtr & ast_function, c
     String column_descriptions_file = getStringLiteral(*args[0], "Column descriptions file");
     String dataset_description_file = getStringLiteral(*args[1], "Dataset description file");
 
-    return StorageCatBoostPool::create(context, column_descriptions_file, dataset_description_file);
+    return StorageCatBoostPool::create(getDatabaseName(), getName(), context, column_descriptions_file, dataset_description_file);
 }
 
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory)

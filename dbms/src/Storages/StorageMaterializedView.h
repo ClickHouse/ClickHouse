@@ -14,6 +14,8 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
@@ -50,6 +52,8 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+
+    ActionLock getActionLock(StorageActionBlockType type) override;
 
     BlockInputStreams read(
         const Names & column_names,

@@ -168,6 +168,8 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
+    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();

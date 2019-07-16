@@ -62,6 +62,11 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
 }
 
 
+void DataTypeDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextEscaped(column, istr, settings);
+}
+
 void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x;

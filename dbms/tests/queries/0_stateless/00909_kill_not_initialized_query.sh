@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE cannot_kill_query (x UInt64) ENGINE = MergeT
 $CLICKHOUSE_CLIENT -q "INSERT INTO cannot_kill_query SELECT * FROM numbers(10000000)" &> /dev/null
 
 # This SELECT query will run for a long time. It's used as bloker for ALTER query. It will be killed with SYNC kill.
-query_for_pending="SELECT count() FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1, max_block_size=1"
+query_for_pending="SELECT count() FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1, max_block_size = 1"
 $CLICKHOUSE_CLIENT -q "$query_for_pending" &>/dev/null &
 
 sleep 1 # queries should be in strict order
@@ -23,7 +23,7 @@ sleep 1
 
 # This SELECT query will also run for a long time. Also it's blocked by ALTER query. It will be killed with ASYNC kill.
 # This is main idea which we check -- blocked queries can be killed with ASYNC kill.
-query_to_kill="SELECT sum(1) FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1"
+query_to_kill="SELECT sum(1) FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1"
 $CLICKHOUSE_CLIENT -q "$query_to_kill" &>/dev/null &
 
 sleep 1 # just to be sure that kill of $query_to_kill will be executed after $query_to_kill.

@@ -262,8 +262,8 @@ void Compiler::compile(
             " -I " << compiler_headers << "/dbms/src/"
             " -isystem " << compiler_headers << "/contrib/cityhash102/include/"
             " -isystem " << compiler_headers << "/contrib/libpcg-random/include/"
-        #if USE_LFALLOC
-            " -isystem " << compiler_headers << "/contrib/lfalloc/src/"
+        #if USE_MIMALLOC
+            " -isystem " << compiler_headers << "/contrib/mimalloc/include/"
         #endif
             " -isystem " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
             " -isystem " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
