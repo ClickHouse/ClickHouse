@@ -1047,11 +1047,13 @@ void ExpressionAnalyzer::collectUsedColumns()
         {
             auto column_sizes = storage->getColumnSizes();
             for (auto & [column_name, column_size] : column_sizes)
+            {
                 if (min_data_compressed == 0 || min_data_compressed > column_size.data_compressed)
                 {
                     min_data_compressed = column_size.data_compressed;
                     min_column_name = column_name;
                 }
+            }
         }
         if (min_data_compressed > 0)
             required.insert(min_column_name);
