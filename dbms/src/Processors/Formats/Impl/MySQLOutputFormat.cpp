@@ -17,7 +17,7 @@ using namespace MySQLProtocol;
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings)
     : IOutputFormat(header, out_)
     , context(context)
-    , packet_sender(std::make_shared<PacketSender>(out, const_cast<size_t &>(context.mysql.sequence_id))) /// TODO: fix it
+    , packet_sender(std::make_shared<PacketSender>(out, const_cast<uint8_t &>(context.mysql.sequence_id))) /// TODO: fix it
     , format_settings(settings)
 {
 }
