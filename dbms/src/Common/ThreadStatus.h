@@ -64,7 +64,7 @@ public:
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
 
-    std::atomic<LogsLevel> client_logs_level = LogsLevel::none;
+    LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
 };
