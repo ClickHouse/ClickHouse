@@ -5,7 +5,7 @@
 namespace JeMalloc
 {
 
-void * handleOOM(std::size_t size, bool nothrow)
+NO_INLINE void * handleOOM(std::size_t size, bool nothrow)
 {
     void * ptr = nullptr;
 
