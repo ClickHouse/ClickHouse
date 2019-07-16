@@ -16,6 +16,15 @@ void registerFunctionsEmbeddedDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionRegionIn>();
     factory.registerFunction<FunctionRegionHierarchy>();
     factory.registerFunction<FunctionRegionToName>();
+
+#if USE_MYSQL
+    factory.registerFunction<FunctionOSToRoot>();
+    factory.registerFunction<FunctionSEToRoot>();
+    factory.registerFunction<FunctionOSIn>();
+    factory.registerFunction<FunctionSEIn>();
+    factory.registerFunction<FunctionOSHierarchy>();
+    factory.registerFunction<FunctionSEHierarchy>();
+#endif
 }
 
 }
