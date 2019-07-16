@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
 
@@ -69,7 +70,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static const std::string & getQueryId();
+    static StringRef getQueryId();
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();

@@ -47,7 +47,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
         {
             const auto & depth_column = arguments[i].column;
 
-            if (depth_column && depth_column->isColumnConst())
+            if (depth_column && isColumnConst(*depth_column))
             {
                 UInt64 value = static_cast<const ColumnConst &>(*depth_column).getValue<UInt64>();
                 if (!value)

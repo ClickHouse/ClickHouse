@@ -506,8 +506,9 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
-                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
+            if (auto resolved = address.getResolvedAddress();
+                resolved && (isLocalAddress(*resolved, context.getTCPPort())
+                    || (context.getTCPPortSecure() && isLocalAddress(*resolved, *context.getTCPPortSecure()))))
             {
                 if (found_via_resolving)
                 {

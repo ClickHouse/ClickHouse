@@ -2171,10 +2171,10 @@ void ClusterCopierApp::mainImpl()
         << "revision " << ClickHouseRevision::get() << ")");
 
     auto context = std::make_unique<Context>(Context::createGlobal());
+    context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
-    context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
 
@@ -2201,6 +2201,10 @@ void ClusterCopierApp::mainImpl()
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
+
+    /// Reset ZooKeeper before removing ClusterCopier.
+    /// Otherwise zookeeper watch can call callback which use already removed ClusterCopier object.
+    context->resetZooKeeper();
 }
 
 

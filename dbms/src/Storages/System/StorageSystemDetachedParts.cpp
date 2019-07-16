@@ -23,6 +23,7 @@ class StorageSystemDetachedParts :
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
     std::string getTableName() const override { return "detached_parts"; }
+    std::string getDatabaseName() const override { return "system"; }
 
 protected:
     explicit StorageSystemDetachedParts()

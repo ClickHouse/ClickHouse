@@ -841,7 +841,7 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-inline void writeCSV(const UInt128, WriteBuffer &)
+[[noreturn]] inline void writeCSV(const UInt128, WriteBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.

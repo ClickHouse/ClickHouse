@@ -49,6 +49,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -1457,6 +1458,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::resetZooKeeper() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper.reset();
+}
+
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");
@@ -1770,6 +1777,11 @@ BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & bu
 BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutput(name, buf, sample, *this);
+}
+
+OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
 }
 
 

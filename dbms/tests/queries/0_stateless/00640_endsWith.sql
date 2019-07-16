@@ -12,4 +12,6 @@ INSERT INTO endsWith_test values ('11', '22', '33'), ('a', 'a', 'bb'), ('abc', '
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S1);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S2);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S2, S3);
+
+SELECT endsWith([], 'str'); -- { serverError 43 }
 DROP TABLE endsWith_test;

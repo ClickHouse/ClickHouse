@@ -153,7 +153,7 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
     }
 
     /// Was it a trailing run of 0x00's?
-    if (best.base != -1 && size_t(best.base + best.len) == words.size())
+    if (best.base != -1 && size_t(best.base) + size_t(best.len) == words.size())
         *dst++ = ':';
 
     *dst++ = '\0';
