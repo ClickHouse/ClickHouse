@@ -1,8 +1,0 @@
-<yandex>
-    <zookeeper>
-        <node>
-            <host>zookeeper</host>
-            <port>2181</port>
-        </node>
-    </zookeeper>
-</yandex>
