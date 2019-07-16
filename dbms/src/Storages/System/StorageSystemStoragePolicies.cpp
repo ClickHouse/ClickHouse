@@ -17,7 +17,8 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
 {
     setColumns(ColumnsDescription(
     {
-        {"name", std::make_shared<DataTypeString>()},
+        {"policy_name", std::make_shared<DataTypeString>()},
+        {"volume_name", std::make_shared<DataTypeString>()},
         {"volume_priority", std::make_shared<DataTypeUInt64>()},
         {"disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
@@ -34,7 +35,8 @@ BlockInputStreams StorageSystemStoragePolicies::read(
 {
     check(column_names);
 
-    MutableColumnPtr col_name_mut = ColumnString::create();
+    MutableColumnPtr col_policy_name_mut = ColumnString::create();
+    MutableColumnPtr col_volume_name_mut = ColumnString::create();
     MutableColumnPtr col_priority_mut = ColumnUInt64::create();
     MutableColumnPtr col_disks_mut = ColumnArray::create(ColumnString::create());
     MutableColumnPtr col_max_part_size_mut = ColumnUInt64::create();
@@ -46,7 +48,8 @@ BlockInputStreams StorageSystemStoragePolicies::read(
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)
         {
-            col_name_mut->insert(name);
+            col_policy_name_mut->insert(name);
+            col_volume_name_mut->insert(volumes[i].getName());
             col_priority_mut->insert(i);
             Array disks;
             disks.reserve(volumes[i].disks.size());
@@ -57,14 +60,16 @@ BlockInputStreams StorageSystemStoragePolicies::read(
         }
     }
 
-    ColumnPtr col_name = std::move(col_name_mut);
+    ColumnPtr col_policy_name = std::move(col_policy_name_mut);
+    ColumnPtr col_volume_name = std::move(col_volume_name_mut);
     ColumnPtr col_priority = std::move(col_priority_mut);
     ColumnPtr col_disks = std::move(col_disks_mut);
     ColumnPtr col_max_part_size = std::move(col_max_part_size_mut);
 
     Block res = getSampleBlock().cloneEmpty();
     size_t col_num = 0;
-    res.getByPosition(col_num++).column = col_name;
+    res.getByPosition(col_num++).column = col_policy_name;
+    res.getByPosition(col_num++).column = col_volume_name;
     res.getByPosition(col_num++).column = col_priority;
     res.getByPosition(col_num++).column = col_disks;
     res.getByPosition(col_num++).column = col_max_part_size;

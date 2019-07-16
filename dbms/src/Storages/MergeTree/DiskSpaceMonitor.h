@@ -303,29 +303,31 @@ public:
         friend class StoragePolicy;
 
     public:
-        Volume(std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
-            : max_data_part_size(max_data_part_size_), disks(std::move(disks_)) { }
+        Volume(String name_, std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
+            : max_data_part_size(max_data_part_size_), disks(std::move(disks_)), name(std::move(name_)) { }
 
-        Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
+        Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
 
-        Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks) { }
+        Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks), name(other.name) { }
 
         Volume & operator=(const Volume & other)
         {
             disks = other.disks;
             max_data_part_size = other.max_data_part_size;
             last_used.store(0, std::memory_order_relaxed);
+            name = other.name;
             return *this;
         }
 
         Volume(Volume && other) noexcept
-            : max_data_part_size(other.max_data_part_size), disks(std::move(other.disks)) { }
+            : max_data_part_size(other.max_data_part_size), disks(std::move(other.disks)), name(std::move(other.name)) { }
 
         Volume & operator=(Volume && other) noexcept
         {
             disks = std::move(other.disks);
             max_data_part_size = other.max_data_part_size;
             last_used.store(0, std::memory_order_relaxed);
+            name = std::move(other.name);
             return *this;
         }
 
@@ -337,20 +339,32 @@ public:
 
         UInt64 getMaxUnreservedFreeSpace() const;
 
+        const String & getName() const { return name; }
+
         UInt64 max_data_part_size = std::numeric_limits<decltype(max_data_part_size)>::max();
 
         Disks disks;
 
     private:
         mutable std::atomic<size_t> last_used = 0;
+        String name;
     };
 
     using Volumes = std::vector<Volume>;
 
-    StoragePolicy(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
            const DiskSelector & disks);
 
-    StoragePolicy(const String & name_, Volumes volumes_) : volumes(std::move(volumes_)), name(name_) { }
+    StoragePolicy(String name_, Volumes volumes_) : volumes(std::move(volumes_)), name(std::move(name_))
+    {
+        if (volumes.empty())
+            throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::UNKNOWN_POLICY);
+
+        for (size_t i = 0; i != volumes.size(); ++i)
+        {
+            volumes_names[volumes[i].getName()] = i;
+        }
+    }
 
     /// Returns disks ordered by volumes priority
     Disks getDisks() const;
@@ -390,9 +404,14 @@ public:
 
     const auto & getVolumes() const { return volumes; }
 
+    const auto & getVolume(size_t i) const { return volumes[i]; }
+
+    const auto & getVolume(const String & volume_name) { return getVolume(volumes_names[volume_name]); }
+
 private:
     Volumes volumes;
     String name;
+    std::map<String, size_t> volumes_names;
 };
 
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;

@@ -90,7 +90,8 @@ void DiskSelector::add(const DiskPtr & disk)
     disks.emplace(disk->getName(), disk);
 }
 
-StoragePolicy::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
+StoragePolicy::Volume::Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
+    : name(std::move(name_))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -208,19 +209,22 @@ UInt64 StoragePolicy::Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-StoragePolicy::StoragePolicy(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-               const DiskSelector & disks) : name(name_)
+StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+               const DiskSelector & disks) : name(std::move(name_))
 {
+    String volumes_prefix = config_prefix + ".volumes";
+    if (!config.has(volumes_prefix))
+        throw Exception("StoragePolicy must contain at least one Volume (.volumes)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
+    config.keys(volumes_prefix, keys);
 
     for (const auto & attr_name : keys)
     {
-        if (!startsWith(attr_name, "volume"))
-            throw Exception("Unknown element in config: " + config_prefix + "." + attr_name + ", must be 'volume'",
-                            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        volumes.emplace_back(config, config_prefix + "." + attr_name, disks);
+        volumes.emplace_back(attr_name, config, volumes_prefix + "." + attr_name, disks);
+        volumes_names[attr_name] = volumes.size() - 1;
     }
+
     if (volumes.empty())
         throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -339,11 +343,12 @@ StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfigura
     }
 
     constexpr auto default_storage_policy_name = "default";
+    constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
     if (policies.find(default_storage_policy_name) == policies.end())
         policies.emplace(default_storage_policy_name,
                         std::make_shared<StoragePolicy>(default_storage_policy_name,
-                                                 StoragePolicy::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
+                                                 StoragePolicy::Volumes{StoragePolicy::Volume{default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]},
                                                                   std::numeric_limits<UInt64>::max()}}));
 }
 
