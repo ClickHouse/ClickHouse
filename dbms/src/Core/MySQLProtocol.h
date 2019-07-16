@@ -121,9 +121,6 @@ enum ColumnType
 };
 
 
-using Vector = PODArray<char>;
-
-
 class ProtocolError : public DB::Exception
 {
 public:
