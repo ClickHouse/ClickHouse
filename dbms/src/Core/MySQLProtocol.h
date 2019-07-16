@@ -131,15 +131,6 @@ public:
 };
 
 
-class WritePacket
-{
-public:
-    virtual void writePayload(WriteBuffer & buffer) const = 0;
-
-    virtual ~WritePacket() = default;
-};
-
-
 class ReadPacket
 {
 public:
@@ -150,17 +141,21 @@ public:
     virtual ~ReadPacket() = default;
 };
 
-
+/** Reading packets.
+ *  Internally, it calls (if no more data) next() method of the underlying ReadBufferFromPocoSocket, and sets the working buffer to the rest part of the current packet payload.
+ */
 class PacketPayloadReadBuffer : public ReadBuffer
 {
 public:
-    PacketPayloadReadBuffer(ReadBuffer & in, size_t & sequence_id): ReadBuffer(in.position(), 0), in(in), sequence_id(sequence_id)
+    PacketPayloadReadBuffer(ReadBuffer & in, uint8_t & sequence_id)
+        : ReadBuffer(in.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
+        , in(in)
+        , sequence_id(sequence_id)
     {
     }
-
 private:
     ReadBuffer & in;
-    size_t & sequence_id;
+    uint8_t & sequence_id;
     const size_t max_packet_size = MAX_PACKET_LENGTH;
 
     // Size of packet which is being read now.
@@ -168,6 +163,7 @@ private:
 
     // Offset in packet payload.
     size_t offset = 0;
+
 protected:
     bool nextImpl() override
     {
@@ -194,7 +190,7 @@ protected:
             if (packet_sequence_id != sequence_id)
             {
                 std::ostringstream tmp;
-                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << sequence_id << '.';
+                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << static_cast<unsigned int>(sequence_id) << '.';
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
             sequence_id++;
@@ -217,15 +213,89 @@ protected:
 };
 
 
+/** Writing packets.
+ *  https://dev.mysql.com/doc/internals/en/mysql-packet.html
+ */
 class PacketPayloadWriteBuffer : public WriteBuffer
 {
-private:
+public:
+    PacketPayloadWriteBuffer(WriteBuffer & out, size_t payload_length, uint8_t & sequence_id)
+        : WriteBuffer(out.position(), 0)
+        , out(out)
+        , sequence_id(sequence_id)
+        , total_left(payload_length)
+    {
+        startPacket();
+    }
 
+    void checkPayloadSize()
+    {
+        if (bytes_written + offset() < payload_length)
+        {
+            std::stringstream ss;
+            ss << "Incomplete payload. Written " << bytes << " bytes, expected " << payload_length << " bytes.";
+            throw Exception(ss.str(), 0);
+
+        }
+    }
+
+    ~PacketPayloadWriteBuffer() override { next(); }
+private:
+    WriteBuffer & out;
+    uint8_t & sequence_id;
+
+    size_t total_left = 0;
+    size_t payload_length = 0;
+    size_t bytes_written = 0;
+
+    void startPacket()
+    {
+        payload_length = std::min(total_left, MAX_PACKET_LENGTH);
+        bytes_written = 0;
+        total_left -= payload_length;
+
+        out.write(reinterpret_cast<char *>(&payload_length), 3);
+        out.write(sequence_id++);
+
+        working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
+        pos = working_buffer.begin();
+    }
 protected:
     void nextImpl() override
     {
+        int written = pos - working_buffer.begin();
+        out.position() += written;
+        bytes_written += written;
 
+        if (bytes_written < payload_length)
+        {
+            out.nextIfAtEnd();
+            working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
+        }
+        else if (total_left > 0 || payload_length == MAX_PACKET_LENGTH)
+        {
+            startPacket();
+        }
     }
+};
+
+
+class WritePacket
+{
+public:
+    virtual void writePayload(WriteBuffer & buffer, uint8_t & sequence_id) const
+    {
+        PacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
+        writePayloadImpl(buf);
+        buf.checkPayloadSize();
+    }
+
+    virtual ~WritePacket() = default;
+
+protected:
+    virtual size_t getPayloadSize() const = 0;
+
+    virtual void writePayloadImpl(WriteBuffer & buffer) const = 0;
 };
 
 
@@ -235,13 +305,13 @@ protected:
 class PacketSender
 {
 public:
-    size_t & sequence_id;
+    uint8_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
     size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For reading and writing.
-    PacketSender(ReadBuffer & in, WriteBuffer & out, size_t & sequence_id)
+    PacketSender(ReadBuffer & in, WriteBuffer & out, uint8_t & sequence_id)
         : sequence_id(sequence_id)
         , in(&in)
         , out(&out)
@@ -249,7 +319,7 @@ public:
     }
 
     /// For writing.
-    PacketSender(WriteBuffer & out, size_t & sequence_id)
+    PacketSender(WriteBuffer & out, uint8_t & sequence_id)
         : sequence_id(sequence_id)
         , in(nullptr)
         , out(&out)
@@ -271,23 +341,7 @@ public:
     void sendPacket(const T & packet, bool flush = false)
     {
         static_assert(std::is_base_of<WritePacket, T>());
-        Vector payload;
-        WriteBufferFromVector buffer(payload);
-        packet.writePayload(buffer);
-        buffer.finish();
-        size_t pos = 0;
-        do
-        {
-            size_t payload_length = std::min(payload.size() - pos, max_packet_size);
-
-            out->write(reinterpret_cast<const char *>(&payload_length), 3);
-            out->write(reinterpret_cast<const char *>(&sequence_id), 1);
-            out->write(payload.data() + pos, payload_length);
-
-            pos += payload_length;
-            sequence_id++;
-        } while (pos < payload.size());
-
+        packet.writePayload(*out, sequence_id);
         if (flush)
             out->next();
     }
@@ -296,7 +350,7 @@ public:
     void resetSequenceId();
 
     /// Converts packet to text. Is used for debug output.
-    static String packetToText(const Vector & payload);
+    static String packetToText(const String & payload);
 };
 
 
@@ -304,19 +358,21 @@ uint64_t readLengthEncodedNumber(ReadBuffer & ss);
 
 void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
 
-template <class T>
-void writeLengthEncodedString(const T & s, WriteBuffer & buffer)
+inline void writeLengthEncodedString(const String & s, WriteBuffer & buffer)
 {
     writeLengthEncodedNumber(s.size(), buffer);
     buffer.write(s.data(), s.size());
 }
 
-template <class T>
-void writeNulTerminatedString(const T & s, WriteBuffer & buffer)
+inline void writeNulTerminatedString(const String & s, WriteBuffer & buffer)
 {
     buffer.write(s.data(), s.size());
     buffer.write(0);
 }
+
+size_t getLengthEncodedNumberSize(uint64_t x);
+
+size_t getLengthEncodedStringSize(const String & s);
 
 
 class Handshake : public WritePacket
@@ -340,7 +396,13 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 26 + server_version.size() + auth_plugin_data.size() + Authentication::SHA256.size();
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(static_cast<char>(protocol_version));
         writeNulTerminatedString(server_version, buffer);
@@ -435,12 +497,17 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 2 + plugin_name.size() + auth_plugin_data.size();
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(0xfe);
         writeNulTerminatedString(plugin_name, buffer);
         writeString(auth_plugin_data, buffer);
-        std::cerr << auth_plugin_data.size() << std::endl;
     }
 };
 
@@ -461,7 +528,13 @@ class AuthMoreData : public WritePacket
 public:
     explicit AuthMoreData(String data): data(std::move(data)) {}
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 1 + data.size();
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(0x01);
         writeString(data, buffer);
@@ -507,7 +580,35 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        size_t result = 2 + getLengthEncodedNumberSize(affected_rows);
+
+        if (capabilities & CLIENT_PROTOCOL_41)
+        {
+            result += 4;
+        }
+        else if (capabilities & CLIENT_TRANSACTIONS)
+        {
+            result += 2;
+        }
+
+        if (capabilities & CLIENT_SESSION_TRACK)
+        {
+            result += getLengthEncodedStringSize(info);
+            if (status_flags & SERVER_SESSION_STATE_CHANGED)
+                result += getLengthEncodedStringSize(session_state_changes);
+        }
+        else
+        {
+            result += info.size();
+        }
+
+        return result;
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(header);
         writeLengthEncodedNumber(affected_rows, buffer);
@@ -525,13 +626,9 @@ public:
 
         if (capabilities & CLIENT_SESSION_TRACK)
         {
-            writeLengthEncodedNumber(info.length(), buffer);
-            writeString(info, buffer);
+            writeLengthEncodedString(info, buffer);
             if (status_flags & SERVER_SESSION_STATE_CHANGED)
-            {
-                writeLengthEncodedNumber(session_state_changes.length(), buffer);
-                writeString(session_state_changes, buffer);
-            }
+                writeLengthEncodedString(session_state_changes, buffer);
         }
         else
         {
@@ -548,7 +645,13 @@ public:
     EOF_Packet(int warnings, int status_flags) : warnings(warnings), status_flags(status_flags)
     {}
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 5;
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(0xfe); // EOF header
         buffer.write(reinterpret_cast<const char *>(&warnings), 2);
@@ -567,7 +670,13 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 4 + sql_state.length() + std::min(error_message.length(), MYSQL_ERRMSG_SIZE);
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         buffer.write(0xff);
         buffer.write(reinterpret_cast<const char *>(&error_code), 2);
@@ -621,7 +730,14 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
+            getLengthEncodedStringSize(name) + getLengthEncodedStringSize(org_name) + getLengthEncodedNumberSize(next_length);
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         writeLengthEncodedString(std::string("def"), buffer); /// always "def"
         writeLengthEncodedString(schema, buffer);
@@ -660,7 +776,13 @@ public:
     {
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return getLengthEncodedNumberSize(value);
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         writeLengthEncodedNumber(value, buffer);
     }
@@ -669,15 +791,23 @@ public:
 class ResultsetRow : public WritePacket
 {
     std::vector<String> columns;
+    size_t payload_size = 0;
 public:
     ResultsetRow() = default;
 
     void appendColumn(String && value)
     {
+        payload_size += getLengthEncodedStringSize(value);
         columns.emplace_back(std::move(value));
     }
 
-    void writePayload(WriteBuffer & buffer) const override
+protected:
+    size_t getPayloadSize() const override
+    {
+        return payload_size;
+    }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
     {
         for (const String & column : columns)
             writeLengthEncodedString(column, buffer);

@@ -15,7 +15,7 @@ void PacketSender::resetSequenceId()
     sequence_id = 0;
 }
 
-String PacketSender::packetToText(const PODArray<char> & payload)
+String PacketSender::packetToText(const String & payload)
 {
     String result;
     for (auto c : payload)
@@ -72,6 +72,31 @@ void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer)
         buffer.write(0xfe);
         buffer.write(reinterpret_cast<char *>(&x), 8);
     }
+}
+
+size_t getLengthEncodedNumberSize(uint64_t x)
+{
+    if (x < 251)
+    {
+        return 1;
+    }
+    else if (x < (1 << 16))
+    {
+        return 3;
+    }
+    else if (x < (1 << 24))
+    {
+        return 4;
+    }
+    else
+    {
+        return 9;
+    }
+}
+
+size_t getLengthEncodedStringSize(const String & s)
+{
+    return getLengthEncodedNumberSize(s.size()) + s.size();
 }
 
 }
