@@ -1,12 +1,12 @@
 ## CREATE DATABASE
 
-Creating db_name databases
+Creating the `db_name` database.
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
-`A database` is just a directory for tables.
+A database is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
 
@@ -93,14 +93,14 @@ Besides default data compression, defined in [server settings](../operations/ser
 
 Supported compression algorithms:
 
-- `NONE` — no compression for data applied.
-- `LZ4`
-- `LZ4HC(level)` — (level) - LZ4\_HC compression algorithm with defined level.
-Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4,9].
-- `ZSTD(level)` — ZSTD compression algorithm with defined `level`. Possible `level` value range: \[1, 22\]. Default value: 1.
+- `NONE` — No compression.
+- `LZ4` — Fast, lossless [data compression algorithm](https://github.com/lz4/lz4) used by default.
+- `LZ4HC[(level)]` — LZ4_HC compression algorithm with defined level.
+Possible `level` range: [3, 12]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4, 9].
+- `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with defined `level`. Possible `level` value range: [1, 22]. Default value: 1.
 Greater values stands for better compression and higher CPU usage.
-- `Delta(delta_bytes)` — compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
-Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
+- `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
+Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
 - `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
 - `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighbouring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
 
@@ -109,7 +109,7 @@ Syntax example:
 ```
 CREATE TABLE codec_example
 (
-    dt Date CODEC(ZSTD), /* Uses the default compression level. */
+    dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
     double_value Float64 CODEC(LZ4HC(9))
