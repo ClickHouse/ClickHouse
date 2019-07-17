@@ -22,6 +22,7 @@
 namespace DB
 {
 
+struct ColumnSize;
 class MergeTreeData;
 
 
