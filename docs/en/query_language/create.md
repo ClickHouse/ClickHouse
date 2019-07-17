@@ -108,14 +108,18 @@ Besides default data compression, defined in [server settings](../operations/ser
 Supported compression algorithms:
 
 - `NONE` — No compression.
-- `LZ4` — Fast, lossless [data compression algorithm](https://github.com/lz4/lz4) used by default.
-- `LZ4HC[(level)]` — LZ4 compression algorithm with defined level. When `level` is in [9, 12], ClickHouse uses LZ4_HC (high compression) algorithm. Default level value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4, 9]. High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times.
+- `LZ4` — Fast, lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Corresponds to calling of `lz4` utility with the compression levels 1 and 2 (`lz4_compress_fast`).
+- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with defined level. Default level: 9. Recommended value range: [4, 9].
 - `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with defined `level`. Possible `level` value range: [1, 22]. Default value: 1.
-Greater values stands for better compression and higher CPU usage.
 - `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
 Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
 - `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
 - `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighbouring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+
+High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+
+!!!warning
+    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
 
 Syntax example:
 
@@ -134,6 +138,7 @@ ORDER BY dt
 
 Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
 Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
+
 ```
 CREATE TABLE timeseries_example
 (
