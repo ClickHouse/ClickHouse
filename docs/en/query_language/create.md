@@ -95,8 +95,7 @@ Supported compression algorithms:
 
 - `NONE` — No compression.
 - `LZ4` — Fast, lossless [data compression algorithm](https://github.com/lz4/lz4) used by default.
-- `LZ4HC[(level)]` — LZ4_HC compression algorithm with defined level.
-Possible `level` range: [3, 12]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4, 9].
+- `LZ4HC[(level)]` — LZ4 compression algorithm with defined level. When `level` is in [9, 12], ClickHouse uses LZ4_HC (high compression) algorithm. Default level value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4, 9]. High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times.
 - `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with defined `level`. Possible `level` value range: [1, 22]. Default value: 1.
 Greater values stands for better compression and higher CPU usage.
 - `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
