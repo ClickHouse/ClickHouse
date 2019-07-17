@@ -166,6 +166,11 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
+# Special options for better optimized code with clang
+#if (COMPILER_CLANG)
+#    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
+#endif ()
+
 if (CMAKE_VERSION VERSION_LESS "3.8.0")
     if (NOT MSVC)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
@@ -378,7 +383,6 @@ endif ()
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
 endif ()
-
 enable_testing() # Enable for tests without binary
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
@@ -471,34 +475,78 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 include (cmake/print_flags.cmake)
 
-
-# Build glibc-compatibility before everything else
-if (GLIBC_COMPATIBILITY)
-    add_subdirectory (libs/libglibc-compatibility)
-    link_libraries (glibc-compatibility)
-endif ()
-
-# Build libcxx and libcxxabi before everything else
-if (USE_LIBCXX)
-    if (USE_INTERNAL_LIBCXX_LIBRARY)
-        add_subdirectory (contrib/libcxx-cmake)
-        add_subdirectory (contrib/libcxxabi-cmake)
-    endif ()
-    link_libraries (${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY})
-endif ()
-
-# Build libunwind before everything else
-if (USE_UNWIND)
-    if (USE_INTERNAL_UNWIND_LIBRARY)
-        add_subdirectory (contrib/libunwind-cmake)
-    endif ()
-    link_libraries (${UNWIND_LIBRARY})
-endif ()
-
-
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+    # FIXME: actually glibc-compatibility should always be built first,
+    #        because it's unconditionally linked via $DEFAULT_LIBS,
+    #        and these looks like the first places that get linked.
+    function (add_default_dependencies target_name)
+        if (TARGET ${target_name})
+            if (GLIBC_COMPATIBILITY)
+                add_dependencies(${target_name} glibc-compatibility)
+            endif ()
+
+            if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+                add_dependencies(${target_name} cxx_static cxxabi_static)
+            endif ()
+
+            if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+                add_dependencies(${target_name} unwind_static)
+            endif ()
+        endif ()
+    endfunction ()
+
+    add_default_dependencies(ltdl)
+    add_default_dependencies(zlibstatic)
+    add_default_dependencies(jemalloc)
+    add_default_dependencies(memcpy)
+    add_default_dependencies(Foundation)
+    add_default_dependencies(common)
+    add_default_dependencies(gtest)
+    add_default_dependencies(lz4)
+    add_default_dependencies(zstd)
+    add_default_dependencies(snappy)
+    add_default_dependencies(arrow)
+    add_default_dependencies(protoc)
+    add_default_dependencies(thrift_static)
+    add_default_dependencies(cityhash)
+    add_default_dependencies(farmhash)
+    add_default_dependencies(murmurhash)
+    add_default_dependencies(metrohash)
+    add_default_dependencies(metrohash128)
+    add_default_dependencies(consistent-hashing)
+    add_default_dependencies(double-conversion)
+    add_default_dependencies(cctz)
+    add_default_dependencies(kj)
+    add_default_dependencies(simdjson)
+    add_default_dependencies(apple_rt)
+    add_default_dependencies(h3)
+    add_default_dependencies(re2)
+    add_default_dependencies(re2_st)
+    add_default_dependencies(hs_compile_shared)
+    add_default_dependencies(hs_exec_shared)
+    add_default_dependencies(hs_shared)
+    add_default_dependencies(widechar_width)
+    add_default_dependencies(string_utils)
+    add_default_dependencies(consistent-hashing-sumbur)
+    add_default_dependencies(boost_program_options_internal)
+    add_default_dependencies(boost_system_internal)
+    add_default_dependencies(boost_regex_internal)
+    add_default_dependencies(roaring)
+    add_default_dependencies(btrie)
+    add_default_dependencies(cpuid)
+    add_default_dependencies(mysqlclient)
+    add_default_dependencies(zlib)
+    add_default_dependencies(thrift)
+    add_default_dependencies(brotli)
+    add_default_dependencies(libprotobuf)
+    add_default_dependencies(base64)
+    add_default_dependencies(readpassphrase)
+    add_default_dependencies(unwind_static)
+endif ()
