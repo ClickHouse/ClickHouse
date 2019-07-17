@@ -219,7 +219,7 @@ void AsynchronousMetrics::update()
         set("MaxPartCountForPartition", max_part_count_for_partition);
 
         set("NumberOfDatabases", number_of_databases);
-        set("TotalNumberOfTables", total_number_of_tables);
+        set("NumberOfTables", total_number_of_tables);
     }
 
 #if USE_TCMALLOC
