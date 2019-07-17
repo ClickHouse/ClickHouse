@@ -6,6 +6,13 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 
+#if defined(__linux__)
+#include <sys/time.h>
+#include <sys/resource.h>
+
+#include <Common/hasLinuxCapability.h>
+#endif
+
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
@@ -13,13 +20,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_SET_THREAD_PRIORITY;
+}
+
+
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
     query_context = &query_context_;
+    query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
-
-    query_id = query_context->getCurrentQueryId();
 
     if (thread_group)
     {
@@ -93,6 +105,26 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         thread_group->thread_numbers.emplace_back(thread_number);
     }
 
+    if (query_context)
+        query_id = query_context->getCurrentQueryId();
+
+#if defined(__linux__)
+    /// Set "nice" value if required.
+    if (query_context)
+    {
+        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+    }
+#endif
+
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
 }
@@ -143,6 +175,18 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+
+#if defined(__linux__)
+    if (os_thread_priority)
+    {
+        LOG_TRACE(log, "Resetting nice");
+
+        if (0 != setpriority(PRIO_PROCESS, os_thread_id, 0))
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+
+        os_thread_priority = 0;
+    }
+#endif
 }
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
@@ -227,7 +271,7 @@ void CurrentThread::attachQueryContext(Context & query_context)
 {
     if (unlikely(!current_thread))
         return;
-    return current_thread->attachQueryContext(query_context);
+    current_thread->attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()

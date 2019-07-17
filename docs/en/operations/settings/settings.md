@@ -199,15 +199,10 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with
-default values of the respective columns. This option only applies to
-[JSONEachRow](../../interfaces/formats.md#jsoneachrow) and
-[CSV](../../interfaces/formats.md#csv) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    When this option is enabled, extended table metadata are sent
-from server to client. It consumes additional computing resources on the server
-and can reduce performance.
+    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
 
 Possible values:
 
@@ -236,6 +231,25 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables inserting of JSON data with nested objects.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -253,6 +267,27 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
+
+## date_time_input_format {#settings-date_time_input_format}
+
+Enables or disables extended parsing of date and time formatted strings.
+
+The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic format.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 

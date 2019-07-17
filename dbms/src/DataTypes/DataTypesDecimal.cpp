@@ -241,7 +241,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 }
 
 template <typename T>
-static DataTypePtr createExect(const ASTPtr & arguments)
+static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
@@ -260,9 +260,9 @@ static DataTypePtr createExect(const ASTPtr & arguments)
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
-    factory.registerDataType("Decimal32", createExect<Decimal32>, DataTypeFactory::CaseInsensitive);
-    factory.registerDataType("Decimal64", createExect<Decimal64>, DataTypeFactory::CaseInsensitive);
-    factory.registerDataType("Decimal128", createExect<Decimal128>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::CaseInsensitive);
 
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);

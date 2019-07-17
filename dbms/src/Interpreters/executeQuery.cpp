@@ -28,8 +28,11 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
-#include "DNSCacheUpdater.h"
+#include <Interpreters/DNSCacheUpdater.h>
 
+#include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 namespace DB
 {
@@ -151,7 +154,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     time_t current_time = time(nullptr);
 
-    context.setQueryContext(context);
+    context.makeQueryContext();
     CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
@@ -200,6 +203,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
     BlockIO res;
+    QueryPipeline & pipeline = res.pipeline;
 
     try
     {
@@ -208,11 +212,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
             visitor.visit(ast);
-        }
 
-        /// Get new query after substitutions.
-        if (context.hasQueryParameters())
+            /// Get new query after substitutions.
             query = serializeAST(*ast);
+        }
 
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
@@ -236,7 +239,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context.initializeExternalTablesIfSet();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        res = interpreter->execute();
+        bool use_processors = settings.experimental_use_processors && interpreter->canExecuteWithProcessors();
+
+        if (use_processors)
+            pipeline = interpreter->executeWithProcessors();
+        else
+            res = interpreter->execute();
+
         if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
             context.setInsertionTable(insert_interpreter->getDatabaseTable());
 
@@ -246,36 +255,57 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if ((*process_list_entry)->isKilled())
                 throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
                     ErrorCodes::QUERY_WAS_CANCELLED);
-            else
+            else if (!use_processors)
                 (*process_list_entry)->setQueryStreams(res);
         }
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
 
-        if (res.in)
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_CURRENT;
+        limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+
+        if (use_processors)
         {
-            res.in->setProgressCallback(context.getProgressCallback());
-            res.in->setProcessListElement(context.getProcessListElement());
+            pipeline.setProgressCallback(context.getProgressCallback());
+            pipeline.setProcessListElement(context.getProcessListElement());
 
             /// Limits on the result, the quota on the result, and also callback for progress.
             /// Limits apply only to the final result.
             if (stage == QueryProcessingStage::Complete)
             {
-                IBlockInputStream::LocalLimits limits;
-                limits.mode = IBlockInputStream::LIMITS_CURRENT;
-                limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-
-                res.in->setLimits(limits);
-                res.in->setQuota(quota);
+                pipeline.resize(1);
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
+                    auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
+                    transform->setQuota(quota);
+                    return transform;
+                });
             }
         }
-
-        if (res.out)
+        else
         {
-            if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+            if (res.in)
             {
-                stream->setProcessListElement(context.getProcessListElement());
+                res.in->setProgressCallback(context.getProgressCallback());
+                res.in->setProcessListElement(context.getProcessListElement());
+
+                /// Limits on the result, the quota on the result, and also callback for progress.
+                /// Limits apply only to the final result.
+                if (stage == QueryProcessingStage::Complete)
+                {
+                    res.in->setLimits(limits);
+                    res.in->setQuota(quota);
+                }
+            }
+
+            if (res.out)
+            {
+                if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+                {
+                    stream->setProcessListElement(context.getProcessListElement());
+                }
             }
         }
 
@@ -305,7 +335,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
@@ -374,7 +404,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            res.exception_callback = [elem, &context, log_queries] () mutable
+            auto exception_callback = [elem, &context, log_queries] () mutable
             {
                 context.getQuota().addError();
 
@@ -416,6 +446,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         query_log->add(elem);
                 }
             };
+
+            res.finish_callback = std::move(finish_callback);
+            res.exception_callback = std::move(exception_callback);
 
             if (!internal && res.in)
             {
@@ -499,6 +532,8 @@ void executeQuery(
 
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail);
 
+    auto & pipeline = streams.pipeline;
+
     try
     {
         if (streams.out)
@@ -551,6 +586,63 @@ void executeQuery(
                 set_query_id(context.getClientInfo().current_query_id);
 
             copyData(*streams.in, *out);
+        }
+
+        if (pipeline.initialized())
+        {
+            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+            WriteBuffer * out_buf = &ostr;
+            std::optional<WriteBufferFromFile> out_file_buf;
+            if (ast_query_with_output && ast_query_with_output->out_file)
+            {
+                if (!allow_into_outfile)
+                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+
+                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
+                out_buf = &*out_file_buf;
+            }
+
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                                 ? *getIdentifierName(ast_query_with_output->format)
+                                 : context.getDefaultFormat();
+
+            if (ast_query_with_output && ast_query_with_output->settings_ast)
+                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
+
+            pipeline.addSimpleTransform([](const Block & header)
+            {
+                return std::make_shared<MaterializingTransform>(header);
+            });
+
+            auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+
+            /// Save previous progress callback if any. TODO Do it more conveniently.
+            auto previous_progress_callback = context.getProgressCallback();
+
+            /// NOTE Progress callback takes shared ownership of 'out'.
+            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+            {
+                if (previous_progress_callback)
+                    previous_progress_callback(progress);
+                out->onProgress(progress);
+            });
+
+            if (set_content_type)
+                set_content_type(out->getContentType());
+
+            if (set_query_id)
+                set_query_id(context.getClientInfo().current_query_id);
+
+            pipeline.setOutput(std::move(out));
+
+            {
+                auto executor = pipeline.execute();
+                executor->execute(context.getSettingsRef().max_threads);
+            }
+
+            pipeline.finalize();
         }
     }
     catch (...)
