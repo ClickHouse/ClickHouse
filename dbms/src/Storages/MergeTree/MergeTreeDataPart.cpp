@@ -153,7 +153,7 @@ MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const Strin
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(
+ColumnSize MergeTreeDataPart::getColumnSizeImpl(
     const String & column_name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
@@ -182,12 +182,12 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(
     return size;
 }
 
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
+ColumnSize MergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
 {
     return getColumnSizeImpl(column_name, type, nullptr);
 }
 
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
+ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 {
     ColumnSize totals;
     std::unordered_set<String> processed_substreams;
