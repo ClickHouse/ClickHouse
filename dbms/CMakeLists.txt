@@ -236,7 +236,7 @@ target_link_libraries(clickhouse_common_io
 )
 
 if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
+    target_link_libraries(clickhouse_common_io PUBLIC ${ZSTD_LIBRARY})
 endif()
 
 if (USE_RDKAFKA)
@@ -285,10 +285,6 @@ target_link_libraries (dbms
     ${Boost_SYSTEM_LIBRARY}
     Threads::Threads
 )
-
-if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
-endif()
 
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
