@@ -27,8 +27,8 @@ using DB::CurrentThread;
     if ((logger)->is((PRIORITY)) || is_clients_log) {                                           \
         std::stringstream oss_internal_rare;                                                    \
         oss_internal_rare << message;                                                           \
-        if ( auto channel = (logger)->getChannel() ) {                                          \
-            channel->log(Message("", oss_internal_rare.str(), (PRIORITY)));                     \
+        if (auto channel = (logger)->getChannel()) {                                            \
+            channel->log(Message((logger)->name(), oss_internal_rare.str(), (PRIORITY)));       \
         }                                                                                       \
     }                                                                                           \
 } while (false)
