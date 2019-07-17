@@ -330,7 +330,11 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, allow_simdjson, 1, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.") \
     \
     M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
-    M(SettingBool, check_query_single_value_result, true, "Return check query result as single 1/0 value")
+    M(SettingBool, check_query_single_value_result, true, "Return check query result as single 1/0 value") \
+    \
+    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    \
+    M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
