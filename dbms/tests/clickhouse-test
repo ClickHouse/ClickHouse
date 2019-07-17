@@ -16,7 +16,10 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-import termcolor
+try:
+    import termcolor
+except ImportError:
+    termcolor = None
 from random import random
 import commands
 import multiprocessing
@@ -93,7 +96,7 @@ def get_server_pid(server_tcp_port):
         return None
 
 def colored(text, args, color=None, on_color=None, attrs=None):
-       if sys.stdout.isatty() or args.force_color:
+       if termcolor and (sys.stdout.isatty() or args.force_color):
            return termcolor.colored(text, color, on_color, attrs)
        else:
            return text
