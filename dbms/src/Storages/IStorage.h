@@ -38,6 +38,19 @@ class AlterCommands;
 class MutationCommands;
 class PartitionCommands;
 
+struct ColumnSize
+{
+    size_t marks = 0;
+    size_t data_compressed = 0;
+    size_t data_uncompressed = 0;
+
+    void add(const ColumnSize & other)
+    {
+        marks += other.marks;
+        data_compressed += other.data_compressed;
+        data_uncompressed += other.data_uncompressed;
+    }
+};
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -82,6 +95,10 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
+    /// Optional size information of each physical column.
+    /// Currently it's only used by the MergeTree family for query optimizations.
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
