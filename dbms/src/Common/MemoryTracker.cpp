@@ -206,8 +206,11 @@ namespace CurrentMemoryTracker
             untracked += size;
             if (untracked > untracked_memory_limit)
             {
-                memory_tracker->alloc(untracked);
+                /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
+                /// more. It could be usefull for enlarge Exception message in rethrow logic.
+                Int64 tmp = untracked;
                 untracked = 0;
+                memory_tracker->alloc(tmp);
             }
         }
     }
