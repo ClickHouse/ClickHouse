@@ -3,6 +3,7 @@
 #if __has_include(<sanitizer/asan_interface.h>)
 #   include <sanitizer/asan_interface.h>
 #endif
+#include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 
@@ -70,10 +71,8 @@ public:
             /// item in the list. We poisoned the free block before putting
             /// it into the free list, so we have to unpoison it before
             /// reading anything.
-#if __has_include(<sanitizer/asan_interface.h>)
             ASAN_UNPOISON_MEMORY_REGION(free_block_ptr,
                                         std::max(size, sizeof(Block)));
-#endif
 
             const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
@@ -104,9 +103,7 @@ public:
         /// destructor, to support an underlying allocator that doesn't
         /// integrate with asan. We don't do that, and rely on the fact that
         /// our underlying allocator is Arena, which does have asan integration.
-#if __has_include(<sanitizer/asan_interface.h>)
         ASAN_POISON_MEMORY_REGION(ptr, 1ULL << (list_idx + 1));
-#endif
     }
 
     /// Size of the allocated pool in bytes

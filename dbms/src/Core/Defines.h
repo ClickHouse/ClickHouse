@@ -139,3 +139,8 @@
 /// This number is only used for distributed version compatible.
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+
+#if !__has_include(<sanitizer/asan_interface.h>)
+#   define ASAN_UNPOISON_MEMORY_REGION(a,b)
+#   define ASAN_POISON_MEMORY_REGION(a,b)
+#endif
