@@ -115,8 +115,6 @@ public:
 
     /// To be able to temporarily stop memory tracker
     DB::SimpleActionBlocker blocker;
-
-    UInt32 last_attempt_failed = 0;
 };
 
 
