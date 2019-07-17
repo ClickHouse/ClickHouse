@@ -42,7 +42,7 @@ A structure can contain either `<id>` or `<key>` .
 
 ### Numeric Key
 
-Format: `UInt64`.
+Type: `UInt64`.
 
 Configuration example:
 
@@ -54,7 +54,7 @@ Configuration example:
 
 Configuration fields:
 
-- name – The name of the column with keys.
+- `name` – The name of the column with keys.
 
 ### Composite Key
 
