@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -21,6 +22,8 @@ private:
     ExpressionActionsPtr expression;
     bool on_totals;
     bool default_totals;
+
+    ExpressionActions::Cache cache;
 };
 
 }

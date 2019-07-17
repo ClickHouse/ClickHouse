@@ -10,14 +10,14 @@
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
-
+#include <Core/ColumnNumbers.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 using NameWithAlias = std::pair<std::string, std::string>;
@@ -26,15 +26,19 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 class Join;
 
 class IPreparedFunction;
+
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 
 class IFunctionBase;
+
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 class IFunctionBuilder;
+
 using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
 
 class IDataType;
+
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class ExpressionActions;
@@ -70,9 +74,12 @@ public:
 
     Type type{};
 
+    using EnumeratedColumns = std::unordered_map<std::string, size_t>;
+    static constexpr auto INDEX_NOT_FOUND = NameWithPosition::INDEX_NOT_FOUND;
+
     /// For ADD/REMOVE/COPY_COLUMN.
-    std::string source_name;
-    std::string result_name;
+    NameWithPosition source_name;
+    NameWithPosition result_name;
     DataTypePtr result_type;
 
     /// If COPY_COLUMN can replace the result column.
@@ -94,11 +101,11 @@ public:
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
     PreparedFunctionPtr function;
-    Names argument_names;
+    NamesWithPosition argument_names;
     bool is_function_compiled = false;
 
     /// For ARRAY_JOIN
-    NameSet array_joined_columns;
+    NamesWithPositionSet array_joined_columns;
     bool array_join_is_left = false;
     bool unaligned_array_join = false;
 
@@ -108,7 +115,8 @@ public:
     NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
-    NamesWithAliases projection;
+    NamesWithPosition projection_names;
+    NamesWithPosition projection_aliases;
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
@@ -126,6 +134,7 @@ public:
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
+    void enumerateColumns(EnumeratedColumns & enumerated_columns);
 
     std::string toString() const;
 
@@ -140,8 +149,16 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings);
-    void execute(Block & block, bool dry_run) const;
-    void executeOnTotals(Block & block) const;
+
+    template <bool execute_on_block>
+    void execute(Block & block, Columns & columns, size_t & num_rows,
+                 ColumnNumbers & index, const EnumeratedColumns & enumerated_columns, bool dry_run) const;
+
+    template <bool execute_on_block>
+    void executeOnTotals(Block & block, Columns & columns,
+                         ColumnNumbers & index, const EnumeratedColumns & enumerated_columns) const;
+
+    static ColumnNumbers makeIndex(const Block & block, const EnumeratedColumns & enumerated_columns);
 };
 
 
@@ -172,6 +189,7 @@ public:
             input_columns.emplace_back(input_elem.name, input_elem.type);
             sample_block.insert(input_elem);
         }
+
 #if USE_EMBEDDED_COMPILER
         compilation_cache = context_.getCompiledExpressionCache();
 #endif
@@ -223,6 +241,14 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    struct Cache
+    {
+        Blocks headers;
+        ColumnNumbers index;
+    };
+
+    void execute(const Block & header, Columns & columns, size_t & num_rows, Cache & cache, bool dry_run = false) const;
+
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;
 
@@ -259,13 +285,15 @@ public:
 private:
     NamesAndTypesList input_columns;
     Actions actions;
+    ExpressionAction::EnumeratedColumns enumerated_columns;
     Block sample_block;
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;
 #endif
 
-    void checkLimits(Block & block) const;
+    template <bool execute_on_block>
+    void checkLimits(const Block & header, const Columns & columns) const;
 
     void addImpl(ExpressionAction action, Names & new_names);
 
@@ -339,3 +367,4 @@ struct ExpressionActionsChain
 };
 
 }
+

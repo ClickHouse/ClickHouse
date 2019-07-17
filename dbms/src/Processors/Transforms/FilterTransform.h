@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -35,6 +36,8 @@ private:
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
+
+    ExpressionActions::Cache cache;
 
     void removeFilterIfNeed(Chunk & chunk);
 };

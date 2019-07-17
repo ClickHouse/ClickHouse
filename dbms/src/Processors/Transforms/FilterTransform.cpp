@@ -85,11 +85,8 @@ void FilterTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     {
-        Block block = getInputPort().getHeader().cloneWithColumns(columns);
-        columns.clear();
-        expression->execute(block);
-        num_rows_before_filtration = block.rows();
-        columns = block.getColumns();
+        auto & header = getInputPort().getHeader();
+        expression->execute(header, columns, num_rows_before_filtration, cache);
     }
 
     if (constant_filter_description.always_true)

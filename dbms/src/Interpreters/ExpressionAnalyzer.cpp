@@ -962,7 +962,6 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
     }
 
     actions->finalize(result_names);
-
     return actions;
 }
 

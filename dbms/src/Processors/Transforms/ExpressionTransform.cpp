@@ -1,5 +1,4 @@
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {
@@ -21,20 +20,26 @@ ExpressionTransform::ExpressionTransform(const Block & header, ExpressionActions
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto & header = getInputPort().getHeader();
+    auto num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
 
     if (on_totals)
     {
         if (default_totals && !expression->hasTotalsInJoin())
             return;
 
+        auto block = getInputPort().getHeader().cloneWithColumns(columns);
         expression->executeOnTotals(block);
+        num_rows = block.rows();
+        columns = block.getColumns();
     }
     else
-        expression->execute(block);
+    {
+        expression->execute(header, columns, num_rows, cache);
+    }
 
-    auto num_rows = block.rows();
-    chunk.setColumns(block.getColumns(), num_rows);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

@@ -38,14 +38,18 @@ namespace ErrorCodes
 
 Names ExpressionAction::getNeededColumns() const
 {
-    Names res = argument_names;
+    Names res;
 
-    res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
+    for (const auto & name_with_position : argument_names)
+        res.emplace_back(name_with_position);
+
+    for (const auto & name_with_position : array_joined_columns)
+        res.emplace_back(name_with_position);
 
     res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
 
-    for (const auto & column : projection)
-        res.push_back(column.first);
+    for (const auto & name_with_position : projection_names)
+        res.emplace_back(name_with_position);
 
     if (!source_name.empty())
         res.push_back(source_name);
@@ -54,12 +58,48 @@ Names ExpressionAction::getNeededColumns() const
 }
 
 
+void ExpressionAction::enumerateColumns(EnumeratedColumns & enumerated_columns)
+{
+    auto add = [&](NameWithPosition & name_with_position)
+    {
+        if (name_with_position.empty())
+            return;
+
+        size_t number = enumerated_columns.size();
+        auto it = enumerated_columns.emplace(name_with_position, number);
+        name_with_position.position = it.first->second;
+    };
+
+    for (auto & name_with_position : argument_names)
+        add(name_with_position);
+
+    NamesWithPositionSet new_array_joined_columns;
+    while (!array_joined_columns.empty())
+    {
+        auto name_with_position = *array_joined_columns.begin();
+        array_joined_columns.erase(array_joined_columns.begin());
+        add(name_with_position);
+        new_array_joined_columns.insert(std::move(name_with_position));
+    }
+    array_joined_columns.swap(new_array_joined_columns);
+
+    for (auto & name_with_position : projection_names)
+        add(name_with_position);
+
+    for (auto & name_with_position : projection_aliases)
+        add(name_with_position);
+
+    add(source_name);
+    add(result_name);
+}
+
+
 ExpressionAction ExpressionAction::applyFunction(
     const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
-    if (result_name_ == "")
+    if (result_name_.empty())
     {
         result_name_ = function_->getName() + "(";
         for (size_t i = 0 ; i < argument_names_.size(); ++i)
@@ -75,7 +115,11 @@ ExpressionAction ExpressionAction::applyFunction(
     a.type = APPLY_FUNCTION;
     a.result_name = result_name_;
     a.function_builder = function_;
-    a.argument_names = argument_names_;
+
+    a.argument_names.reserve(argument_names_.size());
+    for (const auto & name : argument_names_)
+        a.argument_names.emplace_back(name);
+
     return a;
 }
 
@@ -112,7 +156,13 @@ ExpressionAction ExpressionAction::project(const NamesWithAliases & projected_co
 {
     ExpressionAction a;
     a.type = PROJECT;
-    a.projection = projected_columns_;
+    a.projection_names.resize(projected_columns_.size());
+    a.projection_aliases.resize(projected_columns_.size());
+    for (size_t i = 0; i < projected_columns_.size(); ++i)
+    {
+        a.projection_names[i] = projected_columns_[i].first;
+        a.projection_aliases[i] = projected_columns_[i].second;
+    }
     return a;
 }
 
@@ -120,17 +170,17 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
 {
     ExpressionAction a;
     a.type = PROJECT;
-    a.projection.resize(projected_columns_.size());
+    a.projection_names.resize(projected_columns_.size());
+    a.projection_aliases.resize(projected_columns_.size());
     for (size_t i = 0; i < projected_columns_.size(); ++i)
-        a.projection[i] = NameWithAlias(projected_columns_[i], "");
+        a.projection_names[i] = projected_columns_[i];
     return a;
 }
 
 ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_columns_)
 {
-    ExpressionAction a;
+    ExpressionAction a = project(aliased_columns_);
     a.type = ADD_ALIASES;
-    a.projection = aliased_columns_;
     return a;
 }
 
@@ -140,7 +190,10 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
     ExpressionAction a;
     a.type = ARRAY_JOIN;
-    a.array_joined_columns = array_joined_columns;
+
+    for (auto & column : array_joined_columns)
+        a.array_joined_columns.emplace(column);
+
     a.array_join_is_left = array_join_is_left;
     a.unaligned_array_join = context.getSettingsRef().enable_unaligned_array_join;
 
@@ -238,7 +291,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             for (const auto & name : array_joined_columns)
             {
                 ColumnWithTypeAndName & current = sample_block.getByName(name);
-                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
+                const auto * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
                 if (!array_type)
                     throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
                 current.type = array_type->getNestedType();
@@ -262,12 +315,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
         {
             Block new_block;
 
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (size_t i = 0; i < projection_names.size(); ++i)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = projection_names[i];
+                const std::string & alias = projection_aliases[i];
                 ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (alias != "")
+                if (!alias.empty())
                     column.name = alias;
                 new_block.insert(std::move(column));
             }
@@ -278,12 +331,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
         case ADD_ALIASES:
         {
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (size_t i = 0; i < projection_names.size(); ++i)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = projection_names[i];
+                const std::string & alias = projection_aliases[i];
                 const ColumnWithTypeAndName & column = sample_block.getByName(name);
-                if (alias != "" && !sample_block.has(alias))
+                if (!alias.empty() && !sample_block.has(alias))
                     sample_block.insert({column.column, column.type, alias});
             }
             break;
@@ -329,16 +382,32 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 }
 
 
-void ExpressionAction::execute(Block & block, bool dry_run) const
+template <bool execute_on_block>
+void ExpressionAction::execute(Block & block, Columns & columns, size_t & num_rows, ColumnNumbers & index, const EnumeratedColumns & enumerated_columns, bool dry_run) const
 {
-    size_t input_rows_count = block.rows();
+    size_t input_rows_count = num_rows;
+
+    auto getIndex = [&index](const NameWithPosition & name) { return index[name.position]; };
+    auto getIndexAt = [&index](const NamesWithPosition & names, size_t i) { return index[names[i].position]; };
+
+    auto setIndex = [&index](const NameWithPosition & name, size_t value) { index[name.position] = value; };
+
+    auto getColumn = [&](size_t pos) -> ColumnPtr &
+    {
+        if constexpr (execute_on_block)
+            return block.getByPosition(pos).column;
+        else
+            return columns[pos];
+    };
+
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)
-        if (!block.has(source_name))
-            throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        if (getIndex(source_name) == INDEX_NOT_FOUND)
+            throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(),
+                            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
     if (type == ADD_COLUMN || (type == COPY_COLUMN && !can_replace) || type == APPLY_FUNCTION)
-        if (block.has(result_name))
+        if (getIndex(result_name) != INDEX_NOT_FOUND)
             throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     switch (type)
@@ -348,9 +417,15 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             ColumnNumbers arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
-                if (!block.has(argument_names[i]))
-                    throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                arguments[i] = block.getPositionByName(argument_names[i]);
+                auto pos = getIndexAt(argument_names, i);
+                arguments[i] = pos;
+
+                if (pos == INDEX_NOT_FOUND)
+                    throw Exception("Not found column: '" + argument_names[i] + "'",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+
+                if constexpr (!execute_on_block)
+                    block.getByPosition(pos).column.swap(columns[pos]);
             }
 
             size_t num_columns_without_result = block.columns();
@@ -361,6 +436,17 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
             function->execute(block, arguments, num_columns_without_result, input_rows_count, dry_run);
 
+            setIndex(result_name, num_columns_without_result);
+
+            if constexpr (!execute_on_block)
+            {
+                columns.emplace_back(std::move(block.getByPosition(num_columns_without_result).column));
+                block.erase(num_columns_without_result);
+
+                for (auto & arg : arguments)
+                    block.getByPosition(arg).column.swap(columns[arg]);
+            }
+
             break;
         }
 
@@ -368,14 +454,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
         {
             if (array_joined_columns.empty())
                 throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
-
-            ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column->convertToFullColumnIfConst();
-            const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
-            if (!any_array)
-                throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
-
-            /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
-            std::map<String, ColumnPtr> non_empty_array_columns;
 
             if (unaligned_array_join)
             {
@@ -390,69 +468,96 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
                 for (const auto & name : array_joined_columns)
                 {
-                    auto & src_col = block.getByName(name);
+                    auto src_index = getIndex(name);
+                    auto & src_col = block.getByPosition(src_index);
 
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
+
+                    /// Calculate length(array).
                     Block tmp_block{src_col, {{}, uint64, {}}};
                     function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
 
+                    /// column_of_max_length = max(length(array), column_of_max_length)
                     Block tmp_block2{
                         column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
                     function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
                     column_of_max_length = tmp_block2.safeGetByPosition(2);
+
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
                 }
 
                 for (const auto & name : array_joined_columns)
                 {
-                    auto & src_col = block.getByName(name);
+                    auto src_index = getIndex(name);
+                    auto & src_col = block.getByPosition(src_index);
 
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
+
+                    /// arrayResize(src_col, column_of_max_length)
                     Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
                     function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
                     src_col.column = tmp_block.safeGetByPosition(2).column;
-                    any_array_ptr = src_col.column->convertToFullColumnIfConst();
-                }
 
-                any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
+                }
             }
             else if (array_join_is_left)
             {
                 for (const auto & name : array_joined_columns)
                 {
-                    auto src_col = block.getByName(name);
+                    auto src_index = getIndex(name);
+                    auto & src_col = block.getByPosition(src_index);
+
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
-
                     function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
-                    non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
-                }
+                    src_col.column = tmp_block.safeGetByPosition(1).column;
 
-                any_array_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
-                any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
+                    if constexpr (!execute_on_block)
+                        src_col.column.swap(columns[src_index]);
+                }
             }
 
-            size_t columns = block.columns();
-            for (size_t i = 0; i < columns; ++i)
+            ColumnPtr any_array_ptr = getColumn(getIndex(*array_joined_columns.begin()))->convertToFullColumnIfConst();
+            const auto * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+            if (!any_array)
+                throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
+
+            size_t num_columns = block.columns();
+            for (size_t i = 0; i < num_columns; ++i)
             {
-                ColumnWithTypeAndName & current = block.safeGetByPosition(i);
+                ColumnWithTypeAndName & current = block.getByPosition(i);
+                auto & column = getColumn(i);
 
                 if (array_joined_columns.count(current.name))
                 {
                     if (!typeid_cast<const DataTypeArray *>(&*current.type))
                         throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
-                    ColumnPtr array_ptr = (array_join_is_left && !unaligned_array_join) ? non_empty_array_columns[current.name] : current.column;
-                    array_ptr = array_ptr->convertToFullColumnIfConst();
+                    ColumnPtr array_ptr = column->convertToFullColumnIfConst();
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
                     if (!unaligned_array_join && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
                         throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-                    current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-                    current.type = typeid_cast<const DataTypeArray &>(*current.type).getNestedType();
+                    column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
+
+                    if constexpr (execute_on_block)
+                        current.type = typeid_cast<const DataTypeArray &>(*current.type).getNestedType();
                 }
                 else
                 {
-                    current.column = current.column->replicate(any_array->getOffsets());
+                    column = column->replicate(any_array->getOffsets());
                 }
+
+                if (i == 0)
+                    num_rows = column->size();
             }
 
             break;
@@ -460,71 +565,207 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
+            if constexpr (!execute_on_block)
+            {
+                for (size_t i = 0; i < columns.size(); ++i)
+                    block.getByPosition(i).column.swap(columns[i]);
+            }
+
             join->joinBlock(block, join_key_names_left, columns_added_by_join);
+
+            if constexpr (!execute_on_block)
+            {
+                columns.resize(block.columns());
+
+                for (size_t i = 0; i < columns.size(); ++i)
+                    block.getByPosition(i).column.swap(columns[i]);
+            }
+
+            num_rows = block.rows();
+            index = makeIndex(block, enumerated_columns);
+
             break;
         }
 
         case PROJECT:
         {
             Block new_block;
+            Columns new_columns;
+            ColumnNumbers new_index(index.size(), INDEX_NOT_FOUND);
 
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (size_t i = 0; i < projection_names.size(); ++i)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
-                ColumnWithTypeAndName column = block.getByName(name);
-                if (alias != "")
-                    column.name = alias;
-                new_block.insert(std::move(column));
+                const std::string & alias = projection_aliases[i];
+
+                auto pos = getIndex(projection_names[i]);
+
+                if constexpr (execute_on_block)
+                {
+                    ColumnWithTypeAndName column = block.getByPosition(pos);
+                    if (!alias.empty())
+                        column.name = alias;
+
+                    new_block.insert(std::move(column));
+                }
+                else
+                    new_columns.emplace_back(columns[pos]);
+
+                if (alias.empty())
+                    new_index[projection_names[i].position] = i;
+                else
+                    new_index[projection_aliases[i].position] = i;
             }
 
-            block.swap(new_block);
+            index.swap(new_index);
+
+            if constexpr (execute_on_block)
+                block.swap(new_block);
+            else
+                columns.swap(new_columns);
 
             break;
         }
 
         case ADD_ALIASES:
         {
-            for (size_t i = 0; i < projection.size(); ++i)
+            size_t num_columns = block.columns();
+
+            for (size_t i = 0; i < projection_names.size(); ++i)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
-                const ColumnWithTypeAndName & column = block.getByName(name);
-                if (alias != "" && !block.has(alias))
-                    block.insert({column.column, column.type, alias});
+                const std::string & alias = projection_aliases[i];
+
+                if (alias.empty())
+                    continue;
+
+                auto pos = getIndex(projection_names[i]);
+                index[projection_aliases[i].position] = num_columns;
+                ++num_columns;
+
+                if constexpr (execute_on_block)
+                    block.insert(block.getByPosition(pos));
+                else
+                    columns.emplace_back(columns[pos]);
             }
             break;
         }
 
         case REMOVE_COLUMN:
-            block.erase(source_name);
+        {
+            auto pos = getIndex(source_name);
+
+            if constexpr (execute_on_block)
+                block.erase(pos);
+            else
+                columns.erase(columns.begin() + pos);
+
+            index[source_name.position] = INDEX_NOT_FOUND;
+
+            for (auto & val : index)
+                if (val > pos && val != INDEX_NOT_FOUND)
+                    --val;
+
             break;
+        }
 
         case ADD_COLUMN:
-            block.insert({ added_column->cloneResized(input_rows_count), result_type, result_name });
+        {
+            auto pos = result_name.position;
+            index[pos] = block.columns();
+
+            if constexpr (execute_on_block)
+                block.insert({ added_column->cloneResized(input_rows_count), result_type, result_name });
+            else
+                columns.emplace_back(added_column->cloneResized(input_rows_count));
+
             break;
+        }
 
         case COPY_COLUMN:
-            if (can_replace && block.has(result_name))
+        {
+            auto dst_pos = getIndex(result_name);
+            auto src_pos = getIndex(source_name);
+
+            if (can_replace && dst_pos != INDEX_NOT_FOUND)
             {
-                auto & result = block.getByName(result_name);
-                result.type = result_type;
-                result.column = block.getByName(source_name).column;
+                if constexpr (execute_on_block)
+                {
+                    auto & dst_col = block.getByPosition(dst_pos);
+                    auto & src_col = block.getByPosition(src_pos);
+                    dst_col.column = src_col.column;
+                    dst_col.type = src_col.type;
+                }
+                else
+                    columns[dst_pos] = columns[src_pos];
             }
             else
-                block.insert({ block.getByName(source_name).column, result_type, result_name });
+            {
+                index[result_name.position] = block.columns();
+
+                if constexpr (execute_on_block)
+                    block.insert({ block.getByPosition(src_pos).column, result_type, result_name });
+                else
+                    columns.emplace_back(columns[src_pos]);
+            }
 
             break;
+        }
     }
 }
 
 
-void ExpressionAction::executeOnTotals(Block & block) const
+ColumnNumbers ExpressionAction::makeIndex(const Block & block, const EnumeratedColumns & enumerated_columns)
+{
+    ColumnNumbers index(enumerated_columns.size(), INDEX_NOT_FOUND);
+
+    for (size_t i = 0, size = block.columns(); i < size; ++i)
+    {
+        const auto & column = block.getByPosition(i);
+        auto it = enumerated_columns.find(column.name);
+        if (it != enumerated_columns.end())
+            index[it->second] = i;
+    }
+
+    return index;
+}
+
+
+template <bool execute_on_block>
+void ExpressionAction::executeOnTotals(
+    Block & block,
+    Columns & columns,
+    ColumnNumbers & index,
+    const EnumeratedColumns & enumerated_columns) const
 {
     if (type != JOIN)
-        execute(block, false);
+    {
+        size_t num_rows = 1;
+        execute<execute_on_block>(block, columns, num_rows, index, enumerated_columns, false);
+    }
     else
+    {
+        if constexpr (!execute_on_block)
+        {
+            for (size_t i = 0; i < columns.size(); ++i)
+                block.getByPosition(i).column.swap(columns[i]);
+        }
+
         join->joinTotals(block);
+
+        if constexpr (!execute_on_block)
+        {
+            for (size_t i = 0; i < columns.size(); ++i)
+                block.getByPosition(i).column.swap(columns[i]);
+        }
+
+        index.assign(index.size(), INDEX_NOT_FOUND);
+        for (size_t i = 0, size = block.columns(); i < size; ++i)
+        {
+            const auto & column = block.getByPosition(i);
+            auto it = enumerated_columns.find(column.name);
+            if (it != enumerated_columns.end())
+                index[it->second] = i;
+        }
+    }
 }
 
 
@@ -564,7 +805,7 @@ std::string ExpressionAction::toString() const
 
         case ARRAY_JOIN:
             ss << (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN ";
-            for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+            for (auto it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
             {
                 if (it != array_joined_columns.begin())
                     ss << ", ";
@@ -574,7 +815,7 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+            for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
             {
                 if (it != columns_added_by_join.begin())
                     ss << ", ";
@@ -585,13 +826,13 @@ std::string ExpressionAction::toString() const
         case PROJECT: [[fallthrough]];
         case ADD_ALIASES:
             ss << (type == PROJECT ? "PROJECT " : "ADD_ALIASES ");
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (size_t i = 0; i < projection_names.size(); ++i)
             {
                 if (i)
                     ss << ", ";
-                ss << projection[i].first;
-                if (projection[i].second != "" && projection[i].second != projection[i].first)
-                    ss << " AS " << projection[i].second;
+                ss << projection_names[i];
+                if (!projection_aliases[i].empty() && projection_aliases[i] != projection_names[i])
+                    ss << " AS " << projection_aliases[i];
             }
             break;
     }
@@ -599,26 +840,35 @@ std::string ExpressionAction::toString() const
     return ss.str();
 }
 
-void ExpressionActions::checkLimits(Block & block) const
+template <bool execute_on_block>
+void ExpressionActions::checkLimits(const Block & header, const Columns & columns) const
 {
-    if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
-        throw Exception("Too many temporary columns: " + block.dumpNames()
+    auto getColumn = [&](size_t i) -> const ColumnPtr &
+    {
+        if constexpr (execute_on_block)
+            return header.getByPosition(i).column;
+        else
+            return columns[i];
+    };
+
+    if (settings.max_temporary_columns && header.columns() > settings.max_temporary_columns)
+        throw Exception("Too many temporary columns: " + header.dumpNames()
             + ". Maximum: " + settings.max_temporary_columns.toString(),
             ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
 
     if (settings.max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
-        for (size_t i = 0, size = block.columns(); i < size; ++i)
-            if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
+        for (size_t i = 0, size = header.columns(); i < size; ++i)
+            if (getColumn(i) && !isColumnConst(*getColumn(i)))
                 ++non_const_columns;
 
         if (non_const_columns > settings.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
-            for (size_t i = 0, size = block.columns(); i < size; ++i)
-                if (block.safeGetByPosition(i).column && !isColumnConst(*block.safeGetByPosition(i).column))
-                    list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
+            for (size_t i = 0, size = header.columns(); i < size; ++i)
+                if (getColumn(i) && !isColumnConst(*getColumn(i)))
+                    list_of_non_const_columns << "\n" << header.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
                 + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
@@ -651,7 +901,7 @@ void ExpressionActions::add(const ExpressionAction & action)
 
 void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
-    if (action.result_name != "")
+    if (!action.result_name.empty())
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
@@ -674,16 +924,18 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
     }
 
     if (action.type == ExpressionAction::ADD_ALIASES)
-        for (const auto & name_with_alias : action.projection)
-            new_names.emplace_back(name_with_alias.second);
+        for (const auto & name : action.projection_aliases)
+            new_names.emplace_back(name);
 
     action.prepare(sample_block, settings);
     actions.push_back(action);
+    actions.back().enumerateColumns(enumerated_columns);
 }
 
 void ExpressionActions::prependProjectInput()
 {
     actions.insert(actions.begin(), ExpressionAction::project(getRequiredColumns()));
+    actions[0].enumerateColumns(enumerated_columns);
 }
 
 void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before)
@@ -704,9 +956,11 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
     {
         input_columns.emplace_back(name, sample_block_before.getByName(name).type);
         actions.insert(actions.begin(), ExpressionAction::removeColumn(name));
+        actions[0].enumerateColumns(enumerated_columns);
     }
 
     actions.insert(actions.begin(), action);
+    actions[0].enumerateColumns(enumerated_columns);
     optimizeArrayJoin();
 }
 
@@ -733,10 +987,48 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 
 void ExpressionActions::execute(Block & block, bool dry_run) const
 {
-    for (const auto & action : actions)
+    Columns columns;
+    size_t num_rows = block.rows();
+    auto index = ExpressionAction::makeIndex(block, enumerated_columns);
+
+    for (auto & action : actions)
     {
-        action.execute(block, dry_run);
-        checkLimits(block);
+        action.execute<true>(block, columns, num_rows, index, enumerated_columns, dry_run);
+        checkLimits<true>(block, columns);
+    }
+}
+
+void ExpressionActions::execute(const Block & header, Columns & columns, size_t & num_rows, Cache & cache, bool dry_run) const
+{
+    if (cache.index.empty())
+    {
+        cache.headers.clear();
+        cache.headers.reserve(actions.size());
+
+        auto index = ExpressionAction::makeIndex(header, enumerated_columns);
+        auto block = header.cloneWithColumns(columns);
+
+        /// Must copy because local index will be changed.
+        cache.index = index;
+
+        for (auto & action : actions)
+        {
+            cache.headers.emplace_back(block.cloneEmpty());
+            action.execute<true>(block, columns, num_rows, index, enumerated_columns, dry_run);
+            checkLimits<true>(block, columns);
+        }
+
+        columns = block.getColumns();
+    }
+    else
+    {
+        ColumnNumbers index = cache.index;
+
+        for (size_t i = 0, size = actions.size(); i < size; ++i)
+        {
+            actions[i].execute<false>(cache.headers[i], columns, num_rows, index, enumerated_columns, dry_run);
+            checkLimits<false>(cache.headers[i], columns);
+        }
     }
 }
 
@@ -773,8 +1065,14 @@ void ExpressionActions::executeOnTotals(Block & block) const
             return; /// There's nothing to JOIN.
     }
 
-    for (const auto & action : actions)
-        action.executeOnTotals(block);
+    Columns columns;
+    auto index = ExpressionAction::makeIndex(block, enumerated_columns);
+
+    for (auto & action : actions)
+    {
+        action.executeOnTotals<true>(block, columns, index, enumerated_columns);
+        checkLimits<true>(block, columns);
+    }
 }
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
@@ -803,9 +1101,8 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 void ExpressionActions::finalize(const Names & output_columns)
 {
     NameSet final_columns;
-    for (size_t i = 0; i < output_columns.size(); ++i)
+    for (const auto & name : output_columns)
     {
-        const std::string & name = output_columns[i];
         if (!sample_block.has(name))
             throw Exception("Unknown column: " + name + ", there are only columns "
                             + sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -826,8 +1123,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 
     {
         NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
-        for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
-            unmodified_columns.insert(it->name);
+        for (const auto & name_and_type : sample_columns)
+            unmodified_columns.insert(name_and_type.name);
     }
 
     /// Let's go from the end and maintain set of required columns at this stage.
@@ -845,9 +1142,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         else if (action.type == ExpressionAction::ADD_ALIASES)
         {
             needed_columns.insert(in.begin(), in.end());
-            for (auto & name_wit_alias : action.projection)
+            for (auto & name : action.projection_aliases)
             {
-                auto it = unmodified_columns.find(name_wit_alias.second);
+                auto it = unmodified_columns.find(name);
                 if (it != unmodified_columns.end())
                     unmodified_columns.erase(it);
             }
@@ -935,9 +1232,9 @@ void ExpressionActions::finalize(const Names & output_columns)
     if (final_columns.empty() && !input_columns.empty())
         final_columns.insert(getSmallestColumn(input_columns));
 
-    for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
+    for (auto it = input_columns.begin(); it != input_columns.end();)
     {
-        NamesAndTypesList::iterator it0 = it;
+        auto it0 = it;
         ++it;
         if (!needed_columns.count(it0->name))
         {
@@ -968,8 +1265,8 @@ void ExpressionActions::finalize(const Names & output_columns)
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
-        for (const auto & name_alias : action.projection)
-            ++columns_refcount[name_alias.first];
+        for (const auto & name : action.projection_names)
+            ++columns_refcount[name];
     }
 
     Actions new_actions;
@@ -985,6 +1282,7 @@ void ExpressionActions::finalize(const Names & output_columns)
             if (refcount <= 0)
             {
                 new_actions.push_back(ExpressionAction::removeColumn(name));
+                new_actions.back().enumerateColumns(enumerated_columns);
                 if (sample_block.has(name))
                     sample_block.erase(name);
             }
@@ -1007,7 +1305,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     std::cerr << "\n";*/
 
     optimizeArrayJoin();
-    checkLimits(sample_block);
+    checkLimits<true>(sample_block, {});
 }
 
 
@@ -1016,17 +1314,17 @@ std::string ExpressionActions::dumpActions() const
     std::stringstream ss;
 
     ss << "input:\n";
-    for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-        ss << it->name << " " << it->type->getName() << "\n";
+    for (const auto & input_column : input_columns)
+        ss << input_column.name << " " << input_column.type->getName() << "\n";
 
     ss << "\nactions:\n";
-    for (size_t i = 0; i < actions.size(); ++i)
-        ss << actions[i].toString() << '\n';
+    for (auto & action : actions)
+        ss << action.toString() << '\n';
 
     ss << "\noutput:\n";
     NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
-    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
-        ss << it->name << " " << it->type->getName() << "\n";
+    for (const auto & output_column : output_columns)
+        ss << output_column.name << " " << output_column.type->getName() << "\n";
 
     return ss.str();
 }
@@ -1065,9 +1363,9 @@ void ExpressionActions::optimizeArrayJoin()
 
             needed = actions[i].getNeededColumns();
 
-            for (size_t j = 0; j < needed.size(); ++j)
+            for (const auto & column : needed)
             {
-                if (array_joined_columns.count(needed[j]))
+                if (array_joined_columns.count(column))
                 {
                     depends_on_array_join = true;
                     break;
@@ -1080,7 +1378,7 @@ void ExpressionActions::optimizeArrayJoin()
             if (first_array_join == NONE)
                 first_array_join = i;
 
-            if (actions[i].result_name != "")
+            if (!actions[i].result_name.empty())
                 array_joined_columns.insert(actions[i].result_name);
             array_joined_columns.insert(actions[i].array_joined_columns.begin(), actions[i].array_joined_columns.end());
 
@@ -1169,11 +1467,10 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(col.name);
             break;
         case PROJECT:
-            for (const auto & pair_of_strs : action.projection)
-            {
-                hash.update(pair_of_strs.first);
-                hash.update(pair_of_strs.second);
-            }
+            for (const auto & name : action.projection_names)
+                hash.update(name);
+            for (const auto & name : action.projection_aliases)
+                hash.update(name);
             break;
         case ADD_ALIASES:
             break;
@@ -1226,7 +1523,8 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && join == other.join
         && join_key_names_left == other.join_key_names_left
         && columns_added_by_join == other.columns_added_by_join
-        && projection == other.projection
+        && projection_names == other.projection_names
+        && projection_aliases == other.projection_aliases
         && is_function_compiled == other.is_function_compiled;
 }
 
