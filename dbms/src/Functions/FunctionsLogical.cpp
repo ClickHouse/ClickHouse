@@ -91,7 +91,101 @@ void convertColumnToUInt8(const IColumn * column, UInt8Container & res)
 }
 
 
-///  TODO: Add a good comment here about what this is
+template <class Op, typename Func>
+static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
+{
+    bool has_res = false;
+    for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
+    {
+        if (!in[i]->isColumnConst())
+            continue;
+
+        UInt8 x = func((*in[i])[0]);
+        if (has_res)
+        {
+            res = Op::apply(res, x);
+        }
+        else
+        {
+            res = x;
+            has_res = true;
+        }
+
+        in.erase(in.begin() + i);
+    }
+    return has_res;
+}
+
+template <class Op>
+inline bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
+{
+    return extractConstColumns<Op>(
+        in, res,
+        [](const Field & value)
+        {
+            return !value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
+        }
+    );
+}
+
+template <class Op>
+inline bool extractConstColumnsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
+{
+    return extractConstColumns<Op>(
+        in, res_3v,
+        [](const Field & value)
+        {
+            return value.isNull()
+                    ? Ternary::makeValue(false, true)
+                    : Ternary::makeValue(applyVisitor(FieldVisitorConvertToNumber<bool>(), value));
+        }
+    );
+}
+
+
+template <typename Op, size_t N>
+class AssociativeApplierImpl
+{
+    using ResultValueType = typename Op::ResultType;
+
+public:
+    /// Remembers the last N columns from `in`.
+    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+        : vec(in[in.size() - N]->getData()), next(in) {}
+
+    /// Returns a combination of values in the i-th row of all columns stored in the constructor.
+    inline ResultValueType apply(const size_t i) const
+    {
+        const auto & a = vec[i];
+        if constexpr (Op::isSaturable())
+            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
+        else
+            return Op::apply(a, next.apply(i));
+    }
+
+private:
+    const UInt8Container & vec;
+    const AssociativeApplierImpl<Op, N - 1> next;
+};
+
+template <typename Op>
+class AssociativeApplierImpl<Op, 1>
+{
+    using ResultValueType = typename Op::ResultType;
+
+public:
+    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+        : vec(in[in.size() - 1]->getData()) {}
+
+    inline ResultValueType apply(const size_t i) const { return vec[i]; }
+
+private:
+    const UInt8Container & vec;
+};
+
+
+/// A helper class used by AssociativeGenericApplierImpl
+/// Allows for on-the-fly conversion of any data type into intermediate ternary representation
 using ValueGetter = std::function<Ternary::ResultType (size_t)>;
 
 template <typename ... Types>
@@ -133,78 +227,9 @@ struct ValueGetterBuilderImpl<>
 using ValueGetterBuilder =
         ValueGetterBuilderImpl<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
 
-
-template <typename Op, size_t N>
-class AssociativeApplierImpl
-{
-    using ResultValueType = typename Op::ResultType;
-
-public:
-    /// Remembers the last N columns from `in`.
-    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
-        : vec(in[in.size() - N]->getData()), next(in) {}
-
-    /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const ResultValueType a, const size_t i) const
-    {
-        if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(vec[i], i));
-        else
-            return Op::apply(a, next.apply(vec[i], i));
-    }
-
-private:
-    const UInt8Container & vec;
-    const AssociativeApplierImpl<Op, N - 1> next;
-};
-
-template <typename Op>
-class AssociativeApplierImpl<Op, 1>
-{
-    using ResultValueType = typename Op::ResultType;
-
-public:
-    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
-        : vec(in[in.size() - 1]->getData()) {}
-
-    inline ResultValueType apply(const ResultValueType a, const size_t i) const
-    {
-        return Op::apply(a, vec[i]);
-    }
-
-private:
-    const UInt8Container & vec;
-};
-
-
-template <class Op>
-static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
-{
-    bool has_res = false;
-    for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
-    {
-        if (!in[i]->isColumnConst())
-            continue;
-
-        Field value = (*in[i])[0];
-
-        UInt8 x = !value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
-        if (has_res)
-        {
-            res = Op::apply(res, x);
-        }
-        else
-        {
-            res = x;
-            has_res = true;
-        }
-
-        in.erase(in.begin() + i);
-    }
-    return has_res;
-}
-
-
+/// This class together with helper class ValueGetterBuilder can be used with columns of arbitrary data type
+/// Allows for on-the-fly conversion of any type of data into intermediate ternary representation
+/// and eliminates the need to materialize data columns in intermediate representation
 template <typename Op, size_t N>
 class AssociativeGenericApplierImpl
 {
@@ -216,17 +241,13 @@ public:
         : val_getter{ValueGetterBuilder::build(in[in.size() - N])}, next{in} {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const ResultValueType a, const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
+        const auto a = val_getter(i);
         if constexpr (Op::isSaturable())
             return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
         else
             return Op::apply(a, next.apply(i));
-
-    }
-    inline ResultValueType apply(const size_t i) const
-    {
-        return apply(val_getter(i), i);
     }
 
 private:
@@ -234,27 +255,6 @@ private:
     const AssociativeGenericApplierImpl<Op, N - 1> next;
 };
 
-
-template <typename Op>
-class AssociativeGenericApplierImpl<Op, 2>
-{
-    using ResultValueType = typename Op::ResultType;
-
-public:
-    /// Remembers the last N columns from `in`.
-    AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
-        : val_getter_L{ValueGetterBuilder::build(in[in.size() - 2])}
-        , val_getter_R{ValueGetterBuilder::build(in[in.size() - 1])} {}
-
-    inline ResultValueType apply(const size_t i) const
-    {
-        return Op::apply(val_getter_L(i), val_getter_R(i));
-    }
-
-private:
-    const ValueGetter val_getter_L;
-    const ValueGetter val_getter_R;
-};
 
 template <typename Op>
 class AssociativeGenericApplierImpl<Op, 1>
@@ -273,40 +273,8 @@ private:
 };
 
 
-template <class Op>
-bool extractConstColumnsTernary(ColumnRawPtrs & in, UInt8 & res_3v)
-{
-    bool has_res = false;
-    for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
-    {
-        if (!in[i]->isColumnConst())
-            continue;
-
-        const auto field_value = (*in[i])[0];
-
-        UInt8 value_3v = field_value.isNull()
-                ? Ternary::makeValue(false, true)
-                : Ternary::makeValue(applyVisitor(FieldVisitorConvertToNumber<bool>(), field_value));
-
-        if (has_res)
-        {
-            res_3v = Op::apply(res_3v, value_3v);
-        }
-        else
-        {
-            res_3v = value_3v;
-            has_res = true;
-        }
-
-        in.erase(in.begin() + i);
-    }
-    return has_res;
-}
-
-
 template <
-    template <typename, size_t> typename OperationApplierImpl, typename Op,
-    size_t N, bool use_result_as_input>
+    template <typename, size_t> typename OperationApplierImpl, typename Op, size_t N>
 struct OperationApplier
 {
     template <typename Columns, typename Result>
@@ -314,17 +282,14 @@ struct OperationApplier
     {
         if (N > in.size())
         {
-            OperationApplier<OperationApplierImpl, Op, N - 1, use_result_as_input>::run(in, result);
+            OperationApplier<OperationApplierImpl, Op, N - 1>::run(in, result);
             return;
         }
 
         const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
         for (auto & res : result)
-            if constexpr (use_result_as_input)
-                res = operationApplierImpl.apply(res, i++);
-            else
-                res = operationApplierImpl.apply(i++);
+            res = operationApplierImpl.apply(i++);
 
         in.erase(in.end() - N, in.end());
     }
@@ -332,20 +297,7 @@ struct OperationApplier
 
 template <
     template <typename, size_t> typename OperationApplierImpl, typename Op>
-struct OperationApplier<OperationApplierImpl, Op, 0, true>
-{
-    template <typename Columns, typename Result>
-    static void NO_INLINE run(Columns &, Result &)
-    {
-        throw Exception(
-                "AssociativeOperationImpl::execute(...): not enough arguments to run this method",
-                ErrorCodes::LOGICAL_ERROR);
-    }
-};
-
-template <
-    template <typename, size_t> typename OperationApplierImpl, typename Op>
-struct OperationApplier<OperationApplierImpl, Op, 1, false>
+struct OperationApplier<OperationApplierImpl, Op, 1>
 {
     template <typename Columns, typename Result>
     static void NO_INLINE run(Columns &, Result &)
@@ -376,14 +328,12 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
 
     const auto result_column = ColumnUInt8::create(input_rows_count);
 
-    /// Efficiently combine all the columns of the correct type.
-    while (arguments.size() > 1)
-    {
-        /// Combining 10 columns per pass is the fastest for large block sizes.
-        /// For small block sizes - more columns is faster.
-        OperationApplier<AssociativeGenericApplierImpl, Op, 10, false>::run(arguments, result_column->getData());
-        arguments.insert(arguments.cbegin(), result_column.get());
-    }
+    /// Combining 10 columns per pass is the fastest for large block sizes.
+    /// For small block sizes - more columns is faster.
+
+    /// Apply function to packs of size 10
+    /// TODO: Need a better comment
+    OperationApplier<AssociativeGenericApplierImpl, Op, 10>::run(arguments, result_column->getData());
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
@@ -440,13 +390,11 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     }
 
     /// Effeciently combine all the columns of the correct type.
-    while (uint8_args.size() > 1)
-    {
-        /// With a large block size, combining 10 columns per pass is the fastest.
-        /// When small - more, is faster.
-        OperationApplier<AssociativeApplierImpl, Op, 10, true>::run(uint8_args, vec_res);
-        uint8_args.push_back(col_res.get());
-    }
+    /// With a large block size, combining 10 columns per pass is the fastest.
+    /// When small - more, is faster.
+    OperationApplier<AssociativeApplierImpl, Op, 10>::run(uint8_args, vec_res);
+//    while (uint8_args.size() > 0)
+//        OperationApplier<AssociativeApplierImpl, Op, 10>::run(uint8_args, vec_res);
 
     /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
     if (uint8_args[0] != col_res.get())
