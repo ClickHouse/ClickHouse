@@ -219,7 +219,7 @@ class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 {
 public:
     /// Called to load or reload an object.
-    using CreateObjectFunction = std::function<ObjectWithException(
+    using CreateObjectFunction = std::function<LoadablePtr(
         const String & /* name */, const ObjectConfig & /* config */, bool config_changed, const LoadablePtr & /* previous_version */)>;
 
     /// Called after loading/reloading an object to calculate the time of the next update.
@@ -783,7 +783,7 @@ private:
         std::exception_ptr new_exception;
         try
         {
-            std::tie(new_object, new_exception) = create_object(name, config, config_changed, previous_version);
+            new_object = create_object(name, config, config_changed, previous_version);
         }
         catch (...)
         {
@@ -792,8 +792,6 @@ private:
 
         if (!new_object && !new_exception)
             throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
-        if (new_object && new_exception)
-            new_object = nullptr;
 
         /// Calculate a new update time.
         TimePoint next_update_time;
@@ -1152,17 +1150,13 @@ void ExternalLoader::reload(bool load_never_loading)
     loading_dispatcher->reload(load_never_loading);
 }
 
-ExternalLoader::ObjectWithException ExternalLoader::createObject(
+ExternalLoader::LoadablePtr ExternalLoader::createObject(
     const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const
 {
     if (previous_version && !config_changed)
-    {
-        auto new_object = previous_version->clone();
-        return {new_object, new_object->getCreationException()};
-    }
+        return previous_version->clone();
 
-    auto new_object = create(name, *config.config, config.key_in_config);
-    return {new_object, new_object->getCreationException()};
+    return create(name, *config.config, config.key_in_config);
 }
 
 ExternalLoader::TimePoint ExternalLoader::calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const
