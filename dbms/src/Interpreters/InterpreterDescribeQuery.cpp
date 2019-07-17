@@ -103,7 +103,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     {
         if (column.is_virtual)
             continue;
-        
+
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 
