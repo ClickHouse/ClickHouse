@@ -137,9 +137,7 @@ public:
 
         char * res = head->pos;
         head->pos += size;
-
         ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
-
         return res;
     }
 
@@ -156,9 +154,7 @@ public:
             {
                 head->pos = static_cast<char *>(head_pos);
                 head->pos += size;
-
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
-
                 return res;
             }
 
