@@ -117,12 +117,7 @@ void MemoryTracker::alloc(Int64 size)
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
             << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
-#ifndef NDEBUG
-        /// Prevent infinite loop in case of catching & new in cycle.
-        if (last_attempt_failed)
-            std::abort();
-#endif
-        ++last_attempt_failed;
+
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
@@ -137,7 +132,6 @@ void MemoryTracker::alloc(Int64 size)
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->alloc(size);
-    last_attempt_failed = 0;
 }
 
 
