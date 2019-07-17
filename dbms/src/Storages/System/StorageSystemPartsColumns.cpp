@@ -151,7 +151,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insertDefault();
             }
 
-            MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
             columns[j++]->insert(column_size.data_compressed + column_size.marks);
             columns[j++]->insert(column_size.data_compressed);
             columns[j++]->insert(column_size.data_uncompressed);

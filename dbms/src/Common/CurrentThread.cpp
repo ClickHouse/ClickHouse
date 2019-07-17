@@ -60,11 +60,12 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
+void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                                LogsLevel client_logs_level)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachInternalTextLogsQueue(logs_queue);
+    current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()

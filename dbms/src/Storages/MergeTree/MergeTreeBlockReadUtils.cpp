@@ -119,7 +119,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            MergeTreeDataPart::ColumnSize column_size = data_part->getColumnSize(
+            ColumnSize column_size = data_part->getColumnSize(
                 column_name, *column_with_type_and_name.type);
 
             info.bytes_per_row_global = column_size.data_uncompressed
