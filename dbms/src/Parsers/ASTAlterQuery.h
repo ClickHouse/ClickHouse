@@ -34,6 +34,7 @@ public:
 
         DROP_PARTITION,
         ATTACH_PARTITION,
+        MOVE_PARTITION,
         REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
@@ -69,7 +70,7 @@ public:
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
      */
-     ASTPtr index;
+    ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
@@ -97,6 +98,17 @@ public:
     bool if_not_exists = false;  /// option for ADD_COLUMN
 
     bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+
+    enum SpaceToMove
+    {
+        DISK,
+        VOLUME,
+        NONE,
+    };
+
+    SpaceToMove space_to_move = SpaceToMove::NONE;
+
+    String space_to_move_name;
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */

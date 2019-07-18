@@ -545,6 +545,9 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
+    /// Moves partition to specified space
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & context);
+
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();

@@ -2571,6 +2571,13 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 }
 
 
+void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & /*context*/)
+{
+    String partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    move(partition_id, name);
+}
+
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
     const auto & partition_ast = ast->as<ASTPartition &>();

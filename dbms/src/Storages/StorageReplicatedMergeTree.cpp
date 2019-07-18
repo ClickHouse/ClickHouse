@@ -3347,6 +3347,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 attachPartition(command.partition, command.part, query_context);
                 break;
 
+            case PartitionCommand::MOVE_PARTITION:
+                movePartitionToDisk(command.partition, command.space_to_move_name, query_context);
+                break;
+
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);

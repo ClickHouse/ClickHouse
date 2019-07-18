@@ -124,6 +124,26 @@ void ASTAlterCommand::formatImpl(
                       << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE "
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+        settings.ostr << "TO ";
+        switch (space_to_move)
+        {
+            case SpaceToMove::DISK:
+                settings.ostr << "DISK ";
+                break;
+            case SpaceToMove::VOLUME:
+                settings.ostr << "VOLUME ";
+                break;
+            case SpaceToMove::NONE:
+            default:
+                break;
+        }
+        settings.ostr << space_to_move_name;
+    }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (replace ? "REPLACE" : "ATTACH") << " PARTITION "

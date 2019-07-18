@@ -1060,6 +1060,10 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 attachPartition(command.partition, command.part, context);
                 break;
 
+            case PartitionCommand::MOVE_PARTITION:
+                movePartitionToDisk(command.partition, command.space_to_move_name, context);
+                break;
+
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);

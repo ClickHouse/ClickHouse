@@ -31,6 +31,27 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.part = command_ast->part;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = MOVE_PARTITION;
+        res.partition = command_ast->partition;
+        res.part = command_ast->part;
+        switch (command_ast->space_to_move)
+        {
+            case ASTAlterCommand::SpaceToMove::DISK:
+                res.space_to_move = PartitionCommand::SpaceToMove::DISK;
+                break;
+            case ASTAlterCommand::SpaceToMove::VOLUME:
+                res.space_to_move = PartitionCommand::SpaceToMove::VOLUME;
+                break;
+            case ASTAlterCommand::SpaceToMove::NONE:
+                res.space_to_move = PartitionCommand::SpaceToMove::NONE;
+                break;
+        }
+        res.space_to_move_name = command_ast->space_to_move_name;
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
     {
         PartitionCommand res;
