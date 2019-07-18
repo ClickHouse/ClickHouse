@@ -273,22 +273,35 @@ private:
 };
 
 
+/// Apply target function by feeding it "stripes" of N columns
+/// Combining 10 columns per pass is the fastest for large block sizes.
+/// For small block sizes - more columns is faster.
 template <
-    template <typename, size_t> typename OperationApplierImpl, typename Op, size_t N>
+    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
 struct OperationApplier
 {
-    template <typename Columns, typename Result>
-    static void NO_INLINE run(Columns & in, Result & result)
+    template <typename Columns, typename ResultColumn>
+    static void run(Columns & in, ResultColumn & result)
+    {
+        while (in.size() > 1)
+        {
+            doRun(in, result->getData());
+            in.push_back(result.get());
+        }
+    }
+
+    template <typename Columns, typename ResultData>
+    static void NO_INLINE doRun(Columns & in, ResultData & result_data)
     {
         if (N > in.size())
         {
-            OperationApplier<OperationApplierImpl, Op, N - 1>::run(in, result);
+            OperationApplier<Op, OperationApplierImpl, N - 1>::doRun(in, result_data);
             return;
         }
 
         const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
-        for (auto & res : result)
+        for (auto & res : result_data)
             res = operationApplierImpl.apply(i++);
 
         in.erase(in.end() - N, in.end());
@@ -296,11 +309,11 @@ struct OperationApplier
 };
 
 template <
-    template <typename, size_t> typename OperationApplierImpl, typename Op>
-struct OperationApplier<OperationApplierImpl, Op, 1>
+    typename Op, template <typename, size_t> typename OperationApplierImpl>
+struct OperationApplier<Op, OperationApplierImpl, 1>
 {
     template <typename Columns, typename Result>
-    static void NO_INLINE run(Columns &, Result &)
+    static void NO_INLINE doRun(Columns &, Result &)
     {
         throw Exception(
                 "AssociativeOperationImpl::execute(...): not enough arguments to run this method",
@@ -328,14 +341,72 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
 
     const auto result_column = ColumnUInt8::create(input_rows_count);
 
-    /// Combining 10 columns per pass is the fastest for large block sizes.
-    /// For small block sizes - more columns is faster.
-
-    /// Apply function to packs of size 10
-    /// TODO: Need a better comment
-    OperationApplier<AssociativeGenericApplierImpl, Op, 10>::run(arguments, result_column->getData());
+    /// TODO: WARNING! This code is faulty for the case of constant
+    OperationApplier<Op, AssociativeGenericApplierImpl>::run(arguments, result_column);
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
+}
+
+
+template <typename Op, typename ... Types>
+struct TypedExecutorInvoker;
+
+template <typename Op>
+using FastExecutorImpl =
+        TypedExecutorInvoker<Op, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+
+template <typename Op, typename Type, typename ... Types>
+struct TypedExecutorInvoker<Op, Type, Types ...>
+{
+    template <typename T, typename Result>
+    static void call(const ColumnVector<T> & x, const IColumn & y, Result & result)
+    {
+        if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
+            std::transform(
+                    x.cbegin(), x.cend(), column->cbegin(), column->cend(),
+                    [](const auto x, const auto y) { return Op::apply(!!x, !!y); });
+        else
+            TypedExecutorInvoker<Op, Types ...>::template call<T>(x, y, result);
+    }
+
+    template <typename Result>
+    static void call(const IColumn & x, const IColumn & y, Result & result)
+    {
+        if (const auto column = typeid_cast<const ColumnVector<Type> *>(&x))
+            FastExecutorImpl<Op>::template call<Type>(*column, y, result);
+        else
+            TypedExecutorInvoker<Op, Types ...>::call(x, y, result);
+    }
+};
+
+template <typename Op>
+struct TypedExecutorInvoker<Op>
+{
+    template <typename T, typename Result>
+    static void call(const ColumnVector<T> &, const IColumn & y, Result &)
+    {
+        throw Exception(std::string("Unknown numeric column y of type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    template <typename Result>
+    static void call(const IColumn & x, const IColumn &, Result &)
+    {
+        throw Exception(std::string("Unknown numeric column x of type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+    }
+};
+
+template <typename Op>
+MutableColumnPtr fastPathApplyAll(ColumnRawPtrs & args)
+{
+    if (args.size() != 2)
+        throw Exception(
+                "Algorithm inconsistency: Fast path is only implemented for 2 vectors currently",
+                ErrorCodes::LOGICAL_ERROR);
+
+    auto result_column = ColumnVector<typename Op::ResultType>::create(args[0]->size());
+    FastExecutorImpl<Op>::call(*args[0], *args[1], result_column->getData());
+
+    return std::move(result_column);
 }
 
 
@@ -359,13 +430,15 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     if (has_consts && Op::apply(const_val, 0) == 0 && Op::apply(const_val, 1) == 1)
         has_consts = false;
 
+    UInt8ColumnPtrs uint8_args;
+
+    /// TODO: FastPath detection goes in here
     auto col_res = ColumnUInt8::create();
     UInt8Container & vec_res = col_res->getData();
-
     if (has_consts)
     {
         vec_res.assign(input_rows_count, const_val);
-        arguments.push_back(col_res.get());
+        uint8_args.push_back(col_res.get());
     }
     else
     {
@@ -373,9 +446,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     }
 
     /// Convert all columns to UInt8
-    UInt8ColumnPtrs uint8_args;
     Columns converted_columns;
-
     for (const IColumn * column : arguments)
     {
         if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
@@ -389,12 +460,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
         }
     }
 
-    /// Effeciently combine all the columns of the correct type.
-    /// With a large block size, combining 10 columns per pass is the fastest.
-    /// When small - more, is faster.
-    OperationApplier<AssociativeApplierImpl, Op, 10>::run(uint8_args, vec_res);
-//    while (uint8_args.size() > 0)
-//        OperationApplier<AssociativeApplierImpl, Op, 10>::run(uint8_args, vec_res);
+    OperationApplier<Op, AssociativeApplierImpl>::run(uint8_args, col_res);
 
     /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
     if (uint8_args[0] != col_res.get())
