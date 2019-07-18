@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -55,7 +55,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
 
     std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    // std::string table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
