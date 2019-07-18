@@ -751,7 +751,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info, format_version))
             continue;
 
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info, data_parts_counter);
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
         ++data_parts_counter;
         part->relative_path = file_name;
         bool broken = false;

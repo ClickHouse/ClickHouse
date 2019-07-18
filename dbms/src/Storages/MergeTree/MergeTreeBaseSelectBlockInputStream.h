@@ -36,15 +36,21 @@ public:
 protected:
     Block readImpl() final;
 
+    Block readFromPartImpl();
+
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
 
     /// We will call progressImpl manually.
     void progress(const Progress &) override {}
 
-    Block readFromPart();
+    virtual Block readFromPart();
 
     void injectVirtualColumns(Block & block) const;
+
+    void initializeRangeReaders(MergeTreeReadTask & task);
+
+    size_t estimateNumRows(MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader);
 
 protected:
     const MergeTreeData & storage;

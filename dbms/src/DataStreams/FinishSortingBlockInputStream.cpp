@@ -62,30 +62,6 @@ struct Less
     }
 };
 
-template<class ForwardIt, class T, class Comparator>
-ForwardIt upperBoundWithoutSWO(ForwardIt first, ForwardIt last, const T& value, Comparator comp)
-{
-    ForwardIt it;
-    typename std::iterator_traits<ForwardIt>::difference_type count, step;
-    count = std::distance(first, last);
-
-    while (count > 0)
-    {
-        it = first;
-        step = count / 2;
-        std::advance(it, step);
-        if (!comp(value, *it))
-        {
-            first = ++it;
-            count -= step + 1;
-        }
-        else
-        {
-            count = step;
-        }
-    }
-    return first;
-}
 
 Block FinishSortingBlockInputStream::readImpl()
 {
@@ -123,12 +99,11 @@ Block FinishSortingBlockInputStream::readImpl()
             if (description_to_sort.empty())
                 return block;
 
-            size_t size = block.rows();
-            if (size == 0)
+            if (block.rows() == 0)
                 continue;
 
-            /// We need to sort each block separately before merging.
-            sortBlock(block, description_to_sort);
+            // We need to sort each block separately before merging.
+            sortBlock(block, description_to_sort, limit);
 
             removeConstantsFromBlock(block);
 
@@ -141,11 +116,12 @@ Block FinishSortingBlockInputStream::readImpl()
 
                 Less less(last_columns, current_columns);
 
+                size_t size = block.rows();
                 IColumn::Permutation perm(size);
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
 
-                auto it = upperBoundWithoutSWO(perm.begin(), perm.end(), last_block.rows() - 1, less);
+                auto it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
 
                 /// We need to save tail of block, because next block may starts with the same key as in tail
                 /// and we should sort these rows in one chunk.
