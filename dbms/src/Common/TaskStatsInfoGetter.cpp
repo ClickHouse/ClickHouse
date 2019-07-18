@@ -133,7 +133,7 @@ struct NetlinkMessage
         if (header.nlmsg_type == NLMSG_ERROR)
             throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
 
-        if (!is_nlmsg_ok((&header), bytes_received))
+        if (!is_nlmsg_ok(&header, bytes_received))
             throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };
