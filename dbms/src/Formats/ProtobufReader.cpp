@@ -67,7 +67,9 @@ bool ProtobufReader::SimpleReader::startMessage()
         if (unlikely(in.eof()))
             return false;
         size_t size_of_message = readVarint();
-        current_message_end = cursor + size_of_message;
+        if(size_of_message == 0)
+            unknownFormat();
+        current_message_end = root_message_end = cursor + size_of_message;
     }
     else
     {
@@ -375,6 +377,10 @@ void ProtobufReader::SimpleReader::ignoreGroup()
     }
 }
 
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
+{
+    unknownFormat();
+}
 
 // Implementation for a converter from any protobuf field type to any DB data type.
 class ProtobufReader::ConverterBaseImpl : public ProtobufReader::IConverter
