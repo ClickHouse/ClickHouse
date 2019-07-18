@@ -189,4 +189,4 @@ dictGet[Тип]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse бросает исключение, если не может обработать значение атрибута или значение несопоставимо с типом атрибута
 
-[Исходная статья](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
