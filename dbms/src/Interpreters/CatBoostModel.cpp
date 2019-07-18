@@ -505,20 +505,6 @@ CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::st
                              const ExternalLoadableLifetime & lifetime)
     : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime)
 {
-    try
-    {
-        init();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
-}
-
-void CatBoostModel::init()
-{
     api_provider = getCatBoostWrapperHolder(lib_path);
     api = &api_provider->getAPI();
     model = std::make_unique<CatBoostModelImpl>(api, model_path);
