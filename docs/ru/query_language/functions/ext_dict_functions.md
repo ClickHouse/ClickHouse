@@ -182,7 +182,7 @@ dictGet[Тип]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 **Возвращаемое значение**
 
 - Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным [типом данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes),то функция возвращает значение для заданного ключа `id_expr`.
-- Если запращиваемого `id_expr` не оказалось в словаре:
+- Если запрашиваемого `id_expr` не оказалось в словаре:
 
     - `dictGet[Тип]` возвратит содержимое элемента `<null_value>` определенного в настройках словаря.
     - `dictGet[Тип]OrDefault` вернет значение переданного `default_value_expr` параметра.
