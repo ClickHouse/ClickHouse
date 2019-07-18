@@ -273,7 +273,7 @@ private:
 };
 
 
-/// Apply target function by feeding it "stripes" of N columns
+/// Apply target function by feeding it "batches" of N columns
 /// Combining 10 columns per pass is the fastest for large block sizes.
 /// For small block sizes - more columns is faster.
 template <
@@ -281,21 +281,21 @@ template <
 struct OperationApplier
 {
     template <typename Columns, typename ResultColumn>
-    static void run(Columns & in, ResultColumn & result)
+    static void apply(Columns & in, ResultColumn & result)
     {
         while (in.size() > 1)
         {
-            doRun(in, result->getData());
+            doBatchedApply(in, result->getData());
             in.push_back(result.get());
         }
     }
 
     template <typename Columns, typename ResultData>
-    static void NO_INLINE doRun(Columns & in, ResultData & result_data)
+    static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
     {
         if (N > in.size())
         {
-            OperationApplier<Op, OperationApplierImpl, N - 1>::doRun(in, result_data);
+            OperationApplier<Op, OperationApplierImpl, N - 1>::doBatchedApply(in, result_data);
             return;
         }
 
@@ -313,10 +313,10 @@ template <
 struct OperationApplier<Op, OperationApplierImpl, 1>
 {
     template <typename Columns, typename Result>
-    static void NO_INLINE doRun(Columns &, Result &)
+    static void NO_INLINE doBatchedApply(Columns &, Result &)
     {
         throw Exception(
-                "AssociativeOperationImpl::execute(...): not enough arguments to run this method",
+                "OperationApplier<...>::apply(...): not enough arguments to run this method",
                 ErrorCodes::LOGICAL_ERROR);
     }
 };
@@ -342,7 +342,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     const auto result_column = ColumnUInt8::create(input_rows_count);
 
     /// TODO: WARNING! This code is faulty for the case of constant
-    OperationApplier<Op, AssociativeGenericApplierImpl>::run(arguments, result_column);
+    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column);
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
@@ -352,30 +352,31 @@ template <typename Op, typename ... Types>
 struct TypedExecutorInvoker;
 
 template <typename Op>
-using FastExecutorImpl =
+using FastApplierImpl =
         TypedExecutorInvoker<Op, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
 
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
     template <typename T, typename Result>
-    static void call(const ColumnVector<T> & x, const IColumn & y, Result & result)
+    static void apply(const ColumnVector<T> & x, const IColumn & y, Result & result)
     {
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
             std::transform(
-                    x.cbegin(), x.cend(), column->cbegin(), column->cend(),
+                    x.getData().cbegin(), x.getData().cend(),
+                    column->getData().cbegin(), result.begin(),
                     [](const auto x, const auto y) { return Op::apply(!!x, !!y); });
         else
-            TypedExecutorInvoker<Op, Types ...>::template call<T>(x, y, result);
+            TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }
 
     template <typename Result>
-    static void call(const IColumn & x, const IColumn & y, Result & result)
+    static void apply(const IColumn & x, const IColumn & y, Result & result)
     {
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            FastExecutorImpl<Op>::template call<Type>(*column, y, result);
+            FastApplierImpl<Op>::template apply<Type>(*column, y, result);
         else
-            TypedExecutorInvoker<Op, Types ...>::call(x, y, result);
+            TypedExecutorInvoker<Op, Types ...>::apply(x, y, result);
     }
 };
 
@@ -383,31 +384,17 @@ template <typename Op>
 struct TypedExecutorInvoker<Op>
 {
     template <typename T, typename Result>
-    static void call(const ColumnVector<T> &, const IColumn & y, Result &)
+    static void apply(const ColumnVector<T> &, const IColumn & y, Result &)
     {
         throw Exception(std::string("Unknown numeric column y of type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename Result>
-    static void call(const IColumn & x, const IColumn &, Result &)
+    static void apply(const IColumn & x, const IColumn &, Result &)
     {
         throw Exception(std::string("Unknown numeric column x of type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
-
-template <typename Op>
-MutableColumnPtr fastPathApplyAll(ColumnRawPtrs & args)
-{
-    if (args.size() != 2)
-        throw Exception(
-                "Algorithm inconsistency: Fast path is only implemented for 2 vectors currently",
-                ErrorCodes::LOGICAL_ERROR);
-
-    auto result_column = ColumnVector<typename Op::ResultType>::create(args[0]->size());
-    FastExecutorImpl<Op>::call(*args[0], *args[1], result_column->getData());
-
-    return std::move(result_column);
-}
 
 
 template <class Op>
@@ -432,7 +419,6 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
 
     UInt8ColumnPtrs uint8_args;
 
-    /// TODO: FastPath detection goes in here
     auto col_res = ColumnUInt8::create();
     UInt8Container & vec_res = col_res->getData();
     if (has_consts)
@@ -443,6 +429,18 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     else
     {
         vec_res.resize(input_rows_count);
+    }
+
+    /// FastPath detection goes in here
+    if (arguments.size() == (has_consts ? 1 : 2))
+    {
+        if (has_consts)
+            FastApplierImpl<Op>::apply(*arguments[0], *col_res, col_res->getData());
+        else
+            FastApplierImpl<Op>::apply(*arguments[0], *arguments[1], col_res->getData());
+
+        result_info.column = std::move(col_res);
+        return;
     }
 
     /// Convert all columns to UInt8
@@ -460,7 +458,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
         }
     }
 
-    OperationApplier<Op, AssociativeApplierImpl>::run(uint8_args, col_res);
+    OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res);
 
     /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
     if (uint8_args[0] != col_res.get())
