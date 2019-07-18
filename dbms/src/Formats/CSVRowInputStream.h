@@ -71,6 +71,8 @@ private:
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
+
+    void readField(IColumn & column, const IDataType & type);
 };
 
 }

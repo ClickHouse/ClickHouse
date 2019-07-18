@@ -8,6 +8,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 
+#include <DataTypes/DataTypeNullable.h>
+
 
 namespace DB
 {
@@ -215,6 +217,7 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 
         if (table_column)
         {
+            skipWhitespacesAndTabs(istr);
             const auto & type = data_types[*table_column];
             const bool at_delimiter = *istr.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
@@ -233,15 +236,31 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
                 read_columns[*table_column] = false;
                 have_default_columns = true;
             }
+            else if (format_settings.csv.null_as_default && !type->isNullable() && type->canBeInsideNullable())
+            {
+                /// If value is null but type is not nullable then use default value instead.
+                DataTypeNullable nullable(type);
+                auto tmp_col = nullable.createColumn();
+                readField(*tmp_col, nullable);
+                if (tmp_col->isNullAt(0))
+                {
+                    read_columns[*table_column] = false;
+                    have_default_columns = true;
+                }
+                else
+                {
+                    columns[*table_column]->insert((*tmp_col)[0]);
+                    read_columns[*table_column] = true;
+                }
+            }
             else
             {
                 /// Read the column normally.
+                readField(*columns[*table_column], *type);
                 read_columns[*table_column] = true;
-                skipWhitespacesAndTabs(istr);
-                type->deserializeAsTextCSV(*columns[*table_column], istr,
-                    format_settings);
-                skipWhitespacesAndTabs(istr);
+
             }
+            skipWhitespacesAndTabs(istr);
         }
         else
         {
@@ -520,8 +539,13 @@ void CSVRowInputStream::updateDiagnosticInfo()
     pos_of_current_row = istr.position();
 }
 
+void CSVRowInputStream::readField(IColumn & column, const IDataType & type)
+{
+    type.deserializeAsTextCSV(column, istr, format_settings);
+}
 
-void registerInputFormatCSV(FormatFactory & factory)
+
+    void registerInputFormatCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
