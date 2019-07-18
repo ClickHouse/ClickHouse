@@ -343,7 +343,8 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     MutableColumnPtr const_column_holder;
     if (has_consts)
     {
-        const_column_holder = convertFromTernaryData(UInt8Container({const_3v_value}), const_3v_value == Ternary::Null);
+        const_column_holder =
+                convertFromTernaryData(UInt8Container(input_rows_count, const_3v_value), const_3v_value == Ternary::Null);
         arguments.push_back(const_column_holder.get());
     }
 
