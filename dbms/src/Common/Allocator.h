@@ -108,6 +108,7 @@ class AllocatorWithHint : Hint
 {
 protected:
     static constexpr bool clear_memory = clear_memory_;
+    static constexpr size_t small_memory_threshold = mmap_threshold;
 
 public:
     /// Allocate memory range.
@@ -161,14 +162,23 @@ public:
 
             /// No need for zero-fill, because mmap guarantees it.
         }
-        else
+        else if (new_size < small_memory_threshold)
         {
-            /// All other cases that requires a copy.
+            /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
             CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = allocNoTrack(new_size, alignment);
             memcpy(new_buf, buf, std::min(old_size, new_size));
             freeNoTrack(buf, old_size);
+            buf = new_buf;
+        }
+        else
+        {
+            /// Big allocs that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
+
+            void * new_buf = alloc(new_size, alignment);
+            memcpy(new_buf, buf, std::min(old_size, new_size));
+            free(buf, old_size);
             buf = new_buf;
         }
 
