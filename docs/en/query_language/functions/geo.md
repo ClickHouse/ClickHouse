@@ -153,7 +153,7 @@ SELECT geohashDecode('ezs42') AS res
 
 ## geoToH3
 
-Calculates H3 point index `(lon, lat)` with specified resolution.
+Calculates [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
 
 ```
 geoToH3(lon, lat, resolution)

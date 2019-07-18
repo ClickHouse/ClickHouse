@@ -600,9 +600,30 @@ SELECT replicate(1, ['a', 'b', 'c'])
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable
+## filesystemAvailable {#function-filesystemavailable}
 
-Возвращает данные о свободном месте на диске в байтах.
+Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+
+```
+filesystemAvailable()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места.
+
+Тип — [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
 
 ## filesystemCapacity
 
