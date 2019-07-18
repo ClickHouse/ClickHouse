@@ -39,7 +39,6 @@ MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
     part_index_in_query(part_index_in_query_),
-    check_columns(check_columns),
     path(data_part->getFullPath())
 {
     /// Let's estimate total number of rows for progress bar.

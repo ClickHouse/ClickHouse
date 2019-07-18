@@ -71,7 +71,6 @@ private:
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
 
-    bool check_columns;
     String path;
 
     bool should_reorder = false;
