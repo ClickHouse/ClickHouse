@@ -40,7 +40,10 @@ TTLBlockInputStream::TTLBlockInputStream(
             auto it = column_defaults.find(name);
 
             if (it != column_defaults.end())
-                default_expr_list->children.emplace_back(it->second.expression);
+            {
+                auto expression = it->second.expression->clone();
+                default_expr_list->children.emplace_back(setAlias(expression, it->first));
+            }
         }
         else
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
