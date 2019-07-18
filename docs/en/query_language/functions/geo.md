@@ -151,4 +151,36 @@ SELECT geohashDecode('ezs42') AS res
 └─────────────────────────────────┘
 ```
 
+## geoToH3
+
+Calculates [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
+
+```
+geoToH3(lon, lat, resolution)
+```
+
+**Input values**
+
+- `lon` — Longitude. Type: [Float64](../../data_types/float.md).
+- `lat` — Latitude. Type: [Float64](../../data_types/float.md).
+- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Hexagon index number.
+- 0 in case of error.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+``` sql
+SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
+```
+```
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->

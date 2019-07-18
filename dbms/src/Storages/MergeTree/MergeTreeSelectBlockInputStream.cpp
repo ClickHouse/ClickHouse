@@ -46,13 +46,13 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     for (const auto & range : all_mark_ranges)
         total_marks_count += range.end - range.begin;
 
-    size_t total_rows = data_part->index_granularity.getTotalRows();
+    size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
         LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
         << ", approx. " << total_rows
         << (all_mark_ranges.size() > 1
-        ? ", up to " + toString(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
+        ? ", up to " + toString(total_rows)
         : "")
         << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 

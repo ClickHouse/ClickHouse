@@ -2380,8 +2380,8 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
 }
@@ -2392,8 +2392,8 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {

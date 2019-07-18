@@ -68,9 +68,6 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
-    std::exception_ptr getCreationException() const override { return creation_exception; }
-
 private:
     std::string name;
     std::string model_path;
@@ -84,9 +81,6 @@ private:
     size_t float_features_count;
     size_t cat_features_count;
     size_t tree_count;
-
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-    std::exception_ptr creation_exception;
 
     void init();
 };

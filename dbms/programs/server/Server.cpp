@@ -187,7 +187,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases...
       */
     global_context = std::make_unique<Context>(Context::createGlobal());
-    global_context->setGlobalContext(*global_context);
+    global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
     bool has_zookeeper = config().has("zookeeper");
@@ -533,10 +533,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
-                      " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
-                      " Note that it will not work on 'nosuid' mounted filesystems."
-                      " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems."
+            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+    }
+
+    if (!hasLinuxCapability(CAP_SYS_NICE))
+    {
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
@@ -738,6 +746,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 if (config().has("mysql_port"))
                 {
+#if USE_POCO_NETSSL
                     Poco::Net::ServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("mysql_port"), /* secure = */ true);
                     socket.setReceiveTimeout(Poco::Timespan());
@@ -749,6 +758,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         new Poco::Net::TCPServerParams));
 
                     LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+#else
+                    throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
                 }
             }
             catch (const Poco::Exception & e)

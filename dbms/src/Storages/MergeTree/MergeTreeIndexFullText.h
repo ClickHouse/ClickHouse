@@ -78,10 +78,9 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_LIKE,
-            FUNCTION_NOT_LIKE,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
+            FUNCTION_MULTI_SEARCH,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -93,15 +92,20 @@ private:
         };
 
         RPNElement(
-            Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
-            : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
+                Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
+                : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
-        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_LIKE, FUNCTION_NOT_LIKE.
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
         size_t key_column;
+
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<BloomFilter> bloom_filter;
-        /// For FUNCTION_IN and FUNCTION_NOT_IN
+
+        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
         std::vector<std::vector<BloomFilter>> set_bloom_filters;
+
+        /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;
     };
 
@@ -112,6 +116,8 @@ private:
 
     bool getKey(const ASTPtr & node, size_t & key_column_num);
     bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
+
+    static bool createFunctionEqualsCondition(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx);
 
     static const AtomMap atom_map;
 
