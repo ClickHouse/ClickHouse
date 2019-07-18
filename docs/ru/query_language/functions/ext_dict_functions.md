@@ -1,6 +1,6 @@
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
-Для получения информации по подключению и настройке внешних словарей, читайте [Внешние словари](../dicts/external_dicts.md).
+Для получения информации по подключению и настройке внешних словарей, читайте [внешние словари](../dicts/external_dicts.md).
 
 ## dictGet
 
@@ -13,20 +13,20 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Параметры**
 
-- `dict_name` — Название словаря. [String literal](../syntax.md#syntax-string-literal).
-- `attr_name` — Название колонки словаря. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Значение ключа. [Expression](../syntax.md#syntax-expressions) Возвращает значение типа [UInt64](../../data_types/int_uint.md) или [Tuple](../../data_types/tuple.md) в зависимости от конфигурации словаря.
-- `default_value_expr` — Значение которое возвращается, если словарь не содержит колонку с ключом `id_expr`. [Expression](../syntax.md#syntax-expressions) возвращает значение такого же типа, что и у атрибута `attr_name`.
+- `dict_name` — Название словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `attr_name` — Название колонки словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `id_expr` — Значение ключа. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md) или [Tuple](../../data_types/tuple.md) в зависимости от конфигурации словаря.
+- `default_value_expr` — Значение которое возвращается, если словарь не содержит колонку с ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращает значение такого же типа, что и у атрибута `attr_name`.
 
 **Возвращаемое значение**
 
-- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным типом [attribute's data Тип](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря для заданного `id_expr`.
+- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным типом [типы данных атрибутов](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря для заданного `id_expr`.
 - Если запращиваемого `id_expr` не оказалось в словаре:
 
     - `dictGet` возвратит содержимое элемента `<null_value>` определенного в настройках словаря.
     - `dictGetOrDefault` вернет значение переданного `default_value_expr` параметра.
 
-ClickHouse бросает исключение, если не может обработать значение атрибута или значение не сопоставимо с типом атрибута.
+ClickHouse бросает исключение, если не может обработать значение атрибута или значение несопоставимо с типом атрибута.
 
 **Примеры использования**
 
@@ -88,7 +88,7 @@ LIMIT 3
 
 **Читайте так же**
 
-- [External Dictionaries](../dicts/external_dicts.md)
+- [Внешние словари](../dicts/external_dicts.md)
 
 
 ## dictHas
@@ -101,8 +101,8 @@ dictHas('dict_name', id_expr)
 
 **Параметры**
 
-- `dict_name` — Название словаря. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Значение ключа. [Expression](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
+- `dict_name` — Название словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `id_expr` — Значение ключа. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -121,8 +121,8 @@ dictGetHierarchy('dict_name', id_expr)
 
 **Параметры**
 
-- `dict_name` — Название словаря. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Значение ключа. [Expression](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
+- `dict_name` — Название словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `id_expr` — Значение ключа. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -138,9 +138,9 @@ dictGetHierarchy('dict_name', id_expr)
 
 **Параметры**
 
-- `dict_name` — Название словаря. [String literal](../syntax.md#syntax-string-literal).
-- `child_id_expr` — Ключ который должен быть проверен. [Expression](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
-- `ancestor_id_expr` — Родительский ключ для ключа `child_id_expr`. [Expression](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
+- `dict_name` — Название словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `child_id_expr` — Ключ который должен быть проверен. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
+- `ancestor_id_expr` — Родительский ключ для ключа `child_id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -174,19 +174,19 @@ dictGet[Тип]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Параметры**
 
-- `dict_name` — Название словаря. [String literal](../syntax.md#syntax-string-literal).
-- `attr_name` — Название колонки словаря. [String literal](../syntax.md#syntax-string-literal).
-- `id_expr` — Значение ключа. [Expression](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
-- `default_value_expr` — Значение которое возвращается, если словарь не содержит строку с ключом `id_expr`. [Expression](../syntax.md#syntax-expressions) возвращает значение с таким же типом, что и тип атрибута `attr_name`.
+- `dict_name` — Название словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `attr_name` — Название колонки словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+- `id_expr` — Значение ключа. [Выражение](../syntax.md#syntax-expressions) возвращает значение типа [UInt64](../../data_types/int_uint.md).
+- `default_value_expr` — Значение которое возвращается, если словарь не содержит строку с ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращает значение с таким же типом, что и тип атрибута `attr_name`.
 
 **Возвращаемое значение**
 
-- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным типом [attribute's data Тип](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря с заданым ключом `id_expr`.
+- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным типом [типы данных атрибута](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря с заданым ключом `id_expr`.
 - Если запращиваемого `id_expr` не оказалось в словаре:
 
     - `dictGet[Тип]` возвратит содержимое элемента `<null_value>` определенного в настройках словаря.
     - `dictGet[Тип]OrDefault` вернет значение переданного `default_value_expr` параметра.
 
-ClickHouse бросает исключение, если не может обработать значение атрибута или значение не сопоставимо с типом атрибута
+ClickHouse бросает исключение, если не может обработать значение атрибута или значение несопоставимо с типом атрибута
 
 [Исходная статья](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
