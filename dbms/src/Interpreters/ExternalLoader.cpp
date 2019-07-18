@@ -219,7 +219,7 @@ class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 {
 public:
     /// Called to load or reload an object.
-    using CreateObjectFunction = std::function<ObjectWithException(
+    using CreateObjectFunction = std::function<LoadablePtr(
         const String & /* name */, const ObjectConfig & /* config */, bool config_changed, const LoadablePtr & /* previous_version */)>;
 
     /// Called after loading/reloading an object to calculate the time of the next update.
@@ -528,16 +528,48 @@ public:
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
-        std::lock_guard lock{mutex};
-        TimePoint now = std::chrono::system_clock::now();
-        for (auto & [name, info] : infos)
-            if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+        std::unordered_map<LoadablePtr, bool> is_modified_map;
+
+        {
+            std::lock_guard lock{mutex};
+            TimePoint now = std::chrono::system_clock::now();
+            for (const auto & name_and_info : infos)
             {
-                if (info.loaded() && !is_object_modified(info.object))
-                    info.next_update_time = calculate_next_update_time(info.object, info.error_count);
-                else
-                    startLoading(name, info);
+                const auto & info = name_and_info.second;
+                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                    is_modified_map.emplace(info.object, true);
             }
+        }
+
+        /// The `mutex` should be unlocked while we're calling the function is_object_modified().
+        for (auto & [object, is_modified_flag] : is_modified_map)
+        {
+            try
+            {
+                is_modified_flag = is_object_modified(object);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getName() + "' was modified");
+            }
+        }
+
+        {
+            std::lock_guard lock{mutex};
+            TimePoint now = std::chrono::system_clock::now();
+            for (auto & [name, info] : infos)
+                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                {
+                    auto it = is_modified_map.find(info.object);
+                    if (it == is_modified_map.end())
+                        continue; /// Object has been just added, it can be simply omitted from this update of outdated.
+                    bool is_modified_flag = it->second;
+                    if (info.loaded() && !is_modified_flag)
+                        info.next_update_time = calculate_next_update_time(info.object, info.error_count);
+                    else
+                        startLoading(name, info);
+                }
+        }
     }
 
 private:
@@ -751,7 +783,7 @@ private:
         std::exception_ptr new_exception;
         try
         {
-            std::tie(new_object, new_exception) = create_object(name, config, config_changed, previous_version);
+            new_object = create_object(name, config, config_changed, previous_version);
         }
         catch (...)
         {
@@ -760,8 +792,6 @@ private:
 
         if (!new_object && !new_exception)
             throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
-        if (new_object && new_exception)
-            new_object = nullptr;
 
         /// Calculate a new update time.
         TimePoint next_update_time;
@@ -1120,17 +1150,13 @@ void ExternalLoader::reload(bool load_never_loading)
     loading_dispatcher->reload(load_never_loading);
 }
 
-ExternalLoader::ObjectWithException ExternalLoader::createObject(
+ExternalLoader::LoadablePtr ExternalLoader::createObject(
     const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const
 {
     if (previous_version && !config_changed)
-    {
-        auto new_object = previous_version->clone();
-        return {new_object, new_object->getCreationException()};
-    }
+        return previous_version->clone();
 
-    auto new_object = create(name, *config.config, config.key_in_config);
-    return {new_object, new_object->getCreationException()};
+    return create(name, *config.config, config.key_in_config);
 }
 
 ExternalLoader::TimePoint ExternalLoader::calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const

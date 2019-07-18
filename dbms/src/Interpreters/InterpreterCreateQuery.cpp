@@ -644,7 +644,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())
-            context.getSessionContext().setQueryContext(context.getSessionContext());
+            context.getSessionContext().makeQueryContext();
 
         return InterpreterInsertQuery(insert,
             create.temporary ? context.getSessionContext() : context,

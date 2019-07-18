@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include <Processors/QueryPipeline.h>
+
 
 namespace DB
 {
@@ -24,6 +26,8 @@ struct BlockIO
 
     BlockOutputStreamPtr out;
     BlockInputStreamPtr in;
+
+    QueryPipeline pipeline;
 
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
@@ -54,6 +58,7 @@ struct BlockIO
         process_list_entry      = rhs.process_list_entry;
         in                      = rhs.in;
         out                     = rhs.out;
+        pipeline                = rhs.pipeline;
 
         finish_callback         = rhs.finish_callback;
         exception_callback      = rhs.exception_callback;

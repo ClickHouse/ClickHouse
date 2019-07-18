@@ -370,6 +370,11 @@ Block Block::cloneWithColumns(const Columns & columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
+                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
 

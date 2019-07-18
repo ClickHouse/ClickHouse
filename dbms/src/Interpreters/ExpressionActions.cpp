@@ -740,22 +740,27 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
+bool ExpressionActions::hasTotalsInJoin() const
+{
+    bool has_totals_in_join = false;
+    for (const auto & action : actions)
+    {
+        if (action.join && action.join->hasTotals())
+        {
+            has_totals_in_join = true;
+            break;
+        }
+    }
+
+    return has_totals_in_join;
+}
+
 void ExpressionActions::executeOnTotals(Block & block) const
 {
     /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
     if (!block)
     {
-        bool has_totals_in_join = false;
-        for (const auto & action : actions)
-        {
-            if (action.join && action.join->hasTotals())
-            {
-                has_totals_in_join = true;
-                break;
-            }
-        }
-
-        if (has_totals_in_join)
+        if (hasTotalsInJoin())
         {
             for (const auto & name_and_type : input_columns)
             {

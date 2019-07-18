@@ -3,6 +3,7 @@
 #include <string>
 #include <common/logger_useful.h>
 #include <Poco/File.h>
+#include <Storages/CheckResults.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ public:
     void update(const Files::const_iterator & begin, const Files::const_iterator & end);
 
     /// Check the files whose parameters are specified in sizes.json
-    bool check() const;
+    CheckResults check() const;
 
 private:
     void initialize();

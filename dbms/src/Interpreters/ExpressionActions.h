@@ -223,6 +223,9 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
+
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
       */

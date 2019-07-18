@@ -1,7 +1,10 @@
 #pragma once
 
+#include <common/StringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
+
+#include <Core/SettingsCommon.h>
 
 #include <IO/Progress.h>
 
@@ -61,6 +64,8 @@ public:
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
 
+    LogsLevel client_logs_level = LogsLevel::none;
+
     String query;
 };
 
@@ -85,6 +90,8 @@ public:
     UInt32 thread_number = 0;
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     Int32 os_thread_id = -1;
+    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
+    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -114,7 +121,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    const std::string & getQueryId() const;
+    StringRef getQueryId() const;
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -127,7 +134,8 @@ public:
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue);
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                     LogsLevel client_logs_level);
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called

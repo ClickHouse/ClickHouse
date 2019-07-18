@@ -26,6 +26,7 @@ namespace ErrorCodes
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
+    const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
@@ -34,6 +35,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
     , uri(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
+    , database_name(database_name_)
     , context(context_)
 {
 }
@@ -144,7 +146,11 @@ BlockInputStreams StorageHDFS::read(
         max_block_size)};
 }
 
-void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
+void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+}
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
@@ -169,7 +175,7 @@ void registerStorageHDFS(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageHDFS::create(url, args.table_name, format_name, args.columns, args.context);
+        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.context);
     });
 }
 
