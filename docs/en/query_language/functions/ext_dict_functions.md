@@ -96,7 +96,7 @@ LIMIT 3
 Checks whether the dictionary has the key.
 
 ```
-dictHas('dict_name', id)
+dictHas('dict_name', id_expr)
 ```
 
 **Parameters**
