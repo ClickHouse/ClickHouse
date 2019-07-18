@@ -46,6 +46,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/addTypeConversionToAST.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -389,6 +391,11 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
         columns = as_storage->getColumns();
         indices = as_storage->getIndices();
     }
+    else if (create.as_table_function)
+    {
+        columns = as_storage->getColumns();
+        indices = as_storage->getIndices();
+    }
     else if (create.select)
     {
         columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -518,6 +525,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     StoragePtr as_storage;
     TableStructureReadLockHolder as_storage_lock;
+
+    if (create.as_table_function)
+    {
+        const auto * table_function = create.as_table_function->as<ASTFunction>();
+        const auto & factory = TableFunctionFactory::instance();
+        as_storage = factory.get(table_function->name, context)->execute(create.as_table_function, context, create.table);
+    }
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
@@ -585,15 +599,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
 
-        res = StorageFactory::instance().get(create,
-            data_path,
-            table_name,
-            database_name,
-            context,
-            context.getGlobalContext(),
-            columns,
-            create.attach,
-            false);
+        if (create.as_table_function)
+            res = as_storage;
+        else
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                table_name,
+                database_name,
+                context,
+                context.getGlobalContext(),
+                columns,
+                create.attach,
+                false);
+        }
 
         if (create.temporary)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);

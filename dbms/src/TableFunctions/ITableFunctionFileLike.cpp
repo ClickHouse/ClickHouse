@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     // Parse args
     ASTs & args_func = ast_function->children;
@@ -60,7 +60,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     }
 
     // Create table
-    StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context));
+    StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context), table_name);
 
     storage->startup();
 
