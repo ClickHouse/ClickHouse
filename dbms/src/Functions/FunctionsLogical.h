@@ -37,7 +37,6 @@ namespace Ternary
 {
     using ResultType = UInt8;
 
-    /// TODO: Provide this with a comment about why this representation is used?
     static constexpr UInt8 False = 0;
     static constexpr UInt8 True = -1;
     static constexpr UInt8 Null = 1;
@@ -47,12 +46,13 @@ namespace Ternary
     {
         return value != 0 ? Ternary::True : Ternary::False;
     }
+
     template <typename T>
     inline ResultType makeValue(T value, bool is_null)
     {
         if (is_null)
             return Ternary::Null;
-        return makeValue(value);
+        return makeValue<T>(value);
     }
 }
 
@@ -83,10 +83,11 @@ struct XorImpl
 
     static inline constexpr bool isSaturable() { return false; }
     static inline constexpr bool isSaturatedValue(bool) { return false; }
-
-    /// TODO: Provide this with a comment about why this is correct!
+    /// TODO: (Is this legit???) Considering that CH uses UInt8 for representation of boolean values this function
+    ///       returns 255 as "true" but the current implementation of logical functions
+    ///       suggests that any nonzero value is "true" as well. Also the current code provides no guarantee
+    ///       for "true" to be represented with the value of 1.
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return (a != b) ? Ternary::True : Ternary::False; }
-
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER
@@ -138,7 +139,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) override;
 
-    /// TODO: Revisit this part !!!
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
