@@ -116,7 +116,7 @@ Type: `UInt8`.
 For the hierarchical dictionary, returns an array of dictionary keys starting from passed `id_expr` and continuing along the chain of parent elements.
 
 ```
-dictGetHierarchy('dict_name', id)
+dictGetHierarchy('dict_name', id_expr)
 ```
 
 **Parameters**
