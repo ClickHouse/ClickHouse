@@ -24,5 +24,17 @@ echo '"2016-01-01 01:02:03","1"
 1502792101,"3"
 99999,"4"' | $CLICKHOUSE_CLIENT --query="INSERT INTO csv FORMAT CSV";
 
+echo '\N, \N' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO csv FORMAT CSV";
+
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY s";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
+
+
+$CLICKHOUSE_CLIENT --query="CREATE TABLE csv_null (t Nullable(DateTime('Europe/Moscow')), s Nullable(String)) ENGINE = Memory";
+
+echo 'NULL, NULL
+"2016-01-01 01:02:03",NUL
+"2016-01-02 01:02:03",Nhello' | $CLICKHOUSE_CLIENT --format_csv_unquoted_null_literal_as_null=1 --query="INSERT INTO csv_null FORMAT CSV";
+
+$CLICKHOUSE_CLIENT --query="SELECT * FROM csv_null ORDER BY s NULLS LAST";
+$CLICKHOUSE_CLIENT --query="DROP TABLE csv_null";
