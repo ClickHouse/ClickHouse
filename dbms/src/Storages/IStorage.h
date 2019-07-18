@@ -333,11 +333,6 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
-protected:
-    /// Returns whether the column is virtual - by default all columns are real.
-    /// Initially reserved virtual column name may be shadowed by real column.
-    /// Returns false even for non-existent non-virtual columns.
-    virtual bool isVirtualColumn(const String & /* column_name */) const { return false; }
 
 private:
     /// You always need to take the next three locks in this order.

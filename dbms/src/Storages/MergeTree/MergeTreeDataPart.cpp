@@ -134,25 +134,22 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & name_, size_t data_part_id_)
+MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
     , index_granularity_info(storage)
-    , data_part_id(data_part_id_)
 {
 }
 
 MergeTreeDataPart::MergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
-    const MergeTreePartInfo & info_,
-    size_t data_part_id_)
+    const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
     , index_granularity_info(storage)
-    , data_part_id(data_part_id_)
 {
 }
 
