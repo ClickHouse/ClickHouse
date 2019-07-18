@@ -64,41 +64,41 @@ Block MergeTreeBaseSelectBlockInputStream::readImpl()
 }
 
 
-void MergeTreeBaseSelectBlockInputStream::initializeRangeReaders(MergeTreeReadTask & task)
+void MergeTreeBaseSelectBlockInputStream::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
     if (prewhere_info)
     {
         if (reader->getColumns().empty())
         {
-            task.range_reader = MergeTreeRangeReader(
+            current_task.range_reader = MergeTreeRangeReader(
                 pre_reader.get(), nullptr,
                 prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                &prewhere_info->prewhere_column_name, &task.ordered_names,
-                task.should_reorder, task.remove_prewhere_column, true);
+                &prewhere_info->prewhere_column_name, &current_task.ordered_names,
+                current_task.should_reorder, current_task.remove_prewhere_column, true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                task.pre_range_reader = MergeTreeRangeReader(
+                current_task.pre_range_reader = MergeTreeRangeReader(
                     pre_reader.get(), nullptr,
                     prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                    &prewhere_info->prewhere_column_name, &task.ordered_names,
-                    task.should_reorder, task.remove_prewhere_column, false);
-                pre_reader_ptr = &task.pre_range_reader;
+                    &prewhere_info->prewhere_column_name, &current_task.ordered_names,
+                    current_task.should_reorder, current_task.remove_prewhere_column, false);
+                pre_reader_ptr = &current_task.pre_range_reader;
             }
 
-            task.range_reader = MergeTreeRangeReader(
+            current_task.range_reader = MergeTreeRangeReader(
                 reader.get(), pre_reader_ptr, nullptr, nullptr,
-                nullptr, &task.ordered_names, true, false, true);
+                nullptr, &current_task.ordered_names, true, false, true);
         }
     }
     else
     {
-        task.range_reader = MergeTreeRangeReader(
+        current_task.range_reader = MergeTreeRangeReader(
             reader.get(), nullptr, nullptr, nullptr,
-            nullptr, &task.ordered_names, task.should_reorder, false, true);
+            nullptr, &current_task.ordered_names, current_task.should_reorder, false, true);
     }
 }
 
