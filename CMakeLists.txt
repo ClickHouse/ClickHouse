@@ -220,7 +220,6 @@ endif ()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
-include (cmake/find_cxxabi.cmake)
 include (cmake/find_cxx.cmake)
 
 include (cmake/test_compiler.cmake)
@@ -403,6 +402,11 @@ endif ()
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
+
+if (USE_LIBCXX)
+    set (HAVE_LIBCXX 1)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+endif()
 
 if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
