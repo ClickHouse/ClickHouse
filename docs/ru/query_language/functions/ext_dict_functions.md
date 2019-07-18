@@ -132,7 +132,7 @@ dictGetHierarchy('dict_name', id_expr)
 
 ## dictIsIn
 
-Осуществляет проверку - является ли ключ родительским в иерархии словаря.
+Осуществляет проверку - является ли ключ родительским во всех цепочке иерархии словаря.
 
 `dictIsIn ('dict_name', child_id_expr, ancestor_id_expr)`
 
