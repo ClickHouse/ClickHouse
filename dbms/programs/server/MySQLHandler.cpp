@@ -320,7 +320,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         connection_context.setUser(handshake_response.username, password, socket().address(), "");
         if (!handshake_response.database.empty()) connection_context.setCurrentDatabase(handshake_response.database);
         connection_context.setCurrentQueryId("");
-        LOG_ERROR(log, "Authentication for user " << handshake_response.username << " succeeded.");
+        LOG_INFO(log, "Authentication for user " << handshake_response.username << " succeeded.");
     }
     catch (const Exception & exc)
     {
@@ -367,7 +367,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         with_output = true;
     };
 
-    ReadBufferFromString empty_select(std::string("select ''"));
+    const String query("select ''");
+    ReadBufferFromString empty_select(query);
 
     bool should_replace = false;
     // Translate query from MySQL to ClickHouse.
