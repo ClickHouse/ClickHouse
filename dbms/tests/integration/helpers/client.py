@@ -44,6 +44,9 @@ class Client:
         return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_error()
 
 
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_answer_and_error()
+
 class QueryTimeoutExceedException(Exception):
     pass
 
@@ -110,3 +113,17 @@ class CommandRequest:
             raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout))
 
         return stderr
+
+
+    def get_answer_and_error(self):
+        self.process.wait()
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
+
+        if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        return (stdout, stderr)
