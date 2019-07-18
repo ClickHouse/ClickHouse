@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <IO/ConcatReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
@@ -258,7 +259,6 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
                 /// Read the column normally.
                 readField(*columns[*table_column], *type);
                 read_columns[*table_column] = true;
-
             }
             skipWhitespacesAndTabs(istr);
         }
@@ -541,7 +541,41 @@ void CSVRowInputStream::updateDiagnosticInfo()
 
 void CSVRowInputStream::readField(IColumn & column, const IDataType & type)
 {
-    type.deserializeAsTextCSV(column, istr, format_settings);
+    if (format_settings.csv.unquoted_null_literal_as_null && type.isNullable())
+    {
+        /// Check for unquoted NULL
+        constexpr char const * null_literal = "NULL";
+        constexpr size_t len = 4;
+        size_t count = 0;
+        while (!istr.eof() && count < len && null_literal[count] == *istr.position())
+        {
+            ++count;
+            ++istr.position();
+        }
+
+        if (count == len)
+        {
+            column.insert(Field());     /// insert null
+        }
+        else if (count == 0)
+        {
+            type.deserializeAsTextCSV(column, istr, format_settings);   /// parse value
+        }
+        else
+        {
+            /// Prepend extracted data and parse value (rare case)
+            ReadBufferFromMemory prepend(null_literal, count);
+            ConcatReadBuffer buf(prepend, istr);
+            type.deserializeAsTextCSV(column, buf, format_settings);
+
+            if (count < buf.count())
+                istr.position() = buf.position();
+        }
+    }
+    else
+    {
+        type.deserializeAsTextCSV(column, istr, format_settings);
+    }
 }
 
 
