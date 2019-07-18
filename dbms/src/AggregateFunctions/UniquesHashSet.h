@@ -146,6 +146,19 @@ private:
                 reinsertImpl(x);
             }
         }
+
+        /** We must process first collision resolution chain once again.
+          * Look at the comment in "resize" function.
+          */
+        for (size_t i = 0; i < buf_size() && buf[i]; ++i)
+        {
+            if (unlikely(i != place(buf[i])))
+            {
+                HashValue x = buf[i];
+                buf[i] = 0;
+                reinsertImpl(x);
+            }
+        }
     }
 
     /// Increase the size of the buffer 2 times or up to new_size_degree, if it is non-zero.
