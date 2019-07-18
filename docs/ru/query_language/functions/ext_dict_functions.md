@@ -20,7 +20,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Возвращаемое значение**
 
-- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным [типом данных атрибута](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря для заданного `id_expr`.
+- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным [типом данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), то функция возвращает значение для заданного ключа `id_expr`.
 - Если запращиваемого `id_expr` не оказалось в словаре:
 
     - `dictGet` возвратит содержимое элемента `<null_value>` определенного в настройках словаря.
@@ -28,7 +28,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouse бросает исключение, если не может обработать значение атрибута или значение несопоставимо с типом атрибута.
 
-**Примеры использования**
+**Пример использования**
 
 Создайте файл `ext-dict-text.csv` со следующим содержимым:
 
@@ -181,7 +181,7 @@ dictGet[Тип]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Возвращаемое значение**
 
-- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным [типом данных атрибута](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), функция возвращает значение атрибута словаря с заданым ключом `id_expr`.
+- Если ClickHouse успешно обрабатывает атрибут в соотвествии с указаным [типом данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes),то функция возвращает значение для заданного ключа `id_expr`.
 - Если запращиваемого `id_expr` не оказалось в словаре:
 
     - `dictGet[Тип]` возвратит содержимое элемента `<null_value>` определенного в настройках словаря.
