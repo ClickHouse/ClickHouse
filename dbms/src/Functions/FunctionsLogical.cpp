@@ -340,8 +340,13 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     }
 
     const auto result_column = ColumnUInt8::create(input_rows_count);
+    MutableColumnPtr const_column_holder;
+    if (has_consts)
+    {
+        const_column_holder = convertFromTernaryData(UInt8Container({const_3v_value}), const_3v_value == Ternary::Null);
+        arguments.push_back(const_column_holder.get());
+    }
 
-    /// TODO: WARNING! This code is faulty for the case of constant
     OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column);
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
