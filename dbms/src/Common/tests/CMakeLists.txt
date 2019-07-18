@@ -23,10 +23,10 @@ add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 
 add_executable (parallel_aggregation parallel_aggregation.cpp)
-target_link_libraries (parallel_aggregation PRIVATE clickhouse_compression clickhouse_common_io)
+target_link_libraries (parallel_aggregation PRIVATE dbms)
 
 add_executable (parallel_aggregation2 parallel_aggregation2.cpp)
-target_link_libraries (parallel_aggregation2 PRIVATE clickhouse_compression clickhouse_common_io)
+target_link_libraries (parallel_aggregation2 PRIVATE dbms)
 
 add_executable (int_hashes_perf int_hashes_perf.cpp AvalancheTest.cpp Random.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io)
@@ -42,7 +42,7 @@ add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
 
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
-target_link_libraries (arena_with_free_lists PRIVATE clickhouse_compression clickhouse_common_io)
+target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
 add_executable (pod_array pod_array.cpp)
 target_link_libraries (pod_array PRIVATE clickhouse_common_io)
@@ -62,7 +62,7 @@ target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
 target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE clickhouse_compression clickhouse_common_io)
+target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms)
 
 add_executable (allocator allocator.cpp)
 target_link_libraries (allocator PRIVATE clickhouse_common_io)
@@ -75,3 +75,6 @@ target_link_libraries (cow_compositions PRIVATE clickhouse_common_io)
 
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
+
+add_executable (mi_malloc_test mi_malloc_test.cpp)
+target_link_libraries (mi_malloc_test PRIVATE clickhouse_common_io)

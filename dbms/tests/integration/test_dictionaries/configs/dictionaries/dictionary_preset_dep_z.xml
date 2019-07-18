@@ -10,9 +10,10 @@
                     <password></password>
                     <db>dict</db>
                     <table>dep_y</table>
+                    <invalidate_query>SELECT intDiv(count(), 5) from dict.dep_y</invalidate_query>
                 </clickhouse>
             </source>
-            <lifetime>60</lifetime>
+            <lifetime>5</lifetime>
             <layout>
                 <flat/>
             </layout>
@@ -21,12 +22,12 @@
                     <name>id</name>
                 </id>
                 <attribute>
-                    <name>Int64_</name>
-                    <type>Int64</type>
-                    <null_value>122</null_value>
+                    <name>b</name>
+                    <type>Int32</type>
+                    <null_value>-3</null_value>
                 </attribute>
                 <attribute>
-                    <name>String_</name>
+                    <name>a</name>
                     <type>String</type>
                     <null_value>ZZ</null_value>
                 </attribute>

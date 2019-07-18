@@ -11,6 +11,7 @@ StoragePtr TableFunctionHDFS::getStorage(
     const String & source, const String & format, const Block & sample_block, Context & global_context) const
 {
     return StorageHDFS::create(source,
+        getDatabaseName(),
         getName(),
         format,
         ColumnsDescription{sample_block.getNamesAndTypesList()},

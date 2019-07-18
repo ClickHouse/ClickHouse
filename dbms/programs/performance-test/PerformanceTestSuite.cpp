@@ -89,6 +89,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
@@ -259,15 +260,12 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         if (input_files.empty())
             throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
-        else
-            LOG_INFO(log, "Found " << input_files.size() << " files");
     }
     else
     {
         input_files = options["input-files"].as<std::vector<std::string>>();
-        LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
-        std::vector<std::string> collected_files;
 
+        std::vector<std::string> collected_files;
         for (const std::string & filename : input_files)
         {
             fs::path file(filename);
@@ -289,6 +287,8 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         input_files = std::move(collected_files);
     }
+
+    LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
     std::sort(input_files.begin(), input_files.end());
     return input_files;
 }
