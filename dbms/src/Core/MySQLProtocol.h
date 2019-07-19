@@ -16,6 +16,7 @@
 #include <Poco/RandomStream.h>
 #include <random>
 #include <sstream>
+#include <IO/LimitReadBuffer.h>
 
 /// Implementation of MySQL wire protocol
 
@@ -128,16 +129,6 @@ public:
 };
 
 
-class ReadPacket
-{
-public:
-    ReadPacket() = default;
-    ReadPacket(ReadPacket &&) = default;
-    virtual void readPayload(ReadBuffer & buf) = 0;
-
-    virtual ~ReadPacket() = default;
-};
-
 /** Reading packets.
  *  Internally, it calls (if no more data) next() method of the underlying ReadBufferFromPocoSocket, and sets the working buffer to the rest part of the current packet payload.
  */
@@ -150,6 +141,7 @@ public:
         , sequence_id(sequence_id)
     {
     }
+
 private:
     ReadBuffer & in;
     uint8_t & sequence_id;
@@ -206,6 +198,36 @@ protected:
         offset += count;
 
         return true;
+    }
+};
+
+
+class ClientPacket
+{
+public:
+    ClientPacket() = default;
+    ClientPacket(ClientPacket &&) = default;
+
+    virtual void read(ReadBuffer & in, uint8_t & sequence_id)
+    {
+        PacketPayloadReadBuffer payload(in, sequence_id);
+        readPayload(payload);
+    }
+
+    virtual void readPayload(ReadBuffer & buf) = 0;
+
+    virtual ~ClientPacket() = default;
+};
+
+
+class LimitedClientPacket : public ClientPacket
+{
+    using ClientPacket::read;
+public:
+    void read(ReadBuffer & in, uint8_t & sequence_id) override
+    {
+        LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
+        ClientPacket::read(limited, sequence_id);
     }
 };
 
@@ -323,15 +345,9 @@ public:
     {
     }
 
-    PacketPayloadReadBuffer getPayload()
+    void receivePacket(ClientPacket & packet)
     {
-        return PacketPayloadReadBuffer(*in, sequence_id);
-    }
-
-    void receivePacket(ReadPacket & packet)
-    {
-        auto payload = getPayload();
-        packet.readPayload(payload);
+        packet.read(*in, sequence_id);
     }
 
     template<class T>
@@ -341,6 +357,11 @@ public:
         packet.writePayload(*out, sequence_id);
         if (flush)
             out->next();
+    }
+
+    PacketPayloadReadBuffer getPayload()
+    {
+        return PacketPayloadReadBuffer(*in, sequence_id);
     }
 
     /// Sets sequence-id to 0. Must be called before each command phase.
@@ -417,7 +438,7 @@ protected:
     }
 };
 
-class SSLRequest : public ReadPacket
+class SSLRequest : public ClientPacket
 {
 public:
     uint32_t capability_flags;
@@ -432,7 +453,7 @@ public:
     }
 };
 
-class HandshakeResponse : public ReadPacket
+class HandshakeResponse : public LimitedClientPacket
 {
 public:
     uint32_t capability_flags = 0;
@@ -508,7 +529,7 @@ protected:
     }
 };
 
-class AuthSwitchResponse : public ReadPacket
+class AuthSwitchResponse : public LimitedClientPacket
 {
 public:
     String value;
@@ -538,17 +559,6 @@ protected:
     }
 };
 
-/// Packet with a single null-terminated string. Is used for clear text authentication.
-class NullTerminatedString : public ReadPacket
-{
-public:
-    String value;
-
-    void readPayload(ReadBuffer & payload) override
-    {
-        readNullTerminated(value, payload);
-    }
-};
 
 class OK_Packet : public WritePacket
 {
@@ -752,7 +762,7 @@ protected:
     }
 };
 
-class ComFieldList : public ReadPacket
+class ComFieldList : public LimitedClientPacket
 {
 public:
     String table, field_wildcard;
