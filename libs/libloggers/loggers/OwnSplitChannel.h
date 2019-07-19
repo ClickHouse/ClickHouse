@@ -1,6 +1,6 @@
 #pragma once
+#include <atomic>
 #include <vector>
-#include <memory>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
@@ -30,8 +30,7 @@ private:
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
-    DB::SensitiveDataMasker * sensitive_data_masker = nullptr; // global context owns that object, pointer should be reset before context destroying.
-    std::mutex mutex;
+    std::atomic<DB::SensitiveDataMasker *> sensitive_data_masker = nullptr; // global context owns that object, pointer should be reset before context destroying.
 };
 
 }

@@ -19,10 +19,10 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 
-    if (sensitive_data_masker)
+    if (auto masker = sensitive_data_masker.load())
     {
         auto message_text = msg.getText();
-        auto matches = sensitive_data_masker->wipeSensitiveData(message_text);
+        auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
             logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
@@ -73,8 +73,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
 void OwnSplitChannel::setMasker(DB::SensitiveDataMasker * _sensitive_data_masker)
 {
-    std::lock_guard lock(mutex);
-    sensitive_data_masker = _sensitive_data_masker;
+    sensitive_data_masker.store(_sensitive_data_masker);
 }
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)

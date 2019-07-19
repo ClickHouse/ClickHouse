@@ -102,7 +102,7 @@ insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' 
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'find_me_TOPSECRET=TOPSECRET' as value1, rand() as valuer from numbers(10);
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' as value1, rand() as valuer from numbers(10000);
 select * from sensitive WHERE value1 = 'find_me_TOPSECRET=TOPSECRET' FORMAT Null;
-drop table sensetive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
+drop table sensitive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
 
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 8a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 8b'

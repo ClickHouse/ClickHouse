@@ -28,13 +28,12 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/DNSCacheUpdater.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-
-#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
