@@ -211,6 +211,11 @@ Possible values:
 
 Default value: 0.
 
+## input_format_null_as_default {#settings-input_format_null_as_default}
+
+Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for CSV format).
+
+
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
 Enables or disables skipping insertion of extra data.
@@ -688,6 +693,10 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+
+## format_csv_unquoted_null_literal_as_null {#settings-format_csv_unquoted_null_literal_as_null}
+
+For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
 ## insert_quorum {#settings-insert_quorum}
 
