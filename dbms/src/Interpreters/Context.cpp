@@ -527,7 +527,8 @@ String Context::getUserFilesPath() const
 
 void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker)
 {
-    if (sensitive_data_masker->rulesCount() > 0) {
+    if (sensitive_data_masker->rulesCount() > 0)
+    {
         auto lock = getLock();
         shared->sensitive_data_masker = std::move(sensitive_data_masker);
     }
