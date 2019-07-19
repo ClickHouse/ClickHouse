@@ -97,6 +97,7 @@ private:
         bool readUInt(UInt64 & value);
         template<typename T> bool readFixed(T & value);
         bool readStringInto(PaddedPODArray<UInt8> & str);
+
         bool ALWAYS_INLINE maybeCanReadValue() const
         {
             if (field_end == REACHED_END)
