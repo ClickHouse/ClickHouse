@@ -127,7 +127,11 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        std::string str_time("0000-00-00 00:00:00"); ///for initial load
+
+        /// For initial load. We use at least start of unix epoch for compatibility reasons.
+        /// We use 1970-01-02 instead 1970-01-01, because 1970-01-01 00:00:00 is before unix epoch in some time zones.
+        std::string str_time("1970-01-02 00:00:00");
+
         return query_builder.composeUpdateQuery(update_field, str_time);
     }
 }
