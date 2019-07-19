@@ -99,6 +99,7 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, 
 
     data_types.resize(num_columns);
     column_indexes_by_names.reserve(num_columns);
+    column_idx_to_nullable_column_idx.resize(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -106,6 +107,16 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, 
 
         data_types[i] = column_info.type;
         column_indexes_by_names.emplace(column_info.name, i);
+
+        /// If input_format_null_as_default=1 we need ColumnNullable of type DataTypeNullable(nested_type)
+        /// to parse value as nullable before inserting it in corresponding column of not-nullable type.
+        /// Constructing temporary column for each row is slow, so we prepare it here
+        if (format_settings.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
+        {
+            column_idx_to_nullable_column_idx[i] = nullable_columns.size();
+            nullable_types.emplace_back(std::make_shared<DataTypeNullable>(column_info.type));
+            nullable_columns.emplace_back(nullable_types.back()->createColumn());
+        }
     }
 }
 
@@ -218,7 +229,8 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
         if (table_column)
         {
             skipWhitespacesAndTabs(istr);
-            read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column], is_last_file_column);
+            read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
+                                                    is_last_file_column, *table_column);
             if (!read_columns[*table_column])
                 have_default_columns = true;
             skipWhitespacesAndTabs(istr);
@@ -360,7 +372,7 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
                 {
                     skipWhitespacesAndTabs(istr);
                     prev_position = istr.position();
-                    readField(*columns[table_column], current_column_type, is_last_file_column);
+                    readField(*columns[table_column], current_column_type, is_last_file_column, table_column);
                     curr_position = istr.position();
                     skipWhitespacesAndTabs(istr);
                 }
@@ -500,7 +512,7 @@ void CSVRowInputStream::updateDiagnosticInfo()
     pos_of_current_row = istr.position();
 }
 
-bool CSVRowInputStream::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+bool CSVRowInputStream::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
 {
     const bool at_delimiter = *istr.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
@@ -518,15 +530,17 @@ bool CSVRowInputStream::readField(IColumn & column, const DataTypePtr & type, bo
         /// works for tuples as well.
         return false;
     }
-    else if (format_settings.csv.null_as_default && !type->isNullable() && type->canBeInsideNullable())
+    else if (column_idx_to_nullable_column_idx[column_idx])
     {
         /// If value is null but type is not nullable then use default value instead.
-        DataTypeNullable nullable(type);
-        auto tmp_col = nullable.createColumn();
-        nullable.deserializeAsTextCSV(*tmp_col, istr, format_settings);
-        if (tmp_col->isNullAt(0))
+        const size_t nullable_idx = *column_idx_to_nullable_column_idx[column_idx];
+        auto & tmp_col = *nullable_columns[nullable_idx];
+        nullable_types[nullable_idx]->deserializeAsTextCSV(tmp_col, istr, format_settings);
+        Field value = tmp_col[0];
+        tmp_col.popBack(1);     /// do not store copy of values in memory
+        if (value.isNull())
             return false;
-        column.insert((*tmp_col)[0]);
+        column.insert(value);
         return true;
     }
     else
