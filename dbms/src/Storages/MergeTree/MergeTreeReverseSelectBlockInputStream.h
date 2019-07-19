@@ -56,8 +56,8 @@ private:
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
     NameSet column_name_set;
-    NamesAndTypesList columns;
-    NamesAndTypesList pre_columns;
+
+    MergeTreeReadTaskColumns task_columns;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
@@ -72,8 +72,6 @@ private:
     size_t part_index_in_query = 0;
 
     String path;
-
-    bool should_reorder = false;
 
     Blocks blocks;
 
