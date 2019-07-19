@@ -386,12 +386,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
                 indices.indices.push_back(
                     std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
     }
-    else if (!create.as_table.empty())
-    {
-        columns = as_storage->getColumns();
-        indices = as_storage->getIndices();
-    }
-    else if (create.as_table_function)
+    else if (!create.as_table.empty() || create.as_table_function)
     {
         columns = as_storage->getColumns();
         indices = as_storage->getIndices();
