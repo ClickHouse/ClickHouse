@@ -41,11 +41,12 @@ namespace
     constexpr UInt64 END_OF_GROUP = static_cast<UInt64>(-2);
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
+}
 
-    [[noreturn]] void unknownFormat()
-    {
-        throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
-    }
+
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
+{
+    throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }
 
 
@@ -68,7 +69,7 @@ bool ProtobufReader::SimpleReader::startMessage()
             return false;
         size_t size_of_message = readVarint();
         if (size_of_message == 0)
-            unknownFormat();
+            throwUnknownFormat();
         current_message_end = cursor + size_of_message;
         root_message_end = current_message_end;
     }
@@ -94,7 +95,7 @@ void ProtobufReader::SimpleReader::endMessage()
         else if (unlikely(cursor > current_message_end))
         {
             if (!parent_message_ends.empty())
-                unknownFormat();
+                throwUnknownFormat();
             moveCursorBackward(cursor - current_message_end);
         }
         current_message_end = REACHED_END;
@@ -144,7 +145,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
 
     UInt64 varint = readVarint();
     if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
-        unknownFormat();
+        throwUnknownFormat();
     UInt32 key = static_cast<UInt32>(varint);
     field_number = (key >> 3);
     WireType wire_type = static_cast<WireType>(key & 0x07);
@@ -174,7 +175,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
         case GROUP_END:
         {
             if (current_message_end != END_OF_GROUP)
-                unknownFormat();
+                throwUnknownFormat();
             current_message_end = REACHED_END;
             return false;
         }
@@ -184,7 +185,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
             return true;
         }
     }
-    unknownFormat();
+    throwUnknownFormat();
     __builtin_unreachable();
 }
 
@@ -260,7 +261,7 @@ void ProtobufReader::SimpleReader::ignore(UInt64 num_bytes)
 void ProtobufReader::SimpleReader::moveCursorBackward(UInt64 num_bytes)
 {
     if (in.offset() < num_bytes)
-        unknownFormat();
+        throwUnknownFormat();
     in.position() -= num_bytes;
     cursor -= num_bytes;
 }
@@ -297,7 +298,7 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     PROTOBUF_READER_READ_VARINT_BYTE(10)
 #undef PROTOBUF_READER_READ_VARINT_BYTE
 
-    unknownFormat();
+    throwUnknownFormat();
     __builtin_unreachable();
 }
 
@@ -330,7 +331,7 @@ void ProtobufReader::SimpleReader::ignoreVarint()
     PROTOBUF_READER_IGNORE_VARINT_BYTE(10)
 #undef PROTOBUF_READER_IGNORE_VARINT_BYTE
 
-    unknownFormat();
+    throwUnknownFormat();
 }
 
 void ProtobufReader::SimpleReader::ignoreGroup()
@@ -374,13 +375,8 @@ void ProtobufReader::SimpleReader::ignoreGroup()
                 break;
             }
         }
-        unknownFormat();
+        throwUnknownFormat();
     }
-}
-
-[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
-{
-    unknownFormat();
 }
 
 // Implementation for a converter from any protobuf field type to any DB data type.
