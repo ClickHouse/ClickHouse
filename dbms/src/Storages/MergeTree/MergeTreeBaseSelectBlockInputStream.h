@@ -36,8 +36,6 @@ public:
 protected:
     Block readImpl() final;
 
-    Block readFromPartImpl();
-
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
 
@@ -45,6 +43,8 @@ protected:
     void progress(const Progress &) override {}
 
     virtual Block readFromPart();
+
+    Block readFromPartImpl();
 
     void injectVirtualColumns(Block & block) const;
 
