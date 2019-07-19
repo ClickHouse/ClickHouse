@@ -109,7 +109,7 @@ private:
         }
 
     private:
-        void readBinary(void* data, size_t size);
+        void readBinary(void * data, size_t size);
         void ignore(UInt64 num_bytes);
         void moveCursorBackward(UInt64 num_bytes);
 
