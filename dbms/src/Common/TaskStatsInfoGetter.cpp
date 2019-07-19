@@ -34,6 +34,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+// Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.
+static inline bool is_nlmsg_ok(const struct nlmsghdr * const nlh, const ssize_t len)
+{
+    return len >= static_cast<ssize_t>(sizeof(*nlh)) && nlh->nlmsg_len >= sizeof(*nlh) && static_cast<size_t>(len) >= nlh->nlmsg_len;
+}
 
 namespace
 {
@@ -128,7 +133,7 @@ struct NetlinkMessage
         if (header.nlmsg_type == NLMSG_ERROR)
             throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
 
-        if (!NLMSG_OK((&header), bytes_received))
+        if (!is_nlmsg_ok(&header, bytes_received))
             throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };

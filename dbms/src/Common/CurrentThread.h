@@ -39,7 +39,8 @@ public:
     static ThreadGroupStatusPtr getGroup();
 
     /// A logs queue used by TCPHandler to pass logs to a client
-    static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue);
+    static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                            LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
@@ -47,6 +48,7 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+    static Int64 & getUntrackedMemory();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
