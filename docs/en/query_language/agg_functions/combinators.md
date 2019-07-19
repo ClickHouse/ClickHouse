@@ -22,13 +22,21 @@ Example 2: `uniqArray(arr)` – Count the number of unique elements in all 'arr'
 
 ## -State
 
-If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the `uniq` function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an AggregateFunction(...) that can be used for further processing or stored in a table to finish aggregating later. To work with these states, use the [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine, the functions [`finalizeAggregation`](../functions/other_functions.md#finalizeaggregation) and [`runningAccumulate`](../functions/other_functions.md#function-runningaccumulate), and the combinators -Merge and -MergeState described below.
+If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the [uniq](reference.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
-## -Merge
+To work with these states, use:
+
+- [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine.
+- [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation) function.
+- [runningAccumulate](../functions/other_functions.md#function-runningaccumulate) function.
+- [-Merge](#aggregate_functions_combinators_merge) combinator.
+- [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+
+## -Merge {#aggregate_functions_combinators_merge}
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState.
+## -MergeState {#aggregate_functions_combinators_mergestate}
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn't return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 

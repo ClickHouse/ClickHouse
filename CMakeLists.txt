@@ -182,6 +182,11 @@ else ()
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+endif ()
+
 option(WITH_COVERAGE "Build with coverage." 0)
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
@@ -220,7 +225,6 @@ endif ()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
-include (cmake/find_cxxabi.cmake)
 include (cmake/find_cxx.cmake)
 
 include (cmake/test_compiler.cmake)
@@ -403,6 +407,11 @@ endif ()
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
+
+if (USE_LIBCXX)
+    set (HAVE_LIBCXX 1)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+endif()
 
 if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
