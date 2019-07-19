@@ -97,10 +97,19 @@ private:
         bool readUInt(UInt64 & value);
         template<typename T> bool readFixed(T & value);
         bool readStringInto(PaddedPODArray<UInt8> & str);
-        bool ALWAYS_INLINE maybeCanReadValue() const { return field_end != REACHED_END; }
+
+        bool ALWAYS_INLINE maybeCanReadValue() const
+        {
+            if (field_end == REACHED_END)
+                return false;
+            if (cursor < root_message_end)
+                return true;
+
+            throwUnknownFormat();
+        }
 
     private:
-        void readBinary(void* data, size_t size);
+        void readBinary(void * data, size_t size);
         void ignore(UInt64 num_bytes);
         void moveCursorBackward(UInt64 num_bytes);
 
@@ -119,6 +128,8 @@ private:
         void ignoreVarint();
         void ignoreGroup();
 
+        [[noreturn]] void throwUnknownFormat() const;
+
         static constexpr UInt64 REACHED_END = 0;
 
         ReadBuffer & in;
@@ -126,6 +137,8 @@ private:
         std::vector<UInt64> parent_message_ends;
         UInt64 current_message_end;
         UInt64 field_end;
+
+        UInt64 root_message_end;
     };
 
     class IConverter
