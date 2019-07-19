@@ -134,6 +134,7 @@ public:
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
+    /// Add new column names to map and enumerate them.
     void enumerateColumns(EnumeratedColumns & enumerated_columns);
 
     std::string toString() const;
@@ -158,6 +159,7 @@ private:
     void executeOnTotals(Block & block, Columns & columns,
                          ColumnNumbers & index, const EnumeratedColumns & enumerated_columns) const;
 
+    /// Returns array which contains positions in block for each column from enumerated_columns (in enumerated order).
     static ColumnNumbers makeIndex(const Block & block, const EnumeratedColumns & enumerated_columns);
 };
 
@@ -231,8 +233,8 @@ public:
     Names getRequiredColumns() const
     {
         Names names;
-        for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-            names.push_back(it->name);
+        for (auto & name_and_type : input_columns)
+            names.push_back(name_and_type.name);
         return names;
     }
 
@@ -241,12 +243,18 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    /// Cache for faster execution on the blocks of the same structure.
+    /// Allows to avoid string searching in hash table.
     struct Cache
     {
+        /// Headers for each step.
         Blocks headers;
+        /// Index for the first execution step.
         ColumnNumbers index;
     };
 
+    /// Execute the expression on the columns with specified header.
+    /// Different headers must use different caches. Cache must be created in each thread separately.
     void execute(const Block & header, Columns & columns, size_t & num_rows, Cache & cache, bool dry_run = false) const;
 
     /// Check if joined subquery has totals.

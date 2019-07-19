@@ -383,8 +383,27 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
 
 template <bool execute_on_block>
-void ExpressionAction::execute(Block & block, Columns & columns, size_t & num_rows, ColumnNumbers & index, const EnumeratedColumns & enumerated_columns, bool dry_run) const
+void ExpressionAction::execute(
+    Block & block,
+    Columns & columns,
+    size_t & num_rows,
+    ColumnNumbers & index,
+    const EnumeratedColumns & enumerated_columns,
+    bool dry_run) const
 {
+    /*
+     * Double-indexation schema is used.
+     * Map `enumerated_columns` contains all columns which could be used in actions.
+     * Each of this column has unique number 0 to enumerated_columns.size() - 1.
+     *
+     * Index array contains positions in block for each enumerated column (or INDEX_NOT_FOUND).
+     * Each action also affects index array.
+     *
+     * Action can be executed on columns or on block itself (in case if execute_on_block is true).
+     * When action is executed on columns, block structure remains unchanged.
+     * Otherwise, columns argument is ignored and block is changed (which also allows to get header for the next step).
+     */
+
     size_t input_rows_count = num_rows;
 
     auto getIndex = [&index](const NameWithPosition & name) { return index[name.position]; };
