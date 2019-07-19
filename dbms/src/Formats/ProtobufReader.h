@@ -128,7 +128,7 @@ private:
         void ignoreVarint();
         void ignoreGroup();
 
-        [[noreturn]] void throwUnknownFormat() const;
+        [[noreturn]] static void throwUnknownFormat();
 
         static constexpr UInt64 REACHED_END = 0;
 
