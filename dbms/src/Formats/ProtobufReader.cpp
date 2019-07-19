@@ -69,7 +69,8 @@ bool ProtobufReader::SimpleReader::startMessage()
         size_t size_of_message = readVarint();
         if (size_of_message == 0)
             unknownFormat();
-        current_message_end = root_message_end = cursor + size_of_message;
+        current_message_end = cursor + size_of_message;
+        root_message_end = current_message_end;
     }
     else
     {
