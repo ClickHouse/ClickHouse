@@ -511,12 +511,14 @@ public:
     {
         std::lock_guard lock{mutex};
         for (auto & [name, info] : infos)
+        {
             if ((info.was_loading() || load_never_loading) && filter_by_name(name))
             {
                 cancelLoading(info);
                 info.forced_to_reload = true;
                 startLoading(name, info);
             }
+        }
     }
 
     /// Starts reloading of all the objects.
@@ -558,6 +560,7 @@ public:
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
             for (auto & [name, info] : infos)
+            {
                 if ((now >= info.next_update_time) && !info.loading())
                 {
                     if (info.loaded())
@@ -574,6 +577,7 @@ public:
                     }
                     startLoading(name, info);
                 }
+            }
         }
     }
 
