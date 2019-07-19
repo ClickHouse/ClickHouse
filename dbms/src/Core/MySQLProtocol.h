@@ -222,7 +222,6 @@ public:
 
 class LimitedClientPacket : public ClientPacket
 {
-    using ClientPacket::read;
 public:
     void read(ReadBuffer & in, uint8_t & sequence_id) override
     {

@@ -47,6 +47,7 @@ inline void writeChar(char x, WriteBuffer & buf)
     ++buf.position();
 }
 
+/// Write the same character n times.
 inline void writeChar(char c, size_t n, WriteBuffer & buf)
 {
     while (n)
