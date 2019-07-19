@@ -493,12 +493,12 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    typedef struct MySQLWireContext
+    struct MySQLWireContext
     {
         uint8_t sequence_id = 0;
         uint32_t client_capabilities = 0;
         size_t max_packet_size = 0;
-    } MySQLState;
+    };
 
     MySQLWireContext mysql;
 private:
