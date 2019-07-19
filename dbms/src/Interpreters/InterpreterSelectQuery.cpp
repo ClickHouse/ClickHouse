@@ -667,7 +667,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    SelectQueryInfo query_info;
     /// PREWHERE optimization
     /// Turn off, if the table filter is applied.
     if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
@@ -679,13 +678,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {
-            query_info.query = query_ptr;
-            query_info.syntax_analyzer_result = syntax_analyzer_result;
-            query_info.sets = query_analyzer->getPreparedSets();
+            SelectQueryInfo current_info;
+            current_info.query = query_ptr;
+            current_info.syntax_analyzer_result = syntax_analyzer_result;
+            current_info.sets = query_analyzer->getPreparedSets();
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{query_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
         };
 
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
@@ -703,17 +703,18 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
     }
 
+    SortingInfoPtr sorting_info;
     if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
     {
-        auto optimize_pk_order = [&](const auto & merge_tree)
+        auto optimize_pk_order = [&](const auto & merge_tree) -> SortingInfoPtr
         {
             if (!merge_tree.hasSortingKey())
-                return;
-
-            auto sorting_info = std::make_shared<SortingInfo>();
+                return {};
 
             auto order_descr = getSortDescription(query);
             const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
+            SortDescription prefix_order_descr;
+
             int direction = order_descr.at(0).direction;
             size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
@@ -722,20 +723,17 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (order_descr[i].column_name != sorting_key_columns[i]
                     || order_descr[i].direction != direction)
                     break;
-                sorting_info->prefix_order_descr.push_back(order_descr[i]);
+                prefix_order_descr.push_back(order_descr[i]);
             }
 
-            if (sorting_info->prefix_order_descr.empty())
-                return;
+            if (prefix_order_descr.empty())
+                return {};
 
-            sorting_info->direction = direction;
-            sorting_info->limit = getLimitForSorting(query, context);
-
-            query_info.sorting_info = sorting_info;
+            return std::make_shared<SortingInfo>(std::move(prefix_order_descr), direction);
         };
 
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            optimize_pk_order(*merge_tree_data);
+            sorting_info = optimize_pk_order(*merge_tree_data);
     }
 
     if (dry_run)
@@ -787,7 +785,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, query_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, pipeline, sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
     }
@@ -1058,13 +1056,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 template <typename TPipeline>
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-        SelectQueryInfo & query_info, const Names & columns_to_remove_after_prewhere)
+        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     constexpr bool pipeline_with_processors = std::is_same<TPipeline, QueryPipeline>::value;
 
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
-    const auto & prewhere_info = query_info.prewhere_info;
 
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
@@ -1319,6 +1316,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
+        query_info.sorting_info = sorting_info;
 
         auto streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
 
