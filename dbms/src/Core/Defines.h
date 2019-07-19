@@ -139,3 +139,7 @@
 /// This number is only used for distributed version compatible.
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+
+/// A macro for suppressing warnings about unused variables. Useful for
+/// structured bindings which have no standard way to declare this.
+#define UNUSED_VARIABLE(X) (void) (X)
