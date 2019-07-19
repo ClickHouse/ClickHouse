@@ -44,7 +44,7 @@ namespace
 }
 
 
-[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat()
 {
     throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }
