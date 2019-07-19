@@ -96,6 +96,8 @@ public:
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+    /// Small amount of untracked memory (per thread atomic-less counter)
+    Int64 untracked_memory = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
