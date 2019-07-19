@@ -61,6 +61,8 @@ public:
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
+        global_context.makeGlobalContext();
+
         std::cerr << std::fixed << std::setprecision(3);
 
         /// This is needed to receive blocks with columns of AggregateFunction data type

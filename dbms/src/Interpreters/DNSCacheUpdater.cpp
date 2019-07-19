@@ -16,7 +16,6 @@ DNSCacheUpdater::DNSCacheUpdater(Context & context_, Int32 update_period_seconds
 
 void DNSCacheUpdater::run()
 {
-    watch.restart();
     auto & resolver = DNSResolver::instance();
 
     /// Reload cluster config if IP of any host has been changed since last update.
@@ -34,8 +33,12 @@ void DNSCacheUpdater::run()
         }
     }
 
-    auto interval_ms = std::max(0, update_period_seconds * 1000 - static_cast<Int32>(watch.elapsedMilliseconds()));
-    task_handle->scheduleAfter(interval_ms);
+    /** DNS resolution may take a while and by this reason, actual update period will be longer than update_period_seconds.
+      * We intentionally allow this "drift" for two reasons:
+      * - automatically throttle when DNS requests take longer time;
+      * - add natural randomization on huge clusters - avoid sending all requests at the same moment of time from different servers.
+      */
+    task_handle->scheduleAfter(update_period_seconds * 1000);
 }
 
 void DNSCacheUpdater::start()

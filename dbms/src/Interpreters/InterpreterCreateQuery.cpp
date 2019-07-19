@@ -159,7 +159,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
-        database->loadTables(context, thread_pool, has_force_restore_data_flag);
+        database->loadTables(context, has_force_restore_data_flag);
     }
     catch (...)
     {
@@ -625,7 +625,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())
-            context.getSessionContext().setQueryContext(context.getSessionContext());
+            context.getSessionContext().makeQueryContext();
 
         return InterpreterInsertQuery(insert,
             create.temporary ? context.getSessionContext() : context,

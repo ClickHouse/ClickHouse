@@ -23,6 +23,7 @@ int main(int, char **)
 try
 {
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
     Settings settings = context.getSettings();
 
     context.setPath("./");

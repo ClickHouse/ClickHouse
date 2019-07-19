@@ -28,6 +28,9 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
+#include <common/logger_useful.h>
+
+#include <Processors/Formats/LazyOutputFormat.h>
 
 #include "TCPHandler.h"
 
@@ -54,7 +57,7 @@ void TCPHandler::runImpl()
     ThreadStatus thread_status;
 
     connection_context = server.context();
-    connection_context.setSessionContext(connection_context);
+    connection_context.makeSessionContext();
 
     Settings global_settings = connection_context.getSettings();
 
@@ -170,12 +173,13 @@ void TCPHandler::runImpl()
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
+            const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && query_context->getSettingsRef().send_logs_level.value != LogsLevel::none)
+                && client_logs_level.value != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
-                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef().send_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
             }
 
             query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
@@ -207,6 +211,8 @@ void TCPHandler::runImpl()
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
                 processInsertQuery(global_settings);
+            else if (state.io.pipeline.initialized())
+                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
             else
                 processOrdinaryQuery();
 
@@ -378,7 +384,10 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     {
         const auto & db_and_table = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-            sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        {
+            if (!db_and_table.second.empty())
+                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        }
     }
 
     /// Send block to the client - table structure.
@@ -447,9 +456,9 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
-                sendTotals();
-                sendExtremes();
-                sendProfileInfo();
+                sendTotals(state.io.in->getTotals());
+                sendExtremes(state.io.in->getExtremes());
+                sendProfileInfo(state.io.in->getProfileInfo());
                 sendProgress();
                 sendLogs();
             }
@@ -460,6 +469,129 @@ void TCPHandler::processOrdinaryQuery()
         }
 
         async_in.readSuffix();
+    }
+
+    state.io.onFinish();
+}
+
+void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+{
+    auto & pipeline = state.io.pipeline;
+
+    /// Send header-block, to allow client to prepare output format for data to send.
+    {
+        auto & header = pipeline.getHeader();
+
+        if (header)
+            sendData(header);
+    }
+
+    auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
+    pipeline.setOutput(lazy_format);
+
+    {
+        auto thread_group = CurrentThread::getGroup();
+        ThreadPool pool(1);
+        auto executor = pipeline.execute();
+        std::atomic_bool exception = false;
+
+        pool.schedule([&]()
+        {
+            /// ThreadStatus thread_status;
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+            );
+
+            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+            setThreadName("QueryPipelineEx");
+
+            try
+            {
+                executor->execute(num_threads);
+            }
+            catch (...)
+            {
+                exception = true;
+                throw;
+            }
+        });
+
+        /// Wait in case of exception. Delete pipeline to release memory.
+        SCOPE_EXIT(
+                /// Clear queue in case if somebody is waiting lazy_format to push.
+                lazy_format->finish();
+                lazy_format->clearQueue();
+
+                pool.wait();
+                pipeline = QueryPipeline()
+        );
+
+        while (true)
+        {
+            Block block;
+
+            while (true)
+            {
+                if (isQueryCancelled())
+                {
+                    /// A packet was received requesting to stop execution of the request.
+                    executor->cancel();
+
+                    break;
+                }
+                else
+                {
+                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+                    {
+                        /// Some time passed and there is a progress.
+                        after_send_progress.restart();
+                        sendProgress();
+                    }
+
+                    sendLogs();
+
+                    if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
+                        break;
+
+                    if (lazy_format->isFinished())
+                        break;
+
+                    if (exception)
+                    {
+                        pool.wait();
+                        break;
+                    }
+                }
+            }
+
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
+              */
+            if (!block && !isQueryCancelled())
+            {
+                pool.wait();
+                pipeline.finalize();
+
+                sendTotals(lazy_format->getTotals());
+                sendExtremes(lazy_format->getExtremes());
+                sendProfileInfo(lazy_format->getProfileInfo());
+                sendProgress();
+                sendLogs();
+            }
+
+            sendData(block);
+            if (!block)
+                break;
+        }
     }
 
     state.io.onFinish();
@@ -495,18 +627,16 @@ void TCPHandler::processTablesStatusRequest()
 }
 
 
-void TCPHandler::sendProfileInfo()
+void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
-    state.io.in->getProfileInfo().write(*out);
+    info.write(*out);
     out->next();
 }
 
 
-void TCPHandler::sendTotals()
+void TCPHandler::sendTotals(const Block & totals)
 {
-    const Block & totals = state.io.in->getTotals();
-
     if (totals)
     {
         initBlockOutput(totals);
@@ -521,10 +651,8 @@ void TCPHandler::sendTotals()
 }
 
 
-void TCPHandler::sendExtremes()
+void TCPHandler::sendExtremes(const Block & extremes)
 {
-    Block extremes = state.io.in->getExtremes();
-
     if (extremes)
     {
         initBlockOutput(extremes);
@@ -730,7 +858,7 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context->tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name, ColumnsDescription{columns});
+                storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns});
                 storage->startup();
                 query_context->addExternalTable(external_table_name, storage);
             }
