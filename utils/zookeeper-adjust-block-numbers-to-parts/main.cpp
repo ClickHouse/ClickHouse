@@ -49,14 +49,14 @@ std::vector<std::string> removeNotExistingTables(zkutil::ZooKeeper & zk, const s
 }
 
 
-size_t getMaxBlockNumberForPartition(zkutil::ZooKeeper & zk,
+Int64 getMaxBlockNumberForPartition(zkutil::ZooKeeper & zk,
     const std::string & replica_path,
     const std::string & partition_name,
     const DB::MergeTreeDataFormatVersion & format_version)
 {
     auto replicas_path = replica_path + "/replicas";
     auto replica_hosts = zk.getChildren(replicas_path);
-    size_t max_block_num = 0;
+    Int64 max_block_num = 0;
     for (const auto & replica_host : replica_hosts)
     {
         auto parts = zk.getChildren(replicas_path + "/" + replica_host + "/parts");
@@ -66,7 +66,7 @@ size_t getMaxBlockNumberForPartition(zkutil::ZooKeeper & zk,
             {
                 auto info = DB::MergeTreePartInfo::fromPartName(part, format_version);
                 if (info.partition_id == partition_name)
-                    max_block_num = std::max<UInt64>(info.max_block, max_block_num);
+                    max_block_num = std::max<Int64>(info.max_block, max_block_num);
             }
             catch (const DB::Exception & ex)
             {
@@ -78,7 +78,7 @@ size_t getMaxBlockNumberForPartition(zkutil::ZooKeeper & zk,
 }
 
 
-size_t getCurrentBlockNumberForPartition(zkutil::ZooKeeper & zk, const std::string & part_path)
+Int64 getCurrentBlockNumberForPartition(zkutil::ZooKeeper & zk, const std::string & part_path)
 {
     Coordination::Stat stat;
     zk.get(part_path, &stat);
@@ -90,10 +90,10 @@ size_t getCurrentBlockNumberForPartition(zkutil::ZooKeeper & zk, const std::stri
 }
 
 
-std::unordered_map<std::string, size_t> getPartitionsNeedAdjustingBlockNumbers(
+std::unordered_map<std::string, Int64> getPartitionsNeedAdjustingBlockNumbers(
     zkutil::ZooKeeper & zk, const std::string & root, const std::vector<std::string> & shards, const std::vector<std::string> & tables)
 {
-    std::unordered_map<std::string, size_t> result;
+    std::unordered_map<std::string, Int64> result;
 
     std::vector<std::string> use_shards = shards.empty() ? getAllShards(zk, root) : removeNotExistingShards(zk, root, shards);
 
@@ -126,9 +126,9 @@ std::unordered_map<std::string, size_t> getPartitionsNeedAdjustingBlockNumbers(
                 try
                 {
                     std::string part_path = blocks_path + "/" + partition;
-                    size_t partition_max_block = getMaxBlockNumberForPartition(zk, table_path, partition, format_version);
-                    size_t current_block_number = getCurrentBlockNumberForPartition(zk, part_path);
-                    if (current_block_number <= partition_max_block)
+                    Int64 partition_max_block = getMaxBlockNumberForPartition(zk, table_path, partition, format_version);
+                    Int64 current_block_number = getCurrentBlockNumberForPartition(zk, part_path);
+                    if (current_block_number < partition_max_block + 1)
                     {
                         std::cout << "\t\tPartition: " << partition << ": current block_number: " << current_block_number
                                   << ", max block number: " << partition_max_block << ". Adjusting is required." << std::endl;
@@ -146,29 +146,63 @@ std::unordered_map<std::string, size_t> getPartitionsNeedAdjustingBlockNumbers(
 }
 
 
-void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, size_t new_current_block_number)
+void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, Int64 new_current_block_number)
 {
-    std::string block_prefix = path + "/block-";
-    Coordination::Requests requests;
+    Int64 current_block_number = getCurrentBlockNumberForPartition(zk, path);
 
-    for (size_t current_block_number = getCurrentBlockNumberForPartition(zk, path);
-         current_block_number < new_current_block_number;
-         ++current_block_number)
+    auto create_ephemeral_nodes = [&](size_t count)
     {
-        if (requests.size() == 50)
+        std::string block_prefix = path + "/block-";
+        Coordination::Requests requests;
+        requests.reserve(count);
+        for (size_t i = 0; i != count; ++i)
+            requests.emplace_back(zkutil::makeCreateRequest(block_prefix, "", zkutil::CreateMode::EphemeralSequential));
+        auto responses = zk.multi(requests);
+
+        std::vector<std::string> paths_created;
+        paths_created.reserve(responses.size());
+        for (const auto & response : responses)
         {
-            zk.multi(requests);
-            std::cout << path << ": " << requests.size() << " ephemeral sequential nodes inserted." << std::endl;
-            requests.clear();
+            const auto * create_response = dynamic_cast<Coordination::CreateResponse*>(response.get());
+            if (!create_response)
+            {
+                std::cerr << "\tCould not create ephemeral node " << block_prefix << std::endl;
+                return false;
+            }
+            paths_created.emplace_back(create_response->path_created);
         }
-        requests.emplace_back(zkutil::makeCreateRequest(path + "/block-", "", zkutil::CreateMode::EphemeralSequential));
-    }
 
-    if (!requests.empty())
-    {
-        std::cout << path << ": " << requests.size() << " ephemeral sequential nodes inserted." << std::endl;
-        zk.multi(requests);
-    }
+        std::sort(paths_created.begin(), paths_created.end());
+        for (const auto & path_created : paths_created)
+        {
+            Int64 number = DB::parse<Int64>(path_created.c_str() + block_prefix.size(), path_created.size() - block_prefix.size());
+            if (number != current_block_number)
+            {
+                char suffix[11] = "";
+                sprintf(suffix, "%010ld", current_block_number);
+                std::string expected_path = block_prefix + suffix;
+                std::cerr << "\t" << path_created << ": Ephemeral node has been created with an unexpected path (expected something like "
+                          << expected_path << ")." << std::endl;
+                return false;
+            }
+            std::cout << "\t" << path_created << std::endl;
+            ++current_block_number;
+        }
+
+        return true;
+    };
+
+    if (current_block_number >= new_current_block_number)
+        return;
+
+    std::cout << "Creating ephemeral sequential nodes:" << std::endl;
+    create_ephemeral_nodes(1); /// Firstly try to create just a single node.
+
+    /// Create other nodes in batches of 50 nodes.
+    while (current_block_number + 50 <= new_current_block_number)
+        create_ephemeral_nodes(50);
+
+    create_ephemeral_nodes(new_current_block_number - current_block_number);
 }
 
 
@@ -230,9 +264,14 @@ try
         return 0;
     }
 
+    std::cout << "Required adjusting of " << part_paths_with_max_block_numbers.size() << " block numbers." << std::endl;
+
     /// Adjust the block numbers.
     if (options.count("dry-run"))
+    {
+        std::cout << "This is a dry-run, exiting." << std::endl;
         return 0;
+    }
 
     std::cout << std::endl << "Adjusting the block numbers:" << std::endl;
     for (const auto & [part_path, max_block_number] : part_paths_with_max_block_numbers)
