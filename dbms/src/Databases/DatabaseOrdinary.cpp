@@ -212,7 +212,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
-			watch.restart();
+            watch.restart();
         }
     };
 
