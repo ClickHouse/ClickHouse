@@ -113,13 +113,13 @@ void MySQLHandler::run()
             packet_sender->resetSequenceId();
             PacketPayloadReadBuffer payload = packet_sender->getPayload();
 
-            unsigned char command = 0;
+            char command = 0;
             payload.readStrict(reinterpret_cast<char &>(command));
 
             // For commands which are executed without MemoryTracker.
             LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
 
-            LOG_DEBUG(log, "Received command: " << static_cast<int>(command) << ". Connection id: " << connection_id << ".");
+            LOG_DEBUG(log, "Received command: " << static_cast<int>(static_cast<unsigned char>(command)) << ". Connection id: " << connection_id << ".");
             try
             {
                 switch (command)
