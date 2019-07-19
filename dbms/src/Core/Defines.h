@@ -140,6 +140,6 @@
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
 
-/// A macro for suppressing warnings about unused variables. Useful for
-/// structured bindings which have no standard way to declare this.
-#define UNUSED_VARIABLE(X) (void) (X)
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(X) (void) (X)
