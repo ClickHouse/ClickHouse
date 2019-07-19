@@ -50,6 +50,19 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
+    try
+    {
+        if (untracked_memory > 0)
+            memory_tracker.alloc(untracked_memory);
+        else
+            memory_tracker.free(-untracked_memory);
+    }
+    catch (const DB::Exception &)
+    {
+        /// It's a minor tracked memory leak here (not the memory itself but it's counter).
+        /// We've already allocated a little bit more then the limit and cannot track it in the thread memory tracker or its parent.
+    }
+
     if (deleter)
         deleter();
     current_thread = nullptr;
