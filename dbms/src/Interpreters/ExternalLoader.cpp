@@ -536,7 +536,7 @@ public:
             for (const auto & name_and_info : infos)
             {
                 const auto & info = name_and_info.second;
-                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                if ((now >= info.next_update_time) && !info.loading() && info.loaded())
                     is_modified_map.emplace(info.object, true);
             }
         }
@@ -558,16 +558,21 @@ public:
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
             for (auto & [name, info] : infos)
-                if ((now >= info.next_update_time) && !info.loading() && info.was_loading())
+                if ((now >= info.next_update_time) && !info.loading())
                 {
-                    auto it = is_modified_map.find(info.object);
-                    if (it == is_modified_map.end())
-                        continue; /// Object has been just added, it can be simply omitted from this update of outdated.
-                    bool is_modified_flag = it->second;
-                    if (info.loaded() && !is_modified_flag)
-                        info.next_update_time = calculate_next_update_time(info.object, info.error_count);
-                    else
-                        startLoading(name, info);
+                    if (info.loaded())
+                    {
+                        auto it = is_modified_map.find(info.object);
+                        if (it == is_modified_map.end())
+                            continue; /// Object has just been added, we can simply omit it from this update of outdated.
+                        bool is_modified_flag = it->second;
+                        if (!is_modified_flag)
+                        {
+                            info.next_update_time = calculate_next_update_time(info.object, info.error_count);
+                            continue;
+                        }
+                    }
+                    startLoading(name, info);
                 }
         }
     }
