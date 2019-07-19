@@ -19,6 +19,7 @@
 #include <ext/scope_guard.h>
 
 #include <openssl/rsa.h>
+#include <IO/LimitReadBuffer.h>
 
 
 namespace DB
@@ -115,6 +116,9 @@ void MySQLHandler::run()
             unsigned char command = 0;
             payload.readStrict(reinterpret_cast<char &>(command));
 
+            // For commands which are executed without MemoryTracker.
+            LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
+
             LOG_DEBUG(log, "Received command: " << static_cast<int>(command) << ". Connection id: " << connection_id << ".");
             try
             {
@@ -123,13 +127,13 @@ void MySQLHandler::run()
                     case COM_QUIT:
                         return;
                     case COM_INIT_DB:
-                        comInitDB(payload);
+                        comInitDB(limited_payload);
                         break;
                     case COM_QUERY:
                         comQuery(payload);
                         break;
                     case COM_FIELD_LIST:
-                        comFieldList(payload);
+                        comFieldList(limited_payload);
                         break;
                     case COM_PING:
                         comPing();
@@ -150,7 +154,7 @@ void MySQLHandler::run()
             }
         }
     }
-    catch (Poco::Exception & exc)
+    catch (const Poco::Exception & exc)
     {
         log->log(exc);
     }
