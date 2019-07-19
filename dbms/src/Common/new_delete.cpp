@@ -1,5 +1,6 @@
 #include <new>
 
+#include <common/config_common.h>
 #include <common/memory.h>
 #include <Common/MemoryTracker.h>
 
