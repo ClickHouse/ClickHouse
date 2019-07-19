@@ -1548,7 +1548,7 @@ public:
         ColumnString::Chars & vec_res_upper_range = col_res_upper_range->getChars();
         vec_res_upper_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
 
-        const UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
+        static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
 
         for (size_t offset = 0; offset < input_rows_count; ++offset)
         {
