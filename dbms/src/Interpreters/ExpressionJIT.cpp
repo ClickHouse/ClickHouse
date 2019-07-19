@@ -485,7 +485,7 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, const Blo
             }
             args.push_back(inserted.first->second);
         }
-        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
+        subexpressions[action.result_name.name] = subexpression(*action.function_base, std::move(args));
         originals.push_back(action.function_base);
     }
     compileFunctionToLLVMByteCode(context, *this);
@@ -607,13 +607,13 @@ std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(cons
 
             case ExpressionAction::PROJECT:
                 current_dependents.clear();
-                for (const auto & proj : actions[i].projection)
-                    current_dependents[proj.first].emplace();
+                for (const auto & proj : actions[i].projection_names)
+                    current_dependents[proj].emplace();
                 break;
 
             case ExpressionAction::ADD_ALIASES:
-                for (const auto & proj : actions[i].projection)
-                    current_dependents[proj.first].emplace();
+                for (const auto & proj : actions[i].projection_names)
+                    current_dependents[proj].emplace();
                 break;
 
             case ExpressionAction::ADD_COLUMN:
@@ -703,8 +703,12 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             }
 
             actions[i].function_base = fn;
-            actions[i].argument_names = fn->getArgumentNames();
             actions[i].is_function_compiled = true;
+
+            auto argument_names = fn->getArgumentNames();
+            actions[i].argument_names.reserve(argument_names.size());
+            for (auto & name : argument_names)
+                actions[i].argument_names.emplace_back(name);
 
             continue;
         }

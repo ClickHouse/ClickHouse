@@ -1141,7 +1141,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 for (const auto & action : prewhere_info->prewhere_actions->getActions())
                 {
                     if (action.type != ExpressionAction::REMOVE_COLUMN
-                        || required_columns.end() == std::find(required_columns.begin(), required_columns.end(), action.source_name))
+                        || required_columns.end() == std::find(required_columns.begin(), required_columns.end(), action.source_name.name))
                         new_actions->add(action);
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
