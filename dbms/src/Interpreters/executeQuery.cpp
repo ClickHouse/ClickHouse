@@ -29,6 +29,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/ProfileEvents.h>
+
 #include <Interpreters/DNSCacheUpdater.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -72,11 +73,9 @@ static String joinLines(const String & query)
 static String prepareQueryForLogging(const String & query, Context & context)
 {
     String res = query;
-    // cropping is cheap and can reduce the amount of work for wipeSensitiveData
-    // side effect: if the query had long string with sensitive data which were removed,
-    // we will store less than log_queries_cut_to_length in logs
-    res = res.substr(0, context.getSettingsRef().log_queries_cut_to_length);
 
+    // wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log
     if (auto masker = context.getSensitiveDataMasker())
     {
         auto matches = masker->wipeSensitiveData(res);
@@ -85,6 +84,9 @@ static String prepareQueryForLogging(const String & query, Context & context)
             ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
         }
     }
+
+    res = res.substr(0, context.getSettingsRef().log_queries_cut_to_length);
+
     return res;
 }
 
