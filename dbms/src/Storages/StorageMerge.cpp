@@ -46,13 +46,15 @@ namespace ErrorCodes
 
 
 StorageMerge::StorageMerge(
-    const std::string & name_,
+    const std::string & database_name_,
+    const std::string & table_name_,
     const ColumnsDescription & columns_,
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
     : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
-    , name(name_)
+    , table_name(table_name_)
+    , database_name(database_name_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -165,7 +167,7 @@ BlockInputStreams StorageMerge::read(
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -201,8 +203,10 @@ BlockInputStreams StorageMerge::read(
         return createSourceStreams(
             query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
-    size_t remaining_streams = num_streams;
     size_t tables_count = selected_tables.size();
+    Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
+    num_streams *= num_streams_multiplier;
+    size_t remaining_streams = num_streams;
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
@@ -384,13 +388,13 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
     auto database = context.getDatabase(source_database);
-    auto table_name_match = [this](const String & table_name) { return table_name_regexp.match(table_name); };
+    auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getIterator(global_context, table_name_match);
 }
 
 
 void StorageMerge::alter(
-    const AlterCommands & params, const String & database_name, const String & table_name,
+    const AlterCommands & params, const String & database_name_, const String & table_name_,
     const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
@@ -398,7 +402,7 @@ void StorageMerge::alter(
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
+    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, {});
     setColumns(new_columns);
 }
 
@@ -489,7 +493,7 @@ void registerStorageMerge(StorageFactory & factory)
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
-            args.table_name, args.columns,
+            args.database_name, args.table_name, args.columns,
             source_database, table_name_regexp, args.context);
     });
 }

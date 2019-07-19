@@ -5,15 +5,33 @@
 #include "MiAllocator.h"
 #include <mimalloc.h>
 
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 void * MiAllocator::alloc(size_t size, size_t alignment)
 {
+    void * ptr;
     if (alignment == 0)
-        return mi_malloc(size);
+    {
+        ptr = mi_malloc(size);
+        if (!ptr)
+            DB::throwFromErrno("MiAllocator: Cannot allocate in mimalloc " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+    }
     else
-        return mi_malloc_aligned(size, alignment);
+    {
+        ptr = mi_malloc_aligned(size, alignment);
+        if (!ptr)
+            DB::throwFromErrno("MiAllocator: Cannot allocate in mimalloc (mi_malloc_aligned) " + formatReadableSizeWithBinarySuffix(size) + " with alignment " + toString(alignment) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+    }
+    return ptr;
 }
 
 void MiAllocator::free(void * buf, size_t)
@@ -32,10 +50,21 @@ void * MiAllocator::realloc(void * old_ptr, size_t, size_t new_size, size_t alig
         return nullptr;
     }
 
-    if (alignment == 0)
-        return mi_realloc(old_ptr, alignment);
+    void * ptr;
 
-    return mi_realloc_aligned(old_ptr, new_size, alignment);
+    if (alignment == 0)
+    {
+        ptr = mi_realloc(old_ptr, alignment);
+        if (!ptr)
+            DB::throwFromErrno("MiAllocator: Cannot reallocate in mimalloc " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+    }
+    else
+    {
+        ptr = mi_realloc_aligned(old_ptr, new_size, alignment);
+        if (!ptr)
+            DB::throwFromErrno("MiAllocator: Cannot reallocate in mimalloc (mi_realloc_aligned) " + formatReadableSizeWithBinarySuffix(size) + " with alignment " + toString(alignment) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+    }
+    return ptr;
 }
 
 }

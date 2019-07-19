@@ -30,7 +30,7 @@ String PacketSender::packetToText(String payload)
 
 uint64_t readLengthEncodedNumber(std::istringstream & ss)
 {
-    char c;
+    char c{};
     uint64_t buf = 0;
     ss.get(c);
     auto cc = static_cast<uint8_t>(c);

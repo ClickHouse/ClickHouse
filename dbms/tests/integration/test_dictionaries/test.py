@@ -3,7 +3,7 @@ import os
 import time
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from generate_dictionaries import generate_structure, generate_dictionaries, DictionaryTestTable
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -53,6 +53,13 @@ def started_cluster():
         test_table.create_clickhouse_source(instance)
         for line in TSV(instance.query('select name from system.dictionaries')).lines:
             print line,
+
+        # Create table `test.small_dict_source`
+        instance.query('''
+            drop table if exists test.small_dict_source;
+            create table test.small_dict_source (id UInt64, a String, b Int32, c Float64) engine=Log;
+            insert into test.small_dict_source values (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
+            ''')
 
         yield cluster
 
@@ -166,17 +173,37 @@ def test_dictionary_dependency(started_cluster):
 
     # Dictionary 'dep_x' depends on 'dep_z', which depends on 'dep_y'.
     # So they all should be loaded at once.
-    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_x', 'a', toUInt64(1))") == "air\n"
     assert get_status('dep_x') == 'LOADED'
     assert get_status('dep_y') == 'LOADED'
     assert get_status('dep_z') == 'LOADED'
 
     # Other dictionaries should work too.
-    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(1))") == "10577349846663553072\n"
-    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(1))") == "10577349846663553072\n"
-    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(12121212))") == "XX\n"
-    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(12121212))") == "YY\n"
-    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(12121212))") == "ZZ\n"
+    assert query("SELECT dictGetString('dep_y', 'a', toUInt64(1))") == "air\n"
+    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(1))") == "air\n"
+
+    assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "XX\n"
+    assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "YY\n"
+    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "ZZ\n"
+
+    # Update the source table.
+    query("insert into test.small_dict_source values (3, 'fire', 30, 8)")
+
+    # Wait for dictionaries to be reloaded.
+    assert_eq_with_retry(instance, "SELECT dictHas('dep_y', toUInt64(3))", "1", sleep_time = 2, retry_count = 10)
+    assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "XX\n"
+    assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
+    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "ZZ\n"
+
+    # dep_x and dep_z are updated only when there `intDiv(count(), 4)`  is changed.
+    query("insert into test.small_dict_source values (4, 'ether', 404, 0.001)")
+    assert_eq_with_retry(instance, "SELECT dictHas('dep_x', toUInt64(4))", "1", sleep_time = 2, retry_count = 10)
+    assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "fire\n"
+    assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
+    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "fire\n"
+    assert query("SELECT dictGetString('dep_x', 'a', toUInt64(4))") == "ether\n"
+    assert query("SELECT dictGetString('dep_y', 'a', toUInt64(4))") == "ether\n"
+    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(4))") == "ether\n"
 
 
 def test_reload_while_loading(started_cluster):

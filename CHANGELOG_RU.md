@@ -1,3 +1,15 @@
+## ClickHouse release 19.9.4.1, 2019-07-05
+
+### Исправления ошибок
+* Исправлен segmentation fault в кодеке сжатия Delta в колонках с величинами размером меньше 32 бит. Ошибка могла приводить к повреждениям памяти. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
+* Исправлена ошибка в проверке кусков в LowCardinality колонках. [#5832](https://github.com/yandex/ClickHouse/pull/5832) ([alesapin](https://github.com/alesapin))
+* Исправлен segmentation fault при слиянии кусков с истекшим TTL в случае, когда в блоке присутствуют столбцы, не входящие в структуру таблицы. [#5819](https://github.com/yandex/ClickHouse/pull/5819) ([Anton Popov](https://github.com/CurtizJ))
+* Исправлена существовавшая возможность ухода в бесконечное ожидание на низко-приоритетных запросах. [#5842](https://github.com/yandex/ClickHouse/pull/5842) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлена ошибка определения таймзоны по умолчанию (UCT вместо UTC). [#5828](https://github.com/yandex/ClickHouse/pull/5828) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлена ошибка в распределенных запросах вида DROP/ALTER/TRUNCATE/OPTIMIZE ON CLUSTER. [#5757](https://github.com/yandex/ClickHouse/pull/5757) ([alesapin](https://github.com/alesapin))
+* Исправлена ошибка, которая при распределенных запросах могла привести к тому, что некоторые запросы не появлялись в query_log сразу после SYSTEM FLUSH LOGS запроса. [#5685](https://github.com/yandex/ClickHouse/pull/5685) ([Anton Popov](https://github.com/CurtizJ))
+* Добавлена отсутствовавшая поддержка константных аргументов для функции `evalMLModel`. [#5820](https://github.com/yandex/ClickHouse/pull/5820) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
 ## ClickHouse release 19.9.2.4, 2019-06-24
 
 ### Новые возможности
@@ -46,6 +58,11 @@
 * Обновление boost до 1.70 [#5570](https://github.com/yandex/ClickHouse/pull/5570) ([proller](https://github.com/proller))
 * Исправлена сборка clickhouse как сабмодуля [#5574](https://github.com/yandex/ClickHouse/pull/5574) ([proller](https://github.com/proller))
 * Улучшение теста производительности функций JSONExtract [#5444](https://github.com/yandex/ClickHouse/pull/5444) ([Vitaly Baranov](https://github.com/vitlibar))
+
+## ClickHouse release 19.7.6.1, 2019-07-05
+
+### Исправления ошибок
+* Исправлена просадка производительности в методе JOIN в некоторых видах запросов. [#5192](https://github.com/yandex/ClickHouse/pull/5192) ([Winter Zhang](https://github.com/zhang2014))
 
 ## ClickHouse release 19.8.3.8, 2019-06-11
 

@@ -2171,10 +2171,10 @@ void ClusterCopierApp::mainImpl()
         << "revision " << ClickHouseRevision::get() << ")");
 
     auto context = std::make_unique<Context>(Context::createGlobal());
+    context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
-    context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
 

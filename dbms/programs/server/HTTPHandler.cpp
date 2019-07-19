@@ -211,7 +211,6 @@ void HTTPHandler::processQuery(
     Output & used_output)
 {
     Context context = server.context();
-    context.setGlobalContext(server.context());
 
     CurrentThread::QueryScope query_scope(context);
 
