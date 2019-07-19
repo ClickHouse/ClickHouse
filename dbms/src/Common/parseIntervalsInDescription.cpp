@@ -24,7 +24,7 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
     }
 
     if (what.size() * to.size() > max_addresses)
-        throw Exception("Table function 'remote': first argument generates too many result addresses",
+        throw Exception("The string with globs generates too many result strings",
                         ErrorCodes::BAD_ARGUMENTS);
     std::vector<String> res;
     for (size_t i = 0; i < to.size(); ++i)
@@ -168,5 +168,9 @@ std::vector<String> parseIntervalsInDescription(const String & description, size
 
     return res;
 }
+
+//std::vector<String> parseGlobsInAddresses(const String & address_pattern, size_t left, size_t right) {
+//
+//}
 
 }

@@ -25,6 +25,10 @@
 #include <Poco/Path.h>
 #include <Poco/File.h>
 
+#include <re2/re2.h>
+#include <boost/filesystem.hpp>
+
+namespace fs = boost::filesystem;
 
 namespace DB
 {
@@ -89,7 +93,38 @@ StorageFile::StorageFile(
 
             path = poco_path.absolute().toString();
             size_t max_addresses = context_global.getSettingsRef().table_function_remote_max_addresses;
-            paths_after_globs_parsed = parseIntervalsInDescription(path, 0, path.size(), ',', max_addresses);
+            std::vector<std::string> paths_after_interval_parsing = parseIntervalsInDescription(path, 0, path.size(), ',', max_addresses);
+
+            fs::path cur_dir(db_dir_path);
+            fs::directory_iterator end;
+            for (const auto & path_with_globs : paths_after_interval_parsing)
+            {
+                std::string path_for_perl;
+                path_for_perl.reserve(path_with_globs.size());
+                for (const auto & letter_in_path : path_with_globs)
+                {
+                    if (letter_in_path == '?')
+                    {
+                        path_for_perl.push_back('.');
+                        continue;
+                    }
+                    if (letter_in_path == '*')
+                        path_for_perl.push_back('.');
+                    else if (letter_in_path == '.')
+                        path_for_perl.push_back('\\');
+                    path_for_perl.push_back(letter_in_path);
+                }
+                re2::RE2 matcher(path_for_perl);
+                for (fs::directory_iterator it(cur_dir); it != end; ++it)
+                {
+                    fs::path file = (*it);
+                    if (re2::RE2::FullMatch(file.string(), matcher))
+                    {
+                        paths_after_globs_parsed.push_back(file.string());
+                    }
+                }
+            }
+
             for (const auto & cur_path : paths_after_globs_parsed)
             {
                 checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
@@ -102,7 +137,6 @@ StorageFile::StorageFile(
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
             path = getTablePath(db_dir_path, table_name, format_name);
-            paths_after_globs_parsed.push_back(path);
             is_db_table = true;
             Poco::File(Poco::Path(path).parent()).createDirectories();
         }
@@ -187,7 +221,6 @@ private:
     std::shared_lock<std::shared_mutex> shared_lock;
     std::unique_lock<std::shared_mutex> unique_lock;
 };
-
 
 BlockInputStreams StorageFile::read(
     const Names & /*column_names*/,
