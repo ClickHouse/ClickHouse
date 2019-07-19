@@ -167,6 +167,8 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 `NULL` форматируется в виде `\N` или `NULL` или пустой неэкранированной строки (см. настройки [format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-format_csv_unquoted_null_literal_as_null) и [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields)).
 
+Если установлена настройка [input_format_defaults_for_omitted_fields = 1](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) и тип столбца не `Nullable(T)`, то пустые значения без кавычек заменяются значениями по умолчанию для типа данных столбца.
+
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
 ## CSVWithNames
