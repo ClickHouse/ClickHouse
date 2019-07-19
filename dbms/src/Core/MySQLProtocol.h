@@ -18,7 +18,8 @@
 #include <sstream>
 #include <IO/LimitReadBuffer.h>
 
-/// Implementation of MySQL wire protocol
+/// Implementation of MySQL wire protocol.
+/// Works only on little-endian architecture.
 
 namespace DB
 {
@@ -212,6 +213,12 @@ public:
     {
         PacketPayloadReadBuffer payload(in, sequence_id);
         readPayload(payload);
+        if (!payload.eof())
+        {
+            std::stringstream tmp;
+            tmp << "Packet payload is not fully read. Stopped after " << payload.count() << " bytes, while " << payload.available() << " bytes are in buffer.";
+            throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
     }
 
     virtual void readPayload(ReadBuffer & buf) = 0;
