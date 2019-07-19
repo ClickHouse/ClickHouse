@@ -186,7 +186,8 @@ private:
 
     template <typename TPipeline>
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-                             SelectQueryInfo & query_info, const Names & columns_to_remove_after_prewhere);
+        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info,
+        const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -248,6 +249,7 @@ private:
     NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
+    SelectQueryInfo query_info;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
