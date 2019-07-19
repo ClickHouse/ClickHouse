@@ -530,8 +530,8 @@ public:
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
+        /// Iterate through all the objects and find loaded ones which should be checked if they were modified.
         std::unordered_map<LoadablePtr, bool> is_modified_map;
-
         {
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
@@ -543,7 +543,9 @@ public:
             }
         }
 
-        /// The `mutex` should be unlocked while we're calling the function is_object_modified().
+        /// Find out which of the loaded objects were modified.
+        /// We couldn't perform these checks while we were building `is_modified_map` because
+        /// the `mutex` should be unlocked while we're calling the function is_object_modified().
         for (auto & [object, is_modified_flag] : is_modified_map)
         {
             try
@@ -556,6 +558,7 @@ public:
             }
         }
 
+        /// Iterate through all the objects again and either start loading or just set `next_update_time`.
         {
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
@@ -567,15 +570,24 @@ public:
                     {
                         auto it = is_modified_map.find(info.object);
                         if (it == is_modified_map.end())
-                            continue; /// Object has just been added, we can simply omit it from this update of outdated.
+                            continue; /// Object has been just loaded (it wasn't loaded while we were building the map `is_modified_map`), so we don't have to reload it right now.
+
                         bool is_modified_flag = it->second;
                         if (!is_modified_flag)
                         {
+                            /// Object wasn't modified so we only have to set `next_update_time`.
                             info.next_update_time = calculate_next_update_time(info.object, info.error_count);
                             continue;
                         }
+
+                        /// Object was modified and should be reloaded.
+                        startLoading(name, info);
                     }
-                    startLoading(name, info);
+                    else if (info.failed())
+                    {
+                        /// Object was never loaded successfully and should be reloaded.
+                        startLoading(name, info);
+                    }
                 }
             }
         }
