@@ -272,9 +272,58 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
 
 void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    safeDeserialize(column,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
-        [this, &settings, &istr] (IColumn & nested) { nested_data_type->deserializeAsTextCSV(nested, istr, settings); });
+    constexpr char const * null_literal = "NULL";
+    constexpr size_t len = 4;
+    size_t null_prefix_len = 0;
+
+    auto check_for_null = [&istr, &settings, &null_prefix_len]
+    {
+        if (checkStringByFirstCharacterAndAssertTheRest("\\N", istr))
+            return true;
+        if (!settings.csv.unquoted_null_literal_as_null)
+            return false;
+
+        /// Check for unquoted NULL
+        while (!istr.eof() && null_prefix_len < len && null_literal[null_prefix_len] == *istr.position())
+        {
+            ++null_prefix_len;
+            ++istr.position();
+        }
+        if (null_prefix_len == len)
+            return true;
+
+        /// Value and "NULL" have common prefix, but value is not "NULL".
+        /// Restore previous buffer position if possible.
+        if (null_prefix_len <= istr.offset())
+        {
+            istr.position() -= null_prefix_len;
+            null_prefix_len = 0;
+        }
+        return false;
+    };
+
+    auto deserialize_nested = [this, &settings, &istr, &null_prefix_len] (IColumn & nested)
+    {
+        if (likely(!null_prefix_len))
+            nested_data_type->deserializeAsTextCSV(nested, istr, settings);
+        else
+        {
+            /// Previous buffer position was not restored,
+            /// so we need to prepend extracted characters (rare case)
+            ReadBufferFromMemory prepend(null_literal, null_prefix_len);
+            ConcatReadBuffer buf(prepend, istr);
+            nested_data_type->deserializeAsTextCSV(nested, buf, settings);
+
+            /// Check if all extracted characters was read by nested parser and update buffer position
+            if (null_prefix_len < buf.count())
+                istr.position() = buf.position();
+            else if (null_prefix_len > buf.count())
+                throw DB::Exception("Some characters were extracted from buffer, but nested parser did not read them",
+                                    ErrorCodes::LOGICAL_ERROR);
+        }
+    };
+
+    safeDeserialize(column, check_for_null, deserialize_nested);
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
