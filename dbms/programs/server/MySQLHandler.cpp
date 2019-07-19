@@ -114,7 +114,7 @@ void MySQLHandler::run()
             PacketPayloadReadBuffer payload = packet_sender->getPayload();
 
             char command = 0;
-            payload.readStrict(reinterpret_cast<char &>(command));
+            payload.readStrict(command);
 
             // For commands which are executed without MemoryTracker.
             LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
