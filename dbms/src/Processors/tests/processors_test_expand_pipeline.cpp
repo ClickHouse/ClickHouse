@@ -65,7 +65,7 @@ public:
     String getName() const override { return "OneNumber"; }
 
     OneNumberSource(UInt64 number)
-            : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}), false),
+            : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
               number(number)
     {
     }

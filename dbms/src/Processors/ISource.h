@@ -13,13 +13,12 @@ protected:
     bool has_input = false;
     bool finished = false;
     bool got_exception = false;
-    const bool async;
     Port::Data current_chunk;
 
     virtual Chunk generate() = 0;
 
 public:
-    explicit ISource(Block header, bool async);
+    explicit ISource(Block header);
 
     Status prepare() override;
     void work() override;

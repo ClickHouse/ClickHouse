@@ -9,7 +9,7 @@ class SourceFromSingleChunk : public ISource
 {
 public:
     explicit SourceFromSingleChunk(Block header, Chunk chunk_)
-        : ISource(std::move(header), false), chunk(std::move(chunk_)) {}
+        : ISource(std::move(header)), chunk(std::move(chunk_)) {}
 
     String getName() const override { return "SourceFromSingleChunk"; }
 

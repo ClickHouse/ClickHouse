@@ -20,7 +20,7 @@ namespace
     {
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
-                : ISource(header, false), file_in(path), compressed_in(file_in)
+                : ISource(header), file_in(path), compressed_in(file_in)
                 , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
         {
             block_in->readPrefix();
@@ -62,7 +62,7 @@ namespace
     {
     public:
         ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
-            : ISource(std::move(header), false), params(std::move(params_)), stream(std::move(stream)) {}
+            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream)) {}
 
         String getName() const override { return "ConvertingAggregatedToBlocksTransform"; }
 

@@ -24,7 +24,7 @@ protected:
 
 public:
     IInputFormat(Block header, ReadBuffer & in)
-        : ISource(std::move(header), false), in(in)
+        : ISource(std::move(header)), in(in)
     {
     }
 };
