@@ -211,7 +211,7 @@ private:
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
         {
-            if (!in[i]->isColumnConst())
+            if (!isColumnConst(*in[i]))
                 continue;
 
             Field value = (*in[i])[0];

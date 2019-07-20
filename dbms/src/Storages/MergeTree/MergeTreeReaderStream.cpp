@@ -20,7 +20,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         MarkCache * mark_cache_, bool save_marks_in_cache_,
         UncompressedCache * uncompressed_cache,
         size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
-        const GranularityInfo * index_granularity_info_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)

@@ -1,6 +1,14 @@
 #include <common/demangle.h>
 
-#if _MSC_VER
+#if defined(__has_feature)
+    #if __has_feature(memory_sanitizer)
+        #define MEMORY_SANITIZER 1
+    #endif
+#elif defined(__MEMORY_SANITIZER__)
+    #define MEMORY_SANITIZER 1
+#endif
+
+#if _MSC_VER || MEMORY_SANITIZER
 
 std::string demangle(const char * name, int & status)
 {

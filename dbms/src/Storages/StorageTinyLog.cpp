@@ -32,6 +32,7 @@
 
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/CheckResults.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -320,20 +321,21 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 StorageTinyLog::StorageTinyLog(
     const std::string & path_,
-    const std::string & name_,
+    const std::string & database_name_,
+    const std::string & table_name_,
     const ColumnsDescription & columns_,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage{columns_},
-    path(path_), name(name_),
+    path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
+    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String full_path = path + escapeForFileName(name) + '/';
+    String full_path = path + escapeForFileName(table_name) + '/';
     if (!attach)
     {
         /// create files if they do not exist
@@ -360,7 +362,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
             ColumnData column_data;
             files.insert(std::make_pair(stream_name, column_data));
             files[stream_name].data_file = Poco::File(
-                path + escapeForFileName(name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+                path + escapeForFileName(table_name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
         }
     };
 
@@ -369,17 +371,18 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     /// Rename directory with data.
-    Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
     path = new_path_to_db;
-    name = new_table_name;
-    file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.json");
+    table_name = new_table_name;
+    database_name = new_database_name;
+    file_checker.setPath(path + escapeForFileName(table_name) + "/" + "sizes.json");
 
     for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-        it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
+        it->second.data_file = Poco::File(path + escapeForFileName(table_name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
 }
 
 
@@ -404,22 +407,22 @@ BlockOutputStreamPtr StorageTinyLog::write(
 }
 
 
-bool StorageTinyLog::checkData() const
+CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     return file_checker.check();
 }
 
 void StorageTinyLog::truncate(const ASTPtr &, const Context &)
 {
-    if (name.empty())
+    if (table_name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
 
-    auto file = Poco::File(path + escapeForFileName(name));
+    auto file = Poco::File(path + escapeForFileName(table_name));
     file.remove(true);
     file.createDirectories();
 
     files.clear();
-    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
+    file_checker = FileChecker{path + escapeForFileName(table_name) + '/' + "sizes.json"};
 
     for (const auto &column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
@@ -436,7 +439,7 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.data_path, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

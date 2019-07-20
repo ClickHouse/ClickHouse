@@ -514,7 +514,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## path
+## path {#server_settings-path}
 
 Путь к каталогу с данными.
 

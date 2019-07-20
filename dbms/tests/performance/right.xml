@@ -1,5 +1,4 @@
 <test>
-    <name>right</name>
     <type>loop</type>
 
     <preconditions>

@@ -24,5 +24,18 @@
             </replica>
         </shard>
     </awesome_cluster>
+    <simple_cluster>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>node5</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>node6</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </simple_cluster>
 </remote_servers>
 </yandex>

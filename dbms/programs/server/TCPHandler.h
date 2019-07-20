@@ -36,6 +36,12 @@ struct QueryState
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
     Protocol::Compression compression = Protocol::Compression::Disable;
 
+    /// A queue with internal logs that will be passed to client. It must be
+    /// destroyed after input/output blocks, because they may contain other
+    /// threads that use this queue.
+    InternalTextLogsQueuePtr logs_queue;
+    BlockOutputStreamPtr logs_block_out;
+
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     BlockInputStreamPtr block_in;
@@ -63,10 +69,6 @@ struct QueryState
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
-
-    /// A queue with internal logs that will be passed to client
-    InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
 
     void reset()
     {
@@ -143,6 +145,8 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
+    void processOrdinaryQueryWithProcessors(size_t num_threads);
+
     void processTablesStatusRequest();
 
     void sendHello();
@@ -153,9 +157,9 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendProfileInfo();
-    void sendTotals();
-    void sendExtremes();
+    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendTotals(const Block & totals);
+    void sendExtremes(const Block & extremes);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
