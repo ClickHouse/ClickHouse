@@ -278,8 +278,8 @@ Ok.
 **Смотрите также**
 
 - [Секция JOIN](../../query_language/select.md#select-join)
-- [Движо таблиц Join](../table_engines/join.md)
-- [join_default_strictness {](settings-join_default_strictness})
+- [Движок таблиц Join](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
