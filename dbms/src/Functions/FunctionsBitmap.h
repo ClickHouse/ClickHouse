@@ -56,7 +56,7 @@ namespace ErrorCodes
   *
   * Two bitmap andnot calculation, return cardinality:
   * bitmapAndnotCardinality: bitmap,bitmap -> integer
-  * 
+  *
   * Determine if a bitmap contains the given integer:
   * bitmapContains: bitmap,integer -> bool
   *
@@ -432,28 +432,28 @@ private:
         Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<UInt8>::Container & vec_to)
     {
         const IColumn * columns[2];
-        bool isColumnConst[2];
+        bool is_column_const[2];
         const PaddedPODArray<AggregateDataPtr> * container0;
         const PaddedPODArray<UInt32> * container1;
 
         for (size_t i = 0; i < 2; ++i)
         {
             columns[i] = block.getByPosition(arguments[i]).column.get();
-            isColumnConst[i] = typeid_cast<const ColumnConst*>(columns[i])!=nullptr;
+            is_column_const[i] = isColumnConst(*columns[i]);
         }
-        if (isColumnConst[0])
+        if (is_column_const[0])
             container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get())->getData();
         else
             container0 = &typeid_cast<const ColumnAggregateFunction*>(columns[0])->getData();
-        if (isColumnConst[1])
+        if (is_column_const[1])
             container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
         else
             container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = isColumnConst[0] ? (*container0)[0] : (*container0)[i];
-            const UInt32 data1 = isColumnConst[1] ? (*container1)[0] : (*container1)[i];
+            const AggregateDataPtr dataPtr0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            const UInt32 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T>& bd0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
             vec_to[i] = bd0.rbs.rb_contains(data1);
@@ -529,18 +529,18 @@ private:
         Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
     {
         const ColumnAggregateFunction * columns[2];
-        bool isColumnConst[2];
+        bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
-            if (auto argument_column_const = typeid_cast<const ColumnConst*>(block.getByPosition(arguments[i]).column.get()))
+            if (auto argument_column_const = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get()))
             {
                 columns[i] = typeid_cast<const ColumnAggregateFunction*>(argument_column_const->getDataColumnPtr().get());
-                isColumnConst[i] = true;
+                is_column_const[i] = true;
             }
             else
             {
                 columns[i] = typeid_cast<const ColumnAggregateFunction*>(block.getByPosition(arguments[i]).column.get());
-                isColumnConst[i] = false;
+                is_column_const[i] = false;
             }
         }
 
@@ -549,8 +549,8 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = isColumnConst[0] ? container0[0] : container0[i];
-            const AggregateDataPtr dataPtr1 = isColumnConst[1] ? container1[0] : container1[i];
+            const AggregateDataPtr dataPtr0 = is_column_const[0] ? container0[0] : container0[i];
+            const AggregateDataPtr dataPtr1 = is_column_const[1] ? container1[0] : container1[i];
             const AggregateFunctionGroupBitmapData<T> & bd1
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
             const AggregateFunctionGroupBitmapData<T> & bd2

@@ -514,7 +514,7 @@ Use the following parameters to configure logging:
 ```
 
 
-## path
+## path {#server_settings-path}
 
 The path to the directory containing data.
 

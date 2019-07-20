@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -21,6 +22,7 @@
 namespace DB
 {
 
+struct ColumnSize;
 class MergeTreeData;
 
 
@@ -37,20 +39,6 @@ struct MergeTreeDataPart
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
-
-    struct ColumnSize
-    {
-        size_t marks = 0;
-        size_t data_compressed = 0;
-        size_t data_uncompressed = 0;
-
-        void add(const ColumnSize & other)
-        {
-            marks += other.marks;
-            data_compressed += other.data_compressed;
-            data_uncompressed += other.data_uncompressed;
-        }
-    };
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
@@ -246,6 +234,8 @@ struct MergeTreeDataPart
         */
     mutable std::mutex alter_mutex;
 
+    MergeTreeIndexGranularityInfo index_granularity_info;
+
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
@@ -274,7 +264,7 @@ struct MergeTreeDataPart
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column) const;
+    bool hasColumnFiles(const String & column, const IDataType & type) const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

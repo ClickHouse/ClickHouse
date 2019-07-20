@@ -1,4 +1,5 @@
-FROM yandex/clickhouse-deb-builder
+# docker build -t yandex/clickhouse-stress-test .
+FROM yandex/clickhouse-stateful-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -21,8 +22,9 @@ RUN apt-get update -y \
             llvm-8 \
             brotli
 
-
 COPY ./stress /stress
+
+ENV DATASETS="hits visits"
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
@@ -32,11 +34,17 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     ln -s /usr/share/clickhouse-test/config/log_queries.xml /etc/clickhouse-server/users.d/; \
     ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer; \
-    echo "TSAN_OPTIONS='halt_on_error=1 history_size=7'" >> /etc/environment; \
-    echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-8/bin/llvm-symbolizer" >> /etc/environment; \
+    echo "TSAN_OPTIONS='halt_on_error=1 history_size=7 ignore_noninstrumented_modules=1 verbosity=1'" >> /etc/environment; \
     echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
-    echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "TSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
-    service clickhouse-server start && sleep 1 && ./stress --output-folder test_output
+    service clickhouse-server start && sleep 5 \
+    && /s3downloader --dataset-names $DATASETS \
+    && chmod 777 -R /var/lib/clickhouse \
+    && clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets" \
+    && clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test" \
+    && service clickhouse-server restart && sleep 5 \
+    && clickhouse-client --query "SHOW TABLES FROM datasets" \
+    && clickhouse-client --query "SHOW TABLES FROM test" \
+    && clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits" \
+    && clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits" \
+    && clickhouse-client --query "SHOW TABLES FROM test" \
+    && ./stress --output-folder test_output

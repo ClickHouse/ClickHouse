@@ -65,6 +65,10 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType DistributedSend;
+}
 
 namespace
 {
@@ -185,7 +189,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : IStorage{columns_}, table_name(table_name),
+    : IStorage{columns_}, table_name(table_name), database_name(database_name),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
@@ -339,7 +343,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & database_name, const String & current_table_name,
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
     const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
@@ -347,7 +351,7 @@ void StorageDistributed::alter(
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 
@@ -427,7 +431,7 @@ void StorageDistributed::createDirectoryMonitors()
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
     std::lock_guard lock(cluster_nodes_mutex);
-    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this, monitors_blocker);
 }
 
 ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
@@ -454,11 +458,17 @@ void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::strin
         conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
 }
 
-void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(
+    const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker)
 {
     requireConnectionPool(name, storage);
     if (!directory_monitor)
-        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool, monitor_blocker);
+}
+
+void StorageDistributed::ClusterNodeData::flushAllData()
+{
+    directory_monitor->flushAllData();
 }
 
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
@@ -497,6 +507,22 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
     }
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
+}
+
+ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
+{
+    if (type == ActionLocks::DistributedSend)
+        return monitors_blocker.cancel();
+    return {};
+}
+
+void StorageDistributed::flushClusterNodesAllData()
+{
+    std::lock_guard lock(cluster_nodes_mutex);
+
+    /// TODO: Maybe it should be executed in parallel
+    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
+        it->second.flushAllData();
 }
 
 

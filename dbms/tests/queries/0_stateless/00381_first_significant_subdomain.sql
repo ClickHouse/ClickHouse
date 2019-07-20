@@ -8,8 +8,6 @@ SELECT
     firstSignificantSubdomain('https://www.yandex.ua/news.html'),
     firstSignificantSubdomain('magnet:yandex.abc'),
     firstSignificantSubdomain('ftp://www.yandex.co.uk/news.html'),
-    firstSignificantSubdomain('ftp://yandex.co.yandex'),
-    firstSignificantSubdomain('http://ввв.яндекс.org.рф'),
     firstSignificantSubdomain('https://api.www3.static.dev.ввв.яндекс.рф'),
     firstSignificantSubdomain('//www.yandex.com.tr/news.html');
 

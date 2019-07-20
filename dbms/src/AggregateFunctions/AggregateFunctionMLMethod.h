@@ -33,7 +33,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -60,7 +59,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -87,7 +85,6 @@ public:
         std::vector<Float64> & batch_gradient,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
@@ -120,14 +117,18 @@ public:
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
         size_t row_num);
 
     /// Updates current weights according to the gradient from the last mini-batch
-    virtual void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & gradient) = 0;
+    virtual void update(
+        UInt64 batch_size,
+        std::vector<Float64> & weights,
+        Float64 & bias,
+        Float64 learning_rate,
+        const std::vector<Float64> & gradient) = 0;
 
     /// Used during the merge of two states
     virtual void merge(const IWeightsUpdater &, Float64, Float64) {}
@@ -143,7 +144,7 @@ public:
 class StochasticGradientDescent : public IWeightsUpdater
 {
 public:
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 };
 
 
@@ -154,7 +155,7 @@ public:
 
     Momentum(Float64 alpha) : alpha_(alpha) {}
 
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -180,13 +181,12 @@ public:
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
         Float64 bias,
-        Float64 learning_rate,
         Float64 l2_reg_coef,
         Float64 target,
         const IColumn ** columns,
         size_t row_num) override;
 
-    void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override;
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
@@ -195,8 +195,48 @@ public:
     void read(ReadBuffer & buf) override;
 
 private:
-    Float64 alpha_{0.1};
+    const Float64 alpha_ = 0.9;
     std::vector<Float64> accumulated_gradient;
+};
+
+
+class Adam : public IWeightsUpdater
+{
+public:
+    Adam()
+    {
+        beta1_powered_ = beta1_;
+        beta2_powered_ = beta2_;
+    }
+
+    void add_to_batch(
+            std::vector<Float64> & batch_gradient,
+            IGradientComputer & gradient_computer,
+            const std::vector<Float64> & weights,
+            Float64 bias,
+            Float64 l2_reg_coef,
+            Float64 target,
+            const IColumn ** columns,
+            size_t row_num) override;
+
+    void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
+
+    virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
+
+    void write(WriteBuffer & buf) const override;
+
+    void read(ReadBuffer & buf) override;
+
+private:
+    /// beta1 and beta2 hyperparameters have such recommended values
+    const Float64 beta1_ = 0.9;
+    const Float64 beta2_ = 0.999;
+    const Float64 eps_ = 0.000001;
+    Float64 beta1_powered_;
+    Float64 beta2_powered_;
+
+    std::vector<Float64> average_gradient;
+    std::vector<Float64> average_squared_gradient;
 };
 
 
@@ -210,8 +250,8 @@ public:
     LinearModelData(
         Float64 learning_rate,
         Float64 l2_reg_coef,
-        UInt32 param_num,
-        UInt32 batch_capacity,
+        UInt64 param_num,
+        UInt64 batch_capacity,
         std::shared_ptr<IGradientComputer> gradient_computer,
         std::shared_ptr<IWeightsUpdater> weights_updater);
 
@@ -269,7 +309,7 @@ public:
         std::string weights_updater_name,
         Float64 learning_rate,
         Float64 l2_reg_coef,
-        UInt32 batch_size,
+        UInt64 batch_size,
         const DataTypes & arguments_types,
         const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
@@ -303,6 +343,8 @@ public:
             new_weights_updater = std::make_shared<Momentum>();
         else if (weights_updater_name == "Nesterov")
             new_weights_updater = std::make_shared<Nesterov>();
+        else if (weights_updater_name == "Adam")
+            new_weights_updater = std::make_shared<Adam>();
         else
             throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
 
@@ -355,10 +397,10 @@ public:
     const char * getHeaderFilePath() const override { return __FILE__; }
 
 private:
-    UInt32 param_num;
+    UInt64 param_num;
     Float64 learning_rate;
     Float64 l2_reg_coef;
-    UInt32 batch_size;
+    UInt64 batch_size;
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::string weights_updater_name;
 };
@@ -371,4 +413,5 @@ struct NameLogisticRegression
 {
     static constexpr auto name = "stochasticLogisticRegression";
 };
+
 }
