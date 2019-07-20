@@ -265,7 +265,7 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 **Possible values**
 
-- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is standard `JOIN` behavior in SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
@@ -276,7 +276,7 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 Changes behavior of join operations with `ANY` strictness.
 
 !!! note "Attention"
-    This setting applies only for the [Join](../table_engines/join.md) table engine.
+    This setting applies only to the [Join](../table_engines/join.md) table engine.
 
 Possible values:
 
@@ -707,7 +707,7 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## max_network_bytes {#settings-max_network_bytes}
-Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
 Possible values:
 
@@ -718,7 +718,7 @@ Default value: 0.
 
 ## max_network_bandwidth {#settings-max_network_bandwidth}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to every query.
 
 Possible values:
 
@@ -729,7 +729,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+Limits the speed that data id exchanged at over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
 
 Possible values:
 
@@ -740,7 +740,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
 
 Possible values:
 
