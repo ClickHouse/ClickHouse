@@ -144,3 +144,7 @@
 #   define ASAN_UNPOISON_MEMORY_REGION(a,b)
 #   define ASAN_POISON_MEMORY_REGION(a,b)
 #endif
+
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(X) (void) (X)
