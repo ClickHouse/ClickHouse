@@ -79,7 +79,7 @@ Enables or disables execution of `GROUP BY` clauses in external memory. See [GRO
 
 Possible values:
 
-- Maximum volume or RAM (in bytes) that can be used by [GROUP BY](../../query_language/select.md#select-group-by-clause) operations.
+- Maximum volume or RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
@@ -209,11 +209,11 @@ What to do when the amount of data exceeds one of the limits: 'throw' or 'break'
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and [Join table engine](../table_engines/join.md).
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join](../table_engines/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
-ClickHouse can proceed with different actions when the limit is reached. Use [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) setting to choose the action.
 
 Possible values:
 
