@@ -1,3 +1,5 @@
+#include "IFunction.h"
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/LRUCache.h>
@@ -13,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
@@ -110,10 +111,10 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
     if (src->onlyNull())
         return src;
-    else if (src->isColumnNullable())
+    else if (auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
     {
-        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
     }
 
     for (const auto & arg : args)
@@ -126,12 +127,12 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
         if (elem.column->onlyNull())
             return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
 
-        if (elem.column->isColumnConst())
+        if (isColumnConst(*elem.column))
             continue;
 
-        if (elem.column->isColumnNullable())
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
+            const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
             if (!result_null_map_column)
             {
                 result_null_map_column = null_map_column;
@@ -203,7 +204,7 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 {
     for (auto arg : args)
-        if (!block.getByPosition(arg).column->isColumnConst())
+        if (!isColumnConst(*block.getByPosition(arg).column))
             return false;
     return true;
 }
@@ -216,7 +217,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
 
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
-        if (arg_num < args.size() && !block.getByPosition(args[arg_num]).column->isColumnConst())
+        if (arg_num < args.size() && !isColumnConst(*block.getByPosition(args[arg_num]).column))
             throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
@@ -582,7 +583,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
         for (ColumnWithTypeAndName & arg : args_without_low_cardinality)
         {
-            bool is_const = arg.column && arg.column->isColumnConst();
+            bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
                 arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 

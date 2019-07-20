@@ -66,7 +66,6 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     else
     {
         update_time = std::chrono::system_clock::now();
-        uri.addQueryParameter(update_field, "0000-00-00 00:00:00");
     }
 }
 

@@ -107,10 +107,6 @@ public:
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable, const ExternalLoaderUpdateSettings & settings = {});
 
-    /// Returns the names of all the objects in the configuration (loaded or not).
-    std::vector<String> getNames() const;
-    size_t getNumberOfNames() const;
-
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
@@ -132,6 +128,9 @@ public:
     Loadables getCurrentlyLoadedObjects() const;
     Loadables getCurrentlyLoadedObjects(const FilterByNameFunction & filter_by_name) const;
     size_t getNumberOfCurrentlyLoadedObjects() const;
+
+    /// Returns true if any object was loaded.
+    bool hasCurrentlyLoadedObjects() const;
 
     static constexpr Duration NO_TIMEOUT = Duration::max();
 
@@ -187,10 +186,8 @@ protected:
 
 private:
     struct ObjectConfig;
-    using ObjectWithException = std::pair<LoadablePtr, std::exception_ptr>;
 
-    ObjectWithException
-    createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
     TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
 
     class ConfigFilesReader;

@@ -191,18 +191,9 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
 
 def test_bridge_dies_with_parent(started_cluster):
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
-    def get_pid(cmd):
-        output = node1.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(cmd)], privileged=True, user='root')
-        if output:
-            try:
-                pid = int(output.split('\n')[0].strip())
-                return pid
-            except:
-                return None
-            return None
 
-    clickhouse_pid = get_pid("clickhouse server")
-    bridge_pid = get_pid("odbc-bridge")
+    clickhouse_pid = node1.get_process_pid("clickhouse server")
+    bridge_pid = node1.get_process_pid("odbc-bridge")
     assert clickhouse_pid is not None
     assert bridge_pid is not None
 
@@ -211,11 +202,11 @@ def test_bridge_dies_with_parent(started_cluster):
             node1.exec_in_container(["bash", "-c", "kill {}".format(clickhouse_pid)], privileged=True, user='root')
         except:
             pass
-        clickhouse_pid = get_pid("clickhouse server")
+        clickhouse_pid = node1.get_process_pid("clickhouse server")
         time.sleep(1)
 
     time.sleep(1) # just for sure, that odbc-bridge caught signal
-    bridge_pid = get_pid("odbc-bridge")
+    bridge_pid = node1.get_process_pid("odbc-bridge")
 
     assert clickhouse_pid is None
     assert bridge_pid is None

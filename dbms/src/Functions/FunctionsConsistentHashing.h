@@ -133,7 +133,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (block.getByPosition(arguments[1]).column->isColumnConst())
+        if (isColumnConst(*block.getByPosition(arguments[1]).column))
             executeConstBuckets(block, arguments, result);
         else
             throw Exception(

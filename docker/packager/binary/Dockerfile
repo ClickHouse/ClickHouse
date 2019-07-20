@@ -45,7 +45,8 @@ RUN apt-get update -y \
             ninja-build \
             gperf \
             git \
-            tzdata
+            tzdata \
+            gperf
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
