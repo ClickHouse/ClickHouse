@@ -244,6 +244,12 @@ static inline void read(IColumn & column, Reader && reader)
 }
 
 
+void DataTypeString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    read(column, [&](ColumnString::Chars & data) { readStringInto(data, istr); });
+}
+
+
 void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });

@@ -38,6 +38,7 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
 
     std::string getTableName() const override { return ""; }
+    std::string getDatabaseName() const override { return ""; }
 
 protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
@@ -1158,6 +1159,7 @@ bool run()
 TestResult check(const TestEntry & entry)
 {
     static DB::Context context = DB::Context::createGlobal();
+    context.makeGlobalContext();
 
     try
     {

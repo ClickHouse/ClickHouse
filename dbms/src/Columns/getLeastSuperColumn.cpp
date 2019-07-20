@@ -31,7 +31,7 @@ ColumnWithTypeAndName getLeastSuperColumn(std::vector<const ColumnWithTypeAndNam
     for (size_t i = 0; i < columns.size(); ++i)
     {
         types[i] = columns[i]->type;
-        if (columns[i]->column->isColumnConst())
+        if (isColumnConst(*columns[i]->column))
             ++num_const;
     }
 

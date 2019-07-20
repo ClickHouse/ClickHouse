@@ -60,6 +60,10 @@ nav:
     - 'IPv4': 'data_types/domains/ipv4.md'
     - 'IPv6': 'data_types/domains/ipv6.md'
 
+- 'Database Engines':
+    - 'Introduction': 'database_engines/index.md'
+    - 'MySQL': 'database_engines/mysql.md'
+
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'
   - 'MergeTree Family':
@@ -103,6 +107,7 @@ nav:
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
+  - 'SYSTEM': 'query_language/system.md'
   - 'Other kinds of queries': 'query_language/misc.md'
   - 'Functions':
     - '介绍': 'query_language/functions/index.md'
@@ -186,6 +191,7 @@ nav:
     - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
+    - 'User Settings': 'operations/settings/settings_users.md'
     - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'

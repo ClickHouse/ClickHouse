@@ -1,14 +1,25 @@
 # Third-party libraries may have substandard code.
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-stringop-overflow -Wno-implicit-function-declaration -Wno-return-type -Wno-array-bounds -Wno-bool-compare -Wno-int-conversion -Wno-switch -Wno-stringop-truncation")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -Wno-class-memaccess -Wno-sign-compare -Wno-array-bounds -Wno-missing-attributes -Wno-stringop-truncation -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format -Wno-parentheses-equality -Wno-tautological-constant-compare -Wno-tautological-constant-out-of-range-compare -Wno-implicit-function-declaration -Wno-return-type -Wno-pointer-bool-conversion -Wno-enum-conversion -Wno-int-conversion -Wno-switch -Wno-string-plus-int")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -Wno-inconsistent-missing-override -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
 endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
+
+
+if (USE_INTERNAL_UNWIND_LIBRARY)
+    add_subdirectory (libunwind-cmake)
+endif ()
+
+if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
+    add_subdirectory(libcxx-cmake)
+    add_subdirectory(libcxxabi-cmake)
+endif()
+
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -29,8 +40,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (double-conversion)
+    add_subdirectory (double-conversion-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
@@ -50,10 +60,6 @@ add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
-endif ()
-
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -106,6 +112,10 @@ if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
+if (USE_INTERNAL_H3_LIBRARY)
+    add_subdirectory(h3-cmake)
+endif ()
+
 if (USE_INTERNAL_SSL_LIBRARY)
     if (NOT MAKE_STATIC_LIBRARIES)
         set (BUILD_SHARED 1)
@@ -150,7 +160,7 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
-if (USE_INTERNAL_CAPNP_LIBRARY)
+if (ENABLE_CAPNP AND USE_INTERNAL_CAPNP_LIBRARY)
     set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
@@ -247,7 +257,6 @@ if(USE_INTERNAL_GTEST_LIBRARY)
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
-    target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
 elseif(GTEST_SRC_DIR)
     add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
@@ -279,7 +288,7 @@ if (USE_INTERNAL_LLVM_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-  add_subdirectory(libgsasl)
+    add_subdirectory(libgsasl)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
@@ -316,4 +325,8 @@ endif()
 
 if (USE_SIMDJSON)
     add_subdirectory (simdjson-cmake)
+endif()
+
+if (USE_MIMALLOC)
+    add_subdirectory (mimalloc)
 endif()

@@ -85,7 +85,7 @@ namespace
 static ColumnData getColumnData(const IColumn * column)
 {
     ColumnData result;
-    const bool is_const = column->isColumnConst();
+    const bool is_const = isColumnConst(*column);
     if (is_const)
         column = &reinterpret_cast<const ColumnConst *>(column)->getDataColumn();
     if (auto * nullable = typeid_cast<const ColumnNullable *>(column))

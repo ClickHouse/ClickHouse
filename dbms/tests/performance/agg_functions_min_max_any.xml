@@ -1,5 +1,4 @@
 <test>
-    <name>test_hits_agg_functions_max_min_any</name>
     <type>loop</type>
 
     <stop_conditions>

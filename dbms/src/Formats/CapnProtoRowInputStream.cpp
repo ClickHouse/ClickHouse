@@ -1,9 +1,10 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_CAPNP
+
+#include "CapnProtoRowInputStream.h"
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/CapnProtoRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -307,6 +308,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
            const Context & context,
            UInt64 max_block_size,
            UInt64 rows_portion_size,
+           FormatFactory::ReadCallback callback,
            const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
@@ -314,6 +316,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
                 sample,
                 max_block_size,
                 rows_portion_size,
+                callback,
                 settings);
         });
 }
