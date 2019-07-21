@@ -995,4 +995,28 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
+## incrementalClustering {#agg_functions-incrementalclustering}
+
+This function implements incremental clustering. You may think of it as a streaming version of k-means algorithm. The difference is that we don't store all points to run k-means algorithm, but store and update limited number of clusters (basically desired number of output clusters multiplied by some factor), which are updated on each new object added. Then to predict we run k-means algorithm on these inner clusters. So this function may be used to run approximate clustering if there is too much data.
+
+### Parameters {#agg_functions-incrementalclustering-parameters}
+
+```text
+incrementalClustering(42)
+```
+
+1. `number of clusters` is the desired number of clusters to run clusterization.
+
+### Usage {#agg_functions-incrementalclustering-usage}
+
+All input data must be of numeric types. Clusters are returned as integer numbers from `0` to `clusters_number - 1`.
+
+1. Predicting on data
+
+`evalMLMethod` returns predicted clusters for input elements of the function.
+
+2. Fetching cluster centers
+
+No `-State` combinator query returns a `Float64` array, which stores all clusters in raw format - an array of size `clusters_number * dimensions`, where each sequential `dimensions` number of elements represent one cluster.
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
