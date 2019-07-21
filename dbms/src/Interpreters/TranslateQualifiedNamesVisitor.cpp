@@ -124,7 +124,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
     if (auto join = select.join())
         extractJoinUsingColumns(join->table_join, data);
 
-#if 1 /// TODO: legacy?
     /// If the WHERE clause or HAVING consists of a single qualified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
     if (select.prewhere())
@@ -133,7 +132,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
         Visitor(data).visit(select.refWhere());
     if (select.having())
         Visitor(data).visit(select.refHaving());
-#endif
 }
 
 static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)
