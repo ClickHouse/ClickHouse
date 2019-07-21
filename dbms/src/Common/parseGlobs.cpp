@@ -1,0 +1,74 @@
+#include <Common/parseGlobs.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <algorithm>
+#include <iostream>
+
+namespace DB
+{
+
+std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
+{
+    std::string first_prepare;
+    first_prepare.reserve(initial_str.size());
+    for (const auto & letter : initial_str)
+    {
+        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+'))
+            first_prepare.push_back('\\');
+        first_prepare.push_back(letter);
+    }
+    re2::RE2 char_range(R"(({[^*?/\\]\.\.[^*?/\\]}))");
+    re2::StringPiece input_for_range(first_prepare);
+    re2::StringPiece matched_range(first_prepare);
+
+    std::string second_prepare;
+    second_prepare.reserve(first_prepare.size());
+    size_t current_index = 0;
+    size_t pos;
+    while (RE2::FindAndConsume(&input_for_range, char_range, &matched_range))
+    {
+        pos = matched_range.data() - first_prepare.data();
+        second_prepare += first_prepare.substr(current_index, pos - current_index);
+        second_prepare.append({'[', matched_range.ToString()[1], '-', matched_range.ToString()[4], ']'});
+        current_index = input_for_range.data() - first_prepare.data();
+    }
+    second_prepare += first_prepare.substr(current_index);
+    std::cout << second_prepare <<std::endl;
+    re2::RE2 enumeration(R"(({[^{}*,]+,[^{}*]*[^{}*,]}))");
+    re2::StringPiece input_enum(second_prepare);
+    re2::StringPiece matched_enum(second_prepare);
+    current_index = 0;
+    std::string third_prepare;
+    while (RE2::FindAndConsume(&input_enum, enumeration, &matched_enum))
+    {
+        pos = matched_enum.data() - second_prepare.data();
+        third_prepare.append(second_prepare.substr(current_index, pos - current_index));
+        std::string buffer = matched_enum.ToString();
+        std::cout << "buffer before " << buffer <<std::endl;
+        buffer[0] = '(';
+        buffer.back() = ')';
+        std::replace(buffer.begin(), buffer.end(), ',', '|');
+        std::cout << "buffer after " << buffer <<std::endl;
+        third_prepare.append(buffer);
+        current_index = input_enum.data() - second_prepare.data();
+    }
+    third_prepare += second_prepare.substr(current_index);
+    std::cout << "third_prepare " << third_prepare <<std::endl;
+    std::string result;
+    result.reserve(third_prepare.size());
+    for (const auto & letter : third_prepare)
+    {
+        if ((letter == '?') || (letter == '*'))
+        {
+            result += "[^/]";
+            if (letter == '?')
+                continue;
+        }
+        if ((letter == '.') || (letter == '{') || (letter == '}'))
+            result.push_back('\\');
+        result.push_back(letter);
+    }
+    std::cout << "result " << result <<std::endl;
+    return result;
+}
+}
