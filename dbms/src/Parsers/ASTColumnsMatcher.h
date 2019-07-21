@@ -25,10 +25,10 @@ struct AsteriskSemanticImpl;
 
 /** SELECT COLUMNS('regexp') is expanded to multiple columns like * (asterisk).
   */
-class ASTColumnsClause : public IAST
+class ASTColumnsMatcher : public IAST
 {
 public:
-    String getID(char) const override { return "ColumnsClause"; }
+    String getID(char) const override { return "ColumnsMatcher"; }
     ASTPtr clone() const override;
 
     void appendColumnName(WriteBuffer & ostr) const override;

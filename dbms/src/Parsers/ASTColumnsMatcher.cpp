@@ -1,4 +1,4 @@
-#include "ASTColumnsClause.h"
+#include "ASTColumnsMatcher.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -11,16 +11,16 @@
 namespace DB
 {
 
-ASTPtr ASTColumnsClause::clone() const
+ASTPtr ASTColumnsMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsClause>(*this);
+    auto clone = std::make_shared<ASTColumnsMatcher>(*this);
     clone->cloneChildren();
     return clone;
 }
 
-void ASTColumnsClause::appendColumnName(WriteBuffer & ostr) const { writeString(original_pattern, ostr); }
+void ASTColumnsMatcher::appendColumnName(WriteBuffer & ostr) const { writeString(original_pattern, ostr); }
 
-void ASTColumnsClause::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     WriteBufferFromOwnString pattern_quoted;
     writeQuotedString(original_pattern, pattern_quoted);
@@ -28,7 +28,7 @@ void ASTColumnsClause::formatImpl(const FormatSettings & settings, FormatState &
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(" << pattern_quoted.str() << ")";
 }
 
-void ASTColumnsClause::setPattern(String pattern)
+void ASTColumnsMatcher::setPattern(String pattern)
 {
     original_pattern = std::move(pattern);
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
@@ -36,7 +36,7 @@ void ASTColumnsClause::setPattern(String pattern)
         throw DB::Exception("COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 }
 
-bool ASTColumnsClause::isColumnMatching(const String & column_name) const
+bool ASTColumnsMatcher::isColumnMatching(const String & column_name) const
 {
     return RE2::PartialMatch(column_name, *column_matcher);
 }

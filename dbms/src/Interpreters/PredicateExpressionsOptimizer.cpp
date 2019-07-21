@@ -15,7 +15,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTColumnsClause.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -414,7 +414,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     for (const auto & projection_column : select_query->select()->children)
     {
-        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsClause>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsMatcher>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -485,7 +485,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
-            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsClause>())
+            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsMatcher>())
             {
                 for (size_t idx = 0; idx < block.columns(); ++idx)
                 {

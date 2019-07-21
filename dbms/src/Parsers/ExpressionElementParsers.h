@@ -75,7 +75,7 @@ protected:
 
 /** COLUMNS('<regular expression>')
   */
-class ParserColumnsClause : public IParserBase
+class ParserColumnsMatcher : public IParserBase
 {
 protected:
     const char * getName() const { return "COLUMNS matcher"; }
