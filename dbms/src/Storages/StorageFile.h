@@ -71,6 +71,9 @@ private:
     std::string path;
     int table_fd = -1;
 
+    bool path_with_globs = false;
+    std::vector<std::string> matched_paths;
+
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
     bool use_table_fd = false;                    /// Use table_fd insted of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin

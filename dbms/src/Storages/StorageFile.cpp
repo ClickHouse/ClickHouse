@@ -18,11 +18,18 @@
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/parseGlobs.h>
 
 #include <fcntl.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
+
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <boost/filesystem.hpp>
+
+namespace fs = boost::filesystem;
 
 namespace DB
 {
@@ -87,7 +94,24 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             path = poco_path.absolute().toString();
-            checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+            if ((path.find('*') != std::string::npos) || (path.find('?') != std::string::npos) || (path.find('{') != std::string::npos))
+            {
+                path_with_globs = true;
+                std::string path_pattern = makeRegexpPatternFromGlobs(path);
+                re2::RE2 matcher(path_pattern);
+                fs::path cur_dir(db_dir_path);
+                fs::directory_iterator end;
+                for (fs::directory_iterator it(cur_dir); it != end; ++it)
+                {
+                    const fs::path file = (*it);
+                    if (re2::RE2::FullMatch(file.string(), matcher))
+                    {
+                        matched_paths.push_back(file.string());
+                        checkCreationIsAllowed(context_global, db_dir_path, matched_paths.back(), table_fd);
+                    }
+                }
+            } else
+                checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -117,7 +141,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, size_t num_of_path)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -143,8 +167,8 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-
-            read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+            std::string path_to_read = storage.path_with_globs ? storage.matched_paths[num_of_path] : storage.path;
+            read_buf = std::make_unique<ReadBufferFromFile>(path_to_read);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
@@ -191,12 +215,26 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
-    const ColumnsDescription & columns_ = getColumns();
-    auto column_defaults = columns_.getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+    const ColumnsDescription & columns = getColumns();
+    auto column_defaults = columns.getDefaults();
+    if (!path_with_globs)
+    {
+        BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, 0);
+        if (column_defaults.empty())
+            return {block_input};
+        return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+    }
+    BlockInputStreams blocks_input;
+    blocks_input.reserve(matched_paths.size());
+    for (size_t i = 0; i < matched_paths.size(); ++i)
+    {
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, i);
+        if (column_defaults.empty())
+            blocks_input.push_back(cur_block);
+        else
+            blocks_input.push_back(std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
+    }
+    return blocks_input;
 }
 
 
