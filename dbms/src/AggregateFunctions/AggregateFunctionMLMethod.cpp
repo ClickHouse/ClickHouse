@@ -483,7 +483,7 @@ void LogisticRegression::compute(
     Float64 derivative = bias;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         derivative += weights[i] * value;
     }
     derivative *= target;
@@ -492,7 +492,7 @@ void LogisticRegression::compute(
     batch_gradient[weights.size()] += target / (derivative + 1);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         batch_gradient[i] += target * value / (derivative + 1) - 2 * l2_reg_coef * weights[i];
     }
 }
@@ -554,7 +554,7 @@ void LinearRegression::compute(
     Float64 derivative = (target - bias);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         derivative -= weights[i] * value;
     }
     derivative *= 2;
@@ -562,7 +562,7 @@ void LinearRegression::compute(
     batch_gradient[weights.size()] += derivative;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
     }
 }

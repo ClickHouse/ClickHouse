@@ -3,11 +3,15 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+
 #include "IAggregateFunction.h"
+
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -322,7 +326,7 @@ public:
     {
     }
 
-    /// This function is called when SELECT linearRegression(...) is called
+    /// This function is called when SELECT stochasticLinearRegression(...) is called
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
