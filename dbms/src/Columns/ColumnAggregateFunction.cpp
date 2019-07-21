@@ -84,7 +84,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
@@ -95,7 +95,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         if (data.size() == 1)
         {
             /// Case for const column. Predict using single model.
-            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
+            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments);
         }
         else
         {
@@ -103,7 +103,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             size_t row_num = 0;
             for (auto val : data)
             {
-                ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
+                ML_function->predictValues(val, *res, block, row_num, 1, arguments);
                 ++row_num;
             }
         }

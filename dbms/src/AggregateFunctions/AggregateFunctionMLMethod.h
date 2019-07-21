@@ -49,8 +49,7 @@ public:
         size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
-        Float64 bias,
-        const Context & context) const = 0;
+        Float64 bias) const = 0;
 };
 
 
@@ -75,8 +74,7 @@ public:
         size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
-        Float64 bias,
-        const Context & context) const override;
+        Float64 bias) const override;
 };
 
 
@@ -101,8 +99,7 @@ public:
         size_t limit,
         const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
-        Float64 bias,
-        const Context & context) const override;
+        Float64 bias) const override;
 };
 
 
@@ -272,8 +269,7 @@ public:
         Block & block,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
-        const Context & context) const;
+        const ColumnNumbers & arguments) const;
 
     void returnWeights(IColumn & to) const;
 private:
@@ -372,8 +368,7 @@ public:
         Block & block,
         size_t offset,
         size_t limit,
-        const ColumnNumbers & arguments,
-        const Context & context) const override
+        const ColumnNumbers & arguments) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception(
@@ -387,7 +382,7 @@ public:
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::BAD_CAST);
 
-        this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
+        this->data(place).predict(column->getData(), block, offset, limit, arguments);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.

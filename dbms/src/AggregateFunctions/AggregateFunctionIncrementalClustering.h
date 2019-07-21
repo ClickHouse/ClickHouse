@@ -78,7 +78,7 @@ public:
     void merge(const ClusteringData & rhs)
     {
         predicted_clusters.clear();
-        /// Ff one of cluster sets are not filled in, put its points to another cluster set
+        /// If one of cluster sets are not filled in, put its points to another cluster set
         if (rhs.clusters.size() < rhs.multiplication_factor * rhs.clusters_num)
         {
             for (size_t i = 0; i != rhs.clusters.size(); ++i)
@@ -136,8 +136,7 @@ public:
                  Block & block,
                  size_t offset,
                  size_t limit,
-                 const ColumnNumbers & arguments,
-                 const Context & /* context */) const
+                 const ColumnNumbers & arguments) const
     {
         if (dimensions + 1 != arguments.size())
             throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
@@ -628,8 +627,7 @@ public:
             Block & block,
             size_t offset,
             size_t limit,
-            const ColumnNumbers & arguments,
-            const Context & context) const override
+            const ColumnNumbers & arguments) const override
     {
         if (arguments.size() != dimensions + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " +
@@ -641,7 +639,7 @@ public:
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::BAD_CAST);
 
-        this->data(place).predict(column->getData(), block, offset, limit, arguments, context);
+        this->data(place).predict(column->getData(), block, offset, limit, arguments);
     }
 
     /// Return all clusters in one array (of size clusters_num * dimensions)
