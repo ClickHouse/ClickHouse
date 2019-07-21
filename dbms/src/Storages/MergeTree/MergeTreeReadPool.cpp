@@ -219,15 +219,15 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_columns_lock.emplace_back(part.data_part->columns_lock);
 
-        auto [columns, pre_columns, should_reorder] =
+        auto [required_columns, required_pre_columns, should_reorder] =
             getReadTaskColumns(data, part.data_part, column_names, prewhere_info, check_columns);
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-        const auto & column_names = columns.getNames();
-        per_part_column_name_set.emplace_back(column_names.begin(), column_names.end());
+        const auto & required_column_names = required_columns.getNames();
+        per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
 
-        per_part_pre_columns.push_back(std::move(pre_columns));
-        per_part_columns.push_back(std::move(columns));
+        per_part_pre_columns.push_back(std::move(required_pre_columns));
+        per_part_columns.push_back(std::move(required_columns));
         per_part_should_reorder.push_back(should_reorder);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
