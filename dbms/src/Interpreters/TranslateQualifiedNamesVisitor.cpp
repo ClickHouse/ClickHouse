@@ -16,7 +16,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTColumnsClause.h>
+#include <Parsers/ASTColumnsMatcher.h>
 
 
 namespace DB
@@ -166,7 +166,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>() || child->as<ASTColumnsClause>())
+            if (child->as<ASTAsterisk>() || child->as<ASTColumnsMatcher>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
@@ -207,7 +207,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
         }
-        else if (const auto * asterisk_pattern = child->as<ASTColumnsClause>())
+        else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
         {
             bool first_table = true;
             for (const auto & [table, table_columns] : tables_with_columns)
