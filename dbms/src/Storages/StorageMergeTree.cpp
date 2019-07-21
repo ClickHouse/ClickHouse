@@ -892,13 +892,10 @@ bool StorageMergeTree::optimize(
             {
                 std::stringstream message;
                 message << "Cannot OPTIMIZE table";
-                if (! disable_reason.empty())
-                {
+                if (!disable_reason.empty())
                     message << ": " << disable_reason;
-                } else
-                {
+                else
                     message << " by some reason.";
-                }
                 LOG_INFO(log, message.rdbuf());
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
@@ -917,13 +914,10 @@ bool StorageMergeTree::optimize(
         {
             std::stringstream message;
             message << "Cannot OPTIMIZE table";
-            if (! disable_reason.empty())
-            {
+            if (!disable_reason.empty())
                 message << ": " << disable_reason;
-            } else
-            {
+            else
                 message << " by some reason.";
-            }
             LOG_INFO(log, message.rdbuf());
 
             if (context.getSettingsRef().optimize_throw_if_noop)
