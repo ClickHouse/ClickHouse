@@ -31,14 +31,14 @@ void ASTColumnsClause::formatImpl(const FormatSettings & settings, FormatState &
 void ASTColumnsClause::setPattern(String pattern)
 {
     original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(pattern, RE2::Quiet);
+    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
         throw DB::Exception("COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 }
 
 bool ASTColumnsClause::isColumnMatching(const String & column_name) const
 {
-    return RE2::FullMatch(column_name, *column_matcher);
+    return RE2::PartialMatch(column_name, *column_matcher);
 }
 
 
