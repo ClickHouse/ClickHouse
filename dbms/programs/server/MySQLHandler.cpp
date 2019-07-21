@@ -299,9 +299,9 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         LOG_TRACE(log, "Received empty password");
     }
 
-    if (!password.empty())
+    if (!password.empty() && password.back() == 0)
     {
-        password.pop_back(); /// terminating null byte
+        password.pop_back();
     }
 
     try
