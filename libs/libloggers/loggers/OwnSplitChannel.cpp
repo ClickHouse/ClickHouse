@@ -64,14 +64,16 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         elem.thread_name = getThreadName();
         elem.thread_number = msg_ext.thread_number;
         elem.os_thread_id = msg.getOsTid();
-        elem.message = msg.getText();
 
+        elem.query_id = msg_ext.query_id;
+
+        elem.message = msg.getText();
+        elem.logger_name = msg.getSource();
         elem.level = msg.getPriority();
 
         if (msg.getSourceFile() != nullptr) {
             elem.source_file = msg.getSourceFile();
         }
-
         elem.source_line = msg.getSourceLine();
 
         text_log->add(elem);

@@ -1,7 +1,8 @@
 #pragma once
 #include <Interpreters/SystemLog.h>
 
-namespace DB {
+namespace DB
+{
 
 using Poco::Message;
 
@@ -16,7 +17,7 @@ struct TextLogElement
     UInt32 os_thread_id;
     UInt32 thread_number;
 
-    Message::Priority level;
+    Message::Priority level = Message::PRIO_TRACE;
 
     String query_id;
 
@@ -37,5 +38,4 @@ class TextLog : public SystemLog<TextLogElement>
 };
 
 
-} //namespace DB
-
+}
