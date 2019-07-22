@@ -30,7 +30,7 @@ public:
     }
 
     AggregateFunctionPtr transformAggregateFunction(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array &) const override
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
@@ -55,29 +55,29 @@ public:
         if (nested_function && nested_function->getName() == "count")
         {
             if (arguments.size() == 1)
-                return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0]);
+                return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
             else
-                return std::make_shared<AggregateFunctionCountNotNullVariadic>(arguments);
+                return std::make_shared<AggregateFunctionCountNotNullVariadic>(arguments, params);
         }
 
         if (has_null_types)
-            return std::make_shared<AggregateFunctionNothing>();
+            return std::make_shared<AggregateFunctionNothing>(arguments, params);
 
         bool return_type_is_nullable = nested_function->getReturnType()->canBeInsideNullable();
 
         if (arguments.size() == 1)
         {
             if (return_type_is_nullable)
-                return std::make_shared<AggregateFunctionNullUnary<true>>(nested_function);
+                return std::make_shared<AggregateFunctionNullUnary<true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionNullUnary<false>>(nested_function);
+                return std::make_shared<AggregateFunctionNullUnary<false>>(nested_function, arguments, params);
         }
         else
         {
             if (return_type_is_nullable)
-                return std::make_shared<AggregateFunctionNullVariadic<true>>(nested_function, arguments);
+                return std::make_shared<AggregateFunctionNullVariadic<true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionNullVariadic<false>>(nested_function, arguments);
+                return std::make_shared<AggregateFunctionNullVariadic<false>>(nested_function, arguments, params);
         }
     }
 };

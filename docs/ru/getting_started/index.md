@@ -4,7 +4,7 @@
 
 ClickHouse может работать на любом Linux, FreeBSD или Mac OS X с архитектурой процессора x86\_64.
 
-Хотя предсобранные релизы обычно компилируются с использованием набора инструкций SSE 4.2, что добавляет использование поддерживающего его процессора в список системных требований. Команда для п проверки наличия поддержки инструкций SSE 4.2 на текущем процессоре:
+Хотя предсобранные релизы обычно компилируются с использованием набора инструкций SSE 4.2, что добавляет использование поддерживающего его процессора в список системных требований. Команда для проверки наличия поддержки инструкций SSE 4.2 на текущем процессоре:
 
 ```bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -27,7 +27,8 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 Затем для самой установки пакетов выполните:
 
 ```bash
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+sudo apt-get install dirmngr    # optional
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
@@ -50,7 +51,7 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ### Из исходникого кода
 
-Для компиляции ClickHouse вручную, испольщуйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build_osx.md).
+Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build_osx.md).
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 
@@ -73,7 +74,7 @@ Server: dbms/programs/clickhouse-server
 Для запуска сервера в качестве демона, выполните:
 
 ``` bash
-% sudo service clickhouse-server start
+$ sudo service clickhouse-server start
 ```
 
 Смотрите логи в директории `/var/log/clickhouse-server/`.
@@ -95,9 +96,9 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 $ clickhouse-client
 ```
 
-По умолчанию он соединяется с localhost:9000, от имени пользователя `default` без пароля. Также клиент может быть использован для соединения с удалённым сервером с помощью аргемента `--host`.
+По умолчанию он соединяется с localhost:9000, от имени пользователя `default` без пароля. Также клиент может быть использован для соединения с удалённым сервером с помощью аргумента `--host`.
 
-Терминал должен использлвать кодировку UTF-8.
+Терминал должен использовать кодировку UTF-8.
 
 Более подробная информация о клиенте располагается в разделе [«Клиент командной строки»](../interfaces/cli.md).
 

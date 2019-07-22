@@ -155,10 +155,10 @@ int main(int argc, char ** argv)
             map.emplace(rand(), it, inserted);
             if (inserted)
             {
-                new(&it->second) Arr(n);
+                new(&it->getSecond()) Arr(n);
 
                 for (size_t j = 0; j < n; ++j)
-                    it->second[j] = field;
+                    it->getSecond()[j] = field;
             }
         }
 

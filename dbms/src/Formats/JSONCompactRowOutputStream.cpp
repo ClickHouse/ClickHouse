@@ -8,15 +8,15 @@
 namespace DB
 {
 
-JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings)
-    : JSONRowOutputStream(ostr_, sample_, settings)
+JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings_)
+    : JSONRowOutputStream(ostr_, sample_, settings_)
 {
 }
 
 
 void JSONCompactRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextJSON(column, row_num, *ostr, settings);
+    type.serializeAsTextJSON(column, row_num, *ostr, settings);
     ++field_number;
 }
 
@@ -58,7 +58,7 @@ void JSONCompactRowOutputStream::writeTotals()
                 writeChar(',', *ostr);
 
             const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
-            column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
+            column.type->serializeAsTextJSON(*column.column.get(), 0, *ostr, settings);
         }
 
         writeChar(']', *ostr);
@@ -79,7 +79,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
             writeChar(',', ostr);
 
         const ColumnWithTypeAndName & column = extremes.safeGetByPosition(i);
-        column.type->serializeTextJSON(*column.column.get(), row_num, ostr, settings);
+        column.type->serializeAsTextJSON(*column.column.get(), row_num, ostr, settings);
     }
 
     writeChar(']', ostr);

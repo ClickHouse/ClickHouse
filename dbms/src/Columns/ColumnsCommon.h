@@ -44,7 +44,7 @@ namespace detail
     const PaddedPODArray<T> * getIndexesData(const IColumn & indexes);
 }
 
-/// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, size_t limit).
+/// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, UInt64 limit).
 template <typename Column>
 ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t limit)
 {

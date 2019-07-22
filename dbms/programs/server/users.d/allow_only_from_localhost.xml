@@ -4,7 +4,6 @@
         <default>
             <networks replace="replace">
                 <ip>::1</ip>
-                <ip>0.0.0.0</ip>
                 <ip>127.0.0.1</ip>
             </networks>
         </default>

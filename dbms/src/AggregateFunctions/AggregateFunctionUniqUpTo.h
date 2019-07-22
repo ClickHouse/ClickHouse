@@ -1,15 +1,19 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+
 #include <Columns/ColumnsNumber.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -132,8 +136,9 @@ private:
     UInt8 threshold;
 
 public:
-    AggregateFunctionUniqUpTo(UInt8 threshold)
-        : threshold(threshold)
+    AggregateFunctionUniqUpTo(UInt8 threshold, const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types_, params_)
+        , threshold(threshold)
     {
     }
 
@@ -191,8 +196,9 @@ private:
     UInt8 threshold;
 
 public:
-    AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, UInt8 threshold)
-        : threshold(threshold)
+    AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, const Array & params, UInt8 threshold)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>(arguments, params)
+        , threshold(threshold)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();

@@ -64,9 +64,9 @@ inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, siz
 
     if (prev_positions.size() > key_index
         && prev_positions[key_index] != name_map.end()
-        && name == prev_positions[key_index]->first)
+        && name == prev_positions[key_index]->getFirst())
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index]->getSecond();
     }
     else
     {
@@ -77,7 +77,7 @@ inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, siz
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->second;
+            return it->getSecond();
         }
         else
             return UNKNOWN_FIELD;
@@ -134,7 +134,7 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
 
     try
     {
-        header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
+        header.getByPosition(index).type->deserializeAsTextJSON(*columns[index], istr, format_settings);
     }
     catch (Exception & e)
     {
@@ -209,7 +209,8 @@ void JSONEachRowRowInputStream::readNestedData(const String & name, MutableColum
     nested_prefix_length = 0;
 }
 
-bool JSONEachRowRowInputStream::read(MutableColumns & columns)
+
+bool JSONEachRowRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 {
     skipWhitespaceIfAny(istr);
 
@@ -229,7 +230,6 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
     size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    /// TODO Ability to provide your DEFAULTs.
     read_columns.assign(num_columns, false);
 
     nested_prefix_length = 0;
@@ -240,6 +240,8 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
         if (!read_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
+    /// return info about defaults set
+    ext.read_columns = read_columns;
     return true;
 }
 
@@ -256,12 +258,14 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context &,
-        size_t max_block_size,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size,
+        FormatFactory::ReadCallback callback,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings),
-            sample, max_block_size, settings);
+            sample, max_block_size, rows_portion_size, callback, settings);
     });
 }
 

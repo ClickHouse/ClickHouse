@@ -8,6 +8,7 @@
     - [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
 - PHP
+    - [SeasClick](https://github.com/SeasX/SeasClick)
     - [phpClickHouse](https://github.com/smi2/phpClickHouse)
     - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
     - [clickhouse-client](https://github.com/bozerkins/clickhouse-client)

@@ -4,9 +4,6 @@ target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system cl
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log PRIVATE dbms)
 
-add_executable (seek_speed_test seek_speed_test.cpp)
-target_link_libraries (seek_speed_test PRIVATE dbms)
-
 add_executable (part_checker part_checker.cpp)
 target_link_libraries (part_checker PRIVATE dbms)
 
@@ -27,3 +24,6 @@ target_link_libraries (get_current_inserts_in_replicated PRIVATE dbms clickhouse
 
 add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_all_partitions.cpp)
 target_link_libraries (get_abandonable_lock_in_all_partitions PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper)
+
+add_executable (transform_part_zk_nodes transform_part_zk_nodes.cpp)
+target_link_libraries (transform_part_zk_nodes PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})

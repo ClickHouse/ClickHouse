@@ -34,11 +34,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const auto & src = block.getByPosition(arguments[0]).column;
-        if (ColumnPtr converted = src->convertToFullColumnIfConst())
-            block.getByPosition(result).column = converted;
-        else
-            block.getByPosition(result).column = src;
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
     }
 };
 

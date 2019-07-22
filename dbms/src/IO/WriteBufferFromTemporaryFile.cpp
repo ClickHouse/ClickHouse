@@ -16,9 +16,7 @@ namespace ErrorCodes
 
 
 WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
-:
-WriteBufferFromFile(tmp_file_->path(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, 0600),
-tmp_file(std::move(tmp_file_))
+    : WriteBufferFromFile(tmp_file_->path(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, 0600), tmp_file(std::move(tmp_file_))
 {}
 
 
@@ -34,7 +32,6 @@ WriteBufferFromTemporaryFile::Ptr WriteBufferFromTemporaryFile::create(const std
 class ReadBufferFromTemporaryWriteBuffer : public ReadBufferFromFile
 {
 public:
-
     static ReadBufferPtr createFrom(WriteBufferFromTemporaryFile * origin)
     {
         int fd = origin->getFD();
@@ -47,8 +44,8 @@ public:
         return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
     }
 
-    ReadBufferFromTemporaryWriteBuffer(int fd, const std::string & file_name, std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
-    : ReadBufferFromFile(fd, file_name), tmp_file(std::move(tmp_file_))
+    ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
+        : ReadBufferFromFile(fd_, file_name_), tmp_file(std::move(tmp_file_))
     {}
 
     std::unique_ptr<Poco::TemporaryFile> tmp_file;

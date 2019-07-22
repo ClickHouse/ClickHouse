@@ -10,7 +10,7 @@ struct BitRotateLeftImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         return (static_cast<Result>(a) << static_cast<Result>(b))
             | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));

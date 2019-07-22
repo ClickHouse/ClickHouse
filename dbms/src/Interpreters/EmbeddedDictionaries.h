@@ -2,14 +2,14 @@
 
 #include <thread>
 #include <functional>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Event.h>
 
 
 namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
 class RegionsHierarchies;
-class TechDataHierarchy;
 class RegionsNames;
 class IGeoDictionariesLoader;
 
@@ -29,7 +29,6 @@ private:
     Context & context;
 
     MultiVersion<RegionsHierarchies> regions_hierarchies;
-    MultiVersion<TechDataHierarchy> tech_data_hierarchy;
     MultiVersion<RegionsNames> regions_names;
 
     std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader;
@@ -41,7 +40,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::thread reloading_thread;
+    ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
 
 
@@ -82,11 +81,6 @@ public:
     MultiVersion<RegionsHierarchies>::Version getRegionsHierarchies() const
     {
         return regions_hierarchies.get();
-    }
-
-    MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
-    {
-        return tech_data_hierarchy.get();
     }
 
     MultiVersion<RegionsNames>::Version getRegionsNames() const

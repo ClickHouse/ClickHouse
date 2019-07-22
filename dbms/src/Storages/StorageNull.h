@@ -19,6 +19,7 @@ class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
 public:
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -31,24 +32,28 @@ public:
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }
 
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override
     {
         table_name = new_table_name;
+        database_name = new_database_name;
     }
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
     String table_name;
+    String database_name;
 
 protected:
-    StorageNull(String table_name_, ColumnsDescription columns_description_)
-        : IStorage{std::move(columns_description_)}, table_name(std::move(table_name_))
+    StorageNull(String database_name_, String table_name_, ColumnsDescription columns_description_)
+        : IStorage{std::move(columns_description_)}, table_name(std::move(table_name_)), database_name(std::move(database_name_))
     {
     }
 };

@@ -28,7 +28,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
@@ -37,7 +37,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
@@ -50,7 +50,7 @@ private:
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
-        size_t max_block_size,
+        UInt64 max_block_size,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         const Names & virt_columns,
@@ -59,7 +59,7 @@ private:
     BlockInputStreams spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const Names & column_names,
-        size_t max_block_size,
+        UInt64 max_block_size,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         const Names & virt_columns,
@@ -78,8 +78,15 @@ private:
         const Context & context) const;
 
     MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPart::Index & index,
+        const MergeTreeData::DataPartPtr & part,
         const KeyCondition & key_condition,
+        const Settings & settings) const;
+
+    MarkRanges filterMarksUsingIndex(
+        MergeTreeIndexPtr index,
+        MergeTreeIndexConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
         const Settings & settings) const;
 };
 

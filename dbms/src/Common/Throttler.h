@@ -108,7 +108,7 @@ public:
 private:
     size_t count = 0;
     const size_t max_speed = 0;
-    const size_t limit = 0;        /// 0 - not limited.
+    const UInt64 limit = 0;        /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;

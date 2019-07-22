@@ -54,7 +54,7 @@ public:
     template <typename Callback>
     Int64 add(Int64 delta, Callback && locked_callback, bool create_if_need = false)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         Int64 res = -1;
 

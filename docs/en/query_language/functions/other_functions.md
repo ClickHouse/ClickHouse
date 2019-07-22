@@ -4,6 +4,55 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## basename
+
+Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
+
+```
+basename( expr )
+```
+
+**Parameters**
+
+- `expr` — Expression resulting in a [String](../../data_types/string.md) type value. All the backslashes must be escaped in the resulting value.
+
+**Returned Value**
+
+A string that contains:
+
+- The trailing part of a string after the last slash or backslash.
+
+    If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+
+- The original string if there are no slashes or backslashes.
+
+**Example**
+
+```sql
+SELECT 'some/long/path/to/file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some-file-name' AS a, basename(a)
+```
+```text
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
+```
+
 ## visibleWidth(x)
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
@@ -25,7 +74,7 @@ Returns a string containing the type name of the passed argument.
 
 If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
-## blockSize()
+## blockSize() {#function-blocksize}
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
@@ -43,6 +92,10 @@ However, the argument is still evaluated. This can be used for benchmarks.
 ## sleep(seconds)
 
 Sleeps 'seconds' seconds on each data block. You can specify an integer or a floating-point number.
+
+## sleepEachRow(seconds)
+
+Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-point number.
 
 ## currentDatabase()
 
@@ -122,7 +175,6 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-<a name="other_functions-transform"></a>
 
 ## transform
 
@@ -147,7 +199,7 @@ Types:
 
 `T` and `U` can be numeric, string, or Date or DateTime types.
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
-For example, the first argument can have the Int64 type, while the second has the Array(Uint16) type.
+For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
 If the 'x' value is equal to one of the elements in the 'array_from' array, it returns the existing element (that is numbered the same) from the 'array_to' array. Otherwise, it returns 'default'. If there are multiple matching elements in 'array_from', it returns one of the matches.
 
@@ -243,11 +295,23 @@ Returns the server's uptime in seconds.
 
 Returns the version of the server as a string.
 
+## timezone()
+
+Returns the timezone of the server.
+
+## blockNumber
+
+Returns the sequence number of the data block where the row is located.
+
+## rowNumberInBlock {#function-rownumberinblock}
+
+Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
+
 ## rowNumberInAllBlocks()
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## runningDifference(x)
+## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
@@ -284,6 +348,10 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
+## runningDifferenceStartingWithFirstValue
+
+Same as for [runningDifference](./other_functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+
 ## MACNumToString(num)
 
 Accepts a UInt64 number. Interprets it as a MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
@@ -298,7 +366,7 @@ Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers i
 
 ## getSizeOfEnumType
 
-Returns the number of fields in [Enum](../../data_types/enum.md#data_type-enum).
+Returns the number of fields in [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -337,7 +405,7 @@ toColumnTypeName(value)
 
 **Returned values**
 
-- A string with the name of the class that is used for representing the `value`  data type in RAM.
+- A string with the name of the class that is used for representing the `value` data type in RAM.
 
 **Example of the difference between` toTypeName ' and ' toColumnTypeName`**
 
@@ -377,7 +445,7 @@ dumpColumnStructure(value)
 
 **Returned values**
 
-- A string describing the structure that is used for representing the `value`  data type in RAM.
+- A string describing the structure that is used for representing the `value` data type in RAM.
 
 **Example**
 
@@ -407,7 +475,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` for numbers.
 - Empty string for strings.
-- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md).
 
 **Example**
 
@@ -441,11 +509,11 @@ The expression passed to the function is not calculated, but ClickHouse applies 
 
 **Returned value**
 
-- 1. 
+- 1.
 
 **Example**
 
-Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime
@@ -559,5 +627,57 @@ SELECT replicate(1, ['a', 'b', 'c'])
 └───────────────────────────────┘
 ```
 
+## filesystemAvailable {#function-filesystemavailable}
+
+Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+
+```
+filesystemAvailable()
+```
+
+**Returned values**
+
+- Amount of remaining space in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
+
+## filesystemCapacity
+
+Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
+
+## finalizeAggregation {#function-finalizeaggregation}
+
+Takes state of aggregate function. Returns result of aggregation (finalized state).
+
+## runningAccumulate {#function-runningaccumulate}
+
+Takes the states of the aggregate function and returns a column with values, are the result of the accumulation of these states for a set of block lines, from the first to the current line.
+For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
+So, result of function depends on partition of data to blocks and on order of data in block.
+
+## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+
+Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+
+Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+
+## modelEvaluate(model_name, ...)
+Evaluate external model.
+Accepts a model name and model arguments. Returns Float64.
+
+## throwIf(x)
+
+Throw an exception if the argument is non zero.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->

@@ -1,6 +1,6 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <IO/ReadBufferAIO.h>
 #endif
 #include <Common/ProfileEvents.h>
@@ -31,11 +31,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::
     }
     else
     {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIO);
         return std::make_unique<ReadBufferAIO>(filename_, buffer_size_, flags_, existing_memory_);
 #else
-        throw Exception("AIO is not implemented yet on non-Linux OS", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("AIO is implemented only on Linux and FreeBSD", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 }

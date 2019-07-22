@@ -13,7 +13,7 @@ chl="$CLICKHOUSE_CLIENT -q"
 ch_dir=`${CLICKHOUSE_EXTRACT_CONFIG} -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
-$chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"
+$chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(31), 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(1), 2)"
 
@@ -26,7 +26,8 @@ done
 $chl "ALTER TABLE test.partition_428 FREEZE"
 
 # Do `cd` for consistent output for reference
-cd $ch_dir && find shadow -type f -exec md5sum {} \; | sort
+# Do not check increment.txt - it can be changed by other tests with FREEZE
+cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428" | sed 's!shadow/[0-9]*/data/[a-z0-9_-]*/!shadow/1/data/test/!g' | sort | uniq
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
@@ -40,7 +41,7 @@ done
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"
 
 # Check the backup hasn't changed
-cd $ch_dir && find shadow -type f -exec md5sum {} \; | sort
+cd $ch_dir && find shadow -type f -exec md5sum {} \; | grep "partition_428" | sed 's!shadow/[0-9]*/data/[a-z0-9_-]*/!shadow/1/data/test/!g' | sort | uniq
 
 $chl "OPTIMIZE TABLE test.partition_428"
 
@@ -50,7 +51,7 @@ $chl "DROP TABLE test.partition_428"
 # Test 2. Simple test
 
 $chl "drop table if exists test.partition_428"
-$chl "create table test.partition_428 (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) ENGINE=MergeTree(date,sample_key,(date,x,sample_key),8192)"
+$chl "create table test.partition_428 (date MATERIALIZED toDate(0), x UInt64, sample_key MATERIALIZED intHash64(x)) ENGINE=MergeTree PARTITION BY date SAMPLE BY sample_key ORDER BY (date,x,sample_key) SETTINGS index_granularity=8192, index_granularity_bytes=0"
 $chl "insert into test.partition_428 ( x ) VALUES ( now() )"
 $chl "insert into test.partition_428 ( x ) VALUES ( now()+1 )"
 $chl "alter table test.partition_428 detach partition 197001"

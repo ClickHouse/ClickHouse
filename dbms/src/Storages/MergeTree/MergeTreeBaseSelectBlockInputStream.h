@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -14,7 +14,7 @@ class MarkCache;
 
 
 /// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
-class MergeTreeBaseSelectBlockInputStream : public IProfilingBlockInputStream
+class MergeTreeBaseSelectBlockInputStream : public IBlockInputStream
 {
 public:
     MergeTreeBaseSelectBlockInputStream(
@@ -71,8 +71,6 @@ protected:
     using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
-
-    UInt64 max_block_size_marks;
 };
 
 }

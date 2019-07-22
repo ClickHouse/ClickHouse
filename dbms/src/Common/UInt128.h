@@ -6,7 +6,7 @@
 
 #include <Core/Types.h>
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
@@ -63,7 +63,7 @@ template <typename T> bool inline operator>  (T a, const UInt128 b) { return UIn
 template <typename T> bool inline operator<= (T a, const UInt128 b) { return UInt128(a) <= b; }
 template <typename T> bool inline operator<  (T a, const UInt128 b) { return UInt128(a) < b; }
 
-template <> constexpr bool IsNumber<UInt128> = true;
+template <> inline constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static const char * get() { return "UInt128"; } };
 template <> struct TypeId<UInt128> { static constexpr const TypeIndex value = TypeIndex::UInt128; };
 
@@ -75,7 +75,7 @@ struct UInt128Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt128HashCRC32
 {
@@ -153,7 +153,7 @@ struct UInt256Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt256HashCRC32
 {

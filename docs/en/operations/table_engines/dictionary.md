@@ -1,8 +1,7 @@
-<a name="table_engines-dictionary"></a>
 
 # Dictionary
 
-The `Dictionary` engine displays the [dictionary](../../query_language/dicts/external_dicts.md#dicts-external_dicts) data as a ClickHouse table.
+The `Dictionary` engine displays the [dictionary](../../query_language/dicts/external_dicts.md) data as a ClickHouse table.
 
 As an example, consider a dictionary of `products` with the following configuration:
 

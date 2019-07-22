@@ -11,7 +11,7 @@ In a "normal" row-oriented DBMS, data is stored in this order:
 | #2 | 89953706054 | 1 | Mission | 1 | 2016-05-18 07:38:00 |
 | #N | ... | ... | ... | ... | ... |
 
-In order words, all the values related to a row are physically stored next to each other.
+In other words, all the values related to a row are physically stored next to each other.
 
 Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 {: .grey }

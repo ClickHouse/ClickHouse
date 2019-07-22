@@ -15,33 +15,33 @@
 
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
-  * - some data structure is used to calculate the value of X;
-  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
-  * - after processing all elements, the data structure is in some state S;
-  * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
-  *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
-  */
+  * - some data structure is used to calculate the value of X;
+  * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
+  * - after processing all elements, the data structure is in some state S;
+  * - as an approximate value of X, the value calculated according to the maximum likelihood principle is returned:
+  *   at what real value X, the probability of finding the data structure in the obtained state S is maximal.
+  */
 
 /** In particular, what is described below can be found by the name of the BJKST algorithm.
-  */
+  */
 
 /** Very simple hash-set for approximate number of unique values.
-  * Works like this:
-  * - you can insert UInt64;
-  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
-  * - the original value is not saved (lost);
-  * - further all operations are made with these hashes;
-  * - hash table is constructed according to the scheme:
-  * -  open addressing (one buffer, position in buffer is calculated by taking remainder of division by its size);
-  * -  linear probing (if the cell already has a value, then the cell following it is taken, etc.);
-  * -  the missing value is zero-encoded; to remember presence of zero in set, separate variable of type bool is used;
-  * -  buffer growth by 2 times when filling more than 50%;
-  * - if the set has more UNIQUES_HASH_MAX_SIZE elements, then all the elements are removed from the set,
-  *   not divisible by 2, and then all elements that do not divide by 2 are not inserted into the set;
-  * - if the situation repeats, then only elements dividing by 4, etc., are taken.
-  * - the size() method returns an approximate number of elements that have been inserted into the set;
-  * - there are methods for quick reading and writing in binary and text form.
-  */
+  * Works like this:
+  * - you can insert UInt64;
+  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
+  * - the original value is not saved (lost);
+  * - further all operations are made with these hashes;
+  * - hash table is constructed according to the scheme:
+  * -  open addressing (one buffer, position in buffer is calculated by taking remainder of division by its size);
+  * -  linear probing (if the cell already has a value, then the cell following it is taken, etc.);
+  * -  the missing value is zero-encoded; to remember presence of zero in set, separate variable of type bool is used;
+  * -  buffer growth by 2 times when filling more than 50%;
+  * - if the set has more UNIQUES_HASH_MAX_SIZE elements, then all the elements are removed from the set,
+  *   not divisible by 2, and then all elements that do not divide by 2 are not inserted into the set;
+  * - if the situation repeats, then only elements dividing by 4, etc., are taken.
+  * - the size() method returns an approximate number of elements that have been inserted into the set;
+  * - there are methods for quick reading and writing in binary and text form.
+  */
 
 /// The maximum degree of buffer size before the values are discarded
 #define UNIQUES_HASH_MAX_SIZE_DEGREE 17
@@ -50,8 +50,8 @@
 #define UNIQUES_HASH_MAX_SIZE (1ULL << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
 
 /** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
-  * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
-  */
+  * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
+  */
 #define UNIQUES_HASH_BITS_FOR_SKIP (32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
 
 /// Initial buffer size degree
@@ -59,8 +59,8 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
-  */
+  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
+  */
 struct UniquesHashSetDefaultHash
 {
     size_t operator() (UInt64 x) const
@@ -126,20 +126,32 @@ private:
     {
         for (size_t i = 0; i < buf_size(); ++i)
         {
-            if (buf[i] && !good(buf[i]))
+            if (buf[i])
             {
-                buf[i] = 0;
-                --m_size;
+                if (!good(buf[i]))
+                {
+                    buf[i] = 0;
+                    --m_size;
+                }
+                /** After removing the elements, there may have been room for items,
+                  * which were placed further than necessary, due to a collision.
+                  * You need to move them.
+                  */
+                else if (i != place(buf[i]))
+                {
+                    HashValue x = buf[i];
+                    buf[i] = 0;
+                    reinsertImpl(x);
+                }
             }
         }
 
-        /** After removing the elements, there may have been room for items,
-          * which were placed further than necessary, due to a collision.
-          * You need to move them.
+        /** We must process first collision resolution chain once again.
+          * Look at the comment in "resize" function.
           */
-        for (size_t i = 0; i < buf_size(); ++i)
+        for (size_t i = 0; i < buf_size() && buf[i]; ++i)
         {
-            if (unlikely(buf[i] && i != place(buf[i])))
+            if (i != place(buf[i]))
             {
                 HashValue x = buf[i];
                 buf[i] = 0;

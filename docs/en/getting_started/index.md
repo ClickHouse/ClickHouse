@@ -27,7 +27,8 @@ If you want to use the most recent version, replace `stable` with `testing` (thi
 Then run these commands to actually install packages:
 
 ```bash
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+sudo apt-get install dirmngr    # optional
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```

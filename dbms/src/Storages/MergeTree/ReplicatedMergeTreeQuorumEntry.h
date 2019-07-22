@@ -20,7 +20,7 @@ namespace DB
 struct ReplicatedMergeTreeQuorumEntry
 {
     String part_name;
-    size_t required_number_of_replicas;
+    size_t required_number_of_replicas{};
     std::set<String> replicas;
 
     ReplicatedMergeTreeQuorumEntry() {}

@@ -1,5 +1,5 @@
-add_subdirectory (System)
+add_subdirectory(System)
 
-if (ENABLE_TESTS)
-    add_subdirectory (tests)
-endif ()
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()

@@ -41,6 +41,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICA";
         case Type::SYNC_REPLICA:
             return "SYNC REPLICA";
+        case Type::FLUSH_DISTRIBUTED:
+            return "FLUSH DISTRIBUTED";
         case Type::RELOAD_DICTIONARY:
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
@@ -59,12 +61,16 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START FETCHES";
         case Type::STOP_REPLICATED_SENDS:
             return "STOP REPLICATED SENDS";
-        case Type::START_REPLICATEDS_SENDS:
+        case Type::START_REPLICATED_SENDS:
             return "START REPLICATED SENDS";
         case Type::STOP_REPLICATION_QUEUES:
             return "STOP REPLICATION QUEUES";
         case Type::START_REPLICATION_QUEUES:
             return "START REPLICATION QUEUES";
+        case Type::STOP_DISTRIBUTED_SENDS:
+            return "STOP DISTRIBUTED SENDS";
+        case Type::START_DISTRIBUTED_SENDS:
+            return "START DISTRIBUTED SENDS";
         case Type::FLUSH_LOGS:
             return "FLUSH LOGS";
         default:
@@ -97,14 +103,16 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_FETCHES
         || type == Type::START_FETCHES
         || type == Type::STOP_REPLICATED_SENDS
-        || type == Type::START_REPLICATEDS_SENDS
+        || type == Type::START_REPLICATED_SENDS
         || type == Type::STOP_REPLICATION_QUEUES
-        || type == Type::START_REPLICATION_QUEUES)
+        || type == Type::START_REPLICATION_QUEUES
+        || type == Type::STOP_DISTRIBUTED_SENDS
+        || type == Type::START_DISTRIBUTED_SENDS)
     {
         if (!target_table.empty())
             print_database_table();
     }
-    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA)
+    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
     {
         print_database_table();
     }

@@ -1,12 +1,14 @@
 #pragma once
 
+#include <Interpreters/Aliases.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
 struct SyntaxAnalyzerResult
 {
@@ -14,8 +16,6 @@ struct SyntaxAnalyzerResult
 
     NamesAndTypesList source_columns;
 
-    /// Note: used only in tests.
-    using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
@@ -54,16 +54,22 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class SyntaxAnalyzer
 {
 public:
-    SyntaxAnalyzer(const Context & context, StoragePtr storage) : context(context), storage(std::move(storage)) {}
+    SyntaxAnalyzer(const Context & context_, const SelectQueryOptions & select_options = {})
+        : context(context_)
+        , subquery_depth(select_options.subquery_depth)
+        , remove_duplicates(select_options.remove_duplicates)
+    {}
 
     SyntaxAnalyzerResultPtr analyze(
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         const Names & required_result_columns = {},
-        size_t subquery_depth = 0) const;
+        StoragePtr storage = {}) const;
 
+private:
     const Context & context;
-    StoragePtr storage;
+    size_t subquery_depth;
+    bool remove_duplicates;
 };
 
 }

@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -25,8 +26,9 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     CollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
-            const String & sign_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
+            const String & sign_column, size_t max_block_size_,
+            WriteBuffer * out_row_sources_buf_ = nullptr, bool average_block_sizes_ = false)
+        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_, false, average_block_sizes_)
     {
         sign_column_number = header.getPositionByName(sign_column);
     }
@@ -74,7 +76,7 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Output to result rows for the current primary key.
-    void insertRows(MutableColumns & merged_columns, size_t & merged_rows);
+    void insertRows(MutableColumns & merged_columns, size_t block_size, MergeStopCondition & condition);
 
     void reportIncorrectData();
 };

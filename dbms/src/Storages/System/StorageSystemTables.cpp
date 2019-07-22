@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int TABLE_IS_DROPPED;
 }
 
 
@@ -60,13 +61,13 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
 }
 
 
-class TablesBlockInputStream : public IProfilingBlockInputStream
+class TablesBlockInputStream : public IBlockInputStream
 {
 public:
     TablesBlockInputStream(
         std::vector<UInt8> columns_mask,
         Block header,
-        size_t max_block_size,
+        UInt64 max_block_size,
         ColumnPtr databases,
         const Context & context)
         : columns_mask(std::move(columns_mask)), header(std::move(header)), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
@@ -173,8 +174,23 @@ protected:
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
-                ++rows_count;
                 auto table_name = tables_it->name();
+                const StoragePtr & table = tables_it->table();
+
+                TableStructureReadLockHolder lock;
+
+                try
+                {
+                    lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        continue;
+                    throw;
+                }
+
+                ++rows_count;
 
                 size_t src_index = 0;
                 size_t res_index = 0;
@@ -186,13 +202,13 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getName());
+                    res_columns[res_index++]->insert(table->getName());
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getDataPath());
+                    res_columns[res_index++]->insert(table->getDataPath());
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
@@ -236,7 +252,7 @@ protected:
 
                         if (ast)
                         {
-                            const ASTCreateQuery & ast_create = typeid_cast<const ASTCreateQuery &>(*ast);
+                            const auto & ast_create = ast->as<ASTCreateQuery &>();
                             if (ast_create.storage)
                             {
                                 engine_full = queryToString(*ast_create.storage);
@@ -253,11 +269,10 @@ protected:
                 else
                     src_index += 2;
 
-                const auto table_it = context.getTable(database_name, table_name);
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPartitionKeyAST()))
+                    if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -265,7 +280,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getSortingKeyAST()))
+                    if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -273,7 +288,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPrimaryKeyAST()))
+                    if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -281,7 +296,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getSamplingKeyAST()))
+                    if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -295,7 +310,7 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     Block header;
-    size_t max_block_size;
+    UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseIteratorPtr tables_it;

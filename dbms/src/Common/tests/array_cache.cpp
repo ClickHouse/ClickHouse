@@ -60,7 +60,7 @@ int main(int argc, char ** argv)
         {
             pcg64 generator(randomSeed());
 
-            for (size_t i = 0; i < num_iterations; ++i)
+            for (size_t j = 0; j < num_iterations; ++j)
             {
                 size_t size = std::uniform_int_distribution<size_t>(1, region_max_size)(generator);
                 int key = std::uniform_int_distribution<int>(1, max_key)(generator);
@@ -70,8 +70,8 @@ int main(int argc, char ** argv)
                     [=]{ return size; },
                     [=](void * /*ptr*/, int & payload)
                     {
-                        payload = i;
-                //        memset(ptr, i, size);
+                        payload = j;
+                //        memset(ptr, j, size);
                     },
                     nullptr);
 

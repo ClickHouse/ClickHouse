@@ -38,6 +38,7 @@ public:
 };
 
 
+/// Allocates in Arena with proper alignment.
 template <size_t alignment>
 class AlignedArenaAllocator
 {
@@ -69,14 +70,14 @@ public:
 
 
 /// Switches to ordinary Allocator after REAL_ALLOCATION_TRESHOLD bytes to avoid fragmentation and trash in Arena.
-template <size_t REAL_ALLOCATION_TRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator>
+template <size_t REAL_ALLOCATION_TRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator, size_t alignment = 0>
 class MixedArenaAllocator : private TRealAllocator
 {
 public:
 
     void * alloc(size_t size, Arena * arena)
     {
-        return (size < REAL_ALLOCATION_TRESHOLD) ? TArenaAllocator::alloc(size, arena) : TRealAllocator::alloc(size);
+        return (size < REAL_ALLOCATION_TRESHOLD) ? TArenaAllocator::alloc(size, arena) : TRealAllocator::alloc(size, alignment);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
@@ -87,9 +88,9 @@ public:
             return TArenaAllocator::realloc(buf, old_size, new_size, arena);
 
         if (old_size >= REAL_ALLOCATION_TRESHOLD)
-            return TRealAllocator::realloc(buf, old_size, new_size);
+            return TRealAllocator::realloc(buf, old_size, new_size, alignment);
 
-        void * new_buf = TRealAllocator::alloc(new_size);
+        void * new_buf = TRealAllocator::alloc(new_size, alignment);
         memcpy(new_buf, buf, old_size);
         return new_buf;
     }
@@ -103,11 +104,11 @@ public:
 
 
 template <size_t alignment, size_t REAL_ALLOCATION_TRESHOLD = 4096>
-using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>>;
+using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>, alignment>;
 
 
 template <size_t N = 64, typename Base = ArenaAllocator>
-class ArenaAllocatorWithStackMemoty : public Base
+class ArenaAllocatorWithStackMemory : public Base
 {
     char stack_memory[N];
 

@@ -1,12 +1,12 @@
 #pragma once
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <Core/Defines.h>
 #include <IO/AIO.h>
+#include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
 
 #include <string>

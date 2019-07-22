@@ -17,7 +17,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t limit = std::stol(argv[1]);
+    UInt64 limit = std::stol(argv[1]);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);

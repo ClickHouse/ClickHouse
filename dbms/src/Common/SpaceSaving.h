@@ -40,7 +40,7 @@ struct SpaceSavingArena
 
 /*
  * Specialized storage for StringRef with a freelist arena.
- * Keys of this type that are retained on insertion must be serialised into local storage,
+ * Keys of this type that are retained on insertion must be serialized into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
 template <>
@@ -79,7 +79,7 @@ private:
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
-        return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
     }
 
 public:
@@ -152,7 +152,7 @@ public:
         auto it = counter_map.find(key, hash);
         if (it != counter_map.end())
         {
-            auto c = it->second;
+            auto c = it->getSecond();
             c->count += increment;
             c->error += error;
             percolate(c);
@@ -167,6 +167,16 @@ public:
         }
 
         auto min = counter_list.back();
+        // The key doesn't exist and cannot fit in the current top K, but
+        // the new key has a bigger weight and is virtually more present
+        // compared to the element who is less present on the set. This part
+        // of the code is useful for the function topKWeighted
+        if (increment > min->count)
+        {
+            destroyLastElement();
+            push(new Counter(arena.emplace(key), increment, error, hash));
+            return;
+        }
         const size_t alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
         if (alpha + increment < min->count)
@@ -189,8 +199,8 @@ public:
             min->error = alpha + error;
             percolate(min);
 
-            it->second = min;
-            it->first = min->key;
+            it->getSecond() = min;
+            it->getFirstMutable() = min->key;
             counter_map.reinsert(it, hash);
         }
     }
@@ -331,6 +341,17 @@ private:
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
+    }
+
+    void destroyLastElement()
+    {
+        auto last_element = counter_list.back();
+        auto cell = counter_map.find(last_element->key, last_element->hash);
+        cell->setZero();
+        counter_map.reinsert(cell, last_element->hash);
+        counter_list.pop_back();
+        arena.free(last_element->key);
+        delete last_element;
     }
 
     HashMap<TKey, Counter *, Hash, Grower, Allocator> counter_map;

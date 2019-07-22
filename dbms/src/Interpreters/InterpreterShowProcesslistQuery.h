@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Return list of currently executing queries.

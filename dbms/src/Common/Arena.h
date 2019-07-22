@@ -5,6 +5,7 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/likely.h>
+#include <sanitizer/asan_interface.h>
 #include <Core/Defines.h>
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
@@ -36,7 +37,7 @@ private:
     static constexpr size_t pad_right = 15;
 
     /// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct Chunk : private Allocator<false>    /// empty base optimization
+    struct alignas(16) Chunk : private Allocator<false>    /// empty base optimization
     {
         char * begin;
         char * pos;
@@ -49,15 +50,23 @@ private:
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
-            begin = reinterpret_cast<char *>(Allocator::alloc(size_));
+            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
             pos = begin;
             end = begin + size_ - pad_right;
             prev = prev_;
+
+            ASAN_POISON_MEMORY_REGION(begin, size_);
         }
 
         ~Chunk()
         {
-            Allocator::free(begin, size());
+            /// We must unpoison the memory before returning to the allocator,
+            /// because the allocator might not have asan integration, and the
+            /// memory would stay poisoned forever. If the allocator supports
+            /// asan, it will correctly poison the memory by itself.
+            ASAN_UNPOISON_MEMORY_REGION(begin, size());
+
+            Allocator<false>::free(begin, size());
 
             if (prev)
                 delete prev;
@@ -126,6 +135,7 @@ public:
 
         char * res = head->pos;
         head->pos += size;
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -142,11 +152,18 @@ public:
             {
                 head->pos = static_cast<char *>(head_pos);
                 head->pos += size;
+                ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
 
             addChunk(size + alignment);
         } while (true);
+    }
+
+    template <typename T>
+    T * alloc()
+    {
+        return reinterpret_cast<T *>(alignedAlloc(sizeof(T), alignof(T)));
     }
 
     /** Rollback just performed allocation.
@@ -155,6 +172,7 @@ public:
     void rollback(size_t size)
     {
         head->pos -= size;
+        ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
     }
 
     /** Begin or expand allocation of contiguous piece of memory without alignment.
@@ -181,6 +199,7 @@ public:
         if (!begin)
             begin = res;
 
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -212,6 +231,8 @@ public:
 
         if (!begin)
             begin = res;
+
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -220,7 +241,10 @@ public:
     {
         char * res = alloc(new_size);
         if (old_data)
+        {
             memcpy(res, old_data, old_size);
+            ASAN_POISON_MEMORY_REGION(old_data, old_size);
+        }
         return res;
     }
 
@@ -228,7 +252,10 @@ public:
     {
         char * res = alignedAlloc(new_size, alignment);
         if (old_data)
+        {
             memcpy(res, old_data, old_size);
+            ASAN_POISON_MEMORY_REGION(old_data, old_size);
+        }
         return res;
     }
 

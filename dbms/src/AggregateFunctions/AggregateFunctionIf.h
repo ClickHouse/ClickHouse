@@ -28,7 +28,8 @@ private:
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types)
-        : nested_func(nested), num_arguments(types.size())
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, nested->getParameters())
+        , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

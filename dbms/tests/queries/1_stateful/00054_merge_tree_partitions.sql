@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS test.partitions;
 CREATE TABLE test.partitions (EventDate Date, CounterID UInt32) ENGINE = MergeTree(EventDate, CounterID, 8192);
-INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 731962;
+INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 1704509;
 
 
 SELECT count() FROM test.partitions;
@@ -24,7 +24,7 @@ ALTER TABLE test.partitions DETACH PARTITION 201403;
 
 SELECT count() FROM test.partitions;
 
-INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 731962 AND toStartOfMonth(EventDate) = toDate('2014-03-01');
+INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 1704509 AND toStartOfMonth(EventDate) = toDate('2014-03-01');
 
 SELECT count() FROM test.partitions;
 

@@ -1,3 +1,5 @@
+#include "config_core.h"
+
 namespace DB
 {
 
@@ -19,6 +21,7 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIgnoreExceptNull(FunctionFactory &);
 void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
@@ -40,6 +43,15 @@ void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
+void registerFunctionJoinGet(FunctionFactory &);
+void registerFunctionFilesystem(FunctionFactory &);
+void registerFunctionEvalMLMethod(FunctionFactory &);
+void registerFunctionBasename(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
+
+#if USE_ICU
+void registerFunctionConvertCharset(FunctionFactory &);
+#endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -59,6 +71,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIgnoreExceptNull(factory);
     registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
@@ -80,6 +93,15 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionLowCardinalityIndices(factory);
     registerFunctionLowCardinalityKeys(factory);
     registerFunctionsIn(factory);
+    registerFunctionJoinGet(factory);
+    registerFunctionFilesystem(factory);
+    registerFunctionEvalMLMethod(factory);
+    registerFunctionBasename(factory);
+    registerFunctionTransform(factory);
+
+#if USE_ICU
+    registerFunctionConvertCharset(factory);
+#endif
 }
 
 }

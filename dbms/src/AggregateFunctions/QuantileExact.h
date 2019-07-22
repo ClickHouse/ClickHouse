@@ -2,9 +2,9 @@
 
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
+#include <Core/Types.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <Core/Types.h>
 #include <IO/VarInt.h>
 
 
@@ -19,7 +19,7 @@ namespace ErrorCodes
 /** Calculates quantile by collecting all values into array
   *  and applying n-th element (introselect) algorithm for the resulting array.
   *
-  * It use O(N) memory and it is very inefficient in case of high amount of identical values.
+  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
   * But it is very CPU efficient for not large datasets.
   */
 template <typename Value>
@@ -27,8 +27,7 @@ struct QuantileExact
 {
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
-
-    using Array = PODArray<Value, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
+    using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
     Array array;
 
     void add(const Value & x)

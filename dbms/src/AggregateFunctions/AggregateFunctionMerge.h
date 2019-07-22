@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
 
@@ -23,13 +22,14 @@ private:
     AggregateFunctionPtr nested_func;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const IDataType & argument)
-        : nested_func(nested_)
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, nested_->getParameters())
+        , nested_func(nested_)
     {
-        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(&argument);
+        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
 
         if (!data_type || data_type->getFunctionName() != nested_func->getName())
-            throw Exception("Illegal type " + argument.getName() + " of argument for aggregate function " + getName(),
+            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

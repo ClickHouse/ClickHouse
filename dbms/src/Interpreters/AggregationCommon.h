@@ -102,23 +102,23 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(column)->getData()[index], 1);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(column)->getData()[index], 2);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(column)->getData()[index], 4);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(column)->getData()[index], 8);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(column)->getChars()[index * key_sizes[j]], key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
@@ -168,23 +168,23 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(key_columns[j])->getData()[i], 1);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(key_columns[j])->getData()[i], 2);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(key_columns[j])->getData()[i], 4);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(key_columns[j])->getData()[i], 8);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
+                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }

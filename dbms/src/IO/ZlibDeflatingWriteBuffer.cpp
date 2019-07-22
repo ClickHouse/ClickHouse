@@ -6,7 +6,7 @@ namespace DB
 
 ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         WriteBuffer & out_,
-        ZlibCompressionMethod compression_method,
+        CompressionMethod compression_method,
         int compression_level,
         size_t buf_size,
         char * existing_memory,
@@ -23,7 +23,7 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
     zstr.avail_out = 0;
 
     int window_bits = 15;
-    if (compression_method == ZlibCompressionMethod::Gzip)
+    if (compression_method == CompressionMethod::Gzip)
     {
         window_bits += 16;
     }
@@ -93,12 +93,14 @@ void ZlibDeflatingWriteBuffer::finish()
         out.position() = out.buffer().end() - zstr.avail_out;
 
         if (rc == Z_STREAM_END)
+        {
+            finished = true;
             return;
+        }
+
         if (rc != Z_OK)
             throw Exception(std::string("deflate finish failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
-
-    finished = true;
 }
 
 }

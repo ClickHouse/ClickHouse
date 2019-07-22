@@ -1,5 +1,10 @@
 # New York Taxi Data
 
+This dataset can be obtained in two ways:
+
+- import from raw data
+- download of prepared partitions
+
 ## How to Import The Raw Data
 
 See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for the description of a dataset and instructions for downloading.
@@ -271,6 +276,21 @@ WHERE (table = 'trips_mergetree') AND active
 ```
 
 Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required, since everything will be fine without it.
+
+## Dowload of Prepared Partitions
+
+```bash
+curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
+tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+# check permissions of unpacked data, fix if required
+sudo service clickhouse-server restart
+clickhouse-client --query "select count(*) from datasets.trips_mergetree"
+```
+
+!!!info
+    If you will run queries described below, you have to use full table name,
+    `datasets.trips_mergetree`.
+
 
 ## Results on Single Server
 

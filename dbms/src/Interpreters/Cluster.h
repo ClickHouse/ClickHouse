@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
@@ -16,7 +16,7 @@ namespace DB
 class Cluster
 {
 public:
-    Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
+    Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -24,7 +24,7 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote);
+            UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -59,15 +59,16 @@ public:
         String password;
         /// This database is selected when no database is specified for Distributed table
         String default_database;
-        UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
-        bool is_local;
+        bool is_local = false;
+        bool user_specified = false;
+
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
-        Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
+        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -77,19 +78,20 @@ public:
 
         static String toString(const String & host_name, UInt16 port);
 
-        static void fromString(const String & host_port_string, String & host_name, UInt16 & port);
+        static std::pair<String, UInt16> fromString(const String & host_port_string);
 
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
-        String toStringFull() const;
+        String toFullString() const;
+        static Address fromFullString(const String & address_full_string);
 
-        /// Returns initially resolved address
-        Poco::Net::SocketAddress getResolvedAddress() const
-        {
-            return initially_resolved_address;
-        }
+        /// Returns resolved address if it does resolve.
+        std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
+
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
-        Poco::Net::SocketAddress initially_resolved_address;
+        bool isLocal(UInt16 clickhouse_port) const;
     };
 
     using Addresses = std::vector<Address>;
@@ -107,8 +109,8 @@ public:
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         std::string dir_name_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
-        UInt32 shard_num;
-        UInt32 weight;
+        UInt32 shard_num = 0;
+        UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
@@ -143,6 +145,9 @@ public:
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
+    /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
+    std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
+
 private:
     using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
@@ -153,8 +158,8 @@ public:
 private:
     void initMisc();
 
-    /// For getClusterWithSingleShard implementation.
-    Cluster(const Cluster & from, size_t index);
+    /// For getClusterWithMultipleShards implementation.
+    Cluster(const Cluster & from, const std::vector<size_t> & indices);
 
     String hash_of_addresses;
     /// Description of the cluster shards.
@@ -178,7 +183,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -186,7 +191,7 @@ public:
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
+    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
 
 public:
     using Impl = std::map<String, ClusterPtr>;

@@ -1,4 +1,3 @@
-<a name="type_conversion_functions"></a>
 
 # Функции преобразования типов
 
@@ -13,7 +12,7 @@
 ## toDate, toDateTime
 
 ## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
-Приводит строку или число value к типу [Decimal](../../data_types/decimal.md#data_type-decimal) указанной точности.
+Приводит строку или число value к типу [Decimal](../../data_types/decimal.md) указанной точности.
 Параметр S (scale) определяет число десятичных знаков после запятой.
 
 ## toString
@@ -95,7 +94,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ## reinterpretAsString
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
-## CAST(x, t)
+## CAST(x, t) {#type_conversion_function-cast}
 Преобразует x в тип данных t.
 Поддерживается также синтаксис CAST(x AS t).
 
@@ -118,7 +117,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
 
-Поддержано преобразование к типу [Nullable](../../data_types/nullable.md#data_type-nullable) и обратно. Пример:
+Поддержано преобразование к типу [Nullable](../../data_types/nullable.md) и обратно. Пример:
 
 ```
 SELECT toTypeName(x) FROM t_null

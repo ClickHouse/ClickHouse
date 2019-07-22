@@ -1,2 +1,2 @@
-SELECT DISTINCT (URLHierarchy(URL)[1]) AS q, 'x' AS w FROM test.hits WHERE CounterID = 101500 ORDER BY URL
+SELECT DISTINCT (URLHierarchy(URL)[1]) AS q, 'x' AS w FROM test.hits WHERE CounterID = 14917930 ORDER BY URL
 

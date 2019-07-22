@@ -36,18 +36,18 @@ struct ComparePairFirst final
     }
 };
 
+static constexpr auto max_events = 32;
+
+template <typename T>
 struct AggregateFunctionSequenceMatchData final
 {
-    static constexpr auto max_events = 32;
-
-    using Timestamp = std::uint32_t;
+    using Timestamp = T;
     using Events = std::bitset<max_events>;
     using TimestampEvents = std::pair<Timestamp, Events>;
     using Comparator = ComparePairFirst<std::less>;
 
     bool sorted = true;
-    static constexpr size_t bytes_in_arena = 64;
-    PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> events_list;
+    PODArrayWithStackMemory<TimestampEvents, 64> events_list;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -61,6 +61,9 @@ struct AggregateFunctionSequenceMatchData final
 
     void merge(const AggregateFunctionSequenceMatchData & other)
     {
+        if (other.events_list.empty())
+            return;
+
         const auto size = events_list.size();
 
         events_list.insert(std::begin(other.events_list), std::end(other.events_list));
@@ -119,7 +122,7 @@ struct AggregateFunctionSequenceMatchData final
 
         for (size_t i = 0; i < size; ++i)
         {
-            std::uint32_t timestamp;
+            Timestamp timestamp;
             readBinary(timestamp, buf);
 
             UInt64 events;
@@ -135,47 +138,23 @@ struct AggregateFunctionSequenceMatchData final
 constexpr auto sequence_match_max_iterations = 1000000;
 
 
-template <typename Derived>
-class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<AggregateFunctionSequenceMatchData, Derived>
+template <typename T, typename Data, typename Derived>
+class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const String & pattern)
-        : pattern(pattern)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern)
+        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
+        , pattern(pattern)
     {
         arg_count = arguments.size();
-
-        if (!sufficientArgs(arg_count))
-            throw Exception{"Aggregate function " + derived().getName() + " requires at least 3 arguments.",
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
-
-        if (arg_count - 1 > AggregateFunctionSequenceMatchData::max_events)
-            throw Exception{"Aggregate function " + derived().getName() + " supports up to " +
-                    toString(AggregateFunctionSequenceMatchData::max_events) + " event arguments.",
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
-
-        const auto time_arg = arguments.front().get();
-        if (!WhichDataType(time_arg).isDateTime())
-            throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function "
-                    + derived().getName() + ", must be DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        for (const auto i : ext::range(1, arg_count))
-        {
-            const auto cond_arg = arguments[i].get();
-            if (!isUInt8(cond_arg))
-                throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
-                        " of aggregate function " + derived().getName() + ", must be UInt8",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
         parsePattern();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = static_cast<const ColumnUInt32 *>(columns[0])->getData()[row_num];
+        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
-        AggregateFunctionSequenceMatchData::Events events;
+        typename Data::Events events;
         for (const auto i : ext::range(1, arg_count))
         {
             const auto event = static_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
@@ -217,16 +196,13 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        std::uint32_t extra;
+        std::uint64_t extra;
 
         PatternAction() = default;
-        PatternAction(const PatternActionType type, const std::uint32_t extra = 0) : type{type}, extra{extra} {}
+        PatternAction(const PatternActionType type, const std::uint64_t extra = 0) : type{type}, extra{extra} {}
     };
 
-    static constexpr size_t bytes_on_stack = 64;
-    using PatternActions = PODArray<PatternAction, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
-
-    static bool sufficientArgs(const size_t arg_count) { return arg_count >= 3; }
+    using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
 
     Derived & derived() { return static_cast<Derived &>(*this); }
 
@@ -234,6 +210,11 @@ private:
     {
         actions.clear();
         actions.emplace_back(PatternActionType::KleeneStar);
+
+        dfa_states.clear();
+        dfa_states.emplace_back(true);
+
+        pattern_has_time = false;
 
         const char * pos = pattern.data();
         const char * begin = pos;
@@ -285,6 +266,7 @@ private:
                         actions.back().type != PatternActionType::KleeneStar)
                         throw Exception{"Temporal condition should be preceeded by an event condition", ErrorCodes::BAD_ARGUMENTS};
 
+                    pattern_has_time = true;
                     actions.emplace_back(type, duration);
                 }
                 else
@@ -299,6 +281,9 @@ private:
                         throw Exception{"Event number " + toString(event_number) + " is out of range", ErrorCodes::BAD_ARGUMENTS};
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
+                    dfa_states.back().transition = DFATransition::SpecificEvent;
+                    dfa_states.back().event = event_number - 1;
+                    dfa_states.emplace_back();
                 }
 
                 if (!match(")"))
@@ -306,17 +291,88 @@ private:
 
             }
             else if (match(".*"))
+            {
                 actions.emplace_back(PatternActionType::KleeneStar);
+                dfa_states.back().has_kleene = true;
+            }
             else if (match("."))
+            {
                 actions.emplace_back(PatternActionType::AnyEvent);
+                dfa_states.back().transition = DFATransition::AnyEvent;
+                dfa_states.emplace_back();
+            }
             else
                 throw_exception("Could not parse pattern, unexpected starting symbol");
         }
     }
 
 protected:
-    template <typename T>
-    bool match(T & events_it, const T events_end) const
+    /// Uses a DFA based approach in order to better handle patterns without
+    /// time assertions.
+    ///
+    /// NOTE: This implementation relies on the assumption that the pattern are *small*.
+    ///
+    /// This algorithm performs in O(mn) (with m the number of DFA states and N the number
+    /// of events) with a memory consumption and memory allocations in O(m). It means that
+    /// if n >>> m (which is expected to be the case), this algorithm can be considered linear.
+    template <typename EventEntry>
+    bool dfaMatch(EventEntry & events_it, const EventEntry events_end) const
+    {
+        using ActiveStates = std::vector<bool>;
+
+        /// Those two vectors keep track of which states should be considered for the current
+        /// event as well as the states which should be considered for the next event.
+        ActiveStates active_states(dfa_states.size(), false);
+        ActiveStates next_active_states(dfa_states.size(), false);
+        active_states[0] = true;
+
+        /// Keeps track of dead-ends in order not to iterate over all the events to realize that
+        /// the match failed.
+        size_t n_active = 1;
+
+        for (/* empty */; events_it != events_end && n_active > 0 && !active_states.back(); ++events_it)
+        {
+            n_active = 0;
+            next_active_states.assign(dfa_states.size(), false);
+
+            for (size_t state = 0; state < dfa_states.size(); ++state)
+            {
+                if (!active_states[state])
+                {
+                    continue;
+                }
+
+                switch (dfa_states[state].transition)
+                {
+                    case DFATransition::None:
+                        break;
+                    case DFATransition::AnyEvent:
+                        next_active_states[state + 1] = true;
+                        ++n_active;
+                        break;
+                    case DFATransition::SpecificEvent:
+                        if (events_it->second.test(dfa_states[state].event))
+                        {
+                            next_active_states[state + 1] = true;
+                            ++n_active;
+                        }
+                        break;
+                }
+
+                if (dfa_states[state].has_kleene)
+                {
+                    next_active_states[state] = true;
+                    ++n_active;
+                }
+            }
+            swap(active_states, next_active_states);
+        }
+
+        return active_states.back();
+    }
+
+    template <typename EventEntry>
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -326,7 +382,7 @@ protected:
         auto base_it = events_it;
 
         /// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
-        using backtrack_info = std::tuple<decltype(action_it), T, T>;
+        using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
         /// backtrack if possible
@@ -377,7 +433,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLessOrEqual)
             {
-                if (events_it->first - base_it->first <= action_it->extra)
+                if (events_it->first <= base_it->first + action_it->extra)
                 {
                     /// condition satisfied, move onto next action
                     back_stack.emplace(action_it, events_it, base_it);
@@ -389,7 +445,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLess)
             {
-                if (events_it->first - base_it->first < action_it->extra)
+                if (events_it->first < base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -400,7 +456,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
             {
-                if (events_it->first - base_it->first >= action_it->extra)
+                if (events_it->first >= base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -411,7 +467,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreater)
             {
-                if (events_it->first - base_it->first > action_it->extra)
+                if (events_it->first > base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -446,16 +502,62 @@ protected:
     }
 
 private:
+    enum class DFATransition : char
+    {
+        ///   .-------.
+        ///   |       |
+        ///   `-------'
+        None,
+        ///   .-------.  (?[0-9])
+        ///   |       | ----------
+        ///   `-------'
+        SpecificEvent,
+        ///   .-------.      .
+        ///   |       | ----------
+        ///   `-------'
+        AnyEvent,
+    };
+
+    struct DFAState
+    {
+        DFAState(bool has_kleene = false)
+            : has_kleene{has_kleene}, event{0}, transition{DFATransition::None}
+        {}
+
+        ///   .-------.
+        ///   |       | - - -
+        ///   `-------'
+        ///     |_^
+        bool has_kleene;
+        /// In the case of a state transitions with a `SpecificEvent`,
+        /// `event` contains the value of the event.
+        uint32_t event;
+        /// The kind of transition out of this state.
+        DFATransition transition;
+    };
+
+    using DFAStates = std::vector<DFAState>;
+
+protected:
+    /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
+    bool pattern_has_time;
+
+private:
     std::string pattern;
     size_t arg_count;
     PatternActions actions;
+
+    DFAStates dfa_states;
 };
 
-
-class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>
+template <typename T, typename Data>
+class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>
 {
 public:
-    using AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>::AggregateFunctionSequenceBase;
+    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceMatch"; }
 
@@ -463,23 +565,27 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        const_cast<Data &>(data(place)).sort();
+        const_cast<Data &>(this->data(place)).sort();
 
-        const auto & data_ref = data(place);
+        const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
+        bool match = this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end);
+        static_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
 
-
-class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>
+template <typename T, typename Data>
+class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>
 {
 public:
-    using AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>::AggregateFunctionSequenceBase;
+    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceCount"; }
 
@@ -487,21 +593,21 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        const_cast<Data &>(data(place)).sort();
+        const_cast<Data &>(this->data(place)).sort();
         static_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 
 private:
     UInt64 count(const ConstAggregateDataPtr & place) const
     {
-        const auto & data_ref = data(place);
+        const auto & data_ref = this->data(place);
 
         const auto events_begin = std::begin(data_ref.events_list);
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
         size_t count = 0;
-        while (events_it != events_end && match(events_it, events_end))
+        while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
             ++count;
 
         return count;

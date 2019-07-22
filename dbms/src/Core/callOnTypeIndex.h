@@ -27,13 +27,15 @@ bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::UInt16:       return f(TypePair<T, UInt16>());
             case TypeIndex::UInt32:       return f(TypePair<T, UInt32>());
             case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
-            //case TypeIndex::UInt128>:     return f(TypePair<T, UInt128>());
 
             case TypeIndex::Int8:         return f(TypePair<T, Int8>());
             case TypeIndex::Int16:        return f(TypePair<T, Int16>());
             case TypeIndex::Int32:        return f(TypePair<T, Int32>());
             case TypeIndex::Int64:        return f(TypePair<T, Int64>());
             case TypeIndex::Int128:       return f(TypePair<T, Int128>());
+
+            case TypeIndex::Enum8:        return f(TypePair<T, Int8>());
+            case TypeIndex::Enum16:        return f(TypePair<T, Int16>());
 
             default:
                 break;
@@ -89,13 +91,16 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
             case TypeIndex::UInt16: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt32: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt64: return callOnBasicType<UInt64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            //case TypeIndex::UInt128: return callOnBasicType<UInt128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
 
             case TypeIndex::Int8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int32: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int64: return callOnBasicType<Int64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int128: return callOnBasicType<Int128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+
+            case TypeIndex::Enum8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Enum16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+
             default:
                 break;
         }

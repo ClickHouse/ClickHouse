@@ -58,10 +58,10 @@ void PrettyBlockOutputStream::calculateWidths(
         {
             {
                 WriteBufferFromString out(serialized_value);
-                elem.type->serializeText(*elem.column, j, out, format_settings);
+                elem.type->serializeAsText(*elem.column, j, out, format_settings);
             }
 
-            widths[i][j] = std::min(format_settings.pretty.max_column_pad_width,
+            widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
                 UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix));
             max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
@@ -69,7 +69,7 @@ void PrettyBlockOutputStream::calculateWidths(
         /// And also calculate widths for names of columns.
         {
             // name string doesn't contain Tab, no need to pass `prefix`
-            name_widths[i] = std::min(format_settings.pretty.max_column_pad_width,
+            name_widths[i] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
                 UTF8::computeWidth(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size()));
             max_widths[i] = std::max(max_widths[i], name_widths[i]);
         }
@@ -206,11 +206,11 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
     if (elem.type->shouldAlignRightInPrettyFormats())
     {
         writePadding();
-        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
+        elem.type->serializeAsText(*elem.column.get(), row_num, ostr, format_settings);
     }
     else
     {
-        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
+        elem.type->serializeAsText(*elem.column.get(), row_num, ostr, format_settings);
         writePadding();
     }
 }

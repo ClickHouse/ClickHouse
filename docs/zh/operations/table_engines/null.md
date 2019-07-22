@@ -1,8 +1,8 @@
 # Null
 
-When writing to a Null table, data is ignored. When reading from a Null table, the response is empty.
+当写入 Null 类型的表时，将忽略数据。从 Null 类型的表中读取时，返回空。
 
-However, you can create a materialized view on a Null table. So the data written to the table will end up in the view.
+但是，可以在 Null 类型的表上创建物化视图。写入表的数据将转发到视图中。
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/null/) <!--hide-->

@@ -41,7 +41,7 @@ void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names_, 
     if (column_names)
     {
         auto & offsets = column_names->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+        offsets.push_back(offsets.back() + size);
     }
 
     if (column_values)
@@ -51,7 +51,7 @@ void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names_, 
         if (!the_same_offsets)
         {
             auto & offsets = column_values->getOffsets();
-            offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+            offsets.push_back(offsets.back() + size);
         }
     }
 }

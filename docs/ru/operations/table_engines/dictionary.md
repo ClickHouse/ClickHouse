@@ -1,8 +1,7 @@
-<a name="table_engines-dictionary"></a>
 
 # Dictionary
 
-Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md#dicts-external_dicts) как таблицу ClickHouse.
+Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 

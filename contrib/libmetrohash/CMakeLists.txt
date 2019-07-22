@@ -1,5 +1,5 @@
 if (HAVE_SSE42) # Not used. Pretty easy to port.
-    set (SOURCES_SSE42_ONLY src/metrohash128crc.cpp)
+    set (SOURCES_SSE42_ONLY src/metrohash128crc.cpp src/metrohash128crc.h)
 endif ()
 
 add_library(metrohash

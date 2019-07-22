@@ -1,13 +1,14 @@
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-
 #include <Poco/Version.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Common/Exception.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Progress.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <IO/Progress.h>
+#include <Common/config.h>
+
 
 namespace DB
 {
@@ -29,23 +30,51 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
             std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #endif
     }
 }
 
+void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+{
+#if defined(POCO_CLICKHOUSE_PATCH)
+    if (headers_finished_sending)
+        return;
+
+    WriteBufferFromOwnString progress_string_writer;
+    accumulated_progress.writeJSON(progress_string_writer);
+
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+#endif
+}
+
+void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
+{
+#if defined(POCO_CLICKHOUSE_PATCH)
+    if (headers_finished_sending)
+        return;
+
+    WriteBufferFromOwnString progress_string_writer;
+    accumulated_progress.writeJSON(progress_string_writer);
+
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+#endif
+}
 
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
+        writeHeaderSummary();
         headers_finished_sending = true;
 
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
         {
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
             /// Send end of headers delimiter.
             if (response_header_ostr)
                 *response_header_ostr << "\r\n" << std::flush;
@@ -68,7 +97,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         startSendHeaders();
 
@@ -76,38 +105,53 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         {
             if (compress)
             {
-                if (compression_method == ZlibCompressionMethod::Gzip)
+                if (compression_method == CompressionMethod::Gzip)
                 {
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: gzip\r\n";
 #else
                     response.set("Content-Encoding", "gzip");
+                    response_body_ostr = &(response.send());
 #endif
+                    out_raw.emplace(*response_body_ostr);
+                    deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                    out = &*deflating_buf;
                 }
-                else if (compression_method == ZlibCompressionMethod::Zlib)
+                else if (compression_method == CompressionMethod::Zlib)
                 {
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: deflate\r\n";
 #else
                     response.set("Content-Encoding", "deflate");
+                    response_body_ostr = &(response.send());
 #endif
+                    out_raw.emplace(*response_body_ostr);
+                    deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                    out = &*deflating_buf;
                 }
+#if USE_BROTLI
+                else if (compression_method == CompressionMethod::Brotli)
+                {
+#if defined(POCO_CLICKHOUSE_PATCH)
+                    *response_header_ostr << "Content-Encoding: br\r\n";
+#else
+                    response.set("Content-Encoding", "br");
+                    response_body_ostr = &(response.send());
+#endif
+                    out_raw.emplace(*response_body_ostr);
+                    brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
+                    out = &*brotli_buf;
+                }
+#endif
+
                 else
                     throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
                                     ErrorCodes::LOGICAL_ERROR);
                 /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-
-#if !POCO_CLICKHOUSE_PATCH
-                response_body_ostr = &(response.send());
-#endif
-
-                out_raw.emplace(*response_body_ostr);
-                deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                out = &*deflating_buf;
             }
             else
             {
-#if !POCO_CLICKHOUSE_PATCH
+#if !defined(POCO_CLICKHOUSE_PATCH)
                 response_body_ostr = &(response.send());
 #endif
 
@@ -133,7 +177,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    ZlibCompressionMethod compression_method_,
+    CompressionMethod compression_method_,
     size_t size)
     : BufferWithOwnMemory<WriteBuffer>(size)
     , request(request_)
@@ -147,7 +191,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 
 void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
@@ -161,13 +205,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
         /// Send all common headers before our special progress headers.
         startSendHeaders();
-
-        WriteBufferFromOwnString progress_string_writer;
-        accumulated_progress.writeJSON(progress_string_writer);
-
-#if POCO_CLICKHOUSE_PATCH
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
-#endif
+        writeHeaderProgress();
     }
 }
 
@@ -181,7 +219,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
     else
     {
         /// If no remaining data, just send headers.
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         startSendHeaders();
         finishSendHeaders();
     }

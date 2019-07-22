@@ -137,8 +137,8 @@ struct TasksStatsCounters
         profile_events.increment(ProfileEvents::OSCPUVirtualTimeMicroseconds,
                                  safeDiff(prev.stat.cpu_run_virtual_total, curr.stat.cpu_run_virtual_total) / 1000U);
 
-        /// Too old struct version, do not read new fields
-        if (curr.stat.version < TASKSTATS_VERSION)
+        /// Since TASKSTATS_VERSION = 3 extended accounting and IO accounting is available.
+        if (curr.stat.version < 3)
             return;
 
         profile_events.increment(ProfileEvents::OSReadChars, safeDiff(prev.stat.read_char, curr.stat.read_char));

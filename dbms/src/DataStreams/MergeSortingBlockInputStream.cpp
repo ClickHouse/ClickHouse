@@ -5,7 +5,7 @@
 #include <DataStreams/processConstants.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 
 
@@ -20,7 +20,7 @@ namespace DB
 
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
-    size_t max_merged_block_size_, size_t limit_, size_t max_bytes_before_remerge_,
+    size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
     size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
@@ -78,7 +78,7 @@ Block MergeSortingBlockInputStream::readImpl()
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
                 Poco::File(tmp_path).createDirectories();
-                temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
+                temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
                 const std::string & path = temporary_files.back()->path();
                 WriteBufferFromFile file_buf(path);
                 CompressedWriteBuffer compressed_buf(file_buf);
@@ -134,7 +134,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
-    Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, size_t limit_)
+    Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Blocks nonempty_blocks;

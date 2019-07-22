@@ -1,6 +1,6 @@
 # ReplacingMergeTree
 
-Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением первичного ключа (точнее, с одинаковым значением [ключа сортировки](mergetree.md#table_engines-mergetree-sorting_key)).
+Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением первичного ключа (точнее, с одинаковым значением [ключа сортировки](mergetree.md)).
 
 Дедупликация данных производится лишь во время слияний. Слияние происходят в фоне в неизвестный момент времени, на который вы не можете ориентироваться. Некоторая часть данных может остаться необработанной. Хотя вы можете вызвать внеочередное слияние с помощью запроса `OPTIMIZE`, на это не стоит рассчитывать, так как запрос `OPTIMIZE` приводит к чтению и записи большого объёма данных.
 
@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md#query_language-queries-create_table).
+Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md).
 
 **Параметры ReplacingMergeTree**
 
@@ -34,7 +34,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
+При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md), что и при создании таблицы `MergeTree`.
 
 <details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 

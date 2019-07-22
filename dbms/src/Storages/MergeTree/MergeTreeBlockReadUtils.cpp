@@ -20,20 +20,19 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
         const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name))
+        if (part->hasColumnFiles(column_name, *storage.getColumn(column_name).type))
         {
             all_column_files_missing = false;
             continue;
         }
 
-        const auto default_it = storage.getColumns().defaults.find(column_name);
-        /// columns has no explicit default expression
-        if (default_it == std::end(storage.getColumns().defaults))
+        const auto column_default = storage.getColumns().getDefault(column_name);
+        if (!column_default)
             continue;
 
         /// collect identifiers required for evaluation
         IdentifierNameSet identifiers;
-        default_it->second.expression->collectIdentifierNames(identifiers);
+        column_default->expression->collectIdentifierNames(identifiers);
 
         for (const auto & identifier : identifiers)
         {
@@ -84,7 +83,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
-    /// Initialize with sample block untill update won't called.
+    /// Initialize with sample block until update won't called.
     initialize(sample_block, columns);
 }
 
@@ -120,7 +119,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            MergeTreeDataPart::ColumnSize column_size = data_part->getColumnSize(
+            ColumnSize column_size = data_part->getColumnSize(
                 column_name, *column_with_type_and_name.type);
 
             info.bytes_per_row_global = column_size.data_uncompressed
@@ -173,7 +172,7 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     block_size_rows = new_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
-    /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
+    /// Use sum of geometric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
     /// NOTE: DEFAULT and MATERIALIZED columns without data has inaccurate estimation of v_{target}
     double alpha = std::pow(1. - decay, diff_rows);
 

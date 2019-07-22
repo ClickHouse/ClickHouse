@@ -1,6 +1,6 @@
 # Yandex.Metrica的使用案例
 
-ClickHouse最初是为[Yandex.Metrica](https://metrica.yandex.com/)[世界第二大Web分析平台](http://w3techs.com/technologies/overview/traffic_analysis/all)而开发的。多年来一直作为该系统的核心组件被该系统持续使用着。目前为止，该系统在ClickHouse中有超过13万亿条记录，并且每天超过200多亿个事件被处理。它允许直接从原始数据中动态查询并生成报告。本文简要介绍了ClickHouse在其早期发展阶段的目标。
+ClickHouse最初是为 [Yandex.Metrica](https://metrica.yandex.com/) [世界第二大Web分析平台](http://w3techs.com/technologies/overview/traffic_analysis/all) 而开发的。多年来一直作为该系统的核心组件被该系统持续使用着。目前为止，该系统在ClickHouse中有超过13万亿条记录，并且每天超过200多亿个事件被处理。它允许直接从原始数据中动态查询并生成报告。本文简要介绍了ClickHouse在其早期发展阶段的目标。
 
 Yandex.Metrica基于用户定义的字段，对实时访问、连接会话，生成实时的统计报表。这种需求往往需要复杂聚合方式，比如对访问用户进行去重。构建报表的数据，是实时接收存储的新数据。
 
@@ -36,7 +36,7 @@ ClickHouse在其他Yandex服务中至少有12个安装：search verticals, Marke
 - 用户不会查看我们为他生成的所有报告，大部分计算将是无用的
 - 各种聚合可能违背了数据的逻辑完整性
 
-如果我们直接使用非聚合数据而不尽兴任何聚合时，我们的计算量可能是减少的。
+如果我们直接使用非聚合数据而不进行任何聚合时，我们的计算量可能是减少的。
 
 然而，相对于聚合中很大一部分工作被离线完成，在线计算需要尽快的完成计算，因为用户在等待结果。
 

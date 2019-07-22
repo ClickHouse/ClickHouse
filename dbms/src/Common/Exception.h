@@ -6,7 +6,7 @@
 
 #include <Poco/Exception.h>
 
-#include <Common/StackTrace.h>
+#include <common/StackTrace.h>
 
 namespace Poco { class Logger; }
 
@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
+    extern const int METRIKA_OTHER_ERROR;
 }
 
 class Exception : public Poco::Exception
@@ -33,6 +34,7 @@ public:
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
     const char * name() const throw() override { return "DB::Exception"; }
+    const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }

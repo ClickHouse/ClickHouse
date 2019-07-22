@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
 
@@ -32,20 +33,22 @@ class CurrentThread
 {
 public:
     /// Handler to current thread
-    static ThreadStatusPtr get();
+    static ThreadStatus & get();
 
     /// Group to which belongs current thread
     static ThreadGroupStatusPtr getGroup();
 
     /// A logs queue used by TCPHandler to pass logs to a client
-    static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue);
+    static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                            LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
-    static MemoryTracker & getMemoryTracker();
+    static MemoryTracker * getMemoryTracker();
+    static Int64 & getUntrackedMemory();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -69,7 +72,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string getCurrentQueryID();
+    static StringRef getQueryId();
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
@@ -84,25 +87,6 @@ public:
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };
-
-    /// Implicitly finalizes current thread in the destructor
-    class ThreadScope
-    {
-    public:
-        void (*deleter)() = nullptr;
-
-        ThreadScope() = default;
-        ~ThreadScope()
-        {
-            if (deleter)
-                deleter();
-
-            /// std::terminate on exception: this is Ok.
-        }
-    };
-
-    using ThreadScopePtr = std::shared_ptr<ThreadScope>;
-    static ThreadScopePtr getScope();
 
 private:
     static void defaultThreadDeleter();

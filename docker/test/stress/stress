@@ -11,7 +11,7 @@ import time
 def run_perf_test(cmd, xmls_path, output_folder):
     output_path = os.path.join(output_folder, "perf_stress_run.txt")
     f = open(output_path, 'w')
-    p = Popen("{} --skip-tags=long --r {}".format(cmd, xmls_path), shell=True, stdout=f, stderr=f)
+    p = Popen("{} --skip-tags=long --recursive --input-files {}".format(cmd, xmls_path), shell=True, stdout=f, stderr=f)
     return p
 
 def run_func_test(cmd, output_prefix, num_processes):
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         while True:
             retcodes = []
             for p in func_pipes:
-                if p.poll():
+                if p.poll() is not None:
                     retcodes.append(p.returncode)
             if len(retcodes) == len(func_pipes):
                 break

@@ -28,7 +28,7 @@ public:
     virtual void write(const Block & block, size_t row_num);
 
     /** Write single value. */
-    virtual void writeField(const IColumn & column, const IDataType & type, size_t row_num) = 0;
+    virtual void writeField(const IColumn & column, const IDataType & type, size_t row_num);
 
     /** Write delimiter. */
     virtual void writeFieldDelimiter() {}      /// delimiter between values

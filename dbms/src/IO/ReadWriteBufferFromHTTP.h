@@ -6,6 +6,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -69,14 +70,24 @@ namespace detail
 
             LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
-            auto & stream_out = session->sendRequest(request);
+            try
+            {
+                auto & stream_out = session->sendRequest(request);
 
-            if (out_stream_callback)
-                out_stream_callback(stream_out);
+                if (out_stream_callback)
+                    out_stream_callback(stream_out);
 
-            istr = receiveResponse(*session, request, response);
+                istr = receiveResponse(*session, request, response);
 
-            impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+            }
+            catch (const Poco::Exception & e)
+            {
+                /// We use session data storage as storage for exception text
+                /// Depend on it we can deduce to reconnect session or reresolve session host
+                session->attachSessionData(e.message());
+                throw;
+            }
         }
 
 
@@ -96,13 +107,13 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<HTTPS
     using Parent = detail::ReadWriteBufferFromHTTPBase<HTTPSessionPtr>;
 
 public:
-    explicit ReadWriteBufferFromHTTP(Poco::URI uri,
-        const std::string & method = {},
+    explicit ReadWriteBufferFromHTTP(Poco::URI uri_,
+        const std::string & method_ = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : Parent(makeHTTPSession(uri, timeouts), uri, method, out_stream_callback, credentials, buffer_size_)
+        : Parent(makeHTTPSession(uri_, timeouts), uri_, method_, out_stream_callback, credentials, buffer_size_)
     {
     }
 };
@@ -111,16 +122,16 @@ class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase
     using Parent = detail::ReadWriteBufferFromHTTPBase<PooledHTTPSessionPtr>;
 
 public:
-    explicit PooledReadWriteBufferFromHTTP(Poco::URI uri,
-        const std::string & method = {},
+    explicit PooledReadWriteBufferFromHTTP(Poco::URI uri_,
+        const std::string & method_ = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
-        : Parent(makePooledHTTPSession(uri, timeouts, max_connections_per_endpoint),
-              uri,
-              method,
+        : Parent(makePooledHTTPSession(uri_, timeouts, max_connections_per_endpoint),
+              uri_,
+              method_,
               out_stream_callback,
               credentials,
               buffer_size_)

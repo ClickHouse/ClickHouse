@@ -22,9 +22,8 @@ cd ClickHouse
 
 # How to Build ClickHouse for Development
 
-Build should work on Ubuntu Linux.
+The following tutorial is based on the Ubuntu Linux system.
 With appropriate changes, it should also work on any other Linux distribution.
-The build process is not intended to work on Mac OS X.
 Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
 
 To test for SSE 4.2, do
@@ -41,7 +40,7 @@ sudo apt-get install git cmake ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-## Install GCC 7
+## Install GCC 8
 
 There are several ways to do this.
 
@@ -51,24 +50,24 @@ There are several ways to do this.
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-7 g++-7
+sudo apt-get install gcc-8 g++-8
 ```
 
 ### Install from Sources
 
 Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
 
-## Use GCC 7 for Builds
+## Use GCC 8 for Builds
 
 ```bash
-export CC=gcc-7
-export CXX=g++-7
+export CC=gcc-8
+export CXX=g++-8
 ```
 
 ## Install Required Libraries from Packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev
+sudo apt-get install libicu-dev libreadline-dev gperf
 ```
 
 ## Checkout ClickHouse Sources

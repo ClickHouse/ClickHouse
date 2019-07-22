@@ -4,7 +4,6 @@
 
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -39,13 +38,11 @@ private:
 
     void toLarge()
     {
-        CurrentMemoryTracker::alloc(sizeof(Large));
-
         /// At the time of copying data from `tiny`, setting the value of `large` is still not possible (otherwise it will overwrite some data).
         Large * tmp_large = new Large;
 
         for (const auto & x : small)
-            tmp_large->insert(x);
+            tmp_large->insert(x.getValue());
 
         large = tmp_large;
     }
@@ -56,11 +53,7 @@ public:
     ~HyperLogLogWithSmallSetOptimization()
     {
         if (isLarge())
-        {
             delete large;
-
-            CurrentMemoryTracker::free(sizeof(Large));
-        }
     }
 
     void insert(Key value)
@@ -99,7 +92,7 @@ public:
         else
         {
             for (const auto & x : rhs.small)
-                insert(x);
+                insert(x.getValue());
         }
     }
 

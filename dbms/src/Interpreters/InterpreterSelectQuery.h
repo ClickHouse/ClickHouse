@@ -3,25 +3,29 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/IInterpreter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IInterpreter.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/TableStructureLockHolder.h>
 
+#include <Processors/QueryPipeline.h>
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
 
-class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
@@ -32,14 +36,6 @@ public:
      * query_ptr
      * - A query AST to interpret.
      *
-     * to_stage
-     * - the stage to which the query is to be executed. By default - till to the end.
-     *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
-     *
-     * subquery_depth
-     * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
-     *   for INSERT SELECT, a value 1 is passed instead of 0.
-     *
      * required_result_column_names
      * - don't calculate all columns except the specified ones from the query
      *  - it is used to remove calculation (and reading) of unnecessary columns from subqueries.
@@ -49,26 +45,22 @@ public:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        const Names & required_result_column_names = Names{},
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0,
-        bool only_analyze_ = false);
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
         const BlockInputStreamPtr & input_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false);
+        const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
         const StoragePtr & storage_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false);
+        const SelectQueryOptions & = {});
 
     ~InterpreterSelectQuery() override;
 
@@ -78,9 +70,14 @@ public:
     /// Execute the query and return multuple streams for parallel processing.
     BlockInputStreams executeWithMultipleStreams();
 
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
+
     Block getSampleBlock();
 
     void ignoreWithTotals();
+
+    ASTPtr getQuery() const { return query_ptr; }
 
 private:
     InterpreterSelectQuery(
@@ -88,10 +85,10 @@ private:
         const Context & context_,
         const BlockInputStreamPtr & input_,
         const StoragePtr & storage_,
-        const Names & required_result_column_names,
-        QueryProcessingStage::Enum to_stage_,
-        size_t subquery_depth_,
-        bool only_analyze_);
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {});
+
+    ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
 
     struct Pipeline
@@ -108,31 +105,41 @@ private:
           * It is appended to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
           */
         BlockInputStreamPtr stream_with_non_joined_data;
+        bool union_stream = false;
 
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
         template <typename Transform>
-        void transform(Transform && transform)
+        void transform(Transform && transformation)
         {
             for (auto & stream : streams)
-                transform(stream);
+                transformation(stream);
 
             if (stream_with_non_joined_data)
-                transform(stream_with_non_joined_data);
+                transformation(stream_with_non_joined_data);
         }
 
         bool hasMoreThanOneStream() const
         {
             return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
         }
+
+        /// Resulting stream is mix of other streams data. Distinct and/or order guaranties are broken.
+        bool hasMixedStreams() const
+        {
+            return hasMoreThanOneStream() || union_stream;
+        }
+
+        bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
+        bool initialized() const { return !streams.empty(); }
     };
 
-    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
-
+    template <typename TPipeline>
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
     struct AnalysisResult
     {
-        bool has_join       = false;
+        bool hasJoin() const { return before_join.get(); }
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;
@@ -162,9 +169,10 @@ private:
 
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
+        FilterInfoPtr filter_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -176,7 +184,8 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
+    template <typename TPipeline>
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
                              const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
@@ -196,6 +205,22 @@ private:
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline);
+    void executeLimitBy(QueryPipeline & pipeline);
+    void executeLimit(QueryPipeline & pipeline);
+    void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(QueryPipeline & pipeline);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+
     /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
     void unifyStreams(Pipeline & pipeline);
 
@@ -207,6 +232,8 @@ private:
 
     void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
 
+    void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
+
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *
       * Section SETTINGS - settings for a specific query.
@@ -215,20 +242,15 @@ private:
       */
     void initSettings();
 
+    const SelectQueryOptions options;
     ASTPtr query_ptr;
-    ASTSelectQuery & query;
     Context context;
-    QueryProcessingStage::Enum to_stage;
-    size_t subquery_depth = 0;
     NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
-
-    /// The object was created only for query analysis.
-    bool only_analyze = false;
 
     /// List of columns to read to execute the query.
     Names required_columns;
@@ -242,7 +264,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    TableStructureReadLockPtr table_lock;
+    TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;

@@ -6,17 +6,14 @@
 #include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadBufferFromHDFS.h>
+#include <IO/WriteBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <Poco/Path.h>
-#include <TableFunctions/parseRemoteDescription.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -29,100 +26,106 @@ namespace ErrorCodes
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
+    const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
-    Context &)
-    : IStorage(columns_), uri(uri_), format_name(format_name_), table_name(table_name_)
+    Context & context_)
+    : IStorage(columns_)
+    , uri(uri_)
+    , format_name(format_name_)
+    , table_name(table_name_)
+    , database_name(database_name_)
+    , context(context_)
 {
 }
 
 namespace
 {
-    class StorageHDFSBlockInputStream : public IProfilingBlockInputStream
+
+class HDFSBlockInputStream : public IBlockInputStream
+{
+public:
+    HDFSBlockInputStream(const String & uri,
+        const String & format,
+        const Block & sample_block,
+        const Context & context,
+        UInt64 max_block_size)
     {
-    public:
-        StorageHDFSBlockInputStream(const String & uri,
-            const String & format,
-            const String & name_,
-            const Block & sample_block,
-            const Context & context,
-            size_t max_block_size)
-            : name(name_)
-        {
-            // Assume no query and fragment in uri, todo, add sanity check
-            String fuzzyFileNames;
-            String uriPrefix = uri.substr(0, uri.find_last_of('/'));
-            if (uriPrefix.length() == uri.length())
-            {
-                fuzzyFileNames = uri;
-                uriPrefix.clear();
-            }
-            else
-            {
-                uriPrefix += "/";
-                fuzzyFileNames = uri.substr(uriPrefix.length());
-            }
+        std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+        auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+        reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+    }
 
-            std::vector<String> fuzzyNameList = parseRemoteDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
+    String getName() const override
+    {
+        return "HDFS";
+    }
 
-            BlockInputStreams inputs;
+    Block readImpl() override
+    {
+        return reader->read();
+    }
 
-            for (auto & name: fuzzyNameList)
-            {
-                std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
+    Block getHeader() const override
+    {
+        return reader->getHeader();
+    }
 
-                inputs.emplace_back(
-                    std::make_shared<OwningBlockInputStream<ReadBuffer>>(
-                        FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size),
-                        std::move(read_buf)));
-            }
+    void readPrefixImpl() override
+    {
+        reader->readPrefix();
+    }
 
-            if (inputs.size() == 0)
-                throw Exception("StorageHDFS inputs interpreter error", ErrorCodes::BAD_ARGUMENTS);
+    void readSuffixImpl() override
+    {
+        reader->readSuffix();
+    }
 
-            if (inputs.size() == 1)
-            {
-                reader = inputs[0];
-            }
-            else
-            {
-                reader = std::make_shared<UnionBlockInputStream>(inputs, nullptr, context.getSettingsRef().max_distributed_connections);
-            }
-        }
+private:
+    BlockInputStreamPtr reader;
+};
 
-        String getName() const override
-        {
-            return name;
-        }
+class HDFSBlockOutputStream : public IBlockOutputStream
+{
+public:
+    HDFSBlockOutputStream(const String & uri,
+        const String & format,
+        const Block & sample_block_,
+        const Context & context)
+        : sample_block(sample_block_)
+    {
+        write_buf = std::make_unique<WriteBufferFromHDFS>(uri);
+        writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+    }
 
-        Block readImpl() override
-        {
-            return reader->read();
-        }
+    Block getHeader() const override
+    {
+        return sample_block;
+    }
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
 
-        void readPrefixImpl() override
-        {
-            reader->readPrefix();
-        }
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
 
-        void readSuffixImpl() override
-        {
-            auto explicitReader = dynamic_cast<UnionBlockInputStream *>(reader.get());
-            if (explicitReader) explicitReader->cancel(false); // skip Union read suffix assertion
+    void writeSuffix() override
+    {
+        writer->writeSuffix();
+        writer->flush();
+        write_buf->sync();
+    }
 
-            reader->readSuffix();
-        }
-
-    private:
-        String name;
-        BlockInputStreamPtr reader;
-    };
+private:
+    Block sample_block;
+    std::unique_ptr<WriteBufferFromHDFS> write_buf;
+    BlockOutputStreamPtr writer;
+};
 
 }
 
@@ -130,26 +133,28 @@ namespace
 BlockInputStreams StorageHDFS::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageHDFSBlockInputStream>(
+    return {std::make_shared<HDFSBlockInputStream>(
         uri,
         format_name,
-        getName(),
         getSampleBlock(),
-        context,
+        context_,
         max_block_size)};
 }
 
-void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
-
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
 {
-    throw Exception("StorageHDFS write is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
-    return {};
+    table_name = new_table_name;
+    database_name = new_database_name;
+}
+
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
+{
+    return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
 }
 
 void registerStorageHDFS(StorageFactory & factory)
@@ -164,13 +169,13 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageHDFS::create(url, args.table_name, format_name, args.columns, args.context);
+        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.context);
     });
 }
 

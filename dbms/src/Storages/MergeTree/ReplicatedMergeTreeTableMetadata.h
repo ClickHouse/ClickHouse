@@ -25,6 +25,9 @@ struct ReplicatedMergeTreeTableMetadata
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;
     String sorting_key;
+    String skip_indices;
+    String ttl_table;
+    UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
@@ -40,10 +43,19 @@ struct ReplicatedMergeTreeTableMetadata
         bool sorting_key_changed = false;
         String new_sorting_key;
 
-        bool empty() const { return !sorting_key_changed; }
+        bool skip_indices_changed = false;
+        String new_skip_indices;
+
+        bool ttl_table_changed = false;
+        String new_ttl_table;
+
+        bool empty() const { return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed; }
     };
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;
+
+private:
+    bool index_granularity_bytes_found_in_zk = false;
 };
 
 }

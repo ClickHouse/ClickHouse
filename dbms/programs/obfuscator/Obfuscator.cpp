@@ -51,7 +51,7 @@ It is designed to retain the following properties of data:
 - probability distributions of length of strings;
 - probability of zero values of numbers; empty strings and arrays, NULLs;
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
-- continuouty (magnitude of difference) of time values across table; continuouty of floating point values.
+- continuity (magnitude of difference) of time values across table; continuity of floating point values.
 - date component of DateTime values;
 - UTF-8 validity of string values;
 - string values continue to look somewhat natural.
@@ -123,7 +123,7 @@ UInt64 hash(Ts... xs)
 
 UInt64 maskBits(UInt64 x, size_t num_bits)
 {
-    return x & ((1 << num_bits) - 1);
+    return x & ((1ULL << num_bits) - 1);
 }
 
 
@@ -149,7 +149,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
         bits = feistelRound(bits, num_bits, seed, i);
-    return (x & ~((1 << num_bits) - 1)) ^ bits;
+    return (x & ~((1ULL << num_bits) - 1)) ^ bits;
 }
 
 
@@ -246,7 +246,7 @@ Float transformFloatMantissa(Float x, UInt64 seed)
 
 
 /// Transform difference from previous number by applying pseudorandom permutation to mantissa part of it.
-/// It allows to retain some continuouty property of source data.
+/// It allows to retain some continuity property of source data.
 template <typename Float>
 class FloatModel : public IModel
 {
@@ -317,8 +317,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {
@@ -577,7 +577,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -591,7 +591,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -623,7 +623,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -639,7 +639,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -674,7 +674,7 @@ public:
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->second.total + it->second.count_end != 0)
+                if (table.end() != it && it->getSecond().total + it->getSecond().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -708,7 +708,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->second.sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -912,8 +912,8 @@ public:
         size_t columns = header.columns();
         models.reserve(columns);
 
-        for (size_t i = 0; i < columns; ++i)
-            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_params));
+        for (const auto & elem : header)
+            models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
     }
 
     void train(const Columns & columns)
@@ -954,7 +954,7 @@ try
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
@@ -1024,6 +1024,7 @@ try
     }
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1037,7 +1038,7 @@ try
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
-    size_t max_block_size = 8192;
+    UInt64 max_block_size = 8192;
 
     /// Train step
     {

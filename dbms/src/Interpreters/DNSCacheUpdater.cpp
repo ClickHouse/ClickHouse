@@ -1,118 +1,54 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
-#include <Common/ProfileEvents.h>
-#include <Poco/Net/NetException.h>
-#include <common/logger_useful.h>
-
-
-namespace ProfileEvents
-{
-    extern Event NetworkErrors;
-}
-
+#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
 
-using BackgroundProcessingPoolTaskInfo = BackgroundProcessingPool::TaskInfo;
-
-namespace ErrorCodes
+DNSCacheUpdater::DNSCacheUpdater(Context & context_, Int32 update_period_seconds_)
+    : context(context_),
+    update_period_seconds(update_period_seconds_),
+    pool(context_.getSchedulePool())
 {
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int ALL_CONNECTION_TRIES_FAILED;
+    task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
 }
 
-
-/// Call it inside catch section
-/// Returns true if it is a network error
-static bool isNetworkError()
+void DNSCacheUpdater::run()
 {
-    try
-    {
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-            return true;
-    }
-    catch (Poco::Net::DNSException &)
-    {
-        return true;
-    }
-    catch (Poco::TimeoutException &)
-    {
-        return true;
-    }
-    catch (...)
-    {
-        /// Do nothing
-    }
+    auto & resolver = DNSResolver::instance();
 
-    return false;
-}
-
-
-DNSCacheUpdater::DNSCacheUpdater(Context & context_)
-    : context(context_), pool(context_.getBackgroundPool())
-{
-    task_handle = pool.addTask([this] () { return run(); });
-}
-
-bool DNSCacheUpdater::run()
-{
-    /// TODO: Ensusre that we get global counter (not thread local)
-    auto num_current_network_exceptions = ProfileEvents::global_counters[ProfileEvents::NetworkErrors].load(std::memory_order_relaxed);
-
-    if (num_current_network_exceptions >= last_num_network_erros + min_errors_to_update_cache
-        && time(nullptr) > last_update_time + min_update_period_seconds)
+    /// Reload cluster config if IP of any host has been changed since last update.
+    if (resolver.updateCache())
     {
+        LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"),
+            "IPs of some hosts have been changed. Will reload cluster config.");
         try
         {
-            LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Updating DNS cache");
-
-            DNSResolver::instance().dropCache();
             context.reloadClusterConfig();
-
-            last_num_network_erros = num_current_network_exceptions;
-            last_update_time = time(nullptr);
-
-            return true;
         }
         catch (...)
         {
-            /// Do not increment ProfileEvents::NetworkErrors twice
-            if (isNetworkError())
-                return false;
-
-            throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    /// According to BackgroundProcessingPool logic, if task has done work, it could be executed again immediately.
-    return false;
+    /** DNS resolution may take a while and by this reason, actual update period will be longer than update_period_seconds.
+      * We intentionally allow this "drift" for two reasons:
+      * - automatically throttle when DNS requests take longer time;
+      * - add natural randomization on huge clusters - avoid sending all requests at the same moment of time from different servers.
+      */
+    task_handle->scheduleAfter(update_period_seconds * 1000);
+}
+
+void DNSCacheUpdater::start()
+{
+    task_handle->activateAndSchedule();
 }
 
 DNSCacheUpdater::~DNSCacheUpdater()
 {
-    if (task_handle)
-        pool.removeTask(task_handle);
-    task_handle.reset();
-}
-
-
-bool DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded()
-{
-    if (isNetworkError())
-    {
-        ProfileEvents::increment(ProfileEvents::NetworkErrors);
-        return true;
-    }
-
-    return false;
+    task_handle->deactivate();
 }
 
 }
-

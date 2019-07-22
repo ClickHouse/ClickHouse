@@ -60,7 +60,7 @@ public:
         {
             {
                 WriteBufferFromString out(tmp);
-                src.type->serializeText(*src.column, i, out, format_settings);
+                src.type->serializeAsText(*src.column, i, out, format_settings);
             }
 
             res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

@@ -87,7 +87,7 @@ void XMLRowOutputStream::writeField(const IColumn & column, const IDataType & ty
     writeCString("\t\t\t<", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">", *ostr);
-    type.serializeTextXML(column, row_num, *ostr, format_settings);
+    type.serializeAsTextXML(column, row_num, *ostr, format_settings);
     writeCString("</", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">\n", *ostr);
@@ -153,7 +153,7 @@ void XMLRowOutputStream::writeTotals()
             writeCString("\t\t<", *ostr);
             writeString(field_tag_names[i], *ostr);
             writeCString(">", *ostr);
-            column.type->serializeTextXML(*column.column.get(), 0, *ostr, format_settings);
+            column.type->serializeAsTextXML(*column.column.get(), 0, *ostr, format_settings);
             writeCString("</", *ostr);
             writeString(field_tag_names[i], *ostr);
             writeCString(">\n", *ostr);
@@ -179,7 +179,7 @@ static void writeExtremesElement(
         writeCString("\t\t\t<", ostr);
         writeString(field_tag_names[i], ostr);
         writeCString(">", ostr);
-        column.type->serializeTextXML(*column.column.get(), row_num, ostr, format_settings);
+        column.type->serializeAsTextXML(*column.column.get(), row_num, ostr, format_settings);
         writeCString("</", ostr);
         writeString(field_tag_names[i], ostr);
         writeCString(">\n", ostr);
@@ -215,10 +215,10 @@ void XMLRowOutputStream::writeStatistics()
     writeText(watch.elapsedSeconds(), *ostr);
     writeCString("</elapsed>\n", *ostr);
     writeCString("\t\t<rows_read>", *ostr);
-    writeText(progress.rows.load(), *ostr);
+    writeText(progress.read_rows.load(), *ostr);
     writeCString("</rows_read>\n", *ostr);
     writeCString("\t\t<bytes_read>", *ostr);
-    writeText(progress.bytes.load(), *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
     writeCString("</bytes_read>\n", *ostr);
     writeCString("\t</statistics>\n", *ostr);
 }

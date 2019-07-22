@@ -1,4 +1,6 @@
 #pragma once
+#include <cmath>
+
 #include <common/arithmeticOverflow.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
@@ -50,7 +52,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
             return 20;
         default:
             break;
-    };
+    }
     return 0;
 }
 
@@ -80,17 +82,18 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception("Precision is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxPrecision()))
-            throw Exception("Scale is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     const char * getFamilyName() const override { return "Decimal"; }
-    std::string getName() const override;
+    std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -100,7 +103,12 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+
     Field getDefault() const override;
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override;
     MutableColumnPtr createColumn() const override;
     bool equals(const IDataType & rhs) const override;
 
@@ -170,8 +178,9 @@ public:
 
     T parseFromString(const String & str) const;
 
-    void readText(T & x, ReadBuffer & istr) const { readText(x, istr, precision, scale); }
-    static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
+    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, precision, scale, csv); }
+    static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 private:
@@ -237,9 +246,9 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
 ///
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -311,9 +320,28 @@ inline std::enable_if_t<IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDa
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
+    using ToNativeType = typename ToDataType::FieldType::NativeType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
-        return value * ToDataType::getScaleMultiplier(scale);
+    {
+        if (!std::isfinite(value))
+            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
+
+        auto out = value * ToDataType::getScaleMultiplier(scale);
+        if constexpr (std::is_same_v<ToNativeType, Int128>)
+        {
+            static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+            static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+            if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
+                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        else
+        {
+            if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
+                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        return out;
+    }
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)

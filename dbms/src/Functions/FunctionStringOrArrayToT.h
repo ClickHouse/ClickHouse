@@ -62,33 +62,33 @@ public:
 
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
+                Impl::vector_fixed_to_constant(col_fixed->getChars(), col_fixed->getN(), res);
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col->size(), toField(res));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_fixed->size(), toField(res));
             }
             else
             {
                 auto col_res = ColumnVector<ResultType>::create();
 
                 typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-                vec_res.resize(col->size());
-                Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
+                vec_res.resize(col_fixed->size());
+                Impl::vector_fixed_to_vector(col_fixed->getChars(), col_fixed->getN(), vec_res);
 
                 block.getByPosition(result).column = std::move(col_res);
             }
         }
-        else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
+        else if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
 
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-            Impl::array(col->getOffsets(), vec_res);
+            vec_res.resize(col_arr->size());
+            Impl::array(col_arr->getOffsets(), vec_res);
 
             block.getByPosition(result).column = std::move(col_res);
         }

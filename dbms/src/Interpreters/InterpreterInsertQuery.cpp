@@ -1,13 +1,17 @@
 #include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/copyData.h>
 
 #include <Parsers/ASTInsertQuery.h>
@@ -42,7 +46,7 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 {
     if (query.table_function)
     {
-        auto table_function = typeid_cast<const ASTFunction *>(query.table_function.get());
+        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
         return factory.get(table_function->name, context)->execute(query.table_function, context);
     }
@@ -53,8 +57,6 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-
-
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
@@ -62,6 +64,8 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
         /// Format Native ignores header and write blocks as is.
         if (query.format == "Native")
             return {};
+        else if (query.no_destination)
+            return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
     }
@@ -88,30 +92,30 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
-
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
+    auto query_sample_block = getSampleBlock(query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), table->getSampleBlock(), table->getColumns().defaults, context);
+        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -124,7 +128,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, {}, QueryProcessingStage::Complete, 1};
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
         res.in = interpreter_select.execute().in;
 
@@ -136,10 +140,16 @@ BlockIO InterpreterInsertQuery::execute()
         if (!allow_materialized)
         {
             Block in_header = res.in->getHeader();
-            for (const auto & name_type : table->getColumns().materialized)
-                if (in_header.has(name_type.name))
-                    throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+            for (const auto & column : table->getColumns())
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
+                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
+    }
+    else if (query.data && !query.has_tail) /// can execute without additional data
+    {
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
+        res.out = nullptr;
     }
 
     return res;
@@ -157,6 +167,12 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
     }
 
     throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
+}
+
+std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+{
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
+    return {query.database, query.table};
 }
 
 }

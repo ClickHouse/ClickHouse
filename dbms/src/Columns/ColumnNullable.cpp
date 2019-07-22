@@ -22,13 +22,12 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    if (ColumnPtr nested_column_materialized = getNestedColumn().convertToFullColumnIfConst())
-        nested_column = nested_column_materialized;
+    nested_column = getNestedColumn().convertToFullColumnIfConst();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
-    if (null_map->isColumnConst())
+    if (isColumnConst(*null_map))
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
@@ -82,9 +81,18 @@ StringRef ColumnNullable::getDataAt(size_t /*n*/) const
     throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
 }
 
-void ColumnNullable::insertData(const char * /*pos*/, size_t /*length*/)
+void ColumnNullable::insertData(const char * pos, size_t length)
 {
-    throw Exception{"Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
+    if (pos == nullptr)
+    {
+        getNestedColumn().insertDefault();
+        getNullMapData().push_back(1);
+    }
+    else
+    {
+        getNestedColumn().insertData(pos, length);
+        getNullMapData().push_back(0);
+    }
 }
 
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -95,12 +103,13 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     auto pos = arena.allocContinue(s, begin);
     memcpy(pos, &arr[n], s);
 
-    size_t nested_size = 0;
+    if (arr[n])
+        return StringRef(pos, s);
 
-    if (arr[n] == 0)
-        nested_size = getNestedColumn().serializeValueIntoArena(n, arena, begin).size;
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
-    return StringRef{begin, s + nested_size};
+    /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+    return StringRef(nested_ref.data - s, nested_ref.size + s);
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
@@ -292,6 +301,12 @@ size_t ColumnNullable::allocatedBytes() const
     return getNestedColumn().allocatedBytes() + getNullMapColumn().allocatedBytes();
 }
 
+void ColumnNullable::protect()
+{
+    getNestedColumn().protect();
+    getNullMapColumn().protect();
+}
+
 
 namespace
 {
@@ -437,13 +452,12 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
-
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
-    if (column->isColumnNullable())
+    if (isColumnNullable(*column))
         return column;
 
-    if (column->isColumnConst())
+    if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));

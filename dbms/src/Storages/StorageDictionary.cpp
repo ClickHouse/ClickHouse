@@ -24,15 +24,23 @@ namespace ErrorCodes
 
 
 StorageDictionary::StorageDictionary(
+    const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
-    const DictionaryStructure & dictionary_structure_,
+    const Context & context,
+    bool attach,
     const String & dictionary_name_)
     : IStorage{columns_}, table_name(table_name_),
+    database_name(database_name_),
     dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
-    checkNamesAndTypesCompatibleWithDictionary(dictionary_structure_);
+    if (!attach)
+    {
+        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+        checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
+    }
 }
 
 BlockInputStreams StorageDictionary::read(
@@ -70,11 +78,11 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const
 {
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
-    std::set<NameAndTypePair> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
+    std::set<NameAndTypePair> names_and_types_set(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (auto & column : getColumns().ordinary)
+    for (const auto & column : getColumns().getOrdinary())
     {
-        if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
+        if (names_and_types_set.find(column) == names_and_types_set.end())
         {
             std::string message = "Not found column ";
             message += column.name + " " + column.type->getName();
@@ -95,13 +103,10 @@ void registerStorageDictionary(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
-        String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
-
-        const auto & dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
-        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+        String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
-            args.table_name, args.columns, dictionary_structure, dictionary_name);
+            args.database_name, args.table_name, args.columns, args.context, args.attach, dictionary_name);
     });
 }
 

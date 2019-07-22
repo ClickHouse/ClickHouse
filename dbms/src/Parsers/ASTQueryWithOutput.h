@@ -6,13 +6,15 @@
 namespace DB
 {
 
-/** Query with output options (supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] suffix).
+/** Query with output options
+  * (supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] [SETTINGS key1 = value1, key2 = value2, ...] suffix).
   */
 class ASTQueryWithOutput : public IAST
 {
 public:
     ASTPtr out_file;
     ASTPtr format;
+    ASTPtr settings_ast;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 
@@ -34,7 +36,7 @@ template <typename ASTIDAndQueryNames>
 class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 {
 public:
-    String getID() const override { return ASTIDAndQueryNames::ID; }
+    String getID(char) const override { return ASTIDAndQueryNames::ID; }
 
     ASTPtr clone() const override
     {

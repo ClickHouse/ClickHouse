@@ -19,8 +19,8 @@ void CountingBlockOutputStream::write(const Block & block)
     Progress local_progress(block.rows(), block.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
 
-    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.rows);
-    ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.bytes);
+    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);

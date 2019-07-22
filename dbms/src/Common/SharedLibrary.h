@@ -1,5 +1,6 @@
 #pragma once
 
+#include <dlfcn.h>
 #include <memory>
 #include <string>
 #include <boost/noncopyable.hpp>
@@ -8,12 +9,12 @@
 namespace DB
 {
 
-    /** Allows you to open a dynamic library and get a pointer to a function from it.
+/** Allows you to open a dynamic library and get a pointer to a function from it.
   */
 class SharedLibrary : private boost::noncopyable
 {
 public:
-    explicit SharedLibrary(const std::string & path);
+    explicit SharedLibrary(const std::string & path, int flags = RTLD_LAZY);
 
     ~SharedLibrary();
 

@@ -64,7 +64,7 @@ namespace DB
   * During insertion, each key is locked - to avoid parallel initialization of regions for same key.
   *
   * On insertion, we search for free region of at least requested size.
-  * If nothing was found, we evict oldest unused region; if not enogh size, we evict it neighbours; and try again.
+  * If nothing was found, we evict oldest unused region; if not enough size, we evict it neighbours; and try again.
   *
   * Metadata is allocated by usual allocator and its memory usage is not accounted.
   *
@@ -94,7 +94,11 @@ private:
         Key key;
         Payload payload;
 
-        void * ptr;
+        union
+        {
+            void * ptr;
+            char * char_ptr;
+        };
         size_t size;
         size_t refcount = 0;
         void * chunk;
@@ -231,7 +235,7 @@ public:
 
         ~Holder()
         {
-            std::lock_guard<std::mutex> cache_lock(cache.mutex);
+            std::lock_guard cache_lock(cache.mutex);
             if (--region.refcount == 0)
                 cache.lru_list.push_back(region);
             cache.total_size_in_use -= region.size;
@@ -301,12 +305,12 @@ private:
             if (cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> token_lock(token->mutex);
+            std::lock_guard token_lock(token->mutex);
 
             if (token->cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> cache_lock(token->cache.mutex);
+            std::lock_guard cache_lock(token->cache.mutex);
 
             --token->refcount;
             if (token->refcount == 0)
@@ -349,7 +353,7 @@ private:
             if (left_it->chunk == region.chunk && left_it->isFree())
             {
                 region.size += left_it->size;
-                *reinterpret_cast<char **>(&region.ptr) -= left_it->size;
+                region.char_ptr-= left_it->size;
                 size_multimap.erase(size_multimap.iterator_to(*left_it));
                 adjacency_list.erase_and_dispose(left_it, [](RegionMetadata * elem) { elem->destroy(); });
             }
@@ -479,7 +483,7 @@ private:
 
         size_multimap.erase(size_multimap.iterator_to(free_region));
         free_region.size -= size;
-        *reinterpret_cast<char **>(&free_region.ptr) += size;
+        free_region.char_ptr += size;
         size_multimap.insert(free_region);
 
         adjacency_list.insert(adjacency_list.iterator_to(free_region), *allocated_region);
@@ -536,7 +540,7 @@ public:
 
     ~ArrayCache()
     {
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
 
         key_map.clear();
         lru_list.clear();
@@ -563,7 +567,7 @@ public:
     {
         InsertTokenHolder token_holder;
         {
-            std::lock_guard<std::mutex> cache_lock(mutex);
+            std::lock_guard cache_lock(mutex);
 
             auto it = key_map.find(key, RegionCompareByKey());
             if (key_map.end() != it)
@@ -584,7 +588,7 @@ public:
 
         InsertToken * token = token_holder.token.get();
 
-        std::lock_guard<std::mutex> token_lock(token->mutex);
+        std::lock_guard token_lock(token->mutex);
 
         token_holder.cleaned_up = token->cleaned_up;
 
@@ -605,7 +609,7 @@ public:
 
         RegionMetadata * region;
         {
-            std::lock_guard<std::mutex> cache_lock(mutex);
+            std::lock_guard cache_lock(mutex);
             region = allocate(size);
         }
 
@@ -626,14 +630,14 @@ public:
             catch (...)
             {
                 {
-                    std::lock_guard<std::mutex> cache_lock(mutex);
+                    std::lock_guard cache_lock(mutex);
                     freeRegion(*region);
                 }
                 throw;
             }
         }
 
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
 
         try
         {
@@ -692,7 +696,7 @@ public:
 
     Statistics getStatistics() const
     {
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
         Statistics res;
 
         res.total_chunks_size = total_chunks_size;

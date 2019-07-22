@@ -15,7 +15,7 @@ public:
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
 
-    String getName() const override
+    String doGetName() const override
     {
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
@@ -54,61 +54,73 @@ public:
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeBinary);
+        serializeImpl(column, row_num, &IDataType::serializeBinary, ostr);
     }
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
     {
-        deserializeImpl(column, istr, &IDataType::deserializeBinary);
+        deserializeImpl(column, &IDataType::deserializeBinary, istr);
     }
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeTextEscaped, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsTextEscaped, ostr, settings);
     }
 
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeImpl(column, istr, &IDataType::deserializeTextEscaped, settings);
+        deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
     }
 
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeTextQuoted, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsTextQuoted, ostr, settings);
     }
 
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeImpl(column, istr, &IDataType::deserializeTextQuoted, settings);
+        deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
+    }
+
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
     }
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeTextCSV, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
     }
 
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeImpl(column, istr, &IDataType::deserializeTextCSV, settings);
+        deserializeImpl(column, &IDataType::deserializeAsTextCSV, istr, settings);
     }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeText, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsText, ostr, settings);
     }
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeTextJSON, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsTextJSON, ostr, settings);
     }
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeImpl(column, istr, &IDataType::deserializeTextJSON, settings);
+        deserializeImpl(column, &IDataType::deserializeAsTextJSON, istr, settings);
     }
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
-        serializeImpl(column, row_num, ostr, &IDataType::serializeTextXML, settings);
+        serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
     }
+
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override
+    {
+        serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
+    }
+
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -143,19 +155,17 @@ public:
 
 private:
 
-    template <typename ... Args>
-    using SerealizeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, WriteBuffer &, Args & ...) const;
+    template <typename ... Params>
+    using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;
 
-    template <typename ... Args>
-    void serializeImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-                       SerealizeFunctionPtr<Args ...> func, Args & ... args) const;
+    template <typename... Params, typename... Args>
+    void serializeImpl(const IColumn & column, size_t row_num, SerializeFunctionPtr<Params...> func, Args &&... args) const;
 
-    template <typename ... Args>
-    using DeserealizeFunctionPtr = void (IDataType::*)(IColumn &, ReadBuffer &, Args & ...) const;
+    template <typename ... Params>
+    using DeserializeFunctionPtr = void (IDataType::*)(IColumn &, Params ...) const;
 
-    template <typename ... Args>
-    void deserializeImpl(IColumn & column, ReadBuffer & istr,
-                         DeserealizeFunctionPtr<Args ...> func, Args & ... args) const;
+    template <typename ... Params, typename... Args>
+    void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Params...> func, Args &&... args) const;
 
     template <typename Creator>
     static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);

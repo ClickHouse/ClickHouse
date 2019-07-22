@@ -12,7 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Gets the domain.
+Gets the domain. Cut scheme with size less than 16 bytes.
 
 ### domainWithoutWWW
 
@@ -34,7 +34,7 @@ For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'y
 
 ### path
 
-Returns the path. Example: `/top/news.html`  The path does not include the query string.
+Returns the path. Example: `/top/news.html` The path does not include the query string.
 
 ### pathFull
 
@@ -42,7 +42,7 @@ The same as above, but including query string and fragment. Example: /top/news.h
 
 ### queryString
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \#  and everything after \#.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
 
 ### fragment
 
@@ -66,7 +66,7 @@ Returns an array of name strings corresponding to the names of URL parameters. T
 
 ### URLHierarchy(URL)
 
-Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. Example:
+Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. 
 
 ### URLPathHierarchy(URL)
 

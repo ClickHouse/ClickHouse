@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-
+#include "config_core.h"
 #if USE_EMBEDDED_COMPILER
 
 #include <Common/typeid_cast.h>
@@ -16,7 +15,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#include <llvm/IR/IRBuilder.h>
 
 #pragma GCC diagnostic pop
 
@@ -34,8 +33,7 @@ static inline bool typeIsSigned(const IDataType & type)
 {
     return typeIsEither<
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-        DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDateTime, DataTypeInterval
+        DataTypeFloat32, DataTypeFloat64, DataTypeInterval
     >(type);
 }
 

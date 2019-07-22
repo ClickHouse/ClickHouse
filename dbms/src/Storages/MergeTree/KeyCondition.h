@@ -235,17 +235,17 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
-    /// Whether the condition is feasible in the key range.
+    /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
-    bool mayBeTrueInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
+    BoolMask checkInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
 
-    /// Whether the condition is feasible in the direct product of single column ranges specified by `parallelogram`.
-    bool mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
+    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `parallelogram`.
+    BoolMask checkInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
 
-    /// Is the condition valid in a semi-infinite (not limited to the right) key range.
+    /// Are the condition and its negation valid in a semi-infinite (not limited to the right) key range.
     /// left_key must contain all the fields in the sort_descr in the appropriate order.
-    bool mayBeTrueAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
+    BoolMask getMaskAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
 
     /// Checks that the index can not be used.
     bool alwaysUnknownOrTrue() const;
@@ -253,7 +253,7 @@ public:
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
 
-    /// Impose an additional condition: the value in the column column must be in the `range` range.
+    /// Impose an additional condition: the value in the column `column` must be in the range `range`.
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
@@ -266,6 +266,11 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
+    /** Computes value of constant expression and its data type.
+      * Returns false, if expression isn't constant.
+      */
+    static bool getConstant(
+            const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
         const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
@@ -310,7 +315,6 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        ASTPtr in_function;
         using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
@@ -320,13 +324,13 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
 
 public:
     static const AtomMap atom_map;
 
 private:
-    bool mayBeTrueInRange(
+    BoolMask checkInRange(
         size_t used_key_size,
         const Field * left_key,
         const Field * right_key,
@@ -339,7 +343,7 @@ private:
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,
-      *  that can be monotomic on certain ranges?
+      *  that can be monotonic on certain ranges?
       * If these conditions are true, then returns number of column in key, type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
@@ -363,21 +367,13 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    void getKeyTuplePositionMapping(
-        const ASTPtr & node,
-        const Context & context,
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-        const size_t tuple_index,
-        size_t & out_key_column_num);
-
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
-        const ASTPtr & node,
+        const ASTs & args,
         const Context & context,
         RPNElement & out,
-        const SetPtr & prepared_set,
         size_t & out_key_column_num);
 
     RPN rpn;

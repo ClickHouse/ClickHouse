@@ -1,9 +1,10 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Core/Defines.h>
+#include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Core/TypeListNumber.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -199,8 +200,8 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
     size += polygons.capacity() * sizeof(MultiPolygon);
     size += getPolygonAllocatedBytes(polygon);
 
-    for (const auto & polygon : polygons)
-        size += getMultiPolygonAllocatedBytes(polygon);
+    for (const auto & elem : polygons)
+        size += getMultiPolygonAllocatedBytes(elem);
 
     return size;
 }
@@ -223,8 +224,15 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
 
+#pragma GCC diagnostic push
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
+
+#pragma GCC diagnostic pop
 
     if (cell_width == 0 || cell_height == 0)
     {
@@ -312,24 +320,23 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return cell.half_planes[0].contains(x, y);
         case CellType::pairOfLinesSingleConvexPolygon:
             return cell.half_planes[0].contains(x, y) && cell.half_planes[1].contains(x, y);
-        case CellType::pairOfLinesDifferentPolygons:
+        case CellType::pairOfLinesDifferentPolygons: [[fallthrough]];
         case CellType::pairOfLinesSingleNonConvexPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
-        default:
-            return false;
-
     }
+
+    __builtin_unreachable();
 }
 
 template <typename CoordinateType>
 typename PointInPolygonWithGrid<CoordinateType>::Distance
 PointInPolygonWithGrid<CoordinateType>::distance(
         const PointInPolygonWithGrid<CoordinateType>::Point & point,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+        const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
 {
-    const auto & outer = polygon.outer();
+    const auto & outer = poly.outer();
     Distance distance = 0;
     for (auto i : ext::range(0, outer.size() - 1))
     {
@@ -341,9 +348,9 @@ PointInPolygonWithGrid<CoordinateType>::distance(
 }
 
 template <typename CoordinateType>
-bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
 {
-    const auto & outer = polygon.outer();
+    const auto & outer = poly.outer();
     /// Segment or point.
     if (outer.size() < 4)
         return false;
@@ -698,6 +705,10 @@ std::string serialize(Polygon && polygon)
 
     return result;
 }
+
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out);
+
+void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
 
 
 } /// GeoUtils

@@ -2,7 +2,7 @@
 
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,13 +11,13 @@ namespace DB
 /** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`).
  *  During sorting only blocks with rows that equal by `x` saved in RAM.
  * */
-class FinishSortingBlockInputStream : public IProfilingBlockInputStream
+class FinishSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     FinishSortingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
         const SortDescription & description_to_sort_,
-        size_t max_merged_block_size_, size_t limit_);
+        size_t max_merged_block_size_, UInt64 limit_);
 
     String getName() const override { return "FinishSorting"; }
 
@@ -33,7 +33,7 @@ private:
     SortDescription description_sorted;
     SortDescription description_to_sort;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
 
     Block tail_block;
     Blocks blocks;

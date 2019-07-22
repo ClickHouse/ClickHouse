@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 /** Adds a materialized const column to the block with a specified value.
   */
 template <typename T>
-class AddingConstColumnBlockInputStream : public IProfilingBlockInputStream
+class AddingConstColumnBlockInputStream : public IBlockInputStream
 {
 public:
     AddingConstColumnBlockInputStream(

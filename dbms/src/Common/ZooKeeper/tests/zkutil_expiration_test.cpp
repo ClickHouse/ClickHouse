@@ -67,6 +67,4 @@ int main(int argc, char ** argv)
         std::cerr << "Some exception: " << DB::getCurrentExceptionMessage(true) << std::endl;
         return 2;
     }
-
-    return 0;
 }

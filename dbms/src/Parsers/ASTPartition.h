@@ -17,7 +17,7 @@ public:
 
     String id;
 
-    String getID() const override;
+    String getID(char) const override;
     ASTPtr clone() const override;
 
 protected:

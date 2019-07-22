@@ -44,7 +44,7 @@ void reinsert(const Value & x)
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
-**6.**  In `if`, `for`, `while` and other expressions, a space is inserted in front of the opening bracket (as opposed to function calls).
+**6.** In `if`, `for`, `while` and other expressions, a space is inserted in front of the opening bracket (as opposed to function calls).
 
 ```cpp
 for (size_t i = 0; i < rows; i += storage.index_granularity)
@@ -93,7 +93,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent  the rest of the code.
+**15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent the rest of the code.
 
 ```cpp
 template <typename T>
@@ -261,7 +261,7 @@ The example is borrowed from the resource [http://home.tamk.fi/~jaalto/course/co
 
 **7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
-**8.** Single-line comments begin with three slashes: `///`  and multi-line comments begin with `/**`. These comments are considered "documentation".
+**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered "documentation".
 
 Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
 
@@ -299,7 +299,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 ## Names
 
-**1.** Use  lowercase letters with underscores in the names of variables and class members.
+**1.** Use lowercase letters with underscores in the names of variables and class members.
 
 ```cpp
 size_t max_block_size;
@@ -307,15 +307,15 @@ size_t max_block_size;
 
 **2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
 
-    ```cpp
-    std::string getName() const override { return "Memory"; }
-    ```
+```cpp
+std::string getName() const override { return "Memory"; }
+```
 
 **3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
 
-    ```cpp
-    class StorageMemory : public IStorage
-    ```
+```cpp
+class StorageMemory : public IStorage
+```
 
 **4.** `using` are named the same way as classes, or with `_t` on the end.
 
@@ -349,7 +349,7 @@ In all other cases, use a name that describes the meaning.
 bool info_successfully_loaded = false;
 ```
 
-**9.**  Names of `define`s and global constants use ALL_CAPS with underscores.
+**9.** Names of `define`s and global constants use ALL_CAPS with underscores.
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000

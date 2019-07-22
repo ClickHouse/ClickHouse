@@ -9,9 +9,9 @@
 
 
 /** In a loop it connects to the server and immediately breaks the connection.
-  * Using the SO_LINGER option, we ensure that the connection is terminated by sending a RST packet (not FIN).
-  * This behavior causes a bug in the TCPServer implementation in the Poco library.
-  */
+  * Using the SO_LINGER option, we ensure that the connection is terminated by sending a RST packet (not FIN).
+  * This behavior causes a bug in the TCPServer implementation in the Poco library.
+  */
 int main(int argc, char ** argv)
 try
 {

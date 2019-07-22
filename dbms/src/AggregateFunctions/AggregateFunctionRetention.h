@@ -76,6 +76,7 @@ public:
     }
 
     AggregateFunctionRetention(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
         for (const auto i : ext::range(0, arguments.size()))
         {
@@ -86,7 +87,7 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        events_size = arguments.size();
+        events_size = static_cast<UInt8>(arguments.size());
     }
 
 
@@ -103,7 +104,6 @@ public:
             if (event)
             {
                 this->data(place).add(i);
-                break;
             }
         }
     }

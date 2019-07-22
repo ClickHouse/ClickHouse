@@ -19,16 +19,24 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
 BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
     const RowInputStreamPtr & row_input_,
     const Block & sample_,
-    size_t max_block_size_,
+    UInt64 max_block_size_,
+    UInt64 rows_portion_size_,
+    FormatFactory::ReadCallback callback,
     const FormatSettings & settings)
-    : row_input(row_input_), sample(sample_), max_block_size(max_block_size_),
-    allow_errors_num(settings.input_allow_errors_num), allow_errors_ratio(settings.input_allow_errors_ratio)
+    : row_input(row_input_)
+    , sample(sample_)
+    , max_block_size(max_block_size_)
+    , rows_portion_size(rows_portion_size_)
+    , read_virtual_columns_callback(callback)
+    , allow_errors_num(settings.input_allow_errors_num)
+    , allow_errors_ratio(settings.input_allow_errors_ratio)
 {
 }
 
@@ -52,16 +60,38 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
+    block_missing_values.clear();
 
     try
     {
-        for (size_t rows = 0; rows < max_block_size; ++rows)
+        for (size_t rows = 0, batch = 0; rows < max_block_size; ++rows, ++batch)
         {
+            if (rows_portion_size && batch == rows_portion_size)
+            {
+                batch = 0;
+                if (!checkTimeLimit() || isCancelled())
+                    break;
+            }
+
             try
             {
                 ++total_rows;
-                if (!row_input->read(columns))
+                RowReadExtension info;
+                if (!row_input->read(columns, info))
                     break;
+                if (read_virtual_columns_callback)
+                    read_virtual_columns_callback();
+
+                for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
+                {
+                    if (!info.read_columns[column_idx])
+                    {
+                        size_t column_size = columns[column_idx]->size();
+                        if (column_size == 0)
+                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                        block_missing_values.setBit(column_idx, column_size - 1);
+                    }
+                }
             }
             catch (Exception & e)
             {
@@ -74,7 +104,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                     throw;
 
                 ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+                Float32 current_error_ratio = static_cast<Float32>(num_errors) / total_rows;
 
                 if (num_errors > allow_errors_num
                     && current_error_ratio > allow_errors_ratio)

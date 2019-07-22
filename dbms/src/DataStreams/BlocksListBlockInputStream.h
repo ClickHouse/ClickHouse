@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 /** A stream of blocks from which you can read the next block from an explicitly provided list.
   * Also see OneBlockInputStream.
   */
-class BlocksListBlockInputStream : public IProfilingBlockInputStream
+class BlocksListBlockInputStream : public IBlockInputStream
 {
 public:
     /// Acquires the ownership of the block list.
@@ -23,6 +23,8 @@ public:
     String getName() const override { return "BlocksList"; }
 
 protected:
+    Block getHeader() const override { return list.empty() ? Block() : *list.begin(); }
+
     Block readImpl() override
     {
         if (it == end)

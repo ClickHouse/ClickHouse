@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <list>
+#include <set>
 #include <map>
 #include <initializer_list>
 
@@ -51,6 +52,8 @@ public:
     void insertUnique(ColumnWithTypeAndName && elem);
     /// remove the column at the specified position
     void erase(size_t position);
+    /// remove the columns at the specified positions
+    void erase(const std::set<size_t> & positions);
     /// remove the column with the specified name
     void erase(const String & name);
 
@@ -79,6 +82,7 @@ public:
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
     Names getNames() const;
+    DataTypes getDataTypes() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -94,8 +98,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !data.empty(); }
-    bool operator!() const { return data.empty(); }
+    operator bool() const { return !!columns(); }
+    bool operator!() const { return !this->operator bool(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;

@@ -6,15 +6,23 @@
 namespace DB
 {
 
+struct AsteriskSemantic;
+struct AsteriskSemanticImpl;
+
 class ASTAsterisk : public IAST
 {
 public:
-    String getID() const override { return "Asterisk"; }
+    String getID(char) const override { return "Asterisk"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+private:
+    std::shared_ptr<AsteriskSemanticImpl> semantic; /// pimpl
+
+    friend struct AsteriskSemantic;
 };
 
 }

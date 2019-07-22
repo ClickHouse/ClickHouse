@@ -1,6 +1,6 @@
-drop table if exists test.cardinality;
-create table test.cardinality (x String) engine = MergeTree order by tuple();
-insert into test.cardinality (x) select concat('v', toString(number)) from numbers(10);
-alter table test.cardinality add column y LowCardinality(String);
-select * from test.cardinality;
-drop table if exists test.cardinality;
+drop table if exists cardinality;
+create table cardinality (x String) engine = MergeTree order by tuple();
+insert into cardinality (x) select concat('v', toString(number)) from numbers(10);
+alter table cardinality add column y LowCardinality(String);
+select * from cardinality;
+drop table if exists cardinality;

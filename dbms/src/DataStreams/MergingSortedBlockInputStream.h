@@ -12,8 +12,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -60,7 +59,7 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 
 /** Merges several sorted streams into one sorted stream.
   */
-class MergingSortedBlockInputStream : public IProfilingBlockInputStream
+class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
@@ -69,7 +68,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -82,7 +81,7 @@ protected:
     struct RowRef
     {
         ColumnRawPtrs * columns = nullptr;
-        size_t row_num;
+        size_t row_num = 0;
         SharedBlockPtr shared_block;
 
         void swap(RowRef & other)
@@ -117,6 +116,38 @@ protected:
         size_t size() const { return empty() ? 0 : columns->size(); }
     };
 
+    /// Simple class, which allows to check stop condition during merge process
+    /// in simple case it just compare amount of merged rows with max_block_size
+    /// in `count_average` case it compares amount of merged rows with linear combination
+    /// of block sizes from which these rows were taken.
+    struct MergeStopCondition
+    {
+        size_t sum_blocks_granularity = 0;
+        size_t sum_rows_count = 0;
+        bool count_average;
+        size_t max_block_size;
+
+        MergeStopCondition(bool count_average_, size_t max_block_size_)
+            : count_average(count_average_)
+            , max_block_size(max_block_size_)
+        {}
+
+        /// add single row from block size `granularity`
+        void addRowWithGranularity(size_t granularity)
+        {
+            sum_blocks_granularity += granularity;
+            sum_rows_count++;
+        }
+
+        /// check that sum_rows_count is enough
+        bool checkStop() const;
+
+        bool empty() const
+        {
+            return sum_blocks_granularity == 0;
+        }
+    };
+
 
     Block readImpl() override;
 
@@ -134,12 +165,13 @@ protected:
 
     const SortDescription description;
     const size_t max_block_size;
-    size_t limit;
-    size_t total_merged_rows = 0;
+    UInt64 limit;
+    UInt64 total_merged_rows = 0;
 
     bool first = true;
     bool has_collation = false;
     bool quiet = false;
+    bool average_block_sizes = false;
 
     /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
     size_t expected_block_size = 0;
@@ -157,7 +189,7 @@ protected:
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;
 
-    /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf;
 

@@ -341,6 +341,13 @@ static inline __m128i libdivide_get_0000FFFF(void) {
 #pragma clang diagnostic pop
 #endif
 
+/// This is a bug in gcc-8, _MM_SHUFFLE was forgotten, though in trunk it is ok https://github.com/gcc-mirror/gcc/blob/master/gcc/config/rs6000/xmmintrin.h#L61
+#if defined(__PPC__)
+#ifndef _MM_SHUFFLE
+#define _MM_SHUFFLE(w,x,y,z) (((w) << 6) | ((x) << 4) | ((y) << 2) | (z))
+#endif
+#endif
+
 static inline __m128i libdivide_s64_signbits(__m128i v) {
     //we want to compute v >> 63, that is, _mm_srai_epi64(v, 63).  But there is no 64 bit shift right arithmetic instruction in SSE2.  So we have to fake it by first duplicating the high 32 bit values, and then using a 32 bit shift.  Another option would be to use _mm_srli_epi64(v, 63) and then subtract that from 0, but that approach appears to be substantially slower for unknown reasons
     __m128i hiBitsDuped = _mm_shuffle_epi32(v, _MM_SHUFFLE(3, 3, 1, 1));

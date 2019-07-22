@@ -21,9 +21,6 @@ class Context;
   * that contain only compatible expressions.
   *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
-  *
-  * NOTE There are concerns with proper quoting of identifiers for remote database.
-  * Some databases use `quotes` and other use "quotes".
   */
 String transformQueryForExternalDatabase(
     const IAST & query,

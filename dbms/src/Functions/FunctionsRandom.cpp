@@ -25,9 +25,6 @@ namespace
         /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
-        LinearCongruentialGenerator() {}
-        LinearCongruentialGenerator(UInt64 value) : current(value) {}
-
         void seed(UInt64 value)
         {
             current = value;
@@ -60,10 +57,10 @@ void RandImpl::execute(char * output, size_t size)
 
     for (const char * end = output + size; output < end; output += 16)
     {
-        unalignedStore(output, generator0.next());
-        unalignedStore(output + 4, generator1.next());
-        unalignedStore(output + 8, generator2.next());
-        unalignedStore(output + 12, generator3.next());
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
     }
 
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.

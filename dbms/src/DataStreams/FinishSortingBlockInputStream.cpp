@@ -26,7 +26,7 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
-    size_t max_merged_block_size_, size_t limit_)
+    size_t max_merged_block_size_, UInt64 limit_)
     : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
@@ -85,7 +85,7 @@ Block FinishSortingBlockInputStream::readImpl()
         {
             Block block = children.back()->read();
 
-            /// End of input stream, but we can`t return immediatly, we need to merge already read blocks.
+            /// End of input stream, but we can`t return immediately, we need to merge already read blocks.
             /// Check it later, when get end of stream from impl.
             if (!block)
             {
@@ -102,7 +102,7 @@ Block FinishSortingBlockInputStream::readImpl()
             if (size == 0)
                 continue;
 
-            /// We need to sort each block separatly before merging.
+            /// We need to sort each block separately before merging.
             sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);

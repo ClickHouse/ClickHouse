@@ -10,49 +10,30 @@
 # Important boost patch: 094c18b
 #
 
-set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/boost)
+include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-if (NOT MSVC)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/boost)
+
+if(NOT MSVC)
     add_definitions(-Wno-unused-variable -Wno-deprecated-declarations)
-endif ()
+endif()
 
-add_library(boost_program_options_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/program_options/src/cmdline.cpp
-${LIBRARY_DIR}/libs/program_options/src/config_file.cpp
-${LIBRARY_DIR}/libs/program_options/src/convert.cpp
-${LIBRARY_DIR}/libs/program_options/src/options_description.cpp
-${LIBRARY_DIR}/libs/program_options/src/parsers.cpp
-${LIBRARY_DIR}/libs/program_options/src/positional_options.cpp
-${LIBRARY_DIR}/libs/program_options/src/split.cpp
-${LIBRARY_DIR}/libs/program_options/src/utf8_codecvt_facet.cpp
-${LIBRARY_DIR}/libs/program_options/src/value_semantic.cpp
-${LIBRARY_DIR}/libs/program_options/src/variables_map.cpp
-${LIBRARY_DIR}/libs/program_options/src/winmain.cpp)
+macro(add_boost_lib lib_name)
+    add_headers_and_sources(boost_${lib_name} ${LIBRARY_DIR}/libs/${lib_name}/src)
+    add_library(boost_${lib_name}_internal ${boost_${lib_name}_sources})
+    target_include_directories(boost_${lib_name}_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+    target_compile_definitions(boost_${lib_name}_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
+endmacro()
 
-add_library(boost_filesystem_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/filesystem/src/codecvt_error_category.cpp
-${LIBRARY_DIR}/libs/filesystem/src/operations.cpp
-${LIBRARY_DIR}/libs/filesystem/src/path.cpp
-${LIBRARY_DIR}/libs/filesystem/src/path_traits.cpp
-${LIBRARY_DIR}/libs/filesystem/src/portability.cpp
-${LIBRARY_DIR}/libs/filesystem/src/unique_path.cpp
-${LIBRARY_DIR}/libs/filesystem/src/utf8_codecvt_facet.cpp
-${LIBRARY_DIR}/libs/filesystem/src/windows_file_codecvt.cpp)
+add_boost_lib(system)
 
-add_library(boost_system_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/system/src/error_code.cpp)
+add_boost_lib(program_options)
 
-add_library(boost_random_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/random/src/random_device.cpp)
+add_boost_lib(filesystem)
+target_link_libraries(boost_filesystem_internal PRIVATE boost_system_internal)
 
-target_link_libraries (boost_filesystem_internal PUBLIC boost_system_internal)
+#add_boost_lib(random)
 
-target_include_directories (boost_program_options_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_filesystem_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_system_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_random_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-
-target_compile_definitions (boost_program_options_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_filesystem_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_system_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_random_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
+if (USE_INTERNAL_PARQUET_LIBRARY)
+    add_boost_lib(regex)
+endif()

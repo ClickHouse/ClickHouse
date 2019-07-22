@@ -1,6 +1,4 @@
-<a name="table_functions-jdbc"></a>
-
-# jdbc
+# jdbc {#table_function-jdbc}
 
 `jdbc(jdbc_connection_uri, schema, table)` - returns table that is connected via JDBC driver.
 

@@ -1,17 +1,27 @@
 #pragma once
 
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
 #include <murmurhash2.h>
 #include <murmurhash3.h>
 
-#include <Poco/ByteOrder.h>
-
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/HashTable/Hash.h>
+
+#include "config_functions.h"
+#if USE_XXHASH
+#   include <xxhash.h>
+#endif
+
+#include "config_core.h"
+#if USE_SSL
+#   include <openssl/md5.h>
+#   include <openssl/sha.h>
+#endif
+
+#include <Poco/ByteOrder.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -26,10 +36,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
 #include <ext/range.h>
 #include <ext/bit_cast.h>
 
@@ -41,6 +49,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -86,7 +96,7 @@ struct IntHash64Impl
     }
 };
 
-
+#if USE_SSL
 struct HalfMD5Impl
 {
     static constexpr auto name = "halfMD5";
@@ -116,6 +126,7 @@ struct HalfMD5Impl
 
     /// If true, it will use intHash32 or intHash64 to hash POD types. This behaviour is intended for better performance of some functions.
     /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
+
     static constexpr bool use_int_hash_for_pods = false;
 };
 
@@ -174,6 +185,7 @@ struct SHA256Impl
         SHA256_Final(out_char_data, &ctx);
     }
 };
+#endif
 
 struct SipHash64Impl
 {
@@ -250,6 +262,25 @@ struct MurmurHash2Impl64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+/// To be compatible with gcc: https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191
+struct GccMurmurHashImpl
+{
+    static constexpr auto name = "gccMurmurHash";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * data, const size_t size)
+    {
+        return MurmurHash64A(data, size, 0xc70f6907UL);
+    }
+
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        return IntHash64Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl32
 {
     static constexpr auto name = "murmurHash3_32";
@@ -293,6 +324,51 @@ struct MurmurHash3Impl64
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
         return IntHash64Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+/// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
+/// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
+///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+struct JavaHashImpl
+{
+    static constexpr auto name = "javaHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        UInt32 h = 0;
+        for (size_t i = 0; i < size; ++i)
+            h = 31 * h + static_cast<UInt32>(static_cast<Int8>(data[i]));
+        return static_cast<Int32>(h);
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+/// This is just JavaHash with zeroed out sign bit.
+/// This function is used in Hive for versions before 3.0,
+///  after 3.0, Hive uses murmur-hash3.
+struct HiveHashImpl
+{
+    static constexpr auto name = "hiveHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Hive hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -354,6 +430,49 @@ struct ImplMetroHash64
 
     static constexpr bool use_int_hash_for_pods = true;
 };
+
+
+#if USE_XXHASH
+
+struct ImplXxHash32
+{
+    static constexpr auto name = "xxHash32";
+    using ReturnType = UInt32;
+
+    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
+    /**
+      *  With current implementation with more than 1 arguments it will give the results
+      *  non-reproducable from outside of CH.
+      *
+      *  Proper way of combining several input is to use streaming mode of hash function
+      *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
+      *
+      *  In common case doable by init_state / update_state / finalize_state
+      */
+    static auto combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+
+struct ImplXxHash64
+{
+    static constexpr auto name = "xxHash64";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+     */
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+#endif
 
 
 template <typename Impl>
@@ -527,9 +646,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            auto value = col_from->template getValue<FromType>();
+            auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
                 hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
@@ -577,10 +696,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
+        else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
         {
-            const typename ColumnString::Chars & data = col_from->getChars();
-            size_t n = col_from->getN();
+            const typename ColumnString::Chars & data = col_from_fixed->getChars();
+            size_t n = col_from_fixed->getN();
             size_t size = data.size() / n;
 
             for (size_t i = 0; i < size; ++i)
@@ -592,9 +711,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
         {
-            String value = col_from->getValue<String>().data();
+            String value = col_from_const->getValue<String>().data();
             const ToType hash = Impl::apply(value.data(), value.size());
             const size_t size = vec_to.size();
 
@@ -654,10 +773,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnArray>(column))
         {
             /// NOTE: here, of course, you can do without the materialization of the column.
-            ColumnPtr full_column = col_from->convertToFullColumn();
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
@@ -698,15 +817,15 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
@@ -922,7 +1041,7 @@ private:
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
-        if (!level_col->isColumnConst())
+        if (!isColumnConst(*level_col))
             throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
@@ -960,22 +1079,34 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
-
+#if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
+#if USE_SSL
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+#endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
+using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
+using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
+#if USE_XXHASH
+    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+#endif
+
 }

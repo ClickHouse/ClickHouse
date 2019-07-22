@@ -107,7 +107,7 @@ public:
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        return cloneDummy(s == 0 ? 0 : offsets.back());
+        return cloneDummy(offsets.back());
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override

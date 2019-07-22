@@ -1,6 +1,6 @@
 #include <Common/Exception.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageFactory.h>
@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-class MemoryBlockInputStream : public IProfilingBlockInputStream
+class MemoryBlockInputStream : public IBlockInputStream
 {
 public:
     MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, const StorageMemory & storage_)
@@ -66,7 +66,7 @@ public:
     void write(const Block & block) override
     {
         storage.check(block, true);
-        std::lock_guard<std::mutex> lock(storage.mutex);
+        std::lock_guard lock(storage.mutex);
         storage.data.push_back(block);
     }
 private:
@@ -74,8 +74,8 @@ private:
 };
 
 
-StorageMemory::StorageMemory(String table_name_, ColumnsDescription columns_description_)
-    : IStorage{std::move(columns_description_)}, table_name(std::move(table_name_))
+StorageMemory::StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_)
+    : IStorage{std::move(columns_description_)}, database_name(std::move(database_name_)), table_name(std::move(table_name_))
 {
 }
 
@@ -90,7 +90,7 @@ BlockInputStreams StorageMemory::read(
 {
     check(column_names);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     size_t size = data.size();
 
@@ -115,7 +115,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-    const ASTPtr & /*query*/, const Settings & /*settings*/)
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this);
 }
@@ -123,13 +123,13 @@ BlockOutputStreamPtr StorageMemory::write(
 
 void StorageMemory::drop()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     data.clear();
 }
 
-void StorageMemory::truncate(const ASTPtr &)
+void StorageMemory::truncate(const ASTPtr &, const Context &)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     data.clear();
 }
 
@@ -143,7 +143,7 @@ void registerStorageMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageMemory::create(args.table_name, args.columns);
+        return StorageMemory::create(args.database_name, args.table_name, args.columns);
     });
 }
 

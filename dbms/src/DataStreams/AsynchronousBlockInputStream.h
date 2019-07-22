@@ -2,12 +2,9 @@
 
 #include <Poco/Event.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/setThreadName.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/CurrentMetrics.h>
-#include <common/ThreadPool.h>
-#include <Common/MemoryTracker.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <Common/ThreadPool.h>
 
 
 namespace CurrentMetrics
@@ -26,7 +23,7 @@ namespace DB
   *     has come over the network with a request to interrupt the execution of the query.
   *    It also allows you to execute multiple queries at the same time.
   */
-class AsynchronousBlockInputStream : public IProfilingBlockInputStream
+class AsynchronousBlockInputStream : public IBlockInputStream
 {
 public:
     AsynchronousBlockInputStream(const BlockInputStreamPtr & in)

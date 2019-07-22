@@ -1,13 +1,13 @@
 #pragma once
-#include <string>
 
-class IProfilingBlockInputStream;
+#include <DataStreams/IBlockStream_fwd.h>
+
+#include <string>
 
 namespace DB
 {
 
-// Using in MySQLDictionarySource and XDBCDictionarySource after processing invalidate_query
-std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream);
-
+/// Using in MySQLDictionarySource and XDBCDictionarySource after processing invalidate_query.
+std::string readInvalidateQuery(IBlockInputStream & block_input_stream);
 
 }

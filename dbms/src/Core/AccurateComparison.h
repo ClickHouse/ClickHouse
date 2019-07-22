@@ -2,9 +2,9 @@
 
 #include <cmath>
 #include <limits>
-
+#include "Defines.h"
+#include "Types.h"
 #include <Common/NaNUtils.h>
-#include <Core/Types.h>
 #include <Common/UInt128.h>
 
 /** Preceptually-correct number comparisons.
@@ -263,59 +263,60 @@ inline bool_if_not_safe_conversion<A, B> equalsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 {
-    return a == b;
+    using LargestType = std::conditional_t<sizeof(A) >= sizeof(B), A, B>;
+    return static_cast<LargestType>(a) == static_cast<LargestType>(b);
 }
 
 template <>
-inline bool equalsOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
 {
     return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float64>(u);
 }
 
 template <>
-inline bool equalsOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 {
     return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float64>(u) == f;
 }
 
 template <>
-inline bool equalsOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 u)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 u)
 {
     return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float64>(u);
 }
 
 template <>
-inline bool equalsOp<DB::Int64, DB::Float64>(DB::Int64 u, DB::Float64 f)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Int64, DB::Float64>(DB::Int64 u, DB::Float64 f)
 {
     return u == static_cast<DB::Int64>(f) && static_cast<DB::Float64>(u) == f;
 }
 
 template <>
-inline bool equalsOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
 {
     return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float32>(u);
 }
 
 template <>
-inline bool equalsOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 {
     return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float32>(u) == f;
 }
 
 template <>
-inline bool equalsOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 u)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 u)
 {
     return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float32>(u);
 }
 
 template <>
-inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 {
     return u == static_cast<DB::Int64>(f) && static_cast<DB::Float32>(u) == f;
 }
 
 template <>
-inline bool equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
+inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
     return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
 }
@@ -338,7 +339,7 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
     return equalsOp(static_cast<DB::Float64>(f), u);
 }
 
-inline bool greaterOp(DB::Int128 i, DB::Float64 f)
+inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 {
     static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
     static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
@@ -350,7 +351,7 @@ inline bool greaterOp(DB::Int128 i, DB::Float64 f)
         || (f < static_cast<DB::Float64>(max_int128) && i > static_cast<DB::Int128>(f));
 }
 
-inline bool greaterOp(DB::Float64 f, DB::Int128 i)
+inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Float64 f, DB::Int128 i)
 {
     static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
     static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
@@ -365,8 +366,8 @@ inline bool greaterOp(DB::Float64 f, DB::Int128 i)
 inline bool greaterOp(DB::Int128 i, DB::Float32 f) { return greaterOp(i, static_cast<DB::Float64>(f)); }
 inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return greaterOp(static_cast<DB::Float64>(f), i); }
 
-inline bool equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
-inline bool equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }
+inline bool NO_SANITIZE_UNDEFINED equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
+inline bool NO_SANITIZE_UNDEFINED equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }
 inline bool equalsOp(DB::Float64 f, DB::Int128 i) { return equalsOp(i, f); }
 inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
 
@@ -423,6 +424,28 @@ template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
     return a >= b;
+}
+
+/// Converts numeric to an equal numeric of other type.
+template <typename From, typename To>
+inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
+{
+    /// If the type is actually the same it's not necessary to do any checks.
+    if constexpr (std::is_same_v<From, To>)
+    {
+        result = value;
+        return true;
+    }
+
+    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
+    if (isNaN(value) && std::is_floating_point_v<To>)
+    {
+        result = value;
+        return true;
+    }
+
+    result = static_cast<To>(value);
+    return equalsOp(value, result);
 }
 
 }

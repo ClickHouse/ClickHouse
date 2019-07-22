@@ -6,7 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageBlock.h>
 
@@ -22,7 +22,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructure(true));
+    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -48,7 +48,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view.tryGetTargetTable();
             if (inner_table)
-                addTableLock(inner_table->lockStructure(true));
+                addTableLock(inner_table->lockStructureForShare(true, context.getCurrentQueryId()));
             else
                 inner_table = dependent_table;
 
@@ -64,9 +64,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /* Do not push to destination table if the flag is set */
     if (!no_destination)
     {
-        output = storage->write(query_ptr, context.getSettingsRef());
+        output = storage->write(query_ptr, context);
         replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
+}
+
+
+Block PushingToViewsBlockOutputStream::getHeader() const
+{
+    /// If we don't write directly to the destination
+    /// then expect that we're inserting with precalculated virtual columns
+    if (output)
+        return storage->getSampleBlock();
+    else
+        return storage->getSampleBlockWithVirtuals();
 }
 
 
@@ -80,6 +91,8 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     Nested::validateArraySizes(block);
 
     if (output)
+        /// TODO: to support virtual and alias columns inside MVs, we should return here the inserted block extended
+        ///       with additional columns directly from storage and pass it to MVs instead of raw block.
         output->write(block);
 
     /// Don't process materialized views if this block is duplicate
@@ -97,7 +110,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             auto thread_group = CurrentThread::getGroup();
             pool.schedule([=]
             {
-                setThreadName("PushingToViewsBlockOutputStream");
+                setThreadName("PushingToViews");
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
                 process(block, view_num);

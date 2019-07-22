@@ -1,6 +1,6 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <IO/WriteBufferAIO.h>
 #endif
 #include <Common/ProfileEvents.h>
@@ -33,11 +33,11 @@ std::unique_ptr<WriteBufferFromFileBase> createWriteBufferFromFileBase(const std
     }
     else
     {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
         ProfileEvents::increment(ProfileEvents::CreatedWriteBufferAIO);
         return std::make_unique<WriteBufferAIO>(filename_, buffer_size_, flags_, mode, existing_memory_);
 #else
-        throw Exception("AIO is not implemented yet on non-Linux OS", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("AIO is implemented only on Linux and FreeBSD", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 }

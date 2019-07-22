@@ -22,7 +22,7 @@ namespace ErrorCodes
   * simulates an array of `content_width`-bit values.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
-class __attribute__ ((packed)) CompactArray final
+class CompactArray final
 {
 public:
     class Reader;
@@ -55,6 +55,7 @@ public:
         return locus;
     }
 
+    /// Used only in arcadia/metrika
     void readText(ReadBuffer & in)
     {
         for (size_t i = 0; i < BITSET_SIZE; ++i)
@@ -65,6 +66,7 @@ public:
         }
     }
 
+    /// Used only in arcadia/metrika
     void writeText(WriteBuffer & out) const
     {
         for (size_t i = 0; i < BITSET_SIZE; ++i)
@@ -165,7 +167,9 @@ private:
     bool fits_in_byte;
 };
 
-/** The `Locus` structure contains the necessary information to find for each cell
+/** TODO This code looks very suboptimal.
+  *
+  * The `Locus` structure contains the necessary information to find for each cell
   * the corresponding byte and offset, in bits, from the beginning of the cell. Since in general
   * case the size of one byte is not divisible by the size of one cell, cases possible
   * when one cell overlaps two bytes. Therefore, the `Locus` structure contains two
@@ -219,13 +223,20 @@ private:
 
     void ALWAYS_INLINE init(BucketIndex bucket_index)
     {
+        /// offset in bits to the leftmost bit
         size_t l = static_cast<size_t>(bucket_index) * content_width;
-        index_l = l >> 3;
-        offset_l = l & 7;
 
-        size_t r = static_cast<size_t>(bucket_index + 1) * content_width;
-        index_r = r >> 3;
-        offset_r = r & 7;
+        /// offset of byte that contains the leftmost bit
+        index_l = l / 8;
+
+        /// offset in bits to the leftmost bit at that byte
+        offset_l = l % 8;
+
+        /// offset of byte that contains the rightmost bit
+        index_r = (l + content_width - 1) / 8;
+
+        /// offset in bits to the next to the rightmost bit at that byte; or zero if the rightmost bit is the rightmost bit in that byte.
+        offset_r = (l + content_width) % 8;
     }
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l) const

@@ -31,7 +31,8 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 然后运行：
 
 ```bash
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+sudo apt-get install dirmngr    # optional
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
@@ -52,7 +53,7 @@ ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与'config
 ```text
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
-    ```
+```
 
 在服务器中为数据创建如下目录：
 

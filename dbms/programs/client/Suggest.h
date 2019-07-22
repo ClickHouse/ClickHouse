@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnString.h>
 #include <Client/Connection.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -39,10 +40,10 @@ private:
         "DATABASES", "LIKE", "PROCESSLIST", "CASE", "WHEN", "THEN", "ELSE", "END", "DESCRIBE", "DESC", "USE", "SET", "OPTIMIZE", "FINAL", "DEDUPLICATE",
         "INSERT", "VALUES", "SELECT", "DISTINCT", "SAMPLE", "ARRAY", "JOIN", "GLOBAL", "LOCAL", "ANY", "ALL", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
         "CROSS", "USING", "PREWHERE", "WHERE", "GROUP", "BY", "WITH", "TOTALS", "HAVING", "ORDER", "COLLATE", "LIMIT", "UNION", "AND", "OR", "ASC", "IN",
-        "KILL", "QUERY", "SYNC", "ASYNC", "TEST"
+        "KILL", "QUERY", "SYNC", "ASYNC", "TEST", "BETWEEN", "TRUNCATE"
     };
 
-    /// Words are fetched asynchonously.
+    /// Words are fetched asynchronously.
     std::thread loading_thread;
     std::atomic<bool> ready{false};
 
@@ -56,7 +57,7 @@ private:
     {
         std::string prefix_str(prefix);
         std::tie(pos, end) = std::equal_range(words.begin(), words.end(), prefix_str,
-            [prefix_length](const std::string & s, const std::string & prefix) { return strncmp(s.c_str(), prefix.c_str(), prefix_length) < 0; });
+            [prefix_length](const std::string & s, const std::string & prefix_searched) { return strncmp(s.c_str(), prefix_searched.c_str(), prefix_length) < 0; });
     }
 
     /// Iterates through matched range.
@@ -71,7 +72,7 @@ private:
         return word;
     }
 
-    void loadImpl(Connection & connection, size_t suggestion_limit)
+    void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
     {
         std::stringstream query;
         query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
@@ -104,12 +105,12 @@ private:
 
         query << ") WHERE notEmpty(res)";
 
-        fetch(connection, query.str());
+        fetch(connection, timeouts, query.str());
     }
 
-    void fetch(Connection & connection, const std::string & query)
+    void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
     {
-        connection.sendQuery(query);
+        connection.sendQuery(timeouts, query);
 
         while (true)
         {
@@ -175,12 +176,11 @@ public:
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
-                    connection_parameters.timeouts,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
 
-                loadImpl(connection, suggestion_limit);
+                loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
             }
             catch (...)
             {
@@ -192,6 +192,12 @@ public:
             std::sort(words.begin(), words.end());
             ready = true;
         });
+    }
+
+    void finalize()
+    {
+        if (loading_thread.joinable())
+            loading_thread.join();
     }
 
     /// A function for readline.
@@ -211,8 +217,7 @@ public:
 
     ~Suggest()
     {
-        if (loading_thread.joinable())
-            loading_thread.join();
+        finalize();
     }
 };
 

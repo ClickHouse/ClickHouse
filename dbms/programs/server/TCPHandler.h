@@ -25,6 +25,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class ColumnsDescription;
 
 /// State of query processing.
 struct QueryState
@@ -34,6 +35,12 @@ struct QueryState
 
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
     Protocol::Compression compression = Protocol::Compression::Disable;
+
+    /// A queue with internal logs that will be passed to client. It must be
+    /// destroyed after input/output blocks, because they may contain other
+    /// threads that use this queue.
+    InternalTextLogsQueuePtr logs_queue;
+    BlockOutputStreamPtr logs_block_out;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -63,10 +70,6 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    /// A queue with internal logs that will be passed to client
-    InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
-
     void reset()
     {
         *this = QueryState();
@@ -94,6 +97,9 @@ public:
 
     void run();
 
+    /// This method is called right before the query execution.
+    virtual void customizeContext(DB::Context & /*context*/) {}
+
 private:
     IServer & server;
     Poco::Logger * log;
@@ -105,7 +111,7 @@ private:
     UInt64 client_revision = 0;
 
     Context connection_context;
-    Context query_context;
+    std::optional<Context> query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -139,18 +145,21 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
+    void processOrdinaryQueryWithProcessors(size_t num_threads);
+
     void processTablesStatusRequest();
 
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
     void sendLogData(const Block & block);
+    void sendTableColumns(const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendProfileInfo();
-    void sendTotals();
-    void sendExtremes();
+    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendTotals(const Block & totals);
+    void sendExtremes(const Block & extremes);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

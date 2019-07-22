@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Storages/StorageDistributed.h>
+#include <Common/ThreadPool.h>
 
 #include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -17,15 +19,19 @@ namespace DB
 class StorageDistributedDirectoryMonitor
 {
 public:
-    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool);
+    StorageDistributedDirectoryMonitor(
+        StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker);
+
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
+    void flushAllData();
+
     void shutdownAndDropAllData();
 private:
     void run();
-    bool findFiles();
+    bool processFiles();
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
@@ -55,7 +61,11 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     Logger * log;
-    std::thread thread {&StorageDistributedDirectoryMonitor::run, this};
+    ActionBlocker & monitor_blocker;
+    ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
+
+    /// Read insert query and insert settings for backward compatible.
+    void readQueryAndSettings(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
 };
 
 }

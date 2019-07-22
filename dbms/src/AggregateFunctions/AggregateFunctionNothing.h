@@ -15,6 +15,9 @@ namespace DB
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params) {}
+
     String getName() const override
     {
         return "nothing";

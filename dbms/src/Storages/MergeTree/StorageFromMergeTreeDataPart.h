@@ -17,6 +17,7 @@ class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMe
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
     String getTableName() const override { return part->storage.getTableName() + " (part " + part->name + ")"; }
+    String getDatabaseName() const override { return part->storage.getDatabaseName(); }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -32,9 +33,9 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
 protected:

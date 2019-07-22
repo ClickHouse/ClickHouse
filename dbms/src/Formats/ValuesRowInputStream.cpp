@@ -37,7 +37,7 @@ ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & hea
 }
 
 
-bool ValuesRowInputStream::read(MutableColumns & columns)
+bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     size_t num_columns = columns.size();
 
@@ -64,7 +64,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
         bool rollback_on_exception = false;
         try
         {
-            header.getByPosition(i).type->deserializeTextQuoted(*columns[i], istr, format_settings);
+            header.getByPosition(i).type->deserializeAsTextQuoted(*columns[i], istr, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(istr);
 
@@ -154,12 +154,14 @@ void registerInputFormatValues(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
-        size_t max_block_size,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size,
+        FormatFactory::ReadCallback callback,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<ValuesRowInputStream>(buf, sample, context, settings),
-            sample, max_block_size, settings);
+            sample, max_block_size, rows_portion_size, callback, settings);
     });
 }
 

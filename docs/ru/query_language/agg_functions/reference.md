@@ -1,17 +1,13 @@
-<a name="aggregate_functions_reference"></a>
-
 # Справочник функций
 
-## count()
+## count() {#agg_function-count}
 
 Считает количество строк. Принимает ноль аргументов, возвращает UInt64.
 Не поддерживается синтаксис `COUNT (DISTINCT x)`. Для этого существует агрегатная функция`uniq`.
 
-Запрос вида  `SELECT count() FROM table` не оптимизируется, так как количество записей в таблице нигде не хранится отдельно. Из таблицы будет выбран какой-нибудь достаточно маленький столбец, и будет посчитано количество значений в нём.
+Запрос вида `SELECT count() FROM table` не оптимизируется, так как количество записей в таблице нигде не хранится отдельно. Из таблицы будет выбран какой-нибудь достаточно маленький столбец, и будет посчитано количество значений в нём.
 
-<a name="agg_function-any"></a>
-
-## any(x)
+## any(x) {#agg_function-any}
 
 Выбирает первое попавшееся значение.
 Порядок выполнения запроса может быть произвольным и даже каждый раз разным, поэтому результат данной функции недетерминирован.
@@ -21,7 +17,7 @@
 
 При наличии в запросе `SELECT` секции `GROUP BY` или хотя бы одной агрегатной функции, ClickHouse (в отличие от, например, MySQL) требует, чтобы все выражения в секциях `SELECT`, `HAVING`, `ORDER BY` вычислялись из ключей или из агрегатных функций. То есть, каждый выбираемый из таблицы столбец, должен использоваться либо в ключах, либо внутри агрегатных функций. Чтобы получить поведение, как в MySQL, вы можете поместить остальные столбцы в агрегатную функцию `any`.
 
-## anyHeavy(x)
+## anyHeavy(x) {#agg_function-anyHeavy}
 
 Выбирает часто встречающееся значение с помощью алгоритма "[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)". Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
 
@@ -35,7 +31,7 @@ anyHeavy(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
 ```sql
 SELECT anyHeavy(AirlineID) AS res
@@ -48,7 +44,7 @@ FROM ontime
 └───────┘
 ```
 
-## anyLast(x)
+## anyLast(x) {#agg_function-anyLast}
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции `any`.
@@ -87,7 +83,7 @@ binary     decimal
 SELECT groupBitAnd(num) FROM t
 ```
 
-Где `num` – столбец с тестовыми данными.
+Где `num` — столбец с тестовыми данными.
 
 Результат:
 
@@ -130,7 +126,7 @@ binary     decimal
 SELECT groupBitOr(num) FROM t
 ```
 
-Где `num` – столбец с тестовыми данными.
+Где `num` — столбец с тестовыми данными.
 
 Результат:
 
@@ -173,7 +169,7 @@ binary     decimal
 SELECT groupBitXor(num) FROM t
 ```
 
-Где `num` – столбец с тестовыми данными.
+Где `num` — столбец с тестовыми данными.
 
 Результат:
 
@@ -182,11 +178,52 @@ binary     decimal
 01101000 = 104
 ```
 
-## min(x)
+## groupBitmap
+
+Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../functions/bitmap_functions.md).
+
+```
+groupBitmap(expr)
+```
+
+**Параметры**
+
+`expr` – выражение, возвращающее тип данных `UInt*`.
+
+**Возвращаемое значение**
+
+Значение типа `UInt64`.
+
+**Пример**
+
+Тестовые данные:
+
+```
+UserID
+1
+1
+2
+3
+```
+
+Запрос:
+
+```
+SELECT groupBitmap(UserID) as num FROM t
+```
+
+Результат:
+
+```
+num
+3
+```
+
+## min(x) {#agg_function-min}
 
 Вычисляет минимум.
 
-## max(x)
+## max(x) {#agg_function-max}
 
 Вычисляет максимум.
 
@@ -214,20 +251,18 @@ SELECT argMin(user, salary) FROM salary
 
 Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
 
-<a name="agg_function-sum"></a>
 
-## sum(x)
+## sum(x) {#agg_function-sum}
 
 Вычисляет сумму.
 Работает только для чисел.
 
-## sumWithOverflow(x)
+## sumWithOverflow(x) {#agg_function-sumWithOverflow}
 
 Вычисляет сумму чисел, используя для результата тот же тип данных, что и для входных параметров. Если сумма выйдет за максимальное значение для заданного типа данных, то функция вернёт ошибку.
 
 Работает только для чисел.
 
-<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -265,15 +300,168 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## avg(x)
+## skewPop
+
+Вычисляет [коэффициент асимметрии](https://ru.wikipedia.org/wiki/Коэффициент_асимметрии) для последовательности.
+
+```
+skewPop(expr)
+```
+
+**Параметры**
+
+`expr` — [Выражение](../syntax.md#syntax-expressions), возвращающее число.
+
+**Возвращаемое значение**
+
+Коэффициент асимметрии заданного распределения. Тип — [Float64](../../data_types/float.md)
+
+**Пример**
+
+```sql
+SELECT skewPop(value) FROM series_with_value_column
+```
+
+## skewSamp
+
+Вычисляет [выборочный коэффициент асимметрии](https://ru.wikipedia.org/wiki/Статистика_(функция_выборки))  для последовательности.
+
+Он представляет собой несмещенную оценку асимметрии случайной величины, если переданные значения образуют ее выборку.
+
+```
+skewSamp(expr)
+```
+
+**Параметры**
+
+`expr` — [Выражение](../syntax.md#syntax-expressions), возвращающее число.
+
+**Возвращаемое значение**
+
+Коэффициент асимметрии заданного распределения. Тип — [Float64](../../data_types/float.md). Если `n <= 1` (`n` — размер выборки), тогда функция возвращает `nan`.
+
+**Пример**
+
+```sql
+SELECT skewSamp(value) FROM series_with_value_column
+```
+
+## kurtPop
+
+Вычисляет [коэффициент эксцесса](https://ru.wikipedia.org/wiki/Коэффициент_эксцесса) последовательности.
+
+```
+kurtPop(expr)
+```
+
+**Параметры**
+
+`expr` — [Выражение](../syntax.md#syntax-expressions), возвращающее число.
+
+**Возвращаемое значение**
+
+Коэффициент эксцесса заданного распределения. Тип — [Float64](../../data_types/float.md)
+
+**Пример**
+
+```sql
+SELECT kurtPop(value) FROM series_with_value_column
+```
+
+## kurtSamp
+
+Вычисляет [выборочный коэффициент эксцесса](https://ru.wikipedia.org/wiki/Статистика_(функция_выборки)) для последовательности.
+
+Он представляет собой несмещенную оценку эксцесса случайной величины, если переданные значения образуют ее выборку.
+
+```
+kurtSamp(expr)
+```
+
+**Параметры**
+
+`expr` — [Выражение](../syntax.md#syntax-expressions), возвращающее число.
+
+**Возвращаемое значение**
+
+Коэффициент эксцесса заданного распределения. Тип — [Float64](../../data_types/float.md). Если `n <= 1` (`n` — размер выборки), тогда функция возвращает `nan`.
+
+**Пример**
+
+```sql
+SELECT kurtSamp(value) FROM series_with_value_column
+```
+
+## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+
+`timeSeriesGroupSum` агрегирует временные ряды в которых не совпадают моменты.
+Функция использует линейную интерполяцию между двумя значениями времени, а затем суммирует значения для одного и того же момента (как измеренные так и интерполированные) по всем рядам.
+
+- `uid` уникальный идентификатор временного ряда, `UInt64`.
+- `timestamp` имеет тип `Int64` чтобы можно было учитывать милли и микросекунды.
+- `value` представляет собой значение метрики.
+
+Функция возвращает массив кортежей с парами `(timestamp, aggregated_value)`.
+
+Временные ряды должны быть отсортированы по возрастанию `timestamp`.
+
+Пример:
+
+```
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+
+```
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+
+И результат будет:
+
+```
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+
+Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
+Также ряды должны быть отсотированы по возрастанию timestamp.
+
+Для пример из описания timeSeriesGroupRateSum результат будет следующим:
+
+```
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
+## avg(x) {#agg_function-avg}
 
 Вычисляет среднее.
 Работает только для чисел.
 Результат всегда Float64.
 
-<a name="agg_function-uniq"></a>
-
-## uniq(x)
+## uniq(x) {#agg_function-uniq}
 
 Приближённо вычисляет количество различных значений аргумента. Работает для чисел, строк, дат, дат-с-временем, для нескольких аргументов и аргументов-кортежей.
 
@@ -323,7 +511,6 @@ GROUP BY timeslot
 
 В некоторых случаях, вы всё же можете рассчитывать на порядок выполнения запроса. Это — случаи, когда `SELECT` идёт из подзапроса, в котором используется `ORDER BY`.
 
-<a name="agg_functions_groupArrayInsertAt"></a>
 
 ## groupArrayInsertAt(x)
 
@@ -336,9 +523,11 @@ GROUP BY timeslot
 - Значение по умолчанию для подстановки на пустые позиции.
 - Длина результирующего массива. Например, если вы хотите получать массивы одинакового размера для всех агрегатных ключей. При использовании этого параметра значение по умолчанию задавать обязательно.
 
-## groupUniqArray(x)
+## groupUniqArray(x), groupUniqArray(max_size)(x)
 
-Составляет массив из различных значений аргумента. Расход оперативки такой же, как у функции `uniqExact`.
+Составляет массив из различных значений аргумента. Расход оперативной памяти такой же, как у функции `uniqExact`.
+
+Функция `groupUniqArray(max_size)(x)` ограничивает размер результирующего массива до `max_size` элементов. Например, `groupUniqArray(1)(x)` равнозначно `[any(x)]`.
 
 ## quantile(level)(x)
 
@@ -463,7 +652,7 @@ topK(N)(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
 ```sql
 SELECT topK(3)(AirlineID) AS res
@@ -489,5 +678,172 @@ FROM ontime
 ## corr(x, y)
 
 Вычисляет коэффициент корреляции Пирсона: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+## simpleLinearRegression
+
+Выполняет простую (одномерную) линейную регрессию.
+
+```
+simpleLinearRegression(x, y)
+```
+
+Параметры:
+
+- `x` — столбец со значениями зависимой переменной.
+- `y` — столбец со значениями наблюдаемой переменной.
+
+Возвращаемые значения:
+
+Константы `(a, b)` результирующей прямой `y = a*x + b`.
+
+**Примеры**
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+
+Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+
+### Параметры {#agg_functions-stochasticlinearregression-parameters}
+
+Есть 4 настраиваемых параметра. Они передаются в функцию последовательно, однако не обязательно указывать все, используются значения по умолчанию, однако хорошая модель требует некоторой настройки параметров.
+
+```text
+stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
+```
+
+1. Скорость обучения — коэффициент длины шага, при выполнении градиентного спуска. Слишком большая скорость обучения может привести к бесконечным весам модели. По умолчанию `0.00001`.
+2. Коэффициент регуляризации l2. Помогает предотвратить подгонку. По умолчанию `0.1`.
+3. Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
+4. Метод обновления весов, можно выбрать один из следующих: `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и остальные методы стохастического градиента. По умолчанию `SGD`.
+
+### Использование {#agg_functions-stochasticlinearregression-usage}
+
+`stochasticLinearRegression` используется на двух этапах: постоение модели и предсказание новых данных. Чтобы постоить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
+Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
+
+<a name="stochasticlinearregression-usage-fitting"></a>
+1. Построение модели
+
+    Пример запроса:
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS train_data
+    (
+        param1 Float64,
+        param2 Float64,
+        target Float64
+    ) ENGINE = Memory;
+
+    CREATE TABLE your_model ENGINE = Memory AS SELECT
+    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+    AS state FROM train_data;
+    ```
+
+    Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
+Обратите внимание, что столбец с целевым значением (которое мы хотели бы научиться предсказывать) вставляется в качестве первого аргумента.
+
+2. Прогнозирование
+
+    После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
+
+    ```sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+
+    Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+
+    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+
+### Примечания {#agg_functions-stochasticlinearregression-notes}
+
+1. Объединить две модели можно следующим запросом:
+
+    ```sql
+    SELECT state1 + state2 FROM your_models
+    ```
+
+    где таблица `your_models` содержит обе модели. Запрос вернёт новый объект `AggregateFunctionState`.
+
+2. Пользователь может получать веса созданной модели для своих целей без сохранения модели, если не использовать комбинатор  `-State`.
+
+    ```sql
+    SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
+    ```
+
+    Подобный запрос строит модель и возвращает её веса, отвечающие параметрам моделей и смещение. Таким образом, в приведенном выше примере запрос вернет столбец с тремя значениями.
+
+**Смотрите также**
+
+- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+- [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
+
+## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
+
+Функция реализует стохастическую логистическую регрессию. Её можно использовать для задачи бинарной классификации, функция поддерживает те же пользовательские параметры, что и stochasticLinearRegression и работает таким же образом.
+
+### Параметры {#agg_functions-stochasticlogisticregression-parameters}
+
+Параметры те же, что и в stochasticLinearRegression:
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
+Смотрите раздел [parameters](#agg_functions-stochasticlinearregression-parameters).
+
+```text
+stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
+```
+
+1. Построение модели
+
+    Смотрите раздел `Построение модели` в описании [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) .
+
+    Прогнозируемые метки должны быть в диапазоне [-1, 1].
+
+2. Прогнозирование
+
+    Используя сохраненное состояние, можно предсказать вероятность наличия у объекта метки `1`.
+
+    ```sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+
+    Запрос возвращает столбец вероятностей. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+
+    Мы также можем установить границу вероятности, которая присваивает элементам различные метки.
+
+    ```sql
+    SELECT ans < 1.1 AND ans > 0.5 FROM
+    (WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) AS ans FROM test_data)
+    ```
+
+    Тогда результатом будут метки.
+
+    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+
+**Смотрите также**
+
+- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+- [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->

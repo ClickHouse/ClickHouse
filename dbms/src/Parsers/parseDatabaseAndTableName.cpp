@@ -2,7 +2,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -30,13 +29,13 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
             return false;
         }
 
-        database_str = typeid_cast<ASTIdentifier &>(*database).name;
-        table_str = typeid_cast<ASTIdentifier &>(*table).name;
+        getIdentifierName(database, database_str);
+        getIdentifierName(table, table_str);
     }
     else
     {
         database_str = "";
-        table_str = typeid_cast<ASTIdentifier &>(*database).name;
+        getIdentifierName(database, table_str);
     }
 
     return true;

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
 
 /** Converts columns-constants to full columns ("materializes" them).
   */
-class MaterializingBlockInputStream : public IProfilingBlockInputStream
+class MaterializingBlockInputStream : public IBlockInputStream
 {
 public:
     MaterializingBlockInputStream(const BlockInputStreamPtr & input);

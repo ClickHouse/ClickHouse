@@ -14,7 +14,7 @@
 #include <Core/Types.h>
 #include <Core/Row.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -107,16 +107,16 @@ int main(int argc, char ** argv)
     AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
     AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
 
-    #define INIT                \
-    {                            \
-        value.resize(3);        \
-                                \
-        value[0] = func_count.get();\
-        value[1] = func_avg.get();    \
-        value[2] = func_uniq.get();    \
+    #define INIT \
+    { \
+        value.resize(3); \
+        \
+        value[0] = func_count.get(); \
+        value[1] = func_avg.get(); \
+        value[2] = func_uniq.get(); \
     }
 
-    INIT;
+    INIT
 
 #ifndef USE_AUTO_ARRAY
     #undef INIT
@@ -162,8 +162,9 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
-                INIT;
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
+                INIT
             }
         }
 
@@ -192,8 +193,9 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
-                INIT;
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
+                INIT
             }
         }
 
@@ -223,8 +225,9 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
-                INIT;
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
+                INIT
             }
         }
 
@@ -248,8 +251,8 @@ int main(int argc, char ** argv)
         std::unordered_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert(std::make_pair(data[i], std::move(value))).first;
-            INIT;
+            it = map.insert(std::make_pair(data[i], value)).first;
+            INIT
         }
 
         watch.stop();
@@ -269,8 +272,8 @@ int main(int argc, char ** argv)
         map.set_empty_key(-1ULL);
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert(std::make_pair(data[i], std::move(value))).first;
-            INIT;
+            it = map.insert(std::make_pair(data[i], value)).first;
+            INIT
         }
 
         watch.stop();
@@ -289,8 +292,8 @@ int main(int argc, char ** argv)
         GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            map.insert(std::make_pair(data[i], std::move(value)));
-            INIT;
+            map.insert(std::make_pair(data[i], value));
+            INIT
         }
 
         watch.stop();

@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class Block;
 class MergeTreeData;
 struct FormatSettings;
 struct MergeTreeDataPartChecksums;
@@ -25,11 +26,13 @@ public:
     explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
 
     String getID(const MergeTreeData & storage) const;
+    String getID(const Block & partition_key_sample) const;
 
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 
     void load(const MergeTreeData & storage, const String & part_path);
     void store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
+    void store(const Block & partition_key_sample, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
 };

@@ -1,10 +1,8 @@
-<a name="data_type-nullable"></a>
+# Nullable(TypeName) {#data_type-nullable}
 
-# Nullable(TypeName)
+Allows to store special marker ([NULL](../query_language/syntax.md)) that denotes "missing value" alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don't have a value will store `NULL`.
 
-Allows to store special marker ([NULL](../query_language/syntax.md#null-literal)) that denotes "missing value" alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don't have a value will store `NULL`.
-
-For a `TypeName`, you can't use composite data types [Array](array.md#data_type is array) and [Tuple](tuple.md#data_type-tuple). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
+For a `TypeName`, you can't use composite data types [Array](array.md) and [Tuple](tuple.md). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
 
 A `Nullable` type field can't be included in table indexes.
 
@@ -33,7 +31,7 @@ Ok.
 
 0 rows in set. Elapsed: 0.012 sec.
 
-:) INSERT INTO t_null VALUES (1, NULL)
+:) INSERT INTO t_null VALUES (1, NULL), (2, 3)
 
 INSERT INTO t_null VALUES
 

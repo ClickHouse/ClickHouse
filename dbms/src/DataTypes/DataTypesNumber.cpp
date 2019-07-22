@@ -20,7 +20,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerSimpleDataType("Float32", [] { return DataTypePtr(std::make_shared<DataTypeFloat32>()); });
     factory.registerSimpleDataType("Float64", [] { return DataTypePtr(std::make_shared<DataTypeFloat64>()); });
 
-    /// These synonims are added for compatibility.
+    /// These synonyms are added for compatibility.
 
     factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);

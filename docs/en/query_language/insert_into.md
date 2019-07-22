@@ -1,4 +1,3 @@
-<a name="queries-insert"></a>
 
 ## INSERT
 
@@ -15,7 +14,7 @@ The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case
 - The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have `DEFAULT` defined must be listed in the query.
+If [strict_insert_defaults=1](../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
 
 Data can be passed to the INSERT in any [format](../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
@@ -41,9 +40,8 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
-<a name="queries-insert-select"></a>
 
-### Inserting The Results of `SELECT`
+### Inserting The Results of `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -51,7 +49,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
 Columns are mapped according to their position in the SELECT clause. However, their names in the SELECT expression and the table for INSERT may differ. If necessary, type casting is performed.
 
-None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`,  and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
+None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.

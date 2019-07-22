@@ -1,10 +1,10 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -15,12 +15,15 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Databases/IDatabase.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
+#include <algorithm>
+#include "InterpreterSystemQuery.h"
 
 
 namespace DB
@@ -41,6 +44,7 @@ namespace ActionLocks
     extern StorageActionBlockType PartsFetch;
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
+    extern StorageActionBlockType DistributedSend;
 }
 
 
@@ -52,7 +56,7 @@ ExecutionStatus getOverallExecutionStatusOfCommands()
     return ExecutionStatus(0);
 }
 
-/// Consequently tries to execute all commands and genreates final exception message for failed commands
+/// Consequently tries to execute all commands and generates final exception message for failed commands
 template <typename Callable, typename ... Callables>
 ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
 {
@@ -116,7 +120,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto & query = typeid_cast<ASTSystemQuery &>(*query_ptr);
+    auto & query = query_ptr->as<ASTSystemQuery &>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -155,7 +159,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            system_context.getExternalDictionaries().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
@@ -184,8 +188,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
-        case Type::START_REPLICATEDS_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, false);
+        case Type::START_REPLICATED_SENDS:
+            startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, false);
@@ -193,8 +197,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, true);
             break;
+        case Type::STOP_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, false);
+            break;
+        case Type::START_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, true);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
+            break;
+        case Type::FLUSH_DISTRIBUTED:
+            flushDistributed(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -206,9 +219,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -238,7 +251,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter();
+        auto table_lock = table->lockExclusively(context.getCurrentQueryId());
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -247,11 +260,11 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -289,7 +302,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     if (replica_names.empty())
         return;
 
-    ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
+    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
         pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
@@ -302,11 +315,21 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-    if (!table_replicated)
+    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+}
 
-    table_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+{
+    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
+    String & table_name = query.target_table;
+
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+        storage_distributed->flushClusterNodesAllData();
+    else
+        throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

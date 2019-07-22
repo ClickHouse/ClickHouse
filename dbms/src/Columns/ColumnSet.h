@@ -14,10 +14,10 @@ using ConstSetPtr = std::shared_ptr<const Set>;
   * Behaves like a constant-column (because the set is one, not its own for each line).
   * This column has a nonstandard value, so it can not be obtained via a normal interface.
   */
-class ColumnSet final : public COWPtrHelper<IColumnDummy, ColumnSet>
+class ColumnSet final : public COWHelper<IColumnDummy, ColumnSet>
 {
 private:
-    friend class COWPtrHelper<IColumnDummy, ColumnSet>;
+    friend class COWHelper<IColumnDummy, ColumnSet>;
 
     ColumnSet(size_t s_, const ConstSetPtr & data_) : data(data_) { s = s_; }
     ColumnSet(const ColumnSet &) = default;

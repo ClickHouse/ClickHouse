@@ -25,11 +25,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->column = column->clone();
         res->children.push_back(res->column);
     }
-    if (primary_key)
-    {
-        res->primary_key = primary_key->clone();
-        res->children.push_back(res->primary_key);
-    }
     if (order_by)
     {
         res->order_by = order_by->clone();
@@ -45,6 +40,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->predicate = predicate->clone();
         res->children.push_back(res->predicate);
     }
+    if (ttl)
+    {
+        res->ttl = ttl->clone();
+        res->children.push_back(res->ttl);
+    }
 
     return res;
 }
@@ -56,7 +56,7 @@ void ASTAlterCommand::formatImpl(
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
         /// AFTER
@@ -69,7 +69,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::DROP_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << (clear_column ? "CLEAR " : "DROP ") << "COLUMN " << (settings.hilite ? hilite_none : "");
+                      << (clear_column ? "CLEAR " : "DROP ") << "COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         column->formatImpl(settings, state, frame);
         if (partition)
         {
@@ -79,18 +79,38 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::MODIFY_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
+    else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
-        primary_key->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+        settings.ostr << " " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
         order_by->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::ADD_INDEX)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        index_decl->formatImpl(settings, state, frame);
+
+        /// AFTER
+        if (index)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
+            index->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::DROP_INDEX)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << "DROP INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        index->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
@@ -159,12 +179,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::COMMENT_COLUMN)
+    else if (type == ASTAlterCommand::MODIFY_TTL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
-        column->formatImpl(settings, state, frame);
-        settings.ostr << " " << (settings.hilite ? hilite_none : "");
-        comment->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
+        ttl->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
@@ -196,9 +214,9 @@ void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatStat
 
 
 /** Get the text that identifies this element. */
-String ASTAlterQuery::getID() const
+String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery_" + database + "_" + table;
+    return "AlterQuery" + (delim + database) + delim + table;
 }
 
 ASTPtr ASTAlterQuery::clone() const

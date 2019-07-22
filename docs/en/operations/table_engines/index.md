@@ -1,6 +1,4 @@
-<a name="table_engines"></a>
-
-# Table engines
+# Table engines {#table_engines}
 
 The table engine (type of table) determines:
 

@@ -14,9 +14,7 @@ Block materializeBlock(const Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        auto & src = element.column;
-        if (ColumnPtr converted = src->convertToFullColumnIfConst())
-            src = converted;
+        element.column = element.column->convertToFullColumnIfConst();
     }
 
     return res;

@@ -1,15 +1,15 @@
 #pragma once
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
-
 #include <capnp/schema-parser.h>
 
 namespace DB
 {
 
+class FormatSchemaInfo;
 class ReadBuffer;
 
 /** A stream for reading messages in Cap'n Proto format in given schema.
@@ -32,11 +32,13 @@ public:
       * schema_file - location of the capnproto schema, e.g. "schema.capnp"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object);
+    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSchemaInfo & info);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
 
 private:
+    kj::Array<capnp::word> readMessage();
+
     // Build a traversal plan from a sorted list of fields
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 
@@ -45,9 +47,9 @@ private:
     struct Action
     {
         enum Type { POP, PUSH, READ };
-        Type type;
-        capnp::StructSchema::Field field = {};
-        BlockPositionList columns = {};
+        Type type{};
+        capnp::StructSchema::Field field{};
+        BlockPositionList columns{};
     };
 
     // Wrapper for classes that could throw in destructor

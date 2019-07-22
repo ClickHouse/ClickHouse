@@ -1,17 +1,15 @@
-<a name="table_engines-url"></a>
-
-# URL(URL, Format)
+# URL(URL, Format) {#table_engines-url}
 
 Manages data on a remote HTTP/HTTPS server. This engine is similar
-to the [`File`](./file.md#) engine.
+to the [File](file.md) engine.
 
 ## Using the engine in the ClickHouse server
 
-`The format` must be one that ClickHouse can use in
+The `format` must be one that ClickHouse can use in
 `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
 [Formats](../../interfaces/formats.md#formats).
 
-`The URL` must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server
+The `URL` must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server
 that uses HTTP or HTTPS. This does not require any
 additional headers for getting a response from the server.
 

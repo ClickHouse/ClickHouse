@@ -1,8 +1,8 @@
 #include "SharedLibrary.h"
 #include <string>
-#include <dlfcn.h>
 #include <boost/core/noncopyable.hpp>
 #include "Exception.h"
+
 
 namespace DB
 {
@@ -12,9 +12,9 @@ namespace ErrorCodes
     extern const int CANNOT_DLSYM;
 }
 
-SharedLibrary::SharedLibrary(const std::string & path)
+SharedLibrary::SharedLibrary(const std::string & path, int flags)
 {
-    handle = dlopen(path.c_str(), RTLD_LAZY);
+    handle = dlopen(path.c_str(), flags);
     if (!handle)
         throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
 }

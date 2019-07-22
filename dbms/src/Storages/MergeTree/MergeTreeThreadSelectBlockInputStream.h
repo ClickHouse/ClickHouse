@@ -18,7 +18,7 @@ public:
         const size_t thread,
         const std::shared_ptr<MergeTreeReadPool> & pool,
         const size_t min_marks_to_read,
-        const size_t max_block_size,
+        const UInt64 max_block_size,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
         const MergeTreeData & storage,

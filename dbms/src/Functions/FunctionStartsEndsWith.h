@@ -75,12 +75,12 @@ public:
 
         if (const ColumnString * haystack = checkAndGetColumn<ColumnString>(haystack_column))
             dispatch<StringSource>(StringSource(*haystack), needle_column, vec_res);
-        else if (const ColumnFixedString * haystack = checkAndGetColumn<ColumnFixedString>(haystack_column))
-            dispatch<FixedStringSource>(FixedStringSource(*haystack), needle_column, vec_res);
-        else if (const ColumnConst * haystack = checkAndGetColumnConst<ColumnString>(haystack_column))
-            dispatch<ConstSource<StringSource>>(ConstSource<StringSource>(*haystack), needle_column, vec_res);
-        else if (const ColumnConst * haystack = checkAndGetColumnConst<ColumnFixedString>(haystack_column))
-            dispatch<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*haystack), needle_column, vec_res);
+        else if (const ColumnFixedString * haystack_fixed = checkAndGetColumn<ColumnFixedString>(haystack_column))
+            dispatch<FixedStringSource>(FixedStringSource(*haystack_fixed), needle_column, vec_res);
+        else if (const ColumnConst * haystack_const = checkAndGetColumnConst<ColumnString>(haystack_column))
+            dispatch<ConstSource<StringSource>>(ConstSource<StringSource>(*haystack_const), needle_column, vec_res);
+        else if (const ColumnConst * haystack_const_fixed = checkAndGetColumnConst<ColumnFixedString>(haystack_column))
+            dispatch<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*haystack_const_fixed), needle_column, vec_res);
         else
             throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -93,12 +93,12 @@ private:
     {
         if (const ColumnString * needle = checkAndGetColumn<ColumnString>(needle_column))
             execute<HaystackSource, StringSource>(haystack_source, StringSource(*needle), res_data);
-        else if (const ColumnFixedString * needle = checkAndGetColumn<ColumnFixedString>(needle_column))
-            execute<HaystackSource, FixedStringSource>(haystack_source, FixedStringSource(*needle), res_data);
-        else if (const ColumnConst * needle = checkAndGetColumnConst<ColumnString>(needle_column))
-            execute<HaystackSource, ConstSource<StringSource>>(haystack_source, ConstSource<StringSource>(*needle), res_data);
-        else if (const ColumnConst * needle = checkAndGetColumnConst<ColumnFixedString>(needle_column))
-            execute<HaystackSource, ConstSource<FixedStringSource>>(haystack_source, ConstSource<FixedStringSource>(*needle), res_data);
+        else if (const ColumnFixedString * needle_fixed = checkAndGetColumn<ColumnFixedString>(needle_column))
+            execute<HaystackSource, FixedStringSource>(haystack_source, FixedStringSource(*needle_fixed), res_data);
+        else if (const ColumnConst * needle_const = checkAndGetColumnConst<ColumnString>(needle_column))
+            execute<HaystackSource, ConstSource<StringSource>>(haystack_source, ConstSource<StringSource>(*needle_const), res_data);
+        else if (const ColumnConst * needle_const_fixed = checkAndGetColumnConst<ColumnFixedString>(needle_column))
+            execute<HaystackSource, ConstSource<FixedStringSource>>(haystack_source, ConstSource<FixedStringSource>(*needle_const_fixed), res_data);
         else
             throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }

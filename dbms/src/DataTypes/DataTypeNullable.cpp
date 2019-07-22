@@ -172,7 +172,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 
@@ -188,7 +188,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
     {
         safeDeserialize(column,
             [] { return false; },
-            [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr, settings); });
+            [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextEscaped(nested, istr, settings); });
     }
     else
     {
@@ -214,7 +214,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
                 {
                     /// We could step back to consume backslash again.
                     --istr.position();
-                    nested_data_type->deserializeTextEscaped(nested, istr, settings);
+                    nested_data_type->deserializeAsTextEscaped(nested, istr, settings);
                 }
                 else
                 {
@@ -222,7 +222,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
                     ReadBufferFromMemory prefix("\\", 1);
                     ConcatReadBuffer prepended_istr(prefix, istr);
 
-                    nested_data_type->deserializeTextEscaped(nested, prepended_istr, settings);
+                    nested_data_type->deserializeAsTextEscaped(nested, prepended_istr, settings);
 
                     /// Synchronise cursor position in original buffer.
 
@@ -240,7 +240,7 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
     if (col.isNullAt(row_num))
         writeCString("NULL", ostr);
     else
-        nested_data_type->serializeTextQuoted(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsTextQuoted(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 
@@ -248,8 +248,17 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr, settings); });
+        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextQuoted(nested, istr, settings); });
 }
+
+
+void DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    safeDeserialize(column,
+        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
+        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
+}
+
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -258,14 +267,14 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
-        [this, &settings, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr, settings); });
+        [this, &settings, &istr] (IColumn & nested) { nested_data_type->deserializeAsTextCSV(nested, istr, settings); });
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -281,7 +290,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     if (col.isNullAt(row_num))
         writeCString("ᴺᵁᴸᴸ", ostr);
     else
-        nested_data_type->serializeText(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -291,14 +300,14 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
     if (col.isNullAt(row_num))
         writeCString("null", ostr);
     else
-        nested_data_type->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsTextJSON(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextJSON(nested, istr, settings); });
+        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextJSON(nested, istr, settings); });
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -308,7 +317,34 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
-        nested_data_type->serializeTextXML(col.getNestedColumn(), row_num, ostr, settings);
+        nested_data_type->serializeAsTextXML(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    if (!col.isNullAt(row_num))
+        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
+}
+
+void DataTypeNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    ColumnNullable & col = static_cast<ColumnNullable &>(column);
+    IColumn & nested_column = col.getNestedColumn();
+    size_t old_size = nested_column.size();
+    try
+    {
+        nested_data_type->deserializeProtobuf(nested_column, protobuf, allow_add_row, row_added);
+        if (row_added)
+            col.getNullMapData().push_back(0);
+    }
+    catch (...)
+    {
+        nested_column.popBack(nested_column.size() - old_size);
+        col.getNullMapData().resize_assume_reserved(old_size);
+        row_added = false;
+        throw;
+    }
 }
 
 MutableColumnPtr DataTypeNullable::createColumn() const

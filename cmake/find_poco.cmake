@@ -13,7 +13,10 @@ if (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL)
     list (APPEND POCO_COMPONENTS Crypto NetSSL)
 endif ()
 if (NOT DEFINED ENABLE_POCO_MONGODB OR ENABLE_POCO_MONGODB)
+    set(ENABLE_POCO_MONGODB 1 CACHE BOOL "")
     list (APPEND POCO_COMPONENTS MongoDB)
+else ()
+    set(ENABLE_POCO_MONGODB 0 CACHE BOOL "")
 endif ()
 # TODO: after new poco release with SQL library rename ENABLE_POCO_ODBC -> ENABLE_POCO_SQLODBC
 if (NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC)
@@ -36,6 +39,9 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     set (ENABLE_DATA_SQLITE 0 CACHE BOOL "")
     set (ENABLE_DATA_MYSQL 0 CACHE BOOL "")
     set (ENABLE_DATA_POSTGRESQL 0 CACHE BOOL "")
+    set (ENABLE_ENCODINGS 0 CACHE BOOL "")
+    set (ENABLE_MONGODB ${ENABLE_POCO_MONGODB} CACHE BOOL "" FORCE)
+
     # new after 2.0.0:
     set (POCO_ENABLE_ZIP 0 CACHE BOOL "")
     set (POCO_ENABLE_PAGECOMPILER 0 CACHE BOOL "")
@@ -58,7 +64,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         "${ClickHouse_SOURCE_DIR}/contrib/poco/Util/include/"
     )
 
-    if (NOT DEFINED ENABLE_POCO_MONGODB OR ENABLE_POCO_MONGODB)
+    if (ENABLE_POCO_MONGODB)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
         set (Poco_MongoDB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/poco/MongoDB/include/")
     endif ()
@@ -74,7 +80,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
             set (Poco_SQLODBC_INCLUDE_DIR
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
-                ${ODBC_INCLUDE_DIRECTORIES}
+                ${ODBC_INCLUDE_DIRS}
                 )
             set (Poco_SQLODBC_LIBRARY PocoSQLODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         endif ()
@@ -86,7 +92,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
             set (USE_POCO_DATAODBC 1)
             set (Poco_DataODBC_INCLUDE_DIR
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
-                ${ODBC_INCLUDE_DIRECTORIES}
+                ${ODBC_INCLUDE_DIRS}
             )
             set (Poco_DataODBC_LIBRARY PocoDataODBC ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
         endif ()

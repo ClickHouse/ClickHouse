@@ -12,8 +12,9 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -67,12 +68,13 @@ StorageFile::StorageFile(
         const std::string & table_path_,
         int table_fd_,
         const std::string & db_dir_path,
+        const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         Context & context_)
     : IStorage(columns_),
-    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
+    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
     if (table_fd < 0) /// Will use file
     {
@@ -112,15 +114,15 @@ StorageFile::StorageFile(
 }
 
 
-class StorageFileBlockInputStream : public IProfilingBlockInputStream
+class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
         : storage(storage_)
     {
         if (storage.use_table_fd)
         {
-            storage.rwlock.lock();
+            unique_lock = std::unique_lock(storage.rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
@@ -130,7 +132,7 @@ public:
                 if (storage.table_fd_init_offset < 0)
                     throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-                /// ReadBuffer's seek() doesn't make sence, since cache is empty
+                /// ReadBuffer's seek() doesn't make sense, since cache is empty
                 if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
                     throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
@@ -140,20 +142,12 @@ public:
         }
         else
         {
-            storage.rwlock.lock_shared();
+            shared_lock = std::shared_lock(storage.rwlock);
 
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
-    }
-
-    ~StorageFileBlockInputStream() override
-    {
-        if (storage.use_table_fd)
-            storage.rwlock.unlock();
-        else
-            storage.rwlock.unlock_shared();
     }
 
     String getName() const override
@@ -183,6 +177,9 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
+
+    std::shared_lock<std::shared_mutex> shared_lock;
+    std::unique_lock<std::shared_mutex> unique_lock;
 };
 
 
@@ -194,7 +191,12 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
+    BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
+    const ColumnsDescription & columns = getColumns();
+    auto column_defaults = columns.getDefaults();
+    if (column_defaults.empty())
+        return {block_input};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 
@@ -252,7 +254,7 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Settings & /*settings*/)
+    const Context & /*context*/)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
@@ -264,7 +266,7 @@ void StorageFile::drop()
 }
 
 
-void StorageFile::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -276,6 +278,8 @@ void StorageFile::rename(const String & new_path_to_db, const String & /*new_dat
     Poco::File(path).renameTo(path_new);
 
     path = std::move(path_new);
+    table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 
@@ -291,7 +295,7 @@ void registerStorageFile(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         int source_fd = -1;
         String source_path;
@@ -299,19 +303,19 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
+            if (auto opt_name = getIdentifierName(engine_args[1]))
             {
-                if (identifier->name == "stdin")
+                if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
-                else if (identifier->name == "stdout")
+                else if (*opt_name == "stdout")
                     source_fd = STDOUT_FILENO;
-                else if (identifier->name == "stderr")
+                else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
@@ -326,7 +330,7 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
-            args.table_name, format_name, args.columns,
+            args.database_name, args.table_name, format_name, args.columns,
             args.context);
     });
 }

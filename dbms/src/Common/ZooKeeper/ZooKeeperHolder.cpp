@@ -14,7 +14,7 @@ using namespace zkutil;
 
 ZooKeeperHolder::UnstorableZookeeperHandler ZooKeeperHolder::getZooKeeper()
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
     return UnstorableZookeeperHandler(ptr);
 }
 
@@ -25,7 +25,7 @@ void ZooKeeperHolder::initFromInstance(const ZooKeeper::Ptr & zookeeper_ptr)
 
 bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
     if (ptr.unique())
     {

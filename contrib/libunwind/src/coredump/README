@@ -1,8 +1,0 @@
-This code is based on "unwinding via ptrace" code from ptrace/
-directory.
-
-Files with names starting with _UCD_ are substantially changed
-from their ptrace/_UPT_... progenitors.
-
-Files which still have _UPT_... names are either verbiatim copies
-from ptrace/, or unimplemented stubs.

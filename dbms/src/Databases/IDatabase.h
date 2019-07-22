@@ -1,29 +1,25 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnsDescription.h>
-#include <ctime>
-#include <memory>
-#include <functional>
-#include <Poco/File.h>
-#include <Common/escapeForFileName.h>
+#include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/IStorage_fwd.h>
+#include <Poco/File.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 
-
-class ThreadPool;
+#include <ctime>
+#include <functional>
+#include <memory>
 
 
 namespace DB
 {
 
 class Context;
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct Settings;
 
@@ -60,11 +56,10 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Load a set of existing tables. If thread_pool is specified, use it.
+    /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
     /// Check the existence of the table.
@@ -77,9 +72,11 @@ public:
         const Context & context,
         const String & name) const = 0;
 
+    using FilterByNameFunction = std::function<bool(const String &)>;
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;
+    virtual DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;
@@ -117,6 +114,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
@@ -157,4 +155,3 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }
-

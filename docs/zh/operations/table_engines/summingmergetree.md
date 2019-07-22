@@ -1,12 +1,11 @@
-<a name="table_engine-summingmergetree"></a>
 
 # SummingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key with one row which contains summarized values for the columns with the numeric data type. If the primary key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+该引擎继承自 [MergeTree](mergetree.md)。区别在于，当合并 `SummingMergeTree` 表的数据片段时，ClickHouse 会把所有具有相同主键的行合并为一行，该行包含了被合并的行中具有数值数据类型的列的汇总值。如果主键的组合方式使得单个键值对应于大量的行，则可以显著的减少存储空间并加快数据查询的速度。
 
-We recommend to use the engine together with `MergeTree`. Store complete data in `MergeTree`  table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
+我们推荐将该引擎和 `MergeTree` 一起使用。例如，在准备做报告的时候，将完整的数据存储在 `MergeTree` 表中，并且使用 `SummingMergeTree` 来存储聚合数据。这种方法可以使你避免因为使用不正确的主键组合方式而丢失有价值的数据。
 
-## Creating a Table
+## 建表
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -14,30 +13,30 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = MergeTree()
+) ENGINE = SummingMergeTree([columns])
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+请求参数的描述，参考 [请求描述](../../query_language/create.md)。
 
-**Parameters of SummingMergeTree**
+**SummingMergeTree 的参数**
 
-- `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
-The columns must be of a numeric type and must not be in the primary key.
+- `columns` - 包含了将要被汇总的列的列名的元组。可选参数。
+所选的列必须是数值类型，并且不可位于主键中。
 
-    If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+    如果没有指定 `columns`，ClickHouse 会把所有不在主键中的数值类型的列都进行汇总。
 
-**Query clauses**
+**子句**
 
-When creating a `SummingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+创建 `SummingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的[子句](mergetree.md)。
 
-<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
+<details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention "注意"
+    不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -48,14 +47,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
 ```
 
-All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
+除 `columns` 外的所有参数都与 `MergeTree` 中的含义相同。
 
-- `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
+- `columns` — 包含将要被汇总的列的列名的元组。可选参数。有关说明，请参阅上文。
 </details>
 
-## Usage Example
+## 用法示例
 
-Consider the following table:
+考虑如下的表：
 
 ```sql
 CREATE TABLE summtt
@@ -67,13 +66,13 @@ ENGINE = SummingMergeTree()
 ORDER BY key
 ```
 
-Insert data to it:
+向其中插入数据：
 
 ```
 :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
-ClickHouse may sum all the rows not completely ([see below](#summary-data-processing)), so we use an aggregate function `sum`  and `GROUP BY` clause  in the query.
+ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)）,因此我们在查询中使用了聚合函数 `sum` 和 `GROUP BY` 子句。
 
 ```sql
 SELECT key, sum(value) FROM summtt GROUP BY key
@@ -86,40 +85,39 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<a name="summingmergetree-data-processing"></a>
 
-## Data Processing
+## 数据处理 {#data-processing}
 
-When data are inserted into a table, they are saved as-is. Clickhouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
+当数据被插入到表中时，他们将被原样保存。ClickHouse 定期合并插入的数据片段，并在这个时候对所有具有相同主键的行中的列进行汇总，将这些行替换为包含汇总数据的一行记录。
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
+ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含具有相同主键的行，即单个汇总片段将会是不完整的。因此，聚合函数 [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) 和 `GROUP BY` 子句应该在（`SELECT`）查询语句中被使用，如上文中的例子所述。
 
-### Common rules for summation
+### 汇总的通用规则
 
-The values in the columns with the numeric data type are summarized. The set of columns is defined by the parameter `columns`.
+列中数值类型的值会被汇总。这些列的集合在参数 `columns` 中被定义。
 
-If the values were 0 in all of the columns for summation, the row is deleted.
+如果用于汇总的所有列中的值均为0，则该行会被删除。
 
-If column is not in the primary key and is not summarized, an arbitrary value is selected from the existing ones.
+如果列不在主键中且无法被汇总，则会在现有的值中任选一个。
 
-The values are not summarized for columns in the primary key.
+主键所在的列中的值不会被汇总。
 
-### The Summation in the AggregateFunction Columns
+### AggregateFunction 列中的汇总
 
-For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md#table_engine-aggregatingmergetree) engine aggregating according to the function.
+对于 [AggregateFunction 类型](../../data_types/nested_data_structures/aggregatefunction.md)的列，ClickHouse 根据对应函数表现为 [AggregatingMergeTree](aggregatingmergetree.md) 引擎的聚合。
 
-### Nested Structures
+### 嵌套结构
 
-Table can have nested data structures that are processed in a special way.
+表中可以具有以特殊方式处理的嵌套数据结构。
 
-If the name of a nested table ends with `Map` and it contains at least two columns that meet the following criteria:
+如果嵌套表的名称以 `Map` 结尾，并且包含至少两个符合以下条件的列：
 
-- the first column is numeric `(*Int*, Date, DateTime)`, let's call it `key`,
-- the other columns are arithmetic `(*Int*, Float32/64)`, let's call it `(values...)`,
+- 第一列是数值类型 `(*Int*, Date, DateTime)`，我们称之为 `key`,
+- 其他的列是可计算的 `(*Int*, Float32/64)`，我们称之为 `(values...)`,
 
-then this nested table is interpreted as a mapping of `key => (values...)`, and when merging its rows, the elements of two data sets are merged by `key` with a summation of the corresponding `(values...)`.
+然后这个嵌套表会被解释为一个 `key => (values...)` 的映射，当合并它们的行时，两个数据集中的元素会被根据 `key` 合并为相应的 `(values...)` 的汇总值。
 
-Examples:
+示例：
 
 ```
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
@@ -128,8 +126,8 @@ Examples:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md#agg_function-summary) function for aggregation of `Map`.
+请求数据时，使用 [sumMap(key, value)](../../query_language/agg_functions/reference.md) 函数来对 `Map` 进行聚合。
 
-For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
+对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

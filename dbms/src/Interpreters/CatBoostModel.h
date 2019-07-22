@@ -27,7 +27,11 @@ public:
 
     virtual size_t getFloatFeaturesCount() const = 0;
     virtual size_t getCatFeaturesCount() const = 0;
+    virtual size_t getTreeCount() const = 0;
 };
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// General ML model evaluator interface.
 class IModel : public IExternalLoadable
@@ -35,6 +39,7 @@ class IModel : public IExternalLoadable
 public:
     virtual ColumnPtr evaluate(const ColumnRawPtrs & columns) const = 0;
     virtual std::string getTypeName() const = 0;
+    virtual DataTypePtr getReturnType() const = 0;
 };
 
 class CatBoostModel : public IModel
@@ -48,6 +53,8 @@ public:
 
     size_t getFloatFeaturesCount() const;
     size_t getCatFeaturesCount() const;
+    size_t getTreeCount() const;
+    DataTypePtr getReturnType() const override;
 
     /// IExternalLoadable interface.
 
@@ -59,10 +66,7 @@ public:
 
     bool isModified() const override;
 
-    std::unique_ptr<IExternalLoadable> clone() const override;
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
-    std::exception_ptr getCreationException() const override { return creation_exception; }
+    std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
     std::string name;
@@ -76,9 +80,7 @@ private:
 
     size_t float_features_count;
     size_t cat_features_count;
-
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-    std::exception_ptr creation_exception;
+    size_t tree_count;
 
     void init();
 };

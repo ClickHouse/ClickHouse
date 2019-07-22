@@ -6,7 +6,7 @@
 namespace DB
 {
 
-std::string DataTypeFunction::getName() const
+std::string DataTypeFunction::doGetName() const
 {
     WriteBufferFromOwnString res;
 

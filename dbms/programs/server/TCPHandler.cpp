@@ -1,24 +1,19 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
-#include <daemon/OwnSplitChannel.h>
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -30,7 +25,12 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
+#include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Compression/CompressionFactory.h>
+#include <common/logger_useful.h>
+
+#include <Processors/Formats/LazyOutputFormat.h>
 
 #include "TCPHandler.h"
 
@@ -54,9 +54,10 @@ namespace ErrorCodes
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     connection_context = server.context();
-    connection_context.setSessionContext(connection_context);
+    connection_context.makeSessionContext();
 
     Settings global_settings = connection_context.getSettings();
 
@@ -122,16 +123,25 @@ void TCPHandler::runImpl()
 
     while (1)
     {
-        /// Restore context of request.
-        query_context = connection_context;
-
-        /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
-            ;
+        /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
+        {
+            Stopwatch idle_time;
+            while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
+            {
+                if (idle_time.elapsedSeconds() > global_settings.idle_connection_timeout)
+                {
+                    LOG_TRACE(log, "Closing idle connection");
+                    return;
+                }
+            }
+        }
 
         /// If we need to shut down, or client disconnects.
         if (server.isCancelled() || in->eof())
             break;
+
+        /// Set context of request.
+        query_context = connection_context;
 
         Stopwatch watch;
         state.reset();
@@ -158,22 +168,23 @@ void TCPHandler::runImpl()
             if (!receivePacket())
                 continue;
 
-            query_scope.emplace(query_context);
+            query_scope.emplace(*query_context);
 
-            send_exception_with_stack_trace = query_context.getSettingsRef().calculate_text_stack_trace;
+            send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
+            const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && query_context.getSettingsRef().send_logs_level.value != "none")
+                && client_logs_level.value != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
-                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().send_logs_level.value);
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
             }
 
-            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context)
+            query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
             {
-                if (&context != &query_context)
+                if (&context != &*query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
                 /// Get blocks of temporary tables
@@ -185,8 +196,11 @@ void TCPHandler::runImpl()
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
+            customizeContext(*query_context);
+
+            bool may_have_embedded_data = client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
             if (state.io.out)
                 state.need_receive_data_for_insert = true;
@@ -197,6 +211,8 @@ void TCPHandler::runImpl()
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
                 processInsertQuery(global_settings);
+            else if (state.io.pipeline.initialized())
+                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
             else
                 processOrdinaryQuery();
 
@@ -292,6 +308,9 @@ void TCPHandler::runImpl()
         LOG_INFO(log, std::fixed << std::setprecision(3)
             << "Processed in " << watch.elapsedSeconds() << " sec.");
 
+        /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
+        query_context.reset();
+
         if (network_error)
             break;
     }
@@ -300,10 +319,10 @@ void TCPHandler::runImpl()
 
 void TCPHandler::readData(const Settings & global_settings)
 {
-    auto receive_timeout = query_context.getSettingsRef().receive_timeout.value;
+    const auto receive_timeout = query_context->getSettingsRef().receive_timeout.value;
 
     /// Poll interval should not be greater than receive_timeout
-    size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
+    const size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
     size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
@@ -360,20 +379,19 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       */
     state.io.out->writePrefix();
 
-    /// Send block to the client - table structure.
-    Block block = state.io.out->getHeader();
-
-    /// Support insert from old clients without low cardinality type.
-    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+    /// Send ColumnsDescription for insertion table
+    if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        for (auto & col : block)
+        const auto & db_and_table = query_context->getInsertionTable();
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
-            col.type = recursiveRemoveLowCardinality(col.type);
-            col.column = recursiveRemoveLowCardinality(col.column);
+            if (!db_and_table.second.empty())
+                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
         }
     }
 
-    sendData(block);
+    /// Send block to the client - table structure.
+    sendData(state.io.out->getHeader());
 
     readData(global_settings);
     state.io.out->writeSuffix();
@@ -389,6 +407,7 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
             if (header)
                 sendData(header);
         }
@@ -410,7 +429,7 @@ void TCPHandler::processOrdinaryQuery()
                 }
                 else
                 {
-                    if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
                     {
                         /// Some time passed and there is a progress.
                         after_send_progress.restart();
@@ -419,7 +438,7 @@ void TCPHandler::processOrdinaryQuery()
 
                     sendLogs();
 
-                    if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
+                    if (async_in.poll(query_context->getSettingsRef().interactive_delay / 1000))
                     {
                         /// There is the following result block.
                         block = async_in.read();
@@ -437,9 +456,9 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
-                sendTotals();
-                sendExtremes();
-                sendProfileInfo();
+                sendTotals(state.io.in->getTotals());
+                sendExtremes(state.io.in->getExtremes());
+                sendProfileInfo(state.io.in->getProfileInfo());
                 sendProgress();
                 sendLogs();
             }
@@ -450,6 +469,129 @@ void TCPHandler::processOrdinaryQuery()
         }
 
         async_in.readSuffix();
+    }
+
+    state.io.onFinish();
+}
+
+void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+{
+    auto & pipeline = state.io.pipeline;
+
+    /// Send header-block, to allow client to prepare output format for data to send.
+    {
+        auto & header = pipeline.getHeader();
+
+        if (header)
+            sendData(header);
+    }
+
+    auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
+    pipeline.setOutput(lazy_format);
+
+    {
+        auto thread_group = CurrentThread::getGroup();
+        ThreadPool pool(1);
+        auto executor = pipeline.execute();
+        std::atomic_bool exception = false;
+
+        pool.schedule([&]()
+        {
+            /// ThreadStatus thread_status;
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+            );
+
+            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+            setThreadName("QueryPipelineEx");
+
+            try
+            {
+                executor->execute(num_threads);
+            }
+            catch (...)
+            {
+                exception = true;
+                throw;
+            }
+        });
+
+        /// Wait in case of exception. Delete pipeline to release memory.
+        SCOPE_EXIT(
+                /// Clear queue in case if somebody is waiting lazy_format to push.
+                lazy_format->finish();
+                lazy_format->clearQueue();
+
+                pool.wait();
+                pipeline = QueryPipeline()
+        );
+
+        while (true)
+        {
+            Block block;
+
+            while (true)
+            {
+                if (isQueryCancelled())
+                {
+                    /// A packet was received requesting to stop execution of the request.
+                    executor->cancel();
+
+                    break;
+                }
+                else
+                {
+                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+                    {
+                        /// Some time passed and there is a progress.
+                        after_send_progress.restart();
+                        sendProgress();
+                    }
+
+                    sendLogs();
+
+                    if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
+                        break;
+
+                    if (lazy_format->isFinished())
+                        break;
+
+                    if (exception)
+                    {
+                        pool.wait();
+                        break;
+                    }
+                }
+            }
+
+            /** If data has run out, we will send the profiling data and total values to
+              * the last zero block to be able to use
+              * this information in the suffix output of stream.
+              * If the request was interrupted, then `sendTotals` and other methods could not be called,
+              *  because we have not read all the data yet,
+              *  and there could be ongoing calculations in other threads at the same time.
+              */
+            if (!block && !isQueryCancelled())
+            {
+                pool.wait();
+                pipeline.finalize();
+
+                sendTotals(lazy_format->getTotals());
+                sendExtremes(lazy_format->getExtremes());
+                sendProfileInfo(lazy_format->getProfileInfo());
+                sendProgress();
+                sendLogs();
+            }
+
+            sendData(block);
+            if (!block)
+                break;
+        }
     }
 
     state.io.onFinish();
@@ -485,55 +627,42 @@ void TCPHandler::processTablesStatusRequest()
 }
 
 
-void TCPHandler::sendProfileInfo()
+void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
+    writeVarUInt(Protocol::Server::ProfileInfo, *out);
+    info.write(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendTotals(const Block & totals)
+{
+    if (totals)
     {
-        writeVarUInt(Protocol::Server::ProfileInfo, *out);
-        input->getProfileInfo().write(*out);
+        initBlockOutput(totals);
+
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
+
+        state.block_out->write(totals);
+        state.maybe_compressed_out->next();
         out->next();
     }
 }
 
 
-void TCPHandler::sendTotals()
+void TCPHandler::sendExtremes(const Block & extremes)
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    if (extremes)
     {
-        const Block & totals = input->getTotals();
+        initBlockOutput(extremes);
 
-        if (totals)
-        {
-            initBlockOutput(totals);
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Totals, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(totals);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
-    }
-}
-
-
-void TCPHandler::sendExtremes()
-{
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
-    {
-        Block extremes = input->getExtremes();
-
-        if (extremes)
-        {
-            initBlockOutput(extremes);
-
-            writeVarUInt(Protocol::Server::Extremes, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(extremes);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(extremes);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
@@ -656,11 +785,11 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
-    query_context.setCurrentQueryId(state.query_id);
+    query_context->setCurrentQueryId(state.query_id);
 
     /// Client info
     {
-        ClientInfo & client_info = query_context.getClientInfo();
+        ClientInfo & client_info = query_context->getClientInfo();
         if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
             client_info.read(*in, client_revision);
 
@@ -688,7 +817,7 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
-    Settings & settings = query_context.getSettingsRef();
+    Settings & settings = query_context->getSettingsRef();
     settings.deserialize(*in);
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
@@ -726,16 +855,15 @@ bool TCPHandler::receiveData()
         {
             StoragePtr storage;
             /// If such a table does not exist, create it.
-            if (!(storage = query_context.tryGetExternalTable(external_table_name)))
+            if (!(storage = query_context->tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
+                storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns});
                 storage->startup();
-                query_context.addExternalTable(external_table_name, storage);
+                query_context->addExternalTable(external_table_name, storage);
             }
             /// The data will be written directly to the table.
-            state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
+            state.io.out = storage->write(ASTPtr(), *query_context);
         }
         if (block)
             state.io.out->write(block);
@@ -762,7 +890,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -773,9 +902,14 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
+            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
+            std::optional<int> level;
+            if (method == "ZSTD")
+                level = query_context->getSettingsRef().network_zstd_compression_level;
+
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionSettings(query_context.getSettingsRef()));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }
@@ -783,7 +917,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -795,7 +930,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -805,7 +941,7 @@ bool TCPHandler::isQueryCancelled()
     if (state.is_cancelled || state.sent_all_data)
         return true;
 
-    if (after_check_cancelled.elapsed() / 1000 < query_context.getSettingsRef().interactive_delay)
+    if (after_check_cancelled.elapsed() / 1000 < query_context->getSettingsRef().interactive_delay)
         return false;
 
     after_check_cancelled.restart();
@@ -860,6 +996,16 @@ void TCPHandler::sendLogData(const Block & block)
     out->next();
 }
 
+void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
+{
+    writeVarUInt(Protocol::Server::TableColumns, *out);
+
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *out);
+    writeStringBinary(columns.toString(), *out);
+
+    out->next();
+}
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {

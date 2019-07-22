@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Common/config.h>
-#include <Common/SipHash.h>
-#include <Interpreters/Settings.h>
-#include <Core/Names.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
-
-#include <unordered_set>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Names.h>
+#include <Core/Settings.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include "config_core.h"
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -36,9 +36,6 @@ using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 class ExpressionActions;
 
@@ -71,7 +68,7 @@ public:
         ADD_ALIASES,
     };
 
-    Type type;
+    Type type{};
 
     /// For ADD/REMOVE/COPY_COLUMN.
     std::string source_name;
@@ -87,6 +84,12 @@ public:
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
     /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
+
+    /// For unaligned [LEFT] ARRAY JOIN
+    FunctionBuilderPtr function_length;
+    FunctionBuilderPtr function_greatest;
+    FunctionBuilderPtr function_arrayResize;
+
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
@@ -97,6 +100,7 @@ public:
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
     bool array_join_is_left = false;
+    bool unaligned_array_join = false;
 
     /// For JOIN
     std::shared_ptr<const Join> join;
@@ -219,6 +223,9 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
+
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
       */
@@ -231,17 +238,17 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
 
     const Settings & getSettings() const { return settings; }
 
 
     struct ActionsHash
     {
-        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        UInt128 operator()(const ExpressionActions::Actions & elems) const
         {
             SipHash hash;
-            for (const ExpressionAction & act : actions)
+            for (const ExpressionAction & act : elems)
                 hash.update(ExpressionAction::ActionHash{}(act));
             UInt128 result;
             hash.get128(result.low, result.high);

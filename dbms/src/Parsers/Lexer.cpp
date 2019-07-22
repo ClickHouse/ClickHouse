@@ -73,11 +73,11 @@ Token Lexer::nextTokenImpl()
 
     switch (*pos)
     {
-        case ' ':
-        case '\t':
-        case '\n':
-        case '\r':
-        case '\f':
+        case ' ': [[fallthrough]];
+        case '\t': [[fallthrough]];
+        case '\n': [[fallthrough]];
+        case '\r': [[fallthrough]];
+        case '\f': [[fallthrough]];
         case '\v':
         {
             ++pos;
@@ -86,17 +86,16 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::Whitespace, token_begin, pos);
         }
 
-        case 'a'...'z':
-        case 'A'...'Z':
-        case '_':
-        {
-            ++pos;
-            while (pos < end && isWordCharASCII(*pos))
-                ++pos;
-            return Token(TokenType::BareWord, token_begin, pos);
-        }
-
-        case '0'...'9':
+        case '0': [[fallthrough]];
+        case '1': [[fallthrough]];
+        case '2': [[fallthrough]];
+        case '3': [[fallthrough]];
+        case '4': [[fallthrough]];
+        case '5': [[fallthrough]];
+        case '6': [[fallthrough]];
+        case '7': [[fallthrough]];
+        case '8': [[fallthrough]];
+        case '9':
         {
             /// The task is not to parse a number or check correctness, but only to skip it.
 
@@ -133,7 +132,7 @@ Token Lexer::nextTokenImpl()
                         ++pos;
                 }
 
-                /// exponentation (base 10 or base 2)
+                /// exponentiation (base 10 or base 2)
                 if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
                 {
                     ++pos;
@@ -174,7 +173,10 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::OpeningSquareBracket, token_begin, ++pos);
         case ']':
             return Token(TokenType::ClosingSquareBracket, token_begin, ++pos);
-
+        case '{':
+            return Token(TokenType::OpeningCurlyBrace, token_begin, ++pos);
+        case '}':
+            return Token(TokenType::ClosingCurlyBrace, token_begin, ++pos);
         case ',':
             return Token(TokenType::Comma, token_begin, ++pos);
         case ';':
@@ -196,7 +198,7 @@ Token Lexer::nextTokenImpl()
             while (pos < end && isNumericASCII(*pos))
                 ++pos;
 
-            /// exponentation
+            /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
             {
                 ++pos;
@@ -304,7 +306,15 @@ Token Lexer::nextTokenImpl()
         }
 
         default:
-            return Token(TokenType::Error, token_begin, ++pos);
+            if (isWordCharASCII(*pos))
+            {
+                ++pos;
+                while (pos < end && isWordCharASCII(*pos))
+                    ++pos;
+                return Token(TokenType::BareWord, token_begin, pos);
+            }
+            else
+                return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 
@@ -317,9 +327,9 @@ const char * getTokenName(TokenType type)
         case TokenType::TOKEN: return #TOKEN;
 APPLY_FOR_TOKENS(M)
 #undef M
-        default:
-            __builtin_unreachable();
     }
+
+    __builtin_unreachable();
 }
 
 

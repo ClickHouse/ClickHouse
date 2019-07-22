@@ -1,4 +1,4 @@
-set(JEMALLOC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/jemalloc)
+set(JEMALLOC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/jemalloc)
 
 set(SRCS
 ${JEMALLOC_SOURCE_DIR}/src/arena.c
@@ -15,7 +15,6 @@ ${JEMALLOC_SOURCE_DIR}/src/extent_mmap.c
 ${JEMALLOC_SOURCE_DIR}/src/hash.c
 ${JEMALLOC_SOURCE_DIR}/src/hook.c
 ${JEMALLOC_SOURCE_DIR}/src/jemalloc.c
-${JEMALLOC_SOURCE_DIR}/src/jemalloc_cpp.cpp
 ${JEMALLOC_SOURCE_DIR}/src/large.c
 ${JEMALLOC_SOURCE_DIR}/src/log.c
 ${JEMALLOC_SOURCE_DIR}/src/malloc_io.c
@@ -39,6 +38,10 @@ ${JEMALLOC_SOURCE_DIR}/src/witness.c
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+endif ()
 
 add_library(jemalloc STATIC ${SRCS})
 

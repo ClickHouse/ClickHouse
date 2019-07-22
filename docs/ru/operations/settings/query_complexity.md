@@ -17,9 +17,7 @@
 
 `any (только для group_by_overflow_mode)` - продолжить агрегацию по ключам, которые успели войти в набор, но не добавлять новые ключи в набор.
 
-<a name="settings_max_memory_usage"></a>
-
-## max_memory_usage
+## max_memory_usage {#settings_max_memory_usage}
 
 Максимальный возможный объем оперативной памяти для выполнения запроса на одном сервере.
 
@@ -40,7 +38,7 @@
 
 Максимальный возможный объем оперативной памяти для запросов пользователя на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
 Смотрите также описание настройки [max_memory_usage](#settings_max_memory_usage).
 
@@ -48,7 +46,7 @@
 
 Максимальный возможный объем оперативной памяти для всех запросов на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
 Смотрите также описание настройки [max_memory_usage](#settings_max_memory_usage).
 
@@ -114,6 +112,18 @@
 
 Минимальная скорость выполнения запроса в строчках в секунду. Проверяется на каждый блок данных по истечении timeout_before_checking_execution_speed. Если скорость выполнения запроса оказывается меньше, то кидается исключение.
 
+## min_execution_speed_bytes
+
+Минимальная скорость выполнения запроса в строках на байт. Он проверяется для каждого блока данных после timeout_before_checking_execution_speed. Если скорость выполнения запроса меньше, исключение.
+
+## max_execution_speed
+
+Максимальная скорость выполнения запроса в строках в секунду. Он проверяется для каждого блока данных после timeout_before_checking_execution_speed. Если скорость выполнения запроса выше, скорость будет снижена.
+
+## max_execution_speed_bytes
+
+Максимальная скорость выполнения запроса в байтах в секунду. Он проверяется для каждого блока данных после timeout_before_checking_execution_speed. Если скорость выполнения запроса выше, скорость будет снижена.
+
 ## timeout_before_checking_execution_speed
 
 Проверять, что скорость выполнения запроса не слишком низкая (не меньше min_execution_speed), после прошествия указанного времени в секундах.
@@ -147,7 +157,7 @@
 ## max_ast_elements
 
 Максимальное количество элементов синтаксического дерева запроса. Если превышено - кидается исключение.
-Аналогично, проверяется уже после парсинга запроса. По умолчанию: 10 000.
+Аналогично, проверяется уже после парсинга запроса. По умолчанию: 50 000.
 
 ## max_rows_in_set
 
@@ -184,5 +194,22 @@
 ## transfer_overflow_mode
 
 Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+
+## max_partitions_per_insert_block
+
+Ограничивает максимальное количество партиций в одном вставленном блоке.
+
+Возможные значения:
+
+- Положительное целое число.
+- 0 — неограниченное количество разделов.
+
+Значение по умолчанию: 100.
+
+**Подробности**
+
+При вставке данных, ClickHouse вычисляет количество партиций во вставленном блоке. Если число партиций больше, чем `max_partitions_per_insert_block`, ClickHouse генерирует исключение со следующим текстом:
+
+> "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->

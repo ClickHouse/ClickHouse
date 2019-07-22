@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 
-void ReplacingSortedBlockInputStream::insertRow(MutableColumns & merged_columns, size_t & merged_rows)
+void ReplacingSortedBlockInputStream::insertRow(MutableColumns & merged_columns)
 {
     if (out_row_sources_buf)
     {
@@ -24,7 +24,6 @@ void ReplacingSortedBlockInputStream::insertRow(MutableColumns & merged_columns,
         current_row_sources.resize(0);
     }
 
-    ++merged_rows;
     for (size_t i = 0; i < num_columns; ++i)
         merged_columns[i]->insertFrom(*(*selected_row.columns)[i], selected_row.row_num);
 }
@@ -51,12 +50,12 @@ Block ReplacingSortedBlockInputStream::readImpl()
 
 void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
-    size_t merged_rows = 0;
-
+    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
     /// Take the rows in needed order and put them into `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
         SortCursor current = queue.top();
+        size_t current_block_granularity = current->rows;
 
         if (current_key.empty())
             setPrimaryKeyRef(current_key, current);
@@ -66,7 +65,7 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
         bool key_differs = next_key != current_key;
 
         /// if there are enough rows and the last one is calculated completely
-        if (key_differs && merged_rows >= max_block_size)
+        if (key_differs && stop_condition.checkStop())
             return;
 
         queue.pop();
@@ -74,7 +73,8 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
         if (key_differs)
         {
             /// Write the data for the previous primary key.
-            insertRow(merged_columns, merged_rows);
+            insertRow(merged_columns);
+            stop_condition.addRowWithGranularity(current_block_granularity);
             selected_row.reset();
             current_key.swap(next_key);
         }
@@ -110,7 +110,7 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
 
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
-        insertRow(merged_columns, merged_rows);
+        insertRow(merged_columns);
 
     finished = true;
 }

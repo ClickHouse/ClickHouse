@@ -9,10 +9,12 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
+#include <IO/BrotliWriteBuffer.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <IO/Progress.h>
+#include <Common/config.h>
 
 
 namespace Poco
@@ -49,17 +51,20 @@ private:
     bool add_cors_header = false;
     unsigned keep_alive_timeout = 0;
     bool compress = false;
-    ZlibCompressionMethod compression_method;
+    CompressionMethod compression_method;
     int compression_level = Z_DEFAULT_COMPRESSION;
 
     std::ostream * response_body_ostr = nullptr;
 
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
     std::ostream * response_header_ostr = nullptr;
 #endif
 
     std::optional<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+#if USE_BROTLI
+    std::optional<BrotliWriteBuffer> brotli_buf;
+#endif
 
     WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
@@ -78,6 +83,11 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
+    // Used for write the header X-ClickHouse-Progress
+    void writeHeaderProgress();
+    // Used for write the header X-ClickHouse-Summary
+    void writeHeaderSummary();
+
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();
 
@@ -89,7 +99,7 @@ public:
         Poco::Net::HTTPServerResponse & response_,
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
-        ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
+        CompressionMethod compression_method_ = CompressionMethod::Gzip,
         size_t size = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Writes progess in repeating HTTP headers.

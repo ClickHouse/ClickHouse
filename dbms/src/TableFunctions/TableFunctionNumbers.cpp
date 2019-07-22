@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    if (const ASTFunction * function = typeid_cast<ASTFunction *>(ast_function.get()))
+    if (const auto * function = ast_function->as<ASTFunction>())
     {
         auto arguments = function->arguments->children;
 
@@ -34,7 +34,7 @@ StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const 
         res->startup();
         return res;
     }
-    throw new Exception("Table function 'numbers' requires 'limit' or 'offset, limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    throw Exception("Table function 'numbers' requires 'limit' or 'offset, limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
@@ -45,7 +45,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 
 UInt64 TableFunctionNumbers::evaluateArgument(const Context & context, ASTPtr & argument) const
 {
-    return static_cast<const ASTLiteral &>(*evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)).value.safeGet<UInt64>();
+    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 }

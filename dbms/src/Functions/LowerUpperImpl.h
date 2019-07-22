@@ -28,7 +28,7 @@ private:
     {
         const auto flip_case_mask = 'A' ^ 'a';
 
-#if __SSE2__
+#ifdef __SSE2__
         const auto bytes_sse = sizeof(__m128i);
         const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 

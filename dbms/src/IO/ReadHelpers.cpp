@@ -2,6 +2,7 @@
 #include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -9,9 +10,8 @@
 #include <IO/Operators.h>
 #include <common/find_symbols.h>
 #include <stdlib.h>
-#include <Common/memcpySmall.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -210,10 +210,39 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+
 void readStringUntilEOF(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilEOFInto(s, buf);
+}
+
+template <typename Vector>
+void readEscapedStringUntilEOLInto(Vector & s, ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\n')
+            return;
+
+        if (*buf.position() == '\\')
+            parseComplexEscapeSequence(s, buf);
+    }
+}
+
+
+void readEscapedStringUntilEOL(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringUntilEOLInto(s, buf);
 }
 
 template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
@@ -558,7 +587,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             [&]()
             {
-#if __SSE2__
+#ifdef __SSE2__
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
                 auto dc = _mm_set1_epi8(delimiter);
@@ -991,7 +1020,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
             if (buf.eof())
                 return;
 
-            /// Skip escaped character. We do not consider escape sequences with more than one charater after backslash (\x01).
+            /// Skip escaped character. We do not consider escape sequences with more than one character after backslash (\x01).
             /// It's ok for the purpose of this function, because we are interested only in \n and \\.
             ++buf.position();
             continue;

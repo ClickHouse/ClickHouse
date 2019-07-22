@@ -1,25 +1,41 @@
-## CREATE DATABASE
+## CREATE DATABASE {#query_language-create-database}
 
-Creating db_name databases
+Creates database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
 ```
 
-`A database` is just a directory for tables.
-If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
+### Clauses
 
-<a name="query_language-queries-create_table"></a>
+- `IF NOT EXISTS`
 
-## CREATE TABLE
+    If the `db_name` database already exists then:
+
+    - If clause is specified, ClickHouse doesn't create a new database and doesn't throw an exception.
+    - If clause is not specified, then ClickHouse doesn't create a new database and throw and exception.
+
+- `ON CLUSTER`
+
+    ClickHouse creates the `db_name` database on all the servers of a specified cluster.
+
+- `ENGINE`
+
+    - [MySQL](../database_engines/mysql.md)
+
+        Allows to retrieve data from the remote MySQL server.
+
+    By default, ClickHouse uses its own [database engine](../database_engines/index.md).
+
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -46,7 +62,7 @@ In all cases, if `IF NOT EXISTS` is specified, the query won't return an error i
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
-### Default Values
+### Default Values {#create-default-values}
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -81,7 +97,62 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-### Temporary Tables
+### TTL expression
+
+Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
+
+## Column Compression Codecs
+
+Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
+
+Supported compression algorithms:
+
+- `NONE` — No compression.
+- `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with configurable level. Default level: 9. If you set `level <= 0`, the default level is applied. Possible levels: [1, 12]. Recommended levels are in range: [4, 9].
+- `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default value: 1.
+- `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
+Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
+- `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+- `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighbouring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+
+High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+
+!!!warning
+    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
+
+Syntax example:
+
+```
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9))
+)
+ENGINE = MergeTree
+PARTITION BY tuple()
+ORDER BY dt
+```
+
+Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
+Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
+
+```
+CREATE TABLE timeseries_example
+(
+    dt Date,
+    ts DateTime,
+    path String,
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = MergeTree
+PARTITION BY dt
+ORDER BY (path, ts)
+```
+
+## Temporary Tables
 
 ClickHouse supports temporary tables which have the following characteristics:
 
@@ -124,10 +195,6 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE
 ```
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
-
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
-
-A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 

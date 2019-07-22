@@ -1,6 +1,6 @@
 #pragma once
 #include <common/logger_useful.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
@@ -12,7 +12,7 @@ namespace DB
 /// Collapses the same rows with the opposite sign roughly like CollapsingSortedBlockInputStream.
 /// Outputs the rows in random order (the input streams must still be ordered).
 /// Outputs only rows with a positive sign.
-class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
+class CollapsingFinalBlockInputStream : public IBlockInputStream
 {
 public:
     CollapsingFinalBlockInputStream(
@@ -163,7 +163,7 @@ private:
     struct Cursor
     {
         MergingBlockPtr block;
-        size_t pos;
+        size_t pos = 0;
 
         Cursor() {}
         explicit Cursor(const MergingBlockPtr & block_, size_t pos_ = 0) : block(block_), pos(pos_) {}

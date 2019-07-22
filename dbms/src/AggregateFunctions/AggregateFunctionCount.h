@@ -1,12 +1,12 @@
 #pragma once
 
 #include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -28,6 +28,8 @@ namespace ErrorCodes
 class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
+    AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
+
     String getName() const override { return "count"; }
 
     DataTypePtr getReturnType() const override
@@ -74,7 +76,8 @@ public:
 class AggregateFunctionCountNotNullUnary final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
 {
 public:
-    AggregateFunctionCountNotNullUnary(const DataTypePtr & argument)
+    AggregateFunctionCountNotNullUnary(const DataTypePtr & argument, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params)
     {
         if (!argument->isNullable())
             throw Exception("Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary", ErrorCodes::LOGICAL_ERROR);
@@ -120,7 +123,8 @@ public:
 class AggregateFunctionCountNotNullVariadic final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariadic>
 {
 public:
-    AggregateFunctionCountNotNullVariadic(const DataTypes & arguments)
+    AggregateFunctionCountNotNullVariadic(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariadic>(arguments, params)
     {
         number_of_arguments = arguments.size();
 

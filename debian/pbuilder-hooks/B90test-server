@@ -8,13 +8,17 @@ PACKAGE_INSTALL=${PACKAGE_INSTALL=1}
 TEST_PORT_RANDOM=${TEST_PORT_RANDOM=1}
 
 if [ "${PACKAGE_INSTALL}" ]; then
-    for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
-        apt-get install -y --force-yes "$PKG" ||:
-        apt-get remove -y "$PKG" ||:
-    done
+    #for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
+    #    apt-get install -y --force-yes "$PKG" ||:
+    #    apt-get remove -y "$PKG" ||:
+    #done
 
     dpkg --auto-deconfigure -i /tmp/buildd/*.deb ||:
     apt install -y -f --allow-downgrades ||:
+    dpkg -l | grep clickhouse ||:
+
+    # Second install to replace debian versions
+    dpkg --auto-deconfigure -i /tmp/buildd/*.deb ||:
     dpkg -l | grep clickhouse ||:
 
     # Some test references uses specific timezone
@@ -41,6 +45,8 @@ export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=9440}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=8443}
 
 if [ "${TEST_CONNECT}" ]; then
+    sed -i 's/ssl_conf = ssl_sect/#ssl_conf = ssl_sect/g' /etc/ssl/openssl.cnf ||:
+
     [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
 
     if  [ "${TEST_SSL}" ]; then
@@ -49,7 +55,7 @@ if [ "${TEST_CONNECT}" ]; then
         echo "<yandex><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure>${CLICKHOUSE_SSL_CONFIG}</yandex>" > /etc/clickhouse-client/config.xml
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-        chmod a+r /etc/clickhouse-server/* /etc/clickhouse-client/* ||:
+        chmod -f a+r /etc/clickhouse-server/* /etc/clickhouse-client/* ||:
         CLIENT_ADD+="--secure --port ${CLICKHOUSE_PORT_TCP_SECURE}"
     else
         CLIENT_ADD+="--port ${CLICKHOUSE_PORT_TCP}"
@@ -68,6 +74,7 @@ if [ "${TEST_CONNECT}" ]; then
 
     service clickhouse-server start
     sleep ${TEST_SERVER_STARTUP_WAIT:=5}
+    service clickhouse-server status
 
     # TODO: remove me or make only on error:
     tail -n100 /var/log/clickhouse-server/*.log ||:

@@ -15,6 +15,11 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
         cloned.format = format->clone();
         cloned.children.push_back(cloned.format);
     }
+    if (settings_ast)
+    {
+        cloned.settings_ast = settings_ast->clone();
+        cloned.children.push_back(cloned.settings_ast);
+    }
 }
 
 void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -34,14 +39,22 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
         format->formatImpl(s, state, frame);
     }
+
+    if (settings_ast)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        settings_ast->formatImpl(s, state, frame);
+    }
 }
 
 bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 {
-    if (auto ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
+    /// FIXME: try to prettify this cast using `as<>()`
+    if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
         ast_with_output->format.reset();
         ast_with_output->out_file.reset();
+        ast_with_output->settings_ast.reset();
         return true;
     }
 

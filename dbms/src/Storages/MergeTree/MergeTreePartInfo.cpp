@@ -52,6 +52,12 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         }
     }
 
+    /// Sanity check
+    if (partition_id.empty())
+    {
+        return false;
+    }
+
     Int64 min_block_num = 0;
     Int64 max_block_num = 0;
     UInt32 level = 0;
@@ -62,6 +68,12 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
         || !tryReadIntText(max_block_num, in)
         || !checkChar('_', in)
         || !tryReadIntText(level, in))
+    {
+        return false;
+    }
+
+    /// Sanity check
+    if (min_block_num > max_block_num)
     {
         return false;
     }

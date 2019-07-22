@@ -43,6 +43,9 @@ template <typename T, typename Data>
 class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>
 {
 public:
+    AggregateFunctionBitwise(const DataTypePtr & type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}) {}
+
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override

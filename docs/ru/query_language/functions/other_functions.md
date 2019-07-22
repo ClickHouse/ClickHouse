@@ -1,9 +1,65 @@
 # Прочие функции
 
 ## hostName()
+
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
+## basename
+
+Извлекает конечную часть строки после последнего слэша или бэкслэша. Функция часто используется для извлечения имени файла из пути.
+
+```
+basename( expr )
+```
+
+**Параметры**
+
+- `expr` — Выражение, возвращающее значение типа [String](../../data_types/string.md). В результирующем значении все бэкслэши должны быть экранированы.
+
+**Возвращаемое значение**
+
+Строка, содержащая:
+
+- Конечную часть строки после последнего слэша или бэкслэша.
+
+    Если входная строка содержит путь, заканчивающийся слэшем или бэкслэшем, например, `/` или `с:\`, функция возвращает пустую строку.
+
+- Исходная строка, если нет слэша или бэкслэша.
+
+**Пример**
+
+```sql
+SELECT 'some/long/path/to/file' AS a, basename(a)
+```
+
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+
+```sql
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+```
+
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+
+```sql
+SELECT 'some-file-name' AS a, basename(a)
+```
+
+```text
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
+```
+
 ## visibleWidth(x)
+
 Вычисляет приблизительную ширину при выводе значения в текстовом (tab-separated) виде на консоль.
 Функция используется системой для реализации Pretty форматов.
 
@@ -22,7 +78,7 @@ SELECT visibleWidth(NULL)
 
 Если на вход функции передать `NULL`, то она вернёт тип `Nullable(Nothing)`, что соответствует внутреннему представлению `NULL` в ClickHouse.
 
-## blockSize()
+## blockSize() {#function-blocksize}
 Получить размер блока.
 В ClickHouse выполнение запроса всегда идёт по блокам (наборам кусочков столбцов). Функция позволяет получить размер блока, для которого её вызвали.
 
@@ -111,13 +167,12 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-<a name="other_functions-transform"></a>
 
 ## transform
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-1.  `transform(x, array_from, array_to, default)`
+1. `transform(x, array_from, array_to, default)`
 
 `x` - что преобразовывать.
 
@@ -159,7 +214,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2.  `transform(x, array_from, array_to)`
+2. `transform(x, array_from, array_to)`
 
 Отличается от первого варианта отсутствующим аргументом default.
 Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
@@ -226,6 +281,10 @@ SELECT
 ## version()
 Возвращает версию сервера в виде строки.
 
+## rowNumberInBlock {#function-rownumberinblock}
+
+Возвращает порядковый номер строки в блоке данных. Для каждого блока данных нумерация начинается с 0.
+
 ## rowNumberInAllBlocks()
 Возвращает порядковый номер строки в блоке данных. Функция учитывает только задействованные блоки данных.
 
@@ -276,7 +335,7 @@ FROM
 
 ## getSizeOfEnumType
 
-Возвращает количество полей в [Enum](../../data_types/enum.md#data_type-enum).
+Возвращает количество полей в [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -386,7 +445,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` для чисел;
 - Пустая строка для строк;
-- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md).
 
 **Пример**
 
@@ -426,7 +485,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 **Пример**
 
-Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime
@@ -540,5 +599,42 @@ SELECT replicate(1, ['a', 'b', 'c'])
 │ [1,1,1]                       │
 └───────────────────────────────┘
 ```
+
+## filesystemAvailable {#function-filesystemavailable}
+
+Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+
+```
+filesystemAvailable()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места.
+
+Тип — [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
+
+## filesystemCapacity
+
+Возвращает данные о ёмкости диска.
+
+## finalizeAggregation {#function-finalizeaggregation}
+
+Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+
+## runningAccumulate {#function-runningaccumulate}
+
+Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->

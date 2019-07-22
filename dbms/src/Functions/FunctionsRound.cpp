@@ -10,6 +10,7 @@ void registerFunctionsRound(FunctionFactory & factory)
     factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionCeil>("ceil", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTrunc>("trunc", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRoundDown>();
 
     /// Compatibility aliases.
     factory.registerAlias("ceiling", "ceil", FunctionFactory::CaseInsensitive);

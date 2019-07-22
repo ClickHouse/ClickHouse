@@ -1,7 +1,7 @@
 #include "RegionsHierarchies.h"
 
-#include <common/logger_useful.h>
 #include <Poco/DirectoryIterator.h>
+#include <common/logger_useful.h>
 
 
 RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider)

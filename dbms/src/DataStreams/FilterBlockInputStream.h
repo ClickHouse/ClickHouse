@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Columns/FilterDescription.h>
 
 
@@ -14,7 +14,7 @@ class ExpressionActions;
   * A stream of blocks and an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions, are passed as input.
   * The expression is evaluated and a stream of blocks is returned, which contains only the filtered rows.
   */
-class FilterBlockInputStream : public IProfilingBlockInputStream
+class FilterBlockInputStream : public IBlockInputStream
 {
 private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

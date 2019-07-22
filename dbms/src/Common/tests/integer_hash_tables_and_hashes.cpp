@@ -14,7 +14,7 @@
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 
@@ -171,7 +171,7 @@ namespace Hashes
         }
     };
 
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
     #include <nmmintrin.h>
     #endif
 
@@ -179,7 +179,7 @@ namespace Hashes
     {
         size_t operator()(Key x) const
         {
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
             return _mm_crc32_u64(-1ULL, x);
     #else
             /// On other platforms we do not have CRC32. NOTE This can be confusing.

@@ -50,7 +50,8 @@ IncludeCategories:
   - Regex: '.*'
     Priority: 40
 ReflowComments: false
-AlignEscapedNewlinesLeft: true
+AlignEscapedNewlinesLeft: false
+AlignEscapedNewlines: DontAlign
 
 # Not changed:
 AccessModifierOffset: -4

@@ -1,6 +1,4 @@
-<a name="functions_arrayjoin"></a>
-
-# Функция arrayJoin
+# Функция arrayJoin {#functions_arrayjoin}
 
 Это совсем необычная функция.
 

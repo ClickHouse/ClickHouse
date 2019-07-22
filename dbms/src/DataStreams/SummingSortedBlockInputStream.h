@@ -70,7 +70,7 @@ private:
     /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
-        /// An aggregate function 'sumWithOverflow' or 'sumMap' for summing.
+        /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;

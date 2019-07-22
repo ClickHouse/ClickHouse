@@ -1,12 +1,22 @@
+# docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:18.04
 
-RUN apt-get update -y \
+RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
             bash \
             fakeroot \
             cmake \
+            ccache \
             curl \
+            software-properties-common
+
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
+
+RUN apt-get --allow-unauthenticated update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
             gcc-7 \
             g++-7 \
             gcc-8 \
@@ -18,16 +28,25 @@ RUN apt-get update -y \
             llvm-6.0 \
             libllvm6.0 \
             llvm-6.0-dev \
+            clang-7 \
+            lld-7 \
+            libclang-7-dev \
+            liblld-7-dev \
+            clang-8 \
+            lld-8 \
+            libclang-8-dev \
+            liblld-8-dev \
             libicu-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
             devscripts \
             debhelper \
             git \
-            libc++abi-dev \
             libc++-dev \
+            libc++abi-dev \
             libboost-program-options-dev \
             libboost-system-dev \
             libboost-filesystem-dev \
@@ -46,7 +65,10 @@ RUN apt-get update -y \
             libre2-dev \
             libjemalloc-dev \
             unixodbc-dev \
-            odbcinst
+            odbcinst \
+            tzdata \
+            gperf \
+            alien
 
-
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

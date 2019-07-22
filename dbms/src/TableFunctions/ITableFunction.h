@@ -1,17 +1,16 @@
 #pragma once
 
-#include <string>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
+
 #include <memory>
+#include <string>
+
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
 
 /** Interface for table functions.
   *
@@ -27,6 +26,8 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class ITableFunction
 {
 public:
+    static inline std::string getDatabaseName() { return "_table_function"; }
+
     /// Get the main function name.
     virtual std::string getName() const = 0;
 

@@ -1,6 +1,4 @@
-<a name="aggregate_functions"></a>
-
-# Aggregate functions
+# Aggregate functions {#aggregate_functions}
 
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 

@@ -23,7 +23,7 @@ void ValuesRowOutputStream::flush()
 
 void ValuesRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextQuoted(column, row_num, ostr, format_settings);
+    type.serializeAsTextQuoted(column, row_num, ostr, format_settings);
 }
 
 void ValuesRowOutputStream::writeFieldDelimiter()

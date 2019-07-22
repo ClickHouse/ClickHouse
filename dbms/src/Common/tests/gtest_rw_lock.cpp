@@ -1,13 +1,9 @@
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#ifdef __clang__
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <gtest/gtest.h>
 
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
 #include <common/Types.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <thread>
@@ -38,7 +34,7 @@ TEST(Common, RWLock_1)
             auto type = (std::uniform_int_distribution<>(0, 9)(gen) >= round) ? RWLockImpl::Read : RWLockImpl::Write;
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
 
-            auto lock = fifo_lock->getLock(type);
+            auto lock = fifo_lock->getLock(type, RWLockImpl::NO_QUERY);
 
             if (type == RWLockImpl::Write)
             {
@@ -98,7 +94,7 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < 2 * cycles; ++i)
         {
-            auto lock = fifo_lock->getLock(RWLockImpl::Write);
+            auto lock = fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
@@ -109,17 +105,17 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < cycles; ++i)
         {
-            auto lock1 = fifo_lock->getLock(RWLockImpl::Read);
+            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
 
-            auto lock2 = fifo_lock->getLock(RWLockImpl::Read);
+            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
 
-            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write);});
+            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);});
         }
 
-        fifo_lock->getLock(RWLockImpl::Write);
+        fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
     });
 
     t1.join();
@@ -142,7 +138,7 @@ TEST(Common, RWLock_PerfTest_Readers)
             {
                 for (auto i = 0; i < cycles; ++i)
                 {
-                    auto lock = fifo_lock->getLock(RWLockImpl::Read);
+                    auto lock = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
                 }
             };
 

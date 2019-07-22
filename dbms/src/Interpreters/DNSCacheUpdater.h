@@ -1,40 +1,29 @@
-#pragma once
 
-#include <memory>
-#include <ctime>
-#include <cstddef>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/Stopwatch.h>
 
 
 namespace DB
 {
 
 class Context;
-class BackgroundProcessingPool;
-class BackgroundProcessingPoolTaskInfo;
 
-
-/// Add a task to BackgroundProcessingPool that watch for ProfileEvents::NetworkErrors and updates DNS cache if it has increased
+/// Add a task to BackgroundProcessingPool that resolves all hosts and updates cache with constant period.
 class DNSCacheUpdater
 {
 public:
-
-    explicit DNSCacheUpdater(Context & context);
+    explicit DNSCacheUpdater(Context & context, Int32 update_period_seconds_);
     ~DNSCacheUpdater();
-
-    /// Checks if it is a network error and increments ProfileEvents::NetworkErrors
-    static bool incrementNetworkErrorEventsIfNeeded();
+    void start();
 
 private:
-    bool run();
+    void run();
 
     Context & context;
-    BackgroundProcessingPool & pool;
-    std::shared_ptr<BackgroundProcessingPoolTaskInfo> task_handle;
-    size_t last_num_network_erros = 0;
-    time_t last_update_time = 0;
+    Int32 update_period_seconds;
 
-    static constexpr size_t min_errors_to_update_cache = 3;
-    static constexpr time_t min_update_period_seconds = 45;
+    BackgroundSchedulePool & pool;
+    BackgroundSchedulePoolTaskHolder task_handle;
 };
 
 

@@ -1,0 +1,1 @@
+`a` Nullable(String), `b` Nullable(Int32), `c` Nullable(Float64), `d` Nullable(UInt8), `element` Nullable(Int32)

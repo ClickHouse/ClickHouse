@@ -1,15 +1,15 @@
 SELECT
-    CounterID,
+    EventDate,
     count() AS hits,
     any(visits)
 FROM test.hits ANY LEFT JOIN
 (
     SELECT
-        CounterID,
+        StartDate AS EventDate,
         sum(Sign) AS visits
     FROM test.visits
-    GROUP BY CounterID
-) USING CounterID
-GROUP BY CounterID
+    GROUP BY EventDate
+) USING EventDate
+GROUP BY EventDate
 ORDER BY hits DESC
 LIMIT 10;

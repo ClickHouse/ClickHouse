@@ -61,11 +61,9 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 您可以通过 Ctrl+C 来取消一个长时间的查询。然而，您依然需要等待服务端来中止请求。在某个阶段去取消查询是不可能的。如果您不等待并再次按下 Ctrl + C，客户端将会退出。
 
-命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 "[外部数据查询处理](../operations/table_engines/external_data.md#external-data)".
+命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 "[外部数据查询处理](../operations/table_engines/external_data.md)".
 
-<a name="interfaces_cli_configuration"></a>
-
-## 配置
+## 配置 {#interfaces_cli_configuration}
 
 您可以通过以下方式传入参数到 `clickhouse-client` 中 （所有的参数都有默认值）：
 
@@ -79,7 +77,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 ### 命令行参数
 
-- `--host, -h` -– 服务端的 host 名称, 默认是 'localhost'。  您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
+- `--host, -h` -– 服务端的 host 名称, 默认是 'localhost'。 您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
 - `--port` – 连接的端口，默认值： 9000。注意 HTTP 接口以及 TCP 原生接口是使用不同端口的。
 - `--user, -u` – 用户名。 默认值： default。
 - `--password` – 密码。 默认值： 空字符串。
@@ -95,7 +93,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 ### 配置文件
 
-`clickhouse-client`  使用一下第一个存在的文件：
+`clickhouse-client` 使用一下第一个存在的文件：
 
 - 通过 `-config-file` 参数指定的文件.
 - `./clickhouse-client.xml`
