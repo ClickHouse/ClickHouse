@@ -8,7 +8,6 @@ using Poco::Message;
 
 struct TextLogElement
 {
-    time_t event_date{};
     time_t event_time{};
     UInt32 microseconds;
 
