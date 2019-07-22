@@ -33,6 +33,7 @@ public:
         DROP_INDEX,
 
         DROP_PARTITION,
+        DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
         FETCH_PARTITION,
@@ -90,7 +91,7 @@ public:
 
     bool detach = false;        /// true for DETACH PARTITION
 
-    bool part = false;          /// true for ATTACH PART
+    bool part = false;          /// true for ATTACH PART and DROP DETACHED PART
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 

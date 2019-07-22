@@ -920,6 +920,10 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 dropPartition(command.partition, command.detach, context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                // TODO
+                throw DB::Exception("Not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, context);
                 break;

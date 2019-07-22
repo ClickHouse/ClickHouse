@@ -3348,6 +3348,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 dropPartition(query, command.partition, command.detach, query_context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                // TODO
+                throw DB::Exception("Not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, query_context);
                 break;
