@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int EMPTY_NESTED_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -110,6 +111,10 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
+
+    /// This may happen after expansion of COLUMNS('regexp').
+    if (select_query.select()->children.empty())
+        throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
