@@ -291,7 +291,7 @@ if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
 
-if(ZSTD_LIBRARY)
+if (ZSTD_LIBRARY)
     target_link_libraries(dbms PRIVATE ${ZSTD_LIBRARY})
 endif()
 if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
