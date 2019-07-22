@@ -82,18 +82,20 @@ void ReadBufferFromKafkaConsumer::commit()
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 {
     {
-        String message = "Already subscribed to topics:";
+        String message = "Subscribed to topics:";
         for (const auto & topic : consumer->get_subscription())
             message += " " + topic;
         LOG_TRACE(log, message);
     }
 
     {
-        String message = "Already assigned to topics:";
+        String message = "Assigned to topics:";
         for (const auto & toppar : consumer->get_assignment())
             message += " " + toppar.get_topic();
         LOG_TRACE(log, message);
     }
+
+    consumer->resume();
 
     // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
