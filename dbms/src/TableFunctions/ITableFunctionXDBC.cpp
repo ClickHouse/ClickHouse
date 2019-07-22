@@ -76,10 +76,7 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     readStringBinary(columns_info, buf);
     NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
-    ///If table_name was not specified by user, it will have the same name as remote_table_name
-    std::string local_table_name = (table_name == getName()) ? remote_table_name : table_name;
-
-    auto result = std::make_shared<StorageXDBC>(getDatabaseName(), local_table_name, schema_name, remote_table_name, ColumnsDescription{columns}, context, helper);
+    auto result = std::make_shared<StorageXDBC>(getDatabaseName(), table_name, schema_name, remote_table_name, ColumnsDescription{columns}, context, helper);
 
     if (!result)
         throw Exception("Failed to instantiate storage from table function " + getName(), ErrorCodes::UNKNOWN_EXCEPTION);

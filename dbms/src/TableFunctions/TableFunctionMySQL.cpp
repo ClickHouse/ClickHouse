@@ -118,12 +118,9 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     if (columns.empty())
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    ///If table_name was not specified by user, it will have the same name as remote_table_name
-    std::string local_table_name = (table_name == getName()) ? remote_table_name : table_name;
-
     auto res = StorageMySQL::create(
         getDatabaseName(),
-        local_table_name,
+        table_name,
         std::move(pool),
         remote_database_name,
         remote_table_name,

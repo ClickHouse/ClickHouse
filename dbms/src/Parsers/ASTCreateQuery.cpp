@@ -235,7 +235,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
     }
 
-    if (columns_list && !as_table_function)
+    if (columns_list)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
