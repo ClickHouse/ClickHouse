@@ -10,7 +10,6 @@ struct TextLogElement
 {
     time_t event_date{};
     time_t event_time{};
-
     UInt32 microseconds;
 
     String thread_name;
@@ -20,7 +19,6 @@ struct TextLogElement
     Message::Priority level = Message::PRIO_TRACE;
 
     String query_id;
-
     String logger_name;
     String message;
 
