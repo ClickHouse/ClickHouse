@@ -59,6 +59,7 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
@@ -202,6 +203,9 @@ private:
     /// External tables info.
     std::list<ExternalTable> external_tables;
 
+    /// Dictionary with query parameters for prepared statements.
+    NameToNameMap query_parameters;
+
     ConnectionParameters connection_parameters;
 
     void initialize(Poco::Util::Application & self)
@@ -214,6 +218,7 @@ private:
 
         configReadClient(config(), home_path);
 
+        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
@@ -795,7 +800,6 @@ private:
         /// Some parts of a query (result output and formatting) are executed client-side.
         /// Thus we need to parse the query.
         parsed_query = parsed_query_;
-
         if (!parsed_query)
         {
             const char * begin = query.data();
@@ -900,6 +904,16 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
+        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
+        {
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            ReplaceQueryParameterVisitor visitor(query_parameters);
+            visitor.visit(parsed_query);
+
+            /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
+            query = serializeAST(*parsed_query);
+        }
+
         connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
@@ -1548,7 +1562,8 @@ public:
         /** We allow different groups of arguments:
           * - common arguments;
           * - arguments for any number of external tables each in form "--external args...",
-          *   where possible args are file, name, format, structure, types.
+          *   where possible args are file, name, format, structure, types;
+          * - param arguments for prepared statements.
           * Split these groups before processing.
           */
         using Arguments = std::vector<std::string>;
@@ -1597,7 +1612,31 @@ public:
             else
             {
                 in_external_group = false;
-                common_arguments.emplace_back(arg);
+
+                /// Parameter arg after underline.
+                if (startsWith(arg, "--param_"))
+                {
+                    const char * param_continuation = arg + strlen("--param_");
+                    const char * equal_pos = strchr(param_continuation, '=');
+
+                    if (equal_pos == param_continuation)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    if (equal_pos)
+                    {
+                        /// param_name=value
+                        query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
+                    }
+                    else
+                    {
+                        /// param_name value
+                        ++arg_num;
+                        arg = argv[arg_num];
+                        query_parameters.emplace(String(param_continuation), String(arg));
+                    }
+                }
+                else
+                    common_arguments.emplace_back(arg);
             }
         }
 
@@ -1672,6 +1711,7 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
+
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
@@ -1696,6 +1736,7 @@ public:
         {
             std::cout << main_description << "\n";
             std::cout << external_description << "\n";
+            std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
             exit(0);
         }
 

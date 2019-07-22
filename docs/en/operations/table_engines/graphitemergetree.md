@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+See a detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
@@ -79,8 +79,6 @@ patterns
 ```
 
 ### Required Columns
-
-Set the following parameters only if the name of columns differs from their default values:
 
 - `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 - `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.

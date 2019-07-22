@@ -27,6 +27,7 @@ public:
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
+    ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

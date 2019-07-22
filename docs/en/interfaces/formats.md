@@ -1,10 +1,14 @@
 # Formats for input and output data {#formats}
 
-ClickHouse can accept (`INSERT`) and return (`SELECT`) data in various formats.
+ClickHouse can accept and return data in various formats. A format supported
+for input can be used to parse the data provided to `INSERT`s, to perform
+`SELECT`s from a file-backed table such as File, URL or HDFS, or to read an
+external dictionary. A format supported for output can be used to arrange the
+results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
-The table below lists supported formats and how they can be used in `INSERT` and `SELECT` queries.
+The supported formats are:
 
-| Format | INSERT | SELECT |
+| Format | Input | Output |
 | ------- | -------- | -------- |
 | [TabSeparated](#tabseparated) | ✔ | ✔ |
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
@@ -165,6 +169,10 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
+Empty unquoted input values are replaced with default values for the respective columns, if
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+is enabled.
+
 `NULL` is formatted as `\N`.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
@@ -315,7 +323,7 @@ When using this format, ClickHouse outputs rows as separated, newline-delimited 
 ```json
 {"SearchPhrase":"curtain designs","count()":"1064"}
 {"SearchPhrase":"baku","count()":"1000"}
-{"SearchPhrase":"","count":"8267016"}
+{"SearchPhrase":"","count()":"8267016"}
 ```
 
 When inserting the data, you should provide a separate JSON object for each row.
@@ -377,6 +385,60 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 !!! note "Note"
     Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+
+### Usage of Nested Structures {#jsoneachrow-nested}
+
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+
+For example, consider the following table:
+
+```sql
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Without this setting ClickHouse throws the exception.
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+```text
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
 
 ## Native {#native}
 
@@ -714,13 +776,13 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) is a columnar storage format available to any project in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
 ### Data Types Matching
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
-| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`) |
 | -------------------- | ------------------ | ---- |
 | `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
 | `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
@@ -758,8 +820,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Also look at the `HDFS` and `URL` storage engines to process data from the remote servers.
-
+To exchange data with the Hadoop, you can use `HDFS` table engine.
 
 ## Format Schema {#formatschema}
 

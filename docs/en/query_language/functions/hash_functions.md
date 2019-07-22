@@ -212,7 +212,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 ## jumpConsistentHash
 
 Calculates JumpConsistentHash form a UInt64.
-Accepts a UInt64-type argument. Returns Int32.
+Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
 ## murmurHash2_32, murmurHash2_64

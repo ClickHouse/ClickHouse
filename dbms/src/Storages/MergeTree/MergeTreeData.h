@@ -285,33 +285,6 @@ public:
         String getModeName() const;
     };
 
-    /// Meta information about index granularity
-    struct IndexGranularityInfo
-    {
-        /// Marks file extension '.mrk' or '.mrk2'
-        String marks_file_extension;
-
-        /// Size of one mark in file two or three size_t numbers
-        UInt8 mark_size_in_bytes;
-
-        /// Is stride in rows between marks non fixed?
-        bool is_adaptive;
-
-        /// Fixed size in rows of one granule if index_granularity_bytes is zero
-        size_t fixed_index_granularity;
-
-        /// Approximate bytes size of one granule
-        size_t index_granularity_bytes;
-
-        IndexGranularityInfo(const MergeTreeSettings & settings);
-
-        String getMarksFilePath(const String & column_path) const
-        {
-            return column_path + marks_file_extension;
-        }
-    };
-
-
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
@@ -574,8 +547,7 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
-    ColumnSizeByName getColumnSizes() const
+    ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
         return column_sizes;
@@ -601,10 +573,16 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
+    bool canUseAdaptiveGranularity() const
+    {
+        return settings.index_granularity_bytes != 0 &&
+            (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+    }
+
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
-    IndexGranularityInfo index_granularity_info;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
@@ -658,6 +636,8 @@ public:
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
+
+    bool has_non_adaptive_index_granularity_parts = false;
 
 protected:
     friend struct MergeTreeDataPart;
@@ -818,6 +798,9 @@ protected:
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+
+    bool canReplacePartition(const DataPartPtr & data_part) const;
+
 };
 
 }
