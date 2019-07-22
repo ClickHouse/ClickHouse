@@ -21,6 +21,7 @@ struct PartitionCommand
         ATTACH_PARTITION,
         CLEAR_COLUMN,
         DROP_PARTITION,
+        DROP_DETACHED_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
@@ -35,7 +36,7 @@ struct PartitionCommand
     /// true for DETACH PARTITION.
     bool detach = false;
 
-    /// true for ATTACH PART (and false for PARTITION)
+    /// true for ATTACH PART and DROP DETACHED PART (and false for PARTITION)
     bool part = false;
 
     /// For ATTACH PARTITION partition FROM db.table
