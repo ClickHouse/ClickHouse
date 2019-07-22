@@ -78,5 +78,5 @@
 // python
 //#define HAVE_PYTHON 1
 // disable C11 threads for compatibility with old libc
-#define WITH_C11THREADS 0
+//#define WITH_C11THREADS 1
 #endif /* _CONFIG_H_ */
