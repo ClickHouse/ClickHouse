@@ -521,14 +521,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     StoragePtr as_storage;
     TableStructureReadLockHolder as_storage_lock;
 
-    ColumnsDescription columns;
-    StoragePtr res;
-
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
         as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
+
+    ColumnsDescription columns;
+    StoragePtr res;
+
     if (create.as_table_function)
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
