@@ -56,7 +56,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, inner_table->getSampleBlock(), inner_table->getSampleBlock(), inner_table->getColumns().defaults, context);
+                out, inner_table->getSampleBlock(), inner_table->getSampleBlock(), inner_table->getColumns().getDefaults(), context);
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
         }
     }
@@ -185,7 +185,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         /// InterpreterSelectQuery will do processing of alias columns.
         Context local_context = *views_context;
         local_context.addViewSource(StorageBlock::create(block, storage, view.database));
-        InterpreterSelectQuery select(view.query, local_context);
+        InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
 
         BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
         /// Squashing is needed here because the materialized view query can generate a lot of blocks

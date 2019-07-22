@@ -16,7 +16,7 @@ namespace DB
 class StorageBlock : public ext::shared_ptr_helper<StorageBlock>, public IStorage
 {
 public:
-    std::string getDatabaseName() const { return database_name; }
+    std::string getDatabaseName() const override { return database_name; }
     std::string getName() const override { return storage->getName(); }
     std::string getTableName() const override { return storage->getTableName(); }
     bool isRemote() const override { return storage->isRemote(); }
@@ -26,9 +26,9 @@ public:
     bool supportsReplication() const override { return storage->supportsReplication(); }
     bool supportsDeduplication() const override { return storage->supportsDeduplication(); }
     bool supportsIndexForIn() const override { return storage->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & context) const override
     {
-        return storage->mayBenefitFromIndexForIn(left_in_operand);
+        return storage->mayBenefitFromIndexForIn(left_in_operand, context);
     }
     ASTPtr getPartitionKeyAST() const override { return storage->getPartitionKeyAST(); }
     ASTPtr getSortingKeyAST() const override { return storage->getSortingKeyAST(); }
