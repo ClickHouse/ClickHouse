@@ -614,7 +614,7 @@ bool ColumnLowCardinality::Index::containsDefault() const
 {
     bool contains = false;
 
-    auto check_contains_default = [&](auto & x)
+    auto check_contains_default = [&](auto x)
     {
         using CurIndexType = decltype(x);
         auto & data = getPositionsData<CurIndexType>();
