@@ -29,7 +29,7 @@ private:
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
     bool checkForSuffix();
-    void throwUnexpectedEof();
+    [[noreturn]] void throwUnexpectedEof();
     bool compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
