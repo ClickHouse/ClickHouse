@@ -371,7 +371,7 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             std::transform(
                     x.getData().cbegin(), x.getData().cend(),
                     column->getData().cbegin(), result.begin(),
-                    [](const auto x, const auto y) { return Op::apply(!!x, !!y); });
+                    [](const auto a, const auto b) { return Op::apply(!!a, !!b); });
         else
             TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }
