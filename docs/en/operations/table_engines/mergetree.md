@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [request description](../../query_language/create.md).
 
-**Query clauses**
+**Query Clauses**
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
@@ -81,7 +81,7 @@ For a description of request parameters, see [request description](../../query_l
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
 
-**Example of sections setting**
+**Example of Sections Setting**
 
 ```
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
@@ -107,7 +107,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-**MergeTree() parameters**
+**MergeTree() Parameters**
 
 - `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — an expression for sampling.
@@ -316,7 +316,7 @@ For concurrent table access, we use multi-versioning. In other words, when a tab
 Reading from a table is automatically parallelized.
 
 
-## TTL for columns and tables {#table_engine-mergetree-ttl}
+## TTL for Columns and Tables {#table_engine-mergetree-ttl}
 
 Determines the lifetime of values.
 
@@ -338,20 +338,20 @@ TTL date_time + INTERVAL 15 HOUR
 
 **Column TTL**
 
-When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part become expired, ClickHouse deletes this column from the data part in a filesystem.
+When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause cannot be used for key columns.
+The `TTL` clause can't be used for key columns.
 
 **Table TTL**
 
-When some data in table expires, ClickHouse deletes all the corresponding rows.
+When data in a table expires, ClickHouse deletes all corresponding rows.
 
-**Cleaning up of Data**
+**Removing Data**
 
-Data with expired TTL is removed, when ClickHouse merges data parts.
+Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges consume much resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
-If you perform the `SELECT` query between merges you can get the expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
+If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
