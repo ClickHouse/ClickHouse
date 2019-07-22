@@ -85,7 +85,8 @@ StorageKafka::StorageKafka(
         columns_,
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()}}, true))
+                            {"_offset", std::make_shared<DataTypeUInt64>()},
+                            {"_partition", std::make_shared<DataTypeUInt64>()}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
     , global_context(context_)

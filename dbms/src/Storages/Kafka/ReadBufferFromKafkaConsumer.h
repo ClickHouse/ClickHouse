@@ -30,6 +30,7 @@ public:
     String currentTopic() const { return current[-1].get_topic(); }
     String currentKey() const { return current[-1].get_key(); }
     auto currentOffset() const { return current[-1].get_offset(); }
+    auto currentPartition() const { return current[-1].get_partition(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
