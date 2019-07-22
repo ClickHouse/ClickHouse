@@ -95,9 +95,10 @@ template <class Op, typename Func>
 static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 {
     bool has_res = false;
+
     for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
     {
-        if (!in[i]->isColumnConst())
+        if (!isColumnConst(*in[i]))
             continue;
 
         UInt8 x = func((*in[i])[0]);
@@ -113,6 +114,7 @@ static bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
         in.erase(in.begin() + i);
     }
+
     return has_res;
 }
 
@@ -537,11 +539,6 @@ struct UnaryOperationImpl
         std::transform(
                 a.cbegin(), a.cend(), c.begin(),
                 [](const auto x) { return Op::apply(x); });
-    }
-
-    static void constant(A a, ResultType & c)
-    {
-        c = Op::apply(a);
     }
 };
 
