@@ -694,7 +694,7 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-## format_csv_unquoted_null_literal_as_null {#settings-format_csv_unquoted_null_literal_as_null}
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
