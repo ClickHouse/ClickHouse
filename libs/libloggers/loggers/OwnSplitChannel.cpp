@@ -3,6 +3,7 @@
 #include <iostream>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/TextLog.h>
 #include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
@@ -48,7 +49,34 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         logs_queue->emplace(std::move(columns));
     }
 
-    /// TODO: Also log to system.internal_text_log table
+    /// Also log to system.internal_text_log table
+
+    if (CurrentThread::getGroup() != nullptr &&
+        CurrentThread::getGroup()->global_context != nullptr &&
+        CurrentThread::getGroup()->global_context->getTextLog() != nullptr) {
+
+        const auto text_log = CurrentThread::getGroup()->global_context->getTextLog();
+        TextLogElement elem;
+
+        elem.event_time = msg_ext.time_seconds;
+        elem.microseconds = msg_ext.time_microseconds;
+
+        elem.thread_name = getThreadName();
+        elem.thread_number = msg_ext.thread_number;
+        elem.os_thread_id = msg.getOsTid();
+        elem.message = msg.getText();
+
+        elem.level = msg.getPriority();
+
+        if (msg.getSourceFile() != nullptr) {
+            elem.source_file = msg.getSourceFile();
+        }
+
+        elem.source_line = msg.getSourceLine();
+
+        text_log->add(elem);
+    }
+
 }
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
