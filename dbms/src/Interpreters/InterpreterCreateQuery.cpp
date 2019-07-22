@@ -531,9 +531,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
     if (create.as_table_function)
     {
-        const auto * table_function = create.as_table_function->as<ASTFunction>();
+        const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function->name, context)->execute(create.as_table_function, context, create.table);
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
     }
     else
     {
