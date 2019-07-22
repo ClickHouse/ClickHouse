@@ -314,12 +314,26 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
             ConcatReadBuffer buf(prepend, istr);
             nested_data_type->deserializeAsTextCSV(nested, buf, settings);
 
-            /// Check if all extracted characters was read by nested parser and update buffer position
+            /// Check if all extracted characters were read by nested parser and update buffer position
             if (null_prefix_len < buf.count())
                 istr.position() = buf.position();
             else if (null_prefix_len > buf.count())
-                throw DB::Exception("Some characters were extracted from buffer, but nested parser did not read them",
-                                    ErrorCodes::LOGICAL_ERROR);
+            {
+                /// It can happen only if there is an unquoted string instead of a number
+                /// or if someone uses 'U' or 'L' as delimiter in CSV.
+                /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
+                if (settings.csv.delimiter == 'U' || settings.csv.delimiter == 'L')
+                    throw DB::Exception("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
+                                        "with format_csv_delimiter = 'U' or 'L' for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
+                WriteBufferFromOwnString parsed_value;
+                nested_data_type->serializeAsTextCSV(nested, nested.size() - 1, parsed_value, settings);
+                throw DB::Exception("Error while parsing \"" + std::string(null_literal, null_prefix_len)
+                                    + std::string(istr.position(), std::min(size_t{10}, istr.available())) + "\" as " + getName()
+                                    + " at position " + std::to_string(istr.count()) + ": expected \"NULL\" or " + nested_data_type->getName()
+                                    + ", got \"" + std::string(null_literal, buf.count()) + "\", which was deserialized as \""
+                                    + parsed_value.str() + "\". It seems that input data is ill-formatted.",
+                                    ErrorCodes::CANNOT_READ_ALL_DATA);
+            }
         }
     };
 
