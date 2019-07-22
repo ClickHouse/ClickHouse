@@ -380,7 +380,7 @@ def test_kafka_virtual_columns(kafka_cluster):
     result = ''
     while True:
         time.sleep(1)
-        result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka')
+        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition FROM test.kafka')
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
     kafka_check_result(result, True, 'test_kafka_virtual1.reference')
@@ -397,11 +397,11 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64)
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition FROM test.kafka;
     ''')
 
     messages = []
@@ -411,7 +411,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
 
     while True:
         time.sleep(1)
-        result = instance.query('SELECT kafka_key, key, topic, value, offset FROM test.view')
+        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition FROM test.view')
         if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
             break
     kafka_check_result(result, True, 'test_kafka_virtual2.reference')
