@@ -16,7 +16,7 @@
 #define MKL_APP_NAME "librdkafka"
 #define MKL_APP_DESC_ONELINE "The Apache Kafka C/C++ library"
 // distro
-//#define SOLIB_EXT ".so"
+#define SOLIB_EXT ".so"
 // gcc
 //#define WITH_GCC 1
 // gxx
@@ -48,9 +48,9 @@
 // parseversion
 #define MKL_APP_VERSION "0.11.4"
 // libdl
-//#define WITH_LIBDL 1
+#define WITH_LIBDL 1
 // WITH_PLUGINS
-//#define WITH_PLUGINS 1
+#define WITH_PLUGINS 1
 // zlib
 #define WITH_ZLIB 1
 // zstd
