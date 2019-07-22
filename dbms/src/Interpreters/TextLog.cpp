@@ -1,18 +1,10 @@
 #include <Interpreters/TextLog.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Common/ClickHouseRevision.h>
-#include <Poco/Net/IPAddress.h>
 #include <array>
 
 namespace DB
