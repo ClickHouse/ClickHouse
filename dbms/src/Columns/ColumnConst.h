@@ -99,6 +99,11 @@ public:
         return data->getBool(0);
     }
 
+    Float64 getFloat64(size_t) const override
+    {
+        return data->getFloat64(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -197,8 +202,8 @@ public:
         return false;
     }
 
+    bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
-    bool isColumnConst() const override { return true; }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }

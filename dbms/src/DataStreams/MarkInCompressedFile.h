@@ -7,8 +7,8 @@
 #include <Common/PODArray.h>
 
 #include <Common/config.h>
-#if USE_LFALLOC
-#include <Common/LFAllocator.h>
+#if USE_MIMALLOC
+#include <Common/MiAllocator.h>
 #endif
 
 namespace DB
@@ -43,8 +43,8 @@ struct MarkInCompressedFile
     }
 
 };
-#if USE_LFALLOC
-using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, LFAllocator>;
+#if USE_MIMALLOC
+using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, MiAllocator>;
 #else
 using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
 #endif

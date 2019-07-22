@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -213,6 +214,12 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
     String s;
     readQuotedStringWithSQLStyle(s, istr);
     deserializeFromString(function, column, s);
+}
+
+
+void DataTypeAggregateFunction::deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception("AggregateFunction data type cannot be read from text", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

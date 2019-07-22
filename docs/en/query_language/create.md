@@ -1,14 +1,31 @@
-## CREATE DATABASE
+## CREATE DATABASE {#query_language-create-database}
 
-Creating db_name databases
+Creates database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
 ```
 
-`A database` is just a directory for tables.
-If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
+### Clauses
 
+- `IF NOT EXISTS`
+
+    If the `db_name` database already exists then:
+
+    - If clause is specified, ClickHouse doesn't create a new database and doesn't throw an exception.
+    - If clause is not specified, then ClickHouse doesn't create a new database and throw and exception.
+
+- `ON CLUSTER`
+
+    ClickHouse creates the `db_name` database on all the servers of a specified cluster.
+
+- `ENGINE`
+
+    - [MySQL](../database_engines/mysql.md)
+
+        Allows to retrieve data from the remote MySQL server.
+
+    By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
@@ -82,10 +99,7 @@ It is not possible to set default values for elements in nested data structures.
 
 ### TTL expression
 
-Can be specified only for MergeTree-family tables. An expression for setting storage time for values. It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
-    `TTL date + INTERVAL 1 DAY`
-
-You are not allowed to set TTL for key columns. For more details, see [TTL for columns and tables](../operations/table_engines/mergetree.md)
+Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
 ## Column Compression Codecs
 
@@ -93,20 +107,26 @@ Besides default data compression, defined in [server settings](../operations/ser
 
 Supported compression algorithms:
 
-- `NONE` - no compression for data applied
-- `LZ4`
-- `LZ4HC(level)` - (level) - LZ4\_HC compression algorithm with defined level.
-Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4,9].
-- `ZSTD(level)` - ZSTD compression algorithm with defined `level`. Possible `level` value range: \[1, 22\]. Default value: 1.
-Greater values stands for better compression and higher CPU usage.
-- `Delta(delta_bytes)` - compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
-Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
+- `NONE` — No compression.
+- `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with configurable level. Default level: 9. If you set `level <= 0`, the default level is applied. Possible levels: [1, 12]. Recommended levels are in range: [4, 9].
+- `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default value: 1.
+- `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
+Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
+- `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+- `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighbouring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+
+High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+
+!!!warning
+    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
 
 Syntax example:
+
 ```
 CREATE TABLE codec_example
 (
-    dt Date CODEC(ZSTD), /* используется уровень сжатия по-умолчанию */
+    dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
     double_value Float64 CODEC(LZ4HC(9))
@@ -118,6 +138,7 @@ ORDER BY dt
 
 Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
 Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
+
 ```
 CREATE TABLE timeseries_example
 (

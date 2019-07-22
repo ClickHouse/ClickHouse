@@ -9,10 +9,10 @@
                     <user>default</user>
                     <password></password>
                     <db>test</db>
-                    <table>dictionary_source</table>
+                    <table>small_dict_source</table>
                 </clickhouse>
             </source>
-            <lifetime>60</lifetime>
+            <lifetime>5</lifetime>
             <layout>
                 <flat/>
             </layout>
@@ -21,17 +21,17 @@
                     <name>id</name>
                 </id>
                 <attribute>
-                    <name>Int64_</name>
-                    <type>Int64</type>
-                    <null_value>121</null_value>
+                    <name>b</name>
+                    <type>Int32</type>
+                    <null_value>-1</null_value>
                 </attribute>
                 <attribute>
-                    <name>Float32_</name>
-                    <type>Float32</type>
-                    <null_value>121</null_value>
+                    <name>c</name>
+                    <type>Float64</type>
+                    <null_value>-2</null_value>
                 </attribute>
                 <attribute>
-                    <name>String_</name>
+                    <name>a</name>
                     <type>String</type>
                     <null_value>YY</null_value>
                 </attribute>

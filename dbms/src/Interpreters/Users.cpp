@@ -11,7 +11,7 @@
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/SimpleCache.h>
+#include <common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
 #include <common/logger_useful.h>

@@ -4,6 +4,8 @@
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -69,21 +71,36 @@ StorageKafka::StorageKafka(
     const std::string & database_name_,
     Context & context_,
     const ColumnsDescription & columns_,
-    const String & brokers_, const String & group_, const Names & topics_,
-    const String & format_name_, char row_delimiter_, const String & schema_name_,
-    size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken_,
+    const String & brokers_,
+    const String & group_,
+    const Names & topics_,
+    const String & format_name_,
+    char row_delimiter_,
+    const String & schema_name_,
+    size_t num_consumers_,
+    UInt64 max_block_size_,
+    size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage{columns_},
-    table_name(table_name_), database_name(database_name_), global_context(context_),
-    topics(global_context.getMacros()->expand(topics_)),
-    brokers(global_context.getMacros()->expand(brokers_)),
-    group(global_context.getMacros()->expand(group_)),
-    format_name(global_context.getMacros()->expand(format_name_)),
-    row_delimiter(row_delimiter_),
-    schema_name(global_context.getMacros()->expand(schema_name_)),
-    num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_),
-    skip_broken(skip_broken_), intermediate_commit(intermediate_commit_)
+    : IStorage(
+        columns_,
+        ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
+                            {"_key", std::make_shared<DataTypeString>()},
+                            {"_offset", std::make_shared<DataTypeUInt64>()}}, true))
+    , table_name(table_name_)
+    , database_name(database_name_)
+    , global_context(context_)
+    , topics(global_context.getMacros()->expand(topics_))
+    , brokers(global_context.getMacros()->expand(brokers_))
+    , group(global_context.getMacros()->expand(group_))
+    , format_name(global_context.getMacros()->expand(format_name_))
+    , row_delimiter(row_delimiter_)
+    , schema_name(global_context.getMacros()->expand(schema_name_))
+    , num_consumers(num_consumers_)
+    , max_block_size(max_block_size_)
+    , log(&Logger::get("StorageKafka (" + table_name_ + ")"))
+    , semaphore(0, num_consumers_)
+    , skip_broken(skip_broken_)
+    , intermediate_commit(intermediate_commit_)
 {
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
     task->deactivate();
@@ -92,28 +109,26 @@ StorageKafka::StorageKafka(
 
 BlockInputStreams StorageKafka::read(
     const Names & column_names,
-    const SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /* query_info */,
     const Context & context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
-    unsigned num_streams)
+    QueryProcessingStage::Enum /* processed_stage */,
+    size_t /* max_block_size */,
+    unsigned /* num_streams */)
 {
-    check(column_names);
-
     if (num_created_consumers == 0)
         return BlockInputStreams();
 
-    const size_t stream_count = std::min(size_t(num_streams), num_created_consumers);
-
+    /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     BlockInputStreams streams;
-    streams.reserve(stream_count);
+    streams.reserve(num_created_consumers);
 
     // Claim as many consumers as requested, but don't block
-    for (size_t i = 0; i < stream_count; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        // Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        // TODO That leads to awful performance.
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, schema_name, 1));
+        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+        /// TODO: probably that leads to awful performance.
+        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
+        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
     }
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
@@ -161,9 +176,63 @@ void StorageKafka::shutdown()
 }
 
 
+void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+}
+
+
 void StorageKafka::updateDependencies()
 {
     task->activateAndSchedule();
+}
+
+
+BufferPtr StorageKafka::createBuffer()
+{
+    // Create a consumer and subscribe to topics
+    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+
+    // Limit the number of batched messages to allow early cancellations
+    const Settings & settings = global_context.getSettingsRef();
+    size_t batch_size = max_block_size;
+    if (!batch_size)
+        batch_size = settings.max_block_size.value;
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+
+    return std::make_shared<DelimitedReadBuffer>(
+        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
+}
+
+BufferPtr StorageKafka::claimBuffer()
+{
+    return tryClaimBuffer(-1L);
+}
+
+BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
+{
+    // Wait for the first free buffer
+    if (wait_ms >= 0)
+    {
+        if (!semaphore.tryWait(wait_ms))
+            return nullptr;
+    }
+    else
+        semaphore.wait();
+
+    // Take the first available buffer from the list
+    std::lock_guard lock(mutex);
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
+}
+
+void StorageKafka::pushBuffer(BufferPtr buffer)
+{
+    std::lock_guard lock(mutex);
+    buffers.push_back(buffer);
+    semaphore.set();
 }
 
 
@@ -205,53 +274,6 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     }
 
     return conf;
-}
-
-BufferPtr StorageKafka::createBuffer()
-{
-    // Create a consumer and subscribe to topics
-    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-    consumer->subscribe(topics);
-
-    // Limit the number of batched messages to allow early cancellations
-    const Settings & settings = global_context.getSettingsRef();
-    size_t batch_size = max_block_size;
-    if (!batch_size)
-        batch_size = settings.max_block_size.value;
-    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
-
-    return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
-}
-
-BufferPtr StorageKafka::claimBuffer()
-{
-    return tryClaimBuffer(-1L);
-}
-
-BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
-{
-    // Wait for the first free buffer
-    if (wait_ms >= 0)
-    {
-        if (!semaphore.tryWait(wait_ms))
-            return nullptr;
-    }
-    else
-        semaphore.wait();
-
-    // Take the first available buffer from the list
-    std::lock_guard lock(mutex);
-    auto buffer = buffers.back();
-    buffers.pop_back();
-    return buffer;
-}
-
-void StorageKafka::pushBuffer(BufferPtr buffer)
-{
-    std::lock_guard lock(mutex);
-    buffers.push_back(buffer);
-    semaphore.set();
 }
 
 bool StorageKafka::checkDependencies(const String & current_database_name, const String & current_table_name)
@@ -322,7 +344,7 @@ bool StorageKafka::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->database = database_name;
     insert->table = table_name;
-    insert->no_destination = true; // Only insert into dependent views
+    insert->no_destination = true; // Only insert into dependent views and expect that input blocks contain virtual columns
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -330,11 +352,15 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size.value;
 
     // Create a stream for each consumer and join them in a union stream
+    InterpreterInsertQuery interpreter{insert, global_context};
+    auto block_io = interpreter.execute();
+
+    // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
     streams.reserve(num_created_consumers);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, schema_name, block_size);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -351,9 +377,6 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    // Execute the query
-    InterpreterInsertQuery interpreter{insert, global_context};
-    auto block_io = interpreter.execute();
     copyData(*in, *block_io.out, &stream_cancelled);
 
     // Check whether the limits were applied during query execution

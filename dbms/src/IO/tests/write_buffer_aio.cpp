@@ -14,7 +14,7 @@ namespace
 namespace fs = boost::filesystem;
 
 void run();
-void die(const std::string & msg);
+[[noreturn]] void die(const std::string & msg);
 void runTest(unsigned int num, const std::function<bool()> & func);
 std::string createTmpFile();
 std::string generateString(size_t n);
