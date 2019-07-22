@@ -22,7 +22,6 @@ template <> struct NearestFieldTypeImpl<Message::Priority> { using Type = UInt64
 
 Block TextLogElement::createBlock()
 {
-
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
@@ -47,7 +46,6 @@ Block TextLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                                  "os_thread_id"},
 
         {std::move(priority_datatype),                                                        "level"},
-
         {std::make_shared<DataTypeString>(),                                                  "query_id"},
         {std::make_shared<DataTypeString>(),                                                  "logger_name"},
         {std::make_shared<DataTypeString>(),                                                  "message"},
@@ -69,13 +67,11 @@ void TextLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(microseconds);
 
-    // Thread info
     columns[i++]->insertData(thread_name.data(), thread_name.size());
     columns[i++]->insert(thread_number);
     columns[i++]->insert(os_thread_id);
 
     columns[i++]->insert(level);
-
     columns[i++]->insert(query_id);
     columns[i++]->insert(logger_name);
     columns[i++]->insert(message);
