@@ -608,7 +608,7 @@ load_balancing = first_or_random
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
 
-## format_csv_unquoted_null_literal_as_null {#settings-format_csv_unquoted_null_literal_as_null}
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
 

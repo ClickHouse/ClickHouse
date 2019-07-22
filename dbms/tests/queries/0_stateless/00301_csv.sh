@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE csv_null (t Nullable(DateTime('Europe/M
 
 echo 'NULL, NULL
 "2016-01-01 01:02:03",NUL
-"2016-01-02 01:02:03",Nhello' | $CLICKHOUSE_CLIENT --format_csv_unquoted_null_literal_as_null=1 --query="INSERT INTO csv_null FORMAT CSV";
+"2016-01-02 01:02:03",Nhello' | $CLICKHOUSE_CLIENT --input_format_csv_unquoted_null_literal_as_null=1 --query="INSERT INTO csv_null FORMAT CSV";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv_null ORDER BY s NULLS LAST";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv_null";
