@@ -1,5 +1,3 @@
-#pragma once
-
 #include <dlfcn.h>
 #include <common/unaligned.h>
 #include <Columns/ColumnString.h>
@@ -7,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -84,5 +83,10 @@ public:
         block.getByPosition(result).column = std::move(result_column);
     }
 };
+
+void registerFunctionSymbolizeAddress(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionSymbolizeAddress>();
+}
 
 }
