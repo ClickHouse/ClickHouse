@@ -63,7 +63,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
         elem.thread_name = getThreadName();
         elem.thread_number = msg_ext.thread_number;
-        elem.os_thread_id = msg.getOsTid();
+        elem.os_thread_id = CurrentThread::get().os_thread_id;
 
         elem.query_id = msg_ext.query_id;
 
