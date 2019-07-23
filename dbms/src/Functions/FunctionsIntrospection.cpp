@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsIntrospection(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionSymbolizeTrace>();
+    factory.registerFunction<FunctionSymbolizeAddress>();
 }
 
 }
