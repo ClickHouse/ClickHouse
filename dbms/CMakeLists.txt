@@ -231,6 +231,8 @@ target_link_libraries(clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
         PUBLIC
     roaring
 )
