@@ -32,15 +32,16 @@ The query response contains the `result` column with a single row. The row has a
 - 0 - The data in the table is corrupted.
 - 1 - The data maintains integrity.
 
-The `CHECK TABLE` query is only supported for the following table engines:
+The `CHECK TABLE` query works for the following table engines:
 
 - [Log](../operations/table_engines/log.md)
 - [TinyLog](../operations/table_engines/tinylog.md)
 - [StripeLog](../operations/table_engines/stripelog.md)
+- [MergeTree](../operations/table_engines/mergetree.md)
 
-These engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+The `*Log` engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
-To avoid data loss use the [MergeTree](../operations/table_engines/mergetree.md) family tables.
+For the `MergeTree` family engines the `CHECK TABLE` query shows a check status for every individual table data part at the local server.
 
 **If the data is corrupted**
 
@@ -57,7 +58,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns the following `String` type columns: 
+Returns the following `String` type columns:
 
 - `name` — Column name.
 - `type`— Column type.
