@@ -59,6 +59,7 @@ class Context;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TraceLog;
 
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
@@ -73,6 +74,7 @@ struct SystemLogs
     std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
     std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
+    std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
 
     String part_log_database;
 };

@@ -508,6 +508,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     LOG_DEBUG(log, "Loaded metadata.");
 
+    /// Init trace collector only after trace_log system table was created
+    global_context->initializeTraceCollector();
+
     global_context->setCurrentDatabase(default_database);
 
     if (has_zookeeper && config().has("distributed_ddl"))

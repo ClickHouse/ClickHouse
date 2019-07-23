@@ -8,11 +8,11 @@
 namespace DB
 {
 StoragePtr TableFunctionHDFS::getStorage(
-    const String & source, const String & format, const Block & sample_block, Context & global_context) const
+    const String & source, const String & format, const Block & sample_block, Context & global_context, const std::string & table_name) const
 {
     return StorageHDFS::create(source,
         getDatabaseName(),
-        getName(),
+        table_name,
         format,
         ColumnsDescription{sample_block.getNamesAndTypesList()},
         global_context);

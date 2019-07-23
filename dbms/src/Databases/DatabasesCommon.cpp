@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <sstream>
 
@@ -68,6 +69,13 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
 
+    if (ast_create_query.as_table_function)
+    {
+        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
+        const auto & factory = TableFunctionFactory::instance();
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        return {ast_create_query.table, storage};
+    }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
