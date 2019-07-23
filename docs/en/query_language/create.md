@@ -53,6 +53,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
 ``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
+```
+
+Creates a table with the same structure and data as the value returned by table function.
+
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
@@ -107,22 +113,26 @@ Besides default data compression, defined in [server settings](../operations/ser
 
 Supported compression algorithms:
 
-- `NONE` - no compression for data applied
-- `LZ4`
-- `LZ4HC(level)` - (level) - LZ4\_HC compression algorithm with defined level.
-Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4,9].
-- `ZSTD(level)` - ZSTD compression algorithm with defined `level`. Possible `level` value range: \[1, 22\]. Default value: 1.
-Greater values stands for better compression and higher CPU usage.
-- `Delta(delta_bytes)` - compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
-Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
-- `DoubleDelta` - stores delta of deltas in compact binary form, compressing values down to 1 bit (in the best case). Best compression rates are achieved on monotonic sequences with constant stride, e.g. time samples. Can be used against any fixed-width type. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix instead of 4-bit prefix.
-- `Gorilla` - stores (parts of) xored values in compact binary form, compressing values down to 1 bit (in the best case). Best compression rate is achieved when neighbouring values are binary equal. Basic use case - floating point data that do not change rapidly. Implementation is based on [Gorilla paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf), and extended to support 64bit types.
+- `NONE` — No compression.
+- `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with configurable level. Default level: 9. If you set `level <= 0`, the default level is applied. Possible levels: [1, 12]. Recommended levels are in range: [4, 9].
+- `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default value: 1.
+- `Delta(delta_bytes)` — compression approach, when raw values are replaced with the difference of two neighbour values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values.
+Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
+- `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+- `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighbouring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
+
+High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+
+!!!warning
+    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
 
 Syntax example:
+
 ```
 CREATE TABLE codec_example
 (
-    dt Date CODEC(ZSTD), /* используется уровень сжатия по-умолчанию */
+    dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
     double_value Float64 CODEC(LZ4HC(9))
@@ -134,6 +144,7 @@ ORDER BY dt
 
 Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
 Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
+
 ```
 CREATE TABLE timeseries_example
 (

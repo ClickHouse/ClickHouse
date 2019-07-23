@@ -63,6 +63,7 @@ class Clusters;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TraceLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -421,9 +422,14 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    void initializeTraceCollector();
+    bool hasTraceCollector();
+
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
+
+    std::shared_ptr<TraceLog> getTraceLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

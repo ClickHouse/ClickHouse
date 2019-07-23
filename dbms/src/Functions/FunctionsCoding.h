@@ -1548,13 +1548,15 @@ public:
         ColumnString::Chars & vec_res_upper_range = col_res_upper_range->getChars();
         vec_res_upper_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
 
+        static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
+
         for (size_t offset = 0; offset < input_rows_count; ++offset)
         {
             const size_t offset_ipv6 = offset * IPV6_BINARY_LENGTH;
             UInt8 cidr = col_const_cidr_in
                 ? col_const_cidr_in->getValue<UInt8>()
                 : col_cidr_in->getData()[offset];
-
+            cidr = std::min(cidr, max_cidr_mask);
             applyCIDRMask(&vec_in[offset_ipv6], &vec_res_lower_range[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
         }
 

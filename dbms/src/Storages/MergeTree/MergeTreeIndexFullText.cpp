@@ -49,7 +49,17 @@ static void likeStringToBloomFilter(
     while (cur < data.size() && token_extractor->nextLike(data, &cur, token))
         bloom_filter.add(token.c_str(), token.size());
 }
+/// Unified condition for equals, startsWith and endsWith
+bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
+{
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.bloom_filter = std::make_unique<BloomFilter>(
+            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
+    const auto & str = value.get<String>();
+    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
+    return true;
+}
 
 MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index)
     : IMergeTreeIndexGranule()
@@ -129,13 +139,7 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 "equals",
                 [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
+                    return createFunctionEqualsCondition(out, value, idx);
                 }
         },
         {
@@ -168,26 +172,14 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 "startsWith",
                 [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & prefix = value.get<String>();
-                    stringToBloomFilter(prefix.c_str(), prefix.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
+                    return createFunctionEqualsCondition(out, value, idx);
                 }
         },
         {
                 "endsWith",
                 [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
-                    out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<BloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & suffix = value.get<String>();
-                    stringToBloomFilter(suffix.c_str(), suffix.size(), idx.token_extractor_func, *out.bloom_filter);
-                    return true;
+                    return createFunctionEqualsCondition(out, value, idx);
                 }
         },
         {
@@ -196,6 +188,7 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
                 {
                     out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
+                    /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
                     std::vector<std::vector<BloomFilter>> bloom_filters;
                     bloom_filters.emplace_back();
                     for (const auto & element : value.get<Array>())
@@ -405,7 +398,7 @@ bool MergeTreeConditionFullText::atomFromAST(
 
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
-        std::string func_name = func->name;
+        const auto & func_name = func->name;
 
         if (functionIsInOrGlobalInOperator(func_name) && tryPrepareSetBloomFilter(args, out))
         {

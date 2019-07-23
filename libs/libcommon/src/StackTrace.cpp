@@ -195,12 +195,6 @@ StackTrace::StackTrace(NoCapture)
 {
 }
 
-StackTrace::StackTrace(const std::vector<void *> & source_frames)
-{
-    for (size = 0; size < std::min(source_frames.size(), capacity); ++size)
-        frames[size] = source_frames[size];
-}
-
 void StackTrace::tryCapture()
 {
     size = 0;

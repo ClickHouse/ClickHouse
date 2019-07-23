@@ -561,8 +561,7 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
-    ColumnSizeByName getColumnSizes() const
+    ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
         return column_sizes;
