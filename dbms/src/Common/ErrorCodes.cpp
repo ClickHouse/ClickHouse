@@ -434,6 +434,9 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER = 457;
     extern const int CANNOT_UNLINK = 458;
     extern const int CANNOT_SET_THREAD_PRIORITY = 459;
+    extern const int CANNOT_CREATE_TIMER = 460;
+    extern const int CANNOT_SET_TIMER_PERIOD = 461;
+    extern const int CANNOT_DELETE_TIMER = 462;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
