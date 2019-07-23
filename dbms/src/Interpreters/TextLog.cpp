@@ -17,14 +17,14 @@ Block TextLogElement::createBlock()
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-                {"FATAL",          static_cast<Int8>(Message::PRIO_FATAL)},
-                {"CRITICAL",       static_cast<Int8>(Message::PRIO_CRITICAL)},
-                {"ERROR",          static_cast<Int8>(Message::PRIO_ERROR)},
-                {"WARNING",        static_cast<Int8>(Message::PRIO_WARNING)},
-                {"NOTICE",         static_cast<Int8>(Message::PRIO_NOTICE)},
-                {"INFORMATION",    static_cast<Int8>(Message::PRIO_INFORMATION)},
-                {"DEBUG",          static_cast<Int8>(Message::PRIO_DEBUG)},
-                {"TRACE",          static_cast<Int8>(Message::PRIO_TRACE)}
+                {"Fatal",          static_cast<Int8>(Message::PRIO_FATAL)},
+                {"Critical",       static_cast<Int8>(Message::PRIO_CRITICAL)},
+                {"Error",          static_cast<Int8>(Message::PRIO_ERROR)},
+                {"Warning",        static_cast<Int8>(Message::PRIO_WARNING)},
+                {"Notice",         static_cast<Int8>(Message::PRIO_NOTICE)},
+                {"Information",    static_cast<Int8>(Message::PRIO_INFORMATION)},
+                {"Debug",          static_cast<Int8>(Message::PRIO_DEBUG)},
+                {"Trace",          static_cast<Int8>(Message::PRIO_TRACE)}
         });
 
     return
