@@ -3,21 +3,22 @@
 `SELECT` performs data retrieval.
 
 ``` sql
+[WITH expr_list|(subquery)]
 SELECT [DISTINCT] expr_list
-    [FROM [db.]table | (subquery) | table_function] [FINAL]
-    [SAMPLE sample_coeff]
-    [ARRAY JOIN ...]
-    [GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
-    [PREWHERE expr]
-    [WHERE expr]
-    [GROUP BY expr_list] [WITH TOTALS]
-    [HAVING expr]
-    [ORDER BY expr_list]
-    [LIMIT [n, ]m]
-    [UNION ALL ...]
-    [INTO OUTFILE filename]
-    [FORMAT format]
-    [LIMIT [offset_value, ]n BY columns]
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH TOTALS]
+[HAVING expr]
+[ORDER BY expr_list]
+[LIMIT [n, ]m]
+[UNION ALL ...]
+[INTO OUTFILE filename]
+[FORMAT format]
+[LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -25,6 +26,71 @@ The clauses below are described in almost the same order as in the query executi
 
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM.
 Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified: `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. `The system does not have "merge join"`.
+
+### WITH Clause
+This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), with some limitations:
+1. Recursive queries are not supported
+2. When subquery is used inside WITH section, it's result should be scalar with exactly one row
+3. Expression's results are not available in subqueries
+Results of WITH clause expressions can be used inside SELECT clause.
+
+Example 1: Using constant expression as "variable"
+```
+WITH '2019-08-01 15:23:00' as ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound
+```
+
+Example 2: Evicting sum(bytes) expression result from SELECT clause column list
+```
+WITH sum(bytes) as s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s
+```
+
+Example 3: Using results of scalar subquery
+```
+/* this example would return TOP 10 of most huge tables */
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10
+```
+
+Example 4: Re-using expression in subquery
+As a workaround for current limitation for expression usage in subqueries, you may duplicate it.
+```
+WITH ['hello'] AS hello
+SELECT
+    hello,
+    *
+FROM
+(
+    WITH ['hello'] AS hello
+    SELECT hello
+)
+
+┌─hello─────┬─hello─────┐
+│ ['hello'] │ ['hello'] │
+└───────────┴───────────┘
+```
+
 
 ### FROM Clause
 
@@ -694,7 +760,7 @@ The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 └────────┴──────┘
 ```
 
-You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
+You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this value.
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
