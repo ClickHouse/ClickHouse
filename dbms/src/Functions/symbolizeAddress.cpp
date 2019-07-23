@@ -1,4 +1,6 @@
 #include <dlfcn.h>
+#include <unordered_map>
+#include <optional>
 #include <common/unaligned.h>
 #include <common/demangle.h>
 #include <Columns/ColumnString.h>
@@ -71,21 +73,33 @@ public:
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
+        std::unordered_map<void *, std::string> cache;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             void * addr = unalignedLoad<void *>(&data[i]);
-            Dl_info info;
 
-            /// This is unsafe. The function dladdr may loop infinitely.
-            /// Reproduce with query: SELECT DISTINCT symbolizeAddress(number) FROM system.numbers
-            if (dladdr(addr, &info) && info.dli_sname)
+            if (auto it = cache.find(addr); it != cache.end())
             {
-                int demangling_status = 0;
-                std::string demangled_name = demangle(info.dli_sname, demangling_status);
-                result_column->insertDataWithTerminatingZero(demangled_name.data(), demangled_name.size() + 1);
+                result_column->insertDataWithTerminatingZero(it->second.data(), it->second.size() + 1);
             }
             else
-                result_column->insertDefault();
+            {
+                /// This is extremely slow.
+                Dl_info info;
+                if (dladdr(addr, &info) && info.dli_sname)
+                {
+                    int demangling_status = 0;
+                    std::string demangled_name = demangle(info.dli_sname, demangling_status);
+                    result_column->insertDataWithTerminatingZero(demangled_name.data(), demangled_name.size() + 1);
+                    cache.emplace(addr, demangled_name);
+                }
+                else
+                {
+                    cache.emplace(addr, std::string());
+                    result_column->insertDefault();
+                }
+            }
         }
 
         block.getByPosition(result).column = std::move(result_column);
