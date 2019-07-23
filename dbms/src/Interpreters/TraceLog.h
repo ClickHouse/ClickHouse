@@ -15,7 +15,7 @@ struct TraceLogElement
     static const TimerDataType::Values timer_values;
 
     time_t event_time{};
-    TimerType timer_type;
+    TimerType timer_type{};
     String query_id{};
     Array trace{};
 
