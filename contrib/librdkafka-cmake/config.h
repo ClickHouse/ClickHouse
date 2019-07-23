@@ -63,6 +63,8 @@
 #define WITH_SSL 1
 // WITH_SASL_SCRAM
 #define WITH_SASL_SCRAM 1
+// WITH_SASL_OAUTHBEARER
+#define WITH_SASL_OAUTHBEARER 1
 // crc32chw
 #if !defined(__PPC__)
 #define WITH_CRC32C_HW 1
