@@ -28,6 +28,8 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
+class QueryProfilerReal;
+class QueryProfilerCpu;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -123,7 +125,10 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    StringRef getQueryId() const;
+    StringRef getQueryId() const
+    {
+        return query_id;
+    }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -155,6 +160,10 @@ public:
 protected:
     void initPerformanceCounters();
 
+    void initQueryProfiler();
+
+    void finalizeQueryProfiler();
+
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
@@ -177,6 +186,10 @@ protected:
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
+
+    // CPU and Real time query profilers
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 

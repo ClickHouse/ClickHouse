@@ -694,7 +694,7 @@ The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 └────────┴──────┘
 ```
 
-You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
+You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this value.
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
