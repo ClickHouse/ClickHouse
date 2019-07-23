@@ -93,6 +93,12 @@ struct MergeTreePartInfo
 struct DetachedPartInfo : public MergeTreePartInfo
 {
     String prefix;
+
+    /// If false, prefix contains full directory name and MergeTreePartInfo may be in invalid state
+    /// (directory name was not successfully parsed).
+    bool valid_name;
+
+    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo * part_info, MergeTreeDataFormatVersion format_version);
 };
 
 }
