@@ -74,7 +74,7 @@ public:
         {
             void * addr = unalignedLoad<void *>(&data[i]);
             Dl_info info;
-            if (0 == dladdr(addr, &info) && info.dli_sname)
+            if (dladdr(addr, &info) && info.dli_sname)
                 result_column->insertDataWithTerminatingZero(info.dli_sname, strlen(info.dli_sname) + 1);
             else
                 result_column->insertDefault();
