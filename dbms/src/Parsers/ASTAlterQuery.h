@@ -99,16 +99,16 @@ public:
 
     bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    enum SpaceToMove
+    enum MoveDestinationType
     {
         DISK,
         VOLUME,
         NONE,
     };
 
-    SpaceToMove space_to_move = SpaceToMove::NONE;
+    MoveDestinationType move_destination_type = MoveDestinationType::NONE;
 
-    String space_to_move_name;
+    String move_destination_name;
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */

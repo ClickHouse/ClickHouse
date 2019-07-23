@@ -203,9 +203,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->type = ASTAlterCommand::MOVE_PARTITION;
 
         if (s_to_disk.ignore(pos))
-            command->space_to_move = ASTAlterCommand::SpaceToMove::DISK;
+            command->move_destination_type = ASTAlterCommand::MoveDestinationType::DISK;
         else if (s_to_volume.ignore(pos))
-            command->space_to_move = ASTAlterCommand::SpaceToMove::VOLUME;
+            command->move_destination_type = ASTAlterCommand::MoveDestinationType::VOLUME;
         else
             return false;
 
@@ -213,7 +213,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        command->space_to_move_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
+        command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
     }
     else if (s_fetch_partition.ignore(pos, expected))
     {
