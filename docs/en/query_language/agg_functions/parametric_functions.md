@@ -2,6 +2,42 @@
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
+## histogram
+
+Calculates a histogram.
+
+```
+histogram(number_of_bins)(values)
+```
+
+**Parameters**
+
+`number_of_bins` — Number of bins for the histogram.
+`values` — [Expression](../syntax.md#expressions) resulting in a data sample.
+
+**Returned values**
+
+- [Array](../../data_types/array.md) of [Tuples](../../data_types/tuple.md) of the following format:
+
+    ```
+    [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+    ```
+
+    - `lower` — Lower bound of the bin.
+    - `upper` — Upper bound of the bin.
+    - `height` — Calculated height of the bin.
+
+**Example**
+
+```sql
+SELECT histogram(5)(number + 1) FROM (SELECT * FROM system.numbers LIMIT 20)
+```
+```text
+┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
+│ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 ## sequenceMatch(pattern)(time, cond1, cond2, ...)
 
 Pattern matching for event chains.
