@@ -45,7 +45,11 @@ public:
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        alloc(new_size - old_size);
+        Int64 addition = new_size - old_size;
+        if (addition > 0)
+            alloc(addition);
+        else
+            free(-addition);
     }
 
     /** This function should be called after memory deallocation.
