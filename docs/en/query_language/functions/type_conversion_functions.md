@@ -34,7 +34,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Returned value**
 
-A value in the `Nullable(Decimal(P,S))` data type. `P` is equal to the numeric part of the function name. For example, for the `toDecimal32OrNull` function, `P = 32`. The value contains:
+A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
 - Number with `S` decimal places, if ClickHouse interprets the input string as a number.
 - `NULL`, if ClickHouse can't interpret the input string as a number or if the input number contains more than `S` decimal places.
@@ -76,7 +76,7 @@ These functions should be used instead of `toDecimal*()` functions, if you prefe
 
 **Returned value**
 
-A value in the `Nullable(Decimal(P,S))` data type. `P` is equal to the numeric part of the function name. For example, for the `toDecimal32OrZero` function, `P = 32`. The value contains:
+A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
 - Number with `S` decimal places, if ClickHouse interprets the input string as a number.
 - 0 with `S` decimal places, if ClickHouse can't interpret the input string as a number or if the input number contains more than `S` decimal places.
