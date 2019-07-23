@@ -263,6 +263,29 @@ void writeInsertDataQueriesForInputTest(std::ostream & out)
     }
 
     writeInsertDataQueryForInputTest(ss, "in_persons_00825", "00825_protobuf_format_syntax2:Syntax2Person", out);
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(2);
+        ns.set_square(4);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
+    }
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(0);
+        ns.set_square(0);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
+    }
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(3);
+        ns.set_square(9);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
+    }
+
+    writeInsertDataQueryForInputTest(ss, "in_squares_00825", "00825_protobuf_format:NumberAndSquare", out);
 }
 
 
@@ -636,6 +659,29 @@ void writeReferenceForOutputTest(std::ostream & out)
         person.mutable_measureunits()->add_coef(16);
         person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
+    }
+
+    out << "SQUARES->" << std::endl;
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(0);
+        ns.set_square(0);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
+    }
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(2);
+        ns.set_square(4);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
+    }
+
+    {
+        NumberAndSquare ns;
+        ns.set_number(3);
+        ns.set_square(9);
+        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
     }
 }
 

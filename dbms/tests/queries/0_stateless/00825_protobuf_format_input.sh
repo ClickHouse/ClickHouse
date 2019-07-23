@@ -8,6 +8,7 @@ set -e -o pipefail
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<'EOF'
 DROP TABLE IF EXISTS in_persons_00825;
+DROP TABLE IF EXISTS in_squares_00825;
 
 CREATE TABLE in_persons_00825 (uuid UUID,
                                name String,
@@ -35,6 +36,8 @@ CREATE TABLE in_persons_00825 (uuid UUID,
                                nestiness_a_b_c_d Nullable(UInt32),
                                `nestiness_a_B.c_E` Array(UInt32)
                               ) ENGINE = MergeTree ORDER BY tuple();
+
+CREATE TABLE in_squares_00825 (number UInt32, square UInt32) ENGINE = MergeTree ORDER BY tuple();
 EOF
 
 # To generate the file 00825_protobuf_format_input.insh use the following commands:
@@ -43,5 +46,7 @@ EOF
 source $CURDIR/00825_protobuf_format_input.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS in_persons_00825;"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS in_squares_00825;"
