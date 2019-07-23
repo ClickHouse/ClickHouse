@@ -13,7 +13,7 @@ histogram(number_of_bins)(values)
 **Parameters**
 
 `number_of_bins` — Number of bins for the histogram.
-`values` — [Expression](../syntax.md#expressions) resulting in a data sample.
+`values` — [Expression](../syntax.md#syntax-expressions) resulting in a data sample.
 
 **Returned values**
 
