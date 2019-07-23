@@ -46,6 +46,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/addTypeConversionToAST.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -159,7 +161,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
-        database->loadTables(context, thread_pool, has_force_restore_data_flag);
+        database->loadTables(context, has_force_restore_data_flag);
     }
     catch (...)
     {
@@ -518,33 +520,44 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     StoragePtr as_storage;
     TableStructureReadLockHolder as_storage_lock;
+
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
         as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
 
-    /// Set and retrieve list of columns.
-    ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+    ColumnsDescription columns;
+    StoragePtr res;
 
-    /// Check low cardinality types in creating table if it was not allowed in setting
-    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
+    if (create.as_table_function)
     {
-        for (const auto & name_and_type_pair : columns.getAllPhysical())
+        const auto & table_function = create.as_table_function->as<ASTFunction &>();
+        const auto & factory = TableFunctionFactory::instance();
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+    }
+    else
+    {
+        /// Set and retrieve list of columns.
+        columns = setColumns(create, as_select_sample, as_storage);
+
+        /// Check low cardinality types in creating table if it was not allowed in setting
+        if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
         {
-            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
+            for (const auto & name_and_type_pair : columns.getAllPhysical())
             {
-                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+                if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
+                {
+                    if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
+                        throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                            ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+                }
             }
         }
+
+        /// Set the table engine if it was not specified explicitly.
+        setEngine(create);
     }
-
-    /// Set the table engine if it was not specified explicitly.
-    setEngine(create);
-
-    StoragePtr res;
 
     {
         std::unique_ptr<DDLGuard> guard;
@@ -585,15 +598,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
 
-        res = StorageFactory::instance().get(create,
-            data_path,
-            table_name,
-            database_name,
-            context,
-            context.getGlobalContext(),
-            columns,
-            create.attach,
-            false);
+        if (!create.as_table_function)
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                table_name,
+                database_name,
+                context,
+                context.getGlobalContext(),
+                columns,
+                create.attach,
+                false);
+        }
 
         if (create.temporary)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);

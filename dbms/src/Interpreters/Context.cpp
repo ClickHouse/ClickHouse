@@ -41,6 +41,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -53,6 +54,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 
 
@@ -152,6 +154,8 @@ struct ContextShared
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
+
+    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -285,6 +289,22 @@ struct ContextShared
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
+
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector()
+    {
+        return trace_collector != nullptr;
+    }
+
+    void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
+    {
+        if (trace_log == nullptr)
+            return;
+
+        trace_collector = std::make_unique<TraceCollector>(trace_log);
     }
 
 private:
@@ -496,7 +516,6 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
         return {};
     return it->second;
 }
-
 
 String Context::getPath() const
 {
@@ -963,7 +982,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
-        res = table_function_ptr->execute(table_expression, *this);
+        res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
     }
 
     return res;
@@ -1623,6 +1642,16 @@ void Context::initializeSystemLogs()
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
+bool Context::hasTraceCollector()
+{
+    return shared->hasTraceCollector();
+}
+
+void Context::initializeTraceCollector()
+{
+    shared->initializeTraceCollector(getTraceLog());
+}
+
 
 std::shared_ptr<QueryLog> Context::getQueryLog()
 {
@@ -1663,6 +1692,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     return shared->system_logs->part_log;
 }
 
+
 std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
@@ -1671,6 +1701,17 @@ std::shared_ptr<TextLog> Context::getTextLog()
         return {};
 
     return shared->system_logs->text_log;
+}
+  
+  
+std::shared_ptr<TraceLog> Context::getTraceLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->trace_log)
+        return nullptr;
+
+    return shared->system_logs->trace_log;
 }
 
 
