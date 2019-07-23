@@ -130,19 +130,18 @@ void ASTAlterCommand::formatImpl(
                       << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << "TO ";
-        switch (space_to_move)
+        switch (move_destination_type)
         {
-            case SpaceToMove::DISK:
+            case MoveDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case SpaceToMove::VOLUME:
+            case MoveDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case SpaceToMove::NONE:
-            default:
-                break;
+            case MoveDestinationType::NONE:
+                throw Exception("Unexpected MOVE destination (NONE)", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         }
-        settings.ostr << space_to_move_name;
+        settings.ostr << move_destination_name;
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
