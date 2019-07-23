@@ -3,21 +3,22 @@
 `SELECT` осуществляет выборку данных.
 
 ```sql
+[WITH expr_list|(subquery)]
 SELECT [DISTINCT] expr_list
-    [FROM [db.]table | (subquery) | table_function] [FINAL]
-    [SAMPLE sample_coeff]
-    [ARRAY JOIN ...]
-    [GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
-    [PREWHERE expr]
-    [WHERE expr]
-    [GROUP BY expr_list] [WITH TOTALS]
-    [HAVING expr]
-    [ORDER BY expr_list]
-    [LIMIT [n, ]m]
-    [UNION ALL ...]
-    [INTO OUTFILE filename]
-    [FORMAT format]
-    [LIMIT [offset_value, ]n BY columns]
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH TOTALS]
+[HAVING expr]
+[ORDER BY expr_list]
+[LIMIT [n, ]m]
+[UNION ALL ...]
+[INTO OUTFILE filename]
+[FORMAT format]
+[LIMIT [offset_value, ]n BY columns]
 ```
 
 Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
@@ -26,6 +27,69 @@ SELECT [DISTINCT] expr_list
 Если в запросе отсутствуют секции `DISTINCT`, `GROUP BY`, `ORDER BY`, подзапросы в `IN` и `JOIN`, то запрос будет обработан полностью потоково, с использованием O(1) количества оперативки.
 Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. Подробнее смотрите в разделе "Настройки". Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию. `Merge join` в системе нет.
 
+### Секция WITH
+Данная секция представляет собой [CTE](https://ru.wikipedia.org/wiki/Иерархические_и_рекурсивные_запросы_в_SQL), с рядом ограничений:
+1. Рекурсивные запросы не поддерживаются
+2. Если в качестве выражения используется подзапрос, то результат должен содержать ровно одну строку
+3. Результаты выражений нельзя переиспользовать во вложенных запросах
+В дальнейшем, результаты выражений можно использовать в секции SELECT.
+
+Пример 1: Использование константного выражения как "переменной"
+```
+WITH '2019-08-01 15:23:00' as ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound
+```
+
+Пример 2: Выкидывание выражения sum(bytes) из списка колонок в SELECT
+```
+WITH sum(bytes) as s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s
+```
+
+Пример 3: Использование результатов скалярного подзапроса
+```
+/* запрос покажет TOP 10 самых больших таблиц */
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10
+```
+
+Пример 4: Переиспользование выражения
+В настоящий момент, переиспользование выражения из секции WITH внутри подзапроса возможно только через дублирование.
+```
+WITH ['hello'] AS hello
+SELECT
+    hello,
+    *
+FROM
+(
+    WITH ['hello'] AS hello
+    SELECT hello
+)
+
+┌─hello─────┬─hello─────┐
+│ ['hello'] │ ['hello'] │
+└───────────┴───────────┘
+```
 
 ### Секция FROM
 

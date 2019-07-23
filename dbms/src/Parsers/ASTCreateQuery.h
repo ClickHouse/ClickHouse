@@ -63,6 +63,7 @@ public:
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
+    ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
