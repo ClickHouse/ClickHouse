@@ -28,6 +28,7 @@ public:
 protected:
     explicit StorageSystemDetachedParts()
     {
+        // TODO add column "directory_name" or "is_valid_name"
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
