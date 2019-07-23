@@ -1,5 +1,6 @@
 #include <dlfcn.h>
 #include <common/unaligned.h>
+#include <common/demangle.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -74,10 +75,15 @@ public:
         {
             void * addr = unalignedLoad<void *>(&data[i]);
             Dl_info info;
+
             /// This is unsafe. The function dladdr may loop infinitely.
             /// Reproduce with query: SELECT DISTINCT symbolizeAddress(number) FROM system.numbers
             if (dladdr(addr, &info) && info.dli_sname)
-                result_column->insertDataWithTerminatingZero(info.dli_sname, strlen(info.dli_sname) + 1);
+            {
+                int demangling_status = 0;
+                std::string demangled_name = demangle(info.dli_sname, demangling_status);
+                result_column->insertDataWithTerminatingZero(demangled_name.data(), demangled_name.size() + 1);
+            }
             else
                 result_column->insertDefault();
         }
