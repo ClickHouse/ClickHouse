@@ -11,4 +11,3 @@ ${LIBRARY_DIR}/double-conversion/fixed-dtoa.cc
 ${LIBRARY_DIR}/double-conversion/strtod.cc)
 
 target_include_directories(double-conversion SYSTEM PUBLIC "${LIBRARY_DIR}")
-
