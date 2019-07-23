@@ -247,12 +247,6 @@ public:
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Move part between disks
-    virtual void move(const String & /*part_name*/, const String & /*destination_disk_name*/)
-    {
-        throw Exception("Moves are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
@@ -338,7 +332,7 @@ public:
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
     /// Returns storage policy if table supports it
-    virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+    virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
 
 private:
     /// You always need to take the next three locks in this order.

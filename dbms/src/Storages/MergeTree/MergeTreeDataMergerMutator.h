@@ -35,9 +35,9 @@ struct FutureMergedMutatedPart
 struct MargeTreeMoveEntry
 {
     MergeTreeData::DataPartPtr part;
-    DiskSpaceMonitor::ReservationPtr reserved_space;
+    DiskSpace::ReservationPtr reserved_space;
 
-    MargeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpaceMonitor::ReservationPtr reservation_)
+    MargeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpace::ReservationPtr reservation_)
         : part(part_),
           reserved_space(std::move(reservation_)) { }
 
@@ -114,13 +114,13 @@ public:
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         MergeListEntry & merge_entry, time_t time_of_merge,
-        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
+        DiskSpace::Reservation * disk_reservation, bool deduplication);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context, DiskSpaceMonitor::Reservation * disk_reservation);
+        MergeListEntry & merge_entry, const Context & context, DiskSpace::Reservation * disk_reservation);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

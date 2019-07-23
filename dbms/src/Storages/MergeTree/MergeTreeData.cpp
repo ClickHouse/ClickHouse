@@ -742,7 +742,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
-    std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
+    std::vector<std::pair<String, DiskSpace::DiskPtr>> part_names_with_disks;
     Poco::DirectoryIterator end;
 
     auto disks = storage_policy->getDisks();
@@ -1152,36 +1152,6 @@ void MergeTreeData::rename(const String & /*new_path_to_db*/, const String & new
 
     database_name = new_database_name;
     table_name = new_table_name;
-}
-
-void MergeTreeData::move(const String & part_name, const String & destination_disk_name)
-{
-    auto part = getActiveContainingPart(part_name);
-    if (!part)
-        throw Exception("Part " + part_name + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
-
-    auto disk = storage_policy->getDiskByName(destination_disk_name);
-    if (!disk)
-        throw Exception("Disk " + destination_disk_name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
-
-    auto reservation = reserveSpaceAtDisk(disk, part->bytes_on_disk);
-    if (!reservation)
-        throw Exception("Move is not possible. Not enough space on disk " + destination_disk_name, ErrorCodes::NOT_ENOUGH_SPACE);
-
-    LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
-    part->makeCloneOnDiskDetached(reservation);
-
-    MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(*this,
-                                                                                              reservation->getDisk(), part_name);
-    copied_part->relative_path = "detached/" + part_name;
-
-    copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-
-    copied_part->renameTo(part_name);
-
-    auto old_active_part = swapActivePart(copied_part);
-
-    old_active_part->deleteOnDestroy();
 }
 
 void MergeTreeData::dropAllData()
@@ -2456,7 +2426,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 }
 
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path)
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path)
 {
     MutableDataPartPtr part = std::make_shared<DataPart>(*this, disk, Poco::Path(relative_path).getFileName());
     part->relative_path = relative_path;
@@ -2571,10 +2541,66 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 }
 
 
+void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space)
+{
+    auto reservation = space->reserve(part->bytes_on_disk);
+    if (!reservation || !reservation->isValid())
+        throw Exception("Move is not possible. Not enough space " + space->getName(), ErrorCodes::NOT_ENOUGH_SPACE);
+
+    LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
+    part->makeCloneOnDiskDetached(reservation);
+
+    MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(*this,
+                                                                                              reservation->getDisk(),
+                                                                                              part->name);
+    copied_part->relative_path = "detached/" + part->name;
+
+    copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+
+    copied_part->renameTo(part->name);
+
+    auto old_active_part = swapActivePart(copied_part);
+
+    old_active_part->deleteOnDestroy();
+}
+
+
 void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & /*context*/)
 {
     String partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    move(partition_id, name);
+
+    auto part = getActiveContainingPart(partition_id);
+    if (!part)
+        throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+
+    auto disk = storage_policy->getDiskByName(name);
+    if (!disk)
+        throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    if (part->disk->getName() == disk->getName())
+        throw Exception("Part " + partition_id + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+
+    movePartitionToSpace(part, std::static_pointer_cast<const DiskSpace::Space>(disk));
+}
+
+
+void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, const Context & /*context*/)
+{
+    String partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+
+    auto part = getActiveContainingPart(partition_id);
+    if (!part)
+        throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+
+    auto volume = storage_policy->getVolumeByName(name);
+    if (!volume)
+        throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    for (const auto & disk : volume->disks)
+        if (part->disk->getName() == disk->getName())
+            throw Exception("Part " + partition_id + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
+
+    movePartitionToSpace(part, std::static_pointer_cast<const DiskSpace::Space>(volume));
 }
 
 
@@ -2733,7 +2759,7 @@ MergeTreeData::getDetachedParts() const
     return res;
 }
 
-DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
+DiskSpace::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
     constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 RESERVATION_MULTIPLY_ESTIMATION_FACTOR = 1;
@@ -2949,17 +2975,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     return dst_data_part;
 }
 
-DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
 {
     return storage_policy->reserve(expected_size);
 }
 
-DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(const DiskPtr & disk, UInt64 expected_size)
-{
-    return storage_policy->reserveAtDisk(disk, expected_size);
-}
-
-String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
+String MergeTreeData::getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const
 {
     return disk->getPath() + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
 }

@@ -442,15 +442,15 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelector & getDiskSelector() const;
+    DiskSpace::DiskSelector & getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskPtr & getDisk(const String & name) const;
+    const DiskSpace::DiskPtr & getDisk(const String & name) const;
 
-    StoragePolicySelector & getStoragePolicySelector() const;
+    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
 
     /// Provides storage politics schemes
-    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

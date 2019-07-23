@@ -295,7 +295,7 @@ void StorageMergeTree::alter(
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
-    DiskSpaceMonitor::ReservationPtr reserved_space;
+    DiskSpace::ReservationPtr reserved_space;
 
     bool is_successful = false;
     String exception_message;
@@ -1061,8 +1061,24 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 break;
 
             case PartitionCommand::MOVE_PARTITION:
-                movePartitionToDisk(command.partition, command.space_to_move_name, context);
-                break;
+            {
+                switch (command.move_destination_type)
+                {
+                    case PartitionCommand::MoveDestinationType::DISK:
+                        movePartitionToDisk(command.partition, command.move_destination_name, context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::VOLUME:
+                        movePartitionToVolume(command.partition, command.move_destination_name, context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::NONE:
+                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
+                        break;
+                }
+
+            }
+            break;
 
             case PartitionCommand::REPLACE_PARTITION:
             {
@@ -1142,7 +1158,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     String source_dir = "detached/";
 
-    std::map<String, DiskPtr> name_to_disk;
+    std::map<String, DiskSpace::DiskPtr> name_to_disk;
 
     /// Let's make a list of parts to add.
     Strings parts;
@@ -1155,7 +1171,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
         const auto disks = storage_policy->getDisks();
-        for (const DiskPtr & disk : disks)
+        for (const DiskSpace::DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);
             for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)

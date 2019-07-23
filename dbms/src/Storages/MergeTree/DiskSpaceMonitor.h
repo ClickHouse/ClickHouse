@@ -30,20 +30,43 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
 }
 
-/** path - Contain path to data on disk.
-  *        Ends with /
-  * name - Unique key using for disk space reservation.
-  */
-class Disk
+namespace DiskSpace
+{
+
+
+class Reservation;
+using ReservationPtr = std::unique_ptr<Reservation>;
+
+
+class Space : public std::enable_shared_from_this<Space>
 {
 public:
-    class SpaceInformation
+    virtual ~Space() = default;
+
+    virtual ReservationPtr reserve(UInt64 bytes) const = 0;
+
+    virtual const String & getName() const = 0;
+};
+
+using SpacePtr = std::shared_ptr<const Space>;
+
+
+/** Disk - Smallest space unit.
+ *  path - Path to space. Ends with /
+ *  name - Unique key using for disk space reservation.
+ */
+class Disk : public Space
+{
+public:
+    friend class Reservation;
+
+    class Stat
     {
         struct statvfs fs;
         UInt64 keep_free_space_bytes;
 
     public:
-        SpaceInformation(const Disk & disk)
+        Stat(const Disk & disk)
         {
             if (statvfs(disk.path.c_str(), &fs) != 0)
                 throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
@@ -67,7 +90,6 @@ public:
         }
     };
 
-
     Disk(String name_, String path_, UInt64 keep_free_space_bytes_)
         : name(std::move(name_)),
           path(std::move(path_)),
@@ -75,7 +97,30 @@ public:
     {
     }
 
-    const String & getName() const
+    ~Disk() override = default;
+
+    ReservationPtr reserve(UInt64 bytes) const override;
+
+    bool try_reserve(UInt64 bytes) const
+    {
+        auto avaliable_space = getAvailableSpace();
+        std::lock_guard lock(mutex);
+        if (bytes == 0) {
+            LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserve 0 bytes on disk " << name);
+            ++reservation_count;
+            return true;
+        }
+        avaliable_space -= std::min(avaliable_space, reserved_bytes);
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << avaliable_space << " , to reserve " << bytes << " on disk " << name);
+        if (avaliable_space >= bytes) {
+            ++reservation_count;
+            reserved_bytes += bytes;
+            return true;
+        }
+        return false;
+    }
+
+    const String & getName() const override
     {
         return name;
     }
@@ -92,7 +137,7 @@ public:
 
     auto getSpaceInformation() const
     {
-        return SpaceInformation(*this);
+        return Stat(*this);
     }
 
     UInt64 getTotalSpace() const
@@ -105,173 +150,93 @@ public:
         return getSpaceInformation().getAvailableSpace();
     }
 
+    UInt64 getUnreservedSpace() const
+    {
+        auto avaliable_space = getSpaceInformation().getAvailableSpace();
+        std::lock_guard lock(mutex);
+        avaliable_space -= std::min(avaliable_space, reserved_bytes);
+        return avaliable_space;
+    }
+
 private:
     String name;
     String path;
     UInt64 keep_free_space_bytes;
+
+    /// Real reservation data
+    static std::mutex mutex;
+    mutable UInt64 reserved_bytes = 0;
+    mutable UInt64 reservation_count = 0;
 };
 
 /// It is not possible to change disk runtime.
 using DiskPtr = std::shared_ptr<const Disk>;
+using Disks = std::vector<DiskPtr>;
 
-
-/** Determines amount of free space in filesystem.
-  * Could "reserve" space, for different operations to plan disk space usage.
-  * Reservations are not separated for different filesystems,
-  *  instead it is assumed, that all reservations are done within same filesystem.
-  *
-  *  It is necessary to set all paths in map before MergeTreeData starts
-  */
-class DiskSpaceMonitor
+class Reservation : private boost::noncopyable
 {
 public:
-    struct DiskReserve
+    Reservation(UInt64 size_, DiskPtr disk_ptr_)
+        : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), disk_ptr(std::move(disk_ptr_)), valid(disk_ptr->try_reserve(size))
     {
-        UInt64 reserved_bytes;
-        UInt64 reservation_count;
-    };
-
-    class Reservation : private boost::noncopyable
-    {
-    public:
-        ~Reservation()
-        {
-            try
-            {
-                std::lock_guard lock(DiskSpaceMonitor::mutex);
-                if (reserves->reserved_bytes < size)
-                {
-                    reserves->reserved_bytes = 0;
-                    LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
-                }
-                else
-                {
-                    reserves->reserved_bytes -= size;
-                }
-
-                if (reserves->reservation_count == 0)
-                {
-                    LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
-                }
-                else
-                {
-                    --reserves->reservation_count;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException("~DiskSpaceMonitor");
-            }
-        }
-
-        /// Change amount of reserved space. When new_size is greater than before, availability of free space is not checked.
-        void update(UInt64 new_size)
-        {
-            std::lock_guard lock(DiskSpaceMonitor::mutex);
-            reserves->reserved_bytes -= size;
-            size = new_size;
-            reserves->reserved_bytes += size;
-        }
-
-        UInt64 getSize() const
-        {
-            return size;
-        }
-
-        const DiskPtr & getDisk() const
-        {
-            return disk_ptr;
-        }
-
-        Reservation(UInt64 size_, DiskPtr disk_ptr_)
-            : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), disk_ptr(std::move(disk_ptr_)) ///@TODO_IGR ASK DiskSpaceReservedForMerge?
-        {
-            /// Just make reservation if size is 0
-            if (size == 0)
-            {
-                std::lock_guard lock(DiskSpaceMonitor::mutex);
-                reserves = &DiskSpaceMonitor::reserved[disk_ptr->getName()];
-                ++reserves->reservation_count;
-                valid = true;
-                return;
-            }
-            auto unreserved = disk_ptr->getAvailableSpace();
-
-            LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << unreserved << " , to reserve " << size);
-
-            std::lock_guard lock(DiskSpaceMonitor::mutex);
-
-            if (size > unreserved)
-            {
-                /// Can not reserve, not enough space
-                ///@TODO_IGR ASK metric_increment?
-                size = 0;
-                return;
-            }
-
-            reserves = &DiskSpaceMonitor::reserved[disk_ptr->getName()];
-            reserves->reserved_bytes += size;
-            ++reserves->reservation_count;
-            valid = true;
-        }
-
-        bool isValid() const { return valid; }
-
-    private:
-        UInt64 size;
-        CurrentMetrics::Increment metric_increment;
-        DiskReserve * reserves;
-        DiskPtr disk_ptr;
-        bool valid = false;
-    };
-
-    using ReservationPtr = std::unique_ptr<Reservation>;
-
-    static UInt64 getUnreservedFreeSpace(const DiskPtr & disk_ptr)
-    {
-        UInt64 res = disk_ptr->getAvailableSpace();
-
-        std::lock_guard lock(mutex);
-
-        auto & reserved_bytes = reserved[disk_ptr->getName()].reserved_bytes;
-
-        if (reserved_bytes > res)
-            res = 0;
-        else
-            res -= reserved_bytes;
-
-        return res;
     }
 
-    static std::vector<UInt64> getAllReservedSpace()
+    ~Reservation()
     {
-        std::lock_guard lock(mutex);
-        std::vector<UInt64> res;
-        for (const auto & reserve : reserved)
-            res.push_back(reserve.second.reserved_bytes);
-        return res;
+        try
+        {
+            std::lock_guard lock(Disk::mutex);
+            if (disk_ptr->reserved_bytes < size)
+            {
+                disk_ptr->reserved_bytes = 0;
+                LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
+            }
+            else
+            {
+                disk_ptr->reserved_bytes -= size;
+            }
+
+            if (disk_ptr->reservation_count == 0)
+            {
+                LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
+            }
+            else
+            {
+                --disk_ptr->reservation_count;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("~DiskSpaceMonitor");
+        }
     }
 
-    static std::vector<UInt64> getAllReservationCount()
+    /// Change amount of reserved space. When new_size is greater than before, availability of free space is not checked.
+    void update(UInt64 new_size)
     {
-        std::lock_guard lock(mutex);
-        std::vector<UInt64> res;
-        for (const auto & reserve : reserved)
-            res.push_back(reserve.second.reservation_count);
-        return res;
+        std::lock_guard lock(Disk::mutex);
+        disk_ptr->reserved_bytes -= size;
+        size = new_size;
+        disk_ptr->reserved_bytes += size;
     }
 
-    /// If not enough (approximately) space, do not reserve.
-    /// If not, returns valid pointer
-    ///@TODO_IGR ASK bla bla bla Reservation->operator bool()
-    static ReservationPtr tryToReserve(const DiskPtr & disk_ptr, UInt64 size)
+    UInt64 getSize() const
     {
-        return std::make_unique<Reservation>(size, disk_ptr);
+        return size;
     }
+
+    const DiskPtr & getDisk() const
+    {
+        return disk_ptr;
+    }
+
+    bool isValid() const { return valid; }
 
 private:
-    static std::map<String, DiskReserve> reserved;
-    static std::mutex mutex;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+    DiskPtr disk_ptr;
+    bool valid = false;
 };
 
 
@@ -293,64 +258,62 @@ private:
 };
 
 
-class StoragePolicy
+class Volume : public Space
 {
+    friend class StoragePolicy;
+
 public:
-    using Disks = std::vector<DiskPtr>;
-
-    class Volume
-    {
-        friend class StoragePolicy;
-
-    public:
-        Volume(String name_, std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
+    Volume(String name_, std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
             : max_data_part_size(max_data_part_size_), disks(std::move(disks_)), name(std::move(name_)) { }
 
-        Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
+    Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
 
-        Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks), name(other.name) { }
+    Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks), name(other.name) { }
 
-        Volume & operator=(const Volume & other)
-        {
-            disks = other.disks;
-            max_data_part_size = other.max_data_part_size;
-            last_used.store(0, std::memory_order_relaxed);
-            name = other.name;
-            return *this;
-        }
+    Volume & operator=(const Volume & other)
+    {
+        disks = other.disks;
+        max_data_part_size = other.max_data_part_size;
+        last_used.store(0, std::memory_order_relaxed);
+        name = other.name;
+        return *this;
+    }
 
-        Volume(Volume && other) noexcept
+    Volume(Volume && other) noexcept
             : max_data_part_size(other.max_data_part_size), disks(std::move(other.disks)), name(std::move(other.name)) { }
 
-        Volume & operator=(Volume && other) noexcept
-        {
-            disks = std::move(other.disks);
-            max_data_part_size = other.max_data_part_size;
-            last_used.store(0, std::memory_order_relaxed);
-            name = std::move(other.name);
-            return *this;
-        }
+    Volume & operator=(Volume && other) noexcept
+    {
+        disks = std::move(other.disks);
+        max_data_part_size = other.max_data_part_size;
+        last_used.store(0, std::memory_order_relaxed);
+        name = std::move(other.name);
+        return *this;
+    }
 
-        /// Returns valid reservation or null
-        DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+    /// Returns valid reservation or null
+    ReservationPtr reserve(UInt64 bytes) const override;
 
-        /// Returns valid reservation or null
-        DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
+    UInt64 getMaxUnreservedFreeSpace() const;
 
-        UInt64 getMaxUnreservedFreeSpace() const;
+    const String & getName() const override { return name; }
 
-        const String & getName() const { return name; }
+    UInt64 max_data_part_size = std::numeric_limits<decltype(max_data_part_size)>::max();
 
-        UInt64 max_data_part_size = std::numeric_limits<decltype(max_data_part_size)>::max();
+    Disks disks;
 
-        Disks disks;
+private:
+    mutable std::atomic<size_t> last_used = 0;
+    String name;
+};
 
-    private:
-        mutable std::atomic<size_t> last_used = 0;
-        String name;
-    };
+using VolumePtr = std::shared_ptr<const Volume>;
+using Volumes = std::vector<VolumePtr>;
 
-    using Volumes = std::vector<Volume>;
+
+class StoragePolicy : public Space
+{
+public:
 
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
            const DiskSelector & disks);
@@ -362,7 +325,7 @@ public:
 
         for (size_t i = 0; i != volumes.size(); ++i)
         {
-            volumes_names[volumes[i].getName()] = i;
+            volumes_names[volumes[i]->getName()] = i;
         }
     }
 
@@ -375,21 +338,20 @@ public:
 
     UInt64 getMaxUnreservedFreeSpace() const;
 
-    const String & getName() const { return name; }
+    const String & getName() const override { return name; }
+
+    /// Returns valid reservation or null
+    ReservationPtr reserve(UInt64 bytes) const override;
 
     /// Reserve space on any volume with priority > min_volume_index
-    /// Returns valid reservation or null
-    DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size, size_t min_volume_index=0) const;
-
-    /// Returns valid reservation or null
-    DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
+    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
 
     auto getVolumePriorityByDisk(const DiskPtr & disk_ptr) const
     {
         for (size_t i = 0; i != volumes.size(); ++i)
         {
             const auto & volume = volumes[i];
-            for (auto && disk : volume.disks)
+            for (auto && disk : volume->disks)
             {
                 if (disk->getName() == disk_ptr->getName())
                     return i;
@@ -400,13 +362,19 @@ public:
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size!!!
-    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() const;
+    ReservationPtr reserveOnMaxDiskWithoutReservation() const;
 
     const auto & getVolumes() const { return volumes; }
 
-    const auto & getVolume(size_t i) const { return volumes[i]; }
+    VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
 
-    const auto & getVolume(const String & volume_name) { return getVolume(volumes_names[volume_name]); }
+    VolumePtr getVolumeByName(const String & volume_name) const
+    {
+        auto it = volumes_names.find(volume_name);
+        if (it == volumes_names.end())
+            return {};
+        return getVolume(it->second);
+    }
 
 private:
     Volumes volumes;
@@ -428,5 +396,7 @@ public:
 private:
     std::map<String, StoragePolicyPtr> policies;
 };
+
+}
 
 }

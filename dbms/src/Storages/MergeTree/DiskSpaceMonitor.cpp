@@ -8,8 +8,17 @@
 namespace DB
 {
 
-std::map<String, DiskSpaceMonitor::DiskReserve> DiskSpaceMonitor::reserved;
-std::mutex DiskSpaceMonitor::mutex;
+namespace DiskSpace
+{
+
+std::mutex Disk::mutex;
+
+
+ReservationPtr Disk::reserve(UInt64 bytes) const
+{
+    return std::make_unique<Reservation>(bytes, std::static_pointer_cast<const Disk>(shared_from_this()));
+}
+
 
 DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, String default_path)
 {
@@ -71,6 +80,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         disks.emplace(default_disk_name, std::make_shared<const Disk>(default_disk_name, default_path, 0));
 }
 
+
 const DiskPtr & DiskSelector::operator[](const String & name) const
 {
     auto it = disks.find(name);
@@ -79,18 +89,21 @@ const DiskPtr & DiskSelector::operator[](const String & name) const
     return it->second;
 }
 
+
 bool DiskSelector::has(const String & name) const
 {
     auto it = disks.find(name);
     return it != disks.end();
 }
 
+
 void DiskSelector::add(const DiskPtr & disk)
 {
     disks.emplace(disk->getName(), disk);
 }
 
-StoragePolicy::Volume::Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
+
+Volume::Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
     : name(std::move(name_))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -157,7 +170,8 @@ StoragePolicy::Volume::Volume(String name_, const Poco::Util::AbstractConfigurat
                             " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserve(UInt64 expected_size) const
+
+ReservationPtr Volume::reserve(UInt64 expected_size) const
 {
     /// This volume can not store files which size greater than max_data_part_size
 
@@ -169,7 +183,8 @@ DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserve(UInt64 expected_
     for (size_t i = 0; i != disks_num; ++i)
     {
         size_t index = (start_from + i) % disks_num;
-        auto reservation = DiskSpaceMonitor::tryToReserve(disks[index], expected_size);
+
+        auto reservation = disks[index]->reserve(expected_size);
 
         if (reservation && reservation->isValid())
             return reservation;
@@ -177,37 +192,15 @@ DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserve(UInt64 expected_
     return {};
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
-{
-    /// This volume can not store files which size greater than max_data_part_size
-    /// Reserve and Warn it
 
-    if (expected_size > max_data_part_size)
-        LOG_WARNING(&Logger::get("StoragePolicy"), "Volume max_data_part_size limit exceed: " << expected_size);
-
-    size_t disks_num = disks.size();
-    for (size_t i = 0; i != disks_num; ++i)
-    {
-        if (disks[i] != disk)
-            continue;
-
-        auto reservation = DiskSpaceMonitor::tryToReserve(disks[i], expected_size);
-
-        if (reservation && reservation->isValid())
-            return reservation;
-        return {};
-    }
-    LOG_DEBUG(&Logger::get("StoragePolicy"), "Volume has no disk " << disk->getName());
-    return {};
-}
-
-UInt64 StoragePolicy::Volume::getMaxUnreservedFreeSpace() const
+UInt64 Volume::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
     for (const auto & disk : disks)
-        res = std::max(res, DiskSpaceMonitor::getUnreservedFreeSpace(disk));
+        res = std::max(res, disk->getUnreservedSpace());
     return res;
 }
+
 
 StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
                const DiskSelector & disks) : name(std::move(name_))
@@ -221,7 +214,7 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
 
     for (const auto & attr_name : keys)
     {
-        volumes.emplace_back(attr_name, config, volumes_prefix + "." + attr_name, disks);
+        volumes.push_back(std::make_shared<Volume>(attr_name, config, volumes_prefix + "." + attr_name, disks));
         volumes_names[attr_name] = volumes.size() - 1;
     }
 
@@ -232,7 +225,7 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
     std::set<String> disk_names;
     for (const auto & volume : volumes)
     {
-        for (const auto & disk : volume.disks)
+        for (const auto & disk : volume->disks)
         {
             if (disk_names.find(disk->getName()) != disk_names.end())
                 throw Exception("StoragePolicy disks must not be repeated: " + disk->getName(), ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -242,14 +235,16 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
     }
 }
 
-StoragePolicy::Disks StoragePolicy::getDisks() const
+
+Disks StoragePolicy::getDisks() const
 {
     Disks res;
     for (const auto & volume : volumes)
-        for (const auto & disk : volume.disks)
+        for (const auto & disk : volume->disks)
             res.push_back(disk);
     return res;
 }
+
 
 DiskPtr StoragePolicy::getAnyDisk() const
 {
@@ -260,61 +255,60 @@ DiskPtr StoragePolicy::getAnyDisk() const
         LOG_ERROR(&Logger::get("StoragePolicy"), "No volumes at StoragePolicy " << name);
         throw Exception("StoragePolicy has no Volumes. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
     }
-    if (volumes[0].disks.empty())
+    if (volumes[0]->disks.empty())
     {
         LOG_ERROR(&Logger::get("StoragePolicy"), "No Disks at volume 0 at StoragePolicy " << name);
         throw Exception("StoragePolicy Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
     }
-    return volumes[0].disks[0];
+    return volumes[0]->disks[0];
 }
+
 
 DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
-        for (auto && disk : volume.disks)
+        for (auto && disk : volume->disks)
             if (disk->getName() == disk_name)
                 return disk;
     return {};
 }
 
+
 UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
     for (const auto & volume : volumes)
-        res = std::max(res, volume.getMaxUnreservedFreeSpace());
+        res = std::max(res, volume->getMaxUnreservedFreeSpace());
     return res;
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_index) const
+
+ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_index) const
 {
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
-        auto reservation = volume.reserve(expected_size);
+        auto reservation = volume->reserve(expected_size);
         if (reservation)
             return reservation;
     }
     return {};
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
+
+ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
 {
-    for (const auto & volume : volumes)
-    {
-        auto reservation = volume.reserveAtDisk(disk, expected_size);
-        if (reservation)
-            return reservation;
-    }
-    return {};
+    return reserve(expected_size, 0);
 }
 
-DiskSpaceMonitor::ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservation() const
+
+ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservation() const
 {
     UInt64 max_space = 0;
     DiskPtr max_disk;
     for (const auto & volume : volumes)
     {
-        for (const auto &disk : volume.disks)
+        for (const auto &disk : volume->disks)
         {
             auto avail_space = disk->getAvailableSpace();
             if (avail_space > max_space)
@@ -324,8 +318,9 @@ DiskSpaceMonitor::ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservati
             }
         }
     }
-    return DiskSpaceMonitor::tryToReserve(max_disk, 0);
+    return max_disk->reserve(0);
 }
+
 
 StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
 {
@@ -348,9 +343,10 @@ StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfigura
     if (policies.find(default_storage_policy_name) == policies.end())
         policies.emplace(default_storage_policy_name,
                         std::make_shared<StoragePolicy>(default_storage_policy_name,
-                                                 StoragePolicy::Volumes{StoragePolicy::Volume{default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]},
-                                                                  std::numeric_limits<UInt64>::max()}}));
+                                                        Volumes{std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]},
+                                                                  std::numeric_limits<UInt64>::max())}));
 }
+
 
 const StoragePolicyPtr &  StoragePolicySelector::operator[](const String & name) const
 {
@@ -358,6 +354,8 @@ const StoragePolicyPtr &  StoragePolicySelector::operator[](const String & name)
     if (it == policies.end())
         throw Exception("Unknown StoragePolicy " + name, ErrorCodes::UNKNOWN_POLICY);
     return it->second;
+}
+
 }
 
 }

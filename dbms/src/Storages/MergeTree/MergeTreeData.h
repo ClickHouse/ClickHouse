@@ -329,7 +329,7 @@ public:
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
 
-    StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
+    DiskSpace::StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -494,8 +494,6 @@ public:
     /// Must be called with locked lockStructureForAlter().
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    void move(const String & part_name, const String & destination_disk_name) override;
-
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
@@ -537,7 +535,7 @@ public:
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -545,8 +543,16 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
-    /// Moves partition to specified space
+private:
+    /// Moves part to specified space
+    void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space);
+
+public:
+    /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & context);
+
+    /// Moves partition to specified Volume
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, const Context & context);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -589,19 +595,17 @@ public:
     }
 
 
-    String getFullPathOnDisk(const DiskPtr & disk) const;
+    String getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const;
 
     Strings getDataPaths() const override;
 
-    DiskSpaceMonitor::ReservationPtr reserveSpace(UInt64 expected_size);
+    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
 
-    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(const DiskPtr & disk, UInt64 expected_size);
-
-    DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
+    DiskSpace::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return storage_policy->reserveOnMaxDiskWithoutReservation(); }
+    DiskSpace::ReservationPtr reserveOnMaxDiskWithoutReservation() { return storage_policy->reserveOnMaxDiskWithoutReservation(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -680,7 +684,7 @@ protected:
     String database_name;
     String table_name;
 
-    StoragePolicyPtr storage_policy;
+    DiskSpace::StoragePolicyPtr storage_policy;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

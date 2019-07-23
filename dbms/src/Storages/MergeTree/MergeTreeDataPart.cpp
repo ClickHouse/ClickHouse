@@ -134,7 +134,7 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & disk_, const String & name_)
+MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
@@ -143,7 +143,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & d
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
@@ -524,7 +524,7 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
-void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpaceMonitor::ReservationPtr & reservation) const
+void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const
 {
     auto & reserved_disk = reservation->getDisk();
     if (reserved_disk->getName() == disk->getName())

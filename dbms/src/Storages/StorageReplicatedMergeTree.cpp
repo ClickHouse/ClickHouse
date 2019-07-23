@@ -1050,7 +1050,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_merge);
+    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_merge);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1181,7 +1181,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_result);
+    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_result);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -3348,8 +3348,24 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 break;
 
             case PartitionCommand::MOVE_PARTITION:
-                movePartitionToDisk(command.partition, command.space_to_move_name, query_context);
-                break;
+            {
+                switch (command.move_destination_type)
+                {
+                    case PartitionCommand::MoveDestinationType::DISK:
+                        movePartitionToDisk(command.partition, command.move_destination_name, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::VOLUME:
+                        movePartitionToVolume(command.partition, command.move_destination_name, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::NONE:
+                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
+                        break;
+                }
+
+            }
+            break;
 
             case PartitionCommand::REPLACE_PARTITION:
             {
@@ -3545,7 +3561,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
     String source_dir = "detached/";
 
-    std::map<String, DiskPtr> name_to_disk;
+    std::map<String, DiskSpace::DiskPtr> name_to_disk;
 
     /// Let's compose a list of parts that should be added.
     Strings parts;
@@ -3560,7 +3576,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
         std::set<String> part_names;
         const auto disks = storage_policy->getDisks();
-        for (const DiskPtr & disk : disks)
+        for (const DiskSpace::DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);
             for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir);
