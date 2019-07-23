@@ -1,14 +1,14 @@
 #pragma once
 
-#include <common/StackTrace.h>
+#include <dlfcn.h>
+#include <common/unaligned.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -21,13 +21,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class FunctionSymbolizeTrace : public IFunction
+class FunctionSymbolizeAddress : public IFunction
 {
 public:
-    static constexpr auto name = "symbolizeTrace";
+    static constexpr auto name = "symbolizeAddress";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionSymbolizeTrace>();
+        return std::make_shared<FunctionSymbolizeAddress>();
     }
 
     String getName() const override
@@ -44,20 +44,13 @@ public:
     {
         if (arguments.size() != 1)
             throw Exception("Function " + getName() + " needs exactly one argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                + toString(arguments.size()) + ".", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const auto array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        const auto & type = arguments[0].type;
 
-        if (!array_type)
-            throw Exception("The only argument for function " + getName() + " must be array. Found "
-                            + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        DataTypePtr nested_type = array_type->getNestedType();
-
-        if (!WhichDataType(nested_type).isUInt64())
-            throw Exception("The only argument for function " + getName() + " must be array of UInt64. Found "
-                            + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!WhichDataType(type.get()).isUInt64())
+            throw Exception("The only argument for function " + getName() + " must be UInt64. Found "
+                + type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -67,37 +60,25 @@ public:
         return true;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnPtr column = block.getByPosition(arguments[0]).column;
-        const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column.get());
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
+        const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
-        if (!column_array)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+        if (!column_concrete)
+            throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        const ColumnPtr data_ptr = column_array->getDataPtr();
-        const ColumnVector<UInt64> * data_vector = checkAndGetColumn<ColumnVector<UInt64>>(&*data_ptr);
-
-        const typename ColumnVector<UInt64>::Container & data = data_vector->getData();
-        const ColumnArray::Offsets & offsets = column_array->getOffsets();
-
+        const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
-        StackTrace::Frames frames;
-        size_t current_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t current_size = 0;
-            for (; current_size < frames.size() && current_offset + current_size < offsets[i]; ++current_size)
-            {
-                frames[current_size] = reinterpret_cast<void *>(data[current_offset + current_size]);
-            }
-
-            std::string backtrace = StackTrace(frames.begin(), frames.begin() + current_size).toString();
-            result_column->insertDataWithTerminatingZero(backtrace.c_str(), backtrace.length() + 1);
-
-            current_offset = offsets[i];
+            void * addr = unalignedLoad<void *>(&data[i]);
+            Dl_info info;
+            if (0 == dladdr(addr, &info) && info.dli_sname)
+                result_column->insertDataWithTerminatingZero(info.dli_sname, strlen(info.dli_sname) + 1);
+            else
+                result_column->insertDefault();
         }
 
         block.getByPosition(result).column = std::move(result_column);
