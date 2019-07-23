@@ -32,12 +32,12 @@ The query response contains the `result` column with a single row. The row has a
 - 0 - The data in the table is corrupted.
 - 1 - The data maintains integrity.
 
-The `CHECK TABLE` query works for the following table engines:
+The `CHECK TABLE` query supports the following table engines:
 
 - [Log](../operations/table_engines/log.md)
 - [TinyLog](../operations/table_engines/tinylog.md)
 - [StripeLog](../operations/table_engines/stripelog.md)
-- [MergeTree](../operations/table_engines/mergetree.md)
+- [MergeTree family](../operations/table_engines/mergetree.md)
 
 The `*Log` engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
