@@ -537,9 +537,9 @@ ClickHouse doesn't directly support syntax with commas, so we don't recommend us
 
 #### Strictness {#select-join-strictness}
 
-- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior for standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the standard `JOIN` behavior in SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
-- `ASOF` — For joining sequences with a non-exact match. Usage of `ASOF JOIN` is described below.
+- `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
 **ASOF JOIN Usage**
 
@@ -556,9 +556,9 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` takes the timestamp of a user event from `table_1` and finds in `table_2` an event, which timestamp is closest (equal or less) to the timestamp of the event from `table_1`. In our example, `event_1_1` can be joined with the `event_2_1`, `event_1_2` can be joined with `event_2_3`, `event_2_2` cannot be joined.
+`ASOF JOIN` takes the timestamp of a user event from `table_1` and finds an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
 
-Tables for `ASOF JOIN` must have the ordered sequence column. This column cannot be alone in a table. You can use `UInt32`, `UInt64`, `Float32`, `Float64`, `Date` and `DateTime` data types for this column.
+Tables for `ASOF JOIN` must have an ordered sequence column. This column cannot be alone in a table. You can use `UInt32`, `UInt64`, `Float32`, `Float64`, `Date`, and `DateTime` data types for this column.
 
 Use the following syntax for `ASOF JOIN`:
 
@@ -570,8 +570,8 @@ SELECT expression_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... eq
 
 Implementation details:
 
-- The `asof_column` should be the last in the `USING` clause.
-- The `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
+- `asof_column` should be last in the `USING` clause.
+- `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
