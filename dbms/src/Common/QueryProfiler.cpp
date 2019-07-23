@@ -20,8 +20,13 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
-    void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * /* info */, void * context)
+    void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
+        /// Quickly drop if signal handler is called too frequently.
+        /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
+        if (info && info->si_overrun > 0)
+            return;
+
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
