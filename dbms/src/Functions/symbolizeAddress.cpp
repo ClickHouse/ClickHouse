@@ -74,6 +74,8 @@ public:
         {
             void * addr = unalignedLoad<void *>(&data[i]);
             Dl_info info;
+            /// This is unsafe. The function dladdr may loop infinitely.
+            /// Reproduce with query: SELECT DISTINCT symbolizeAddress(number) FROM system.numbers
             if (dladdr(addr, &info) && info.dli_sname)
                 result_column->insertDataWithTerminatingZero(info.dli_sname, strlen(info.dli_sname) + 1);
             else
