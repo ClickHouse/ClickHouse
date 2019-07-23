@@ -3,22 +3,22 @@
 `SELECT` осуществляет выборку данных.
 
 ```sql
-    [WITH expr_list|(subquery)]
-    SELECT [DISTINCT] expr_list
-    [FROM [db.]table | (subquery) | table_function] [FINAL]
-    [SAMPLE sample_coeff]
-    [ARRAY JOIN ...]
-    [GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
-    [PREWHERE expr]
-    [WHERE expr]
-    [GROUP BY expr_list] [WITH TOTALS]
-    [HAVING expr]
-    [ORDER BY expr_list]
-    [LIMIT [n, ]m]
-    [UNION ALL ...]
-    [INTO OUTFILE filename]
-    [FORMAT format]
-    [LIMIT [offset_value, ]n BY columns]
+[WITH expr_list|(subquery)]
+SELECT [DISTINCT] expr_list
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH TOTALS]
+[HAVING expr]
+[ORDER BY expr_list]
+[LIMIT [n, ]m]
+[UNION ALL ...]
+[INTO OUTFILE filename]
+[FORMAT format]
+[LIMIT [offset_value, ]n BY columns]
 ```
 
 Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
@@ -34,7 +34,17 @@
 3. Результаты выражений нельзя переиспользовать во вложенных запросах
 В дальнейшем, результаты выражений можно использовать в секции SELECT.
 
-Пример 1: Выкидывание выражения sum(bytes) из списка колонок в SELECT
+Пример 1: Использование константного выражения как "переменной"
+```
+WITH '2019-08-01 15:23:00' as ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound
+```
+
+Пример 2: Выкидывание выражения sum(bytes) из списка колонок в SELECT
 ```
 WITH sum(bytes) as s
 SELECT
@@ -45,19 +55,9 @@ GROUP BY table
 ORDER BY s
 ```
 
-Пример 2: Использование константного выражения как "переменной"
-```
-WITH '2019-08-01 15:23:00' as ts_upper_bound
-SELECT *
-FROM hits
-WHERE
-    EventDate = toDate(ts_upper_bound) AND
-    EventTime <= ts_upper_bound
-```
-
 Пример 3: Использование результатов скалярного подзапроса
-(запрос покажет, TOP 10 самых больших таблиц)
 ```
+/* запрос покажет TOP 10 самых больших таблиц */
 WITH
     (
         SELECT sum(bytes)
@@ -65,7 +65,7 @@ WITH
         WHERE active
     ) AS total_disk_usage
 SELECT
-    (sum(bytes) / total_disk_consumed) * 100 AS table_disk_usage,
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
     table
 FROM system.parts
 GROUP BY table
@@ -73,7 +73,8 @@ ORDER BY table_disk_usage DESC
 LIMIT 10
 ```
 
-Для того чтобы использовать выражение в подзапросе, надо его продублировать:
+Пример 4: Переиспользование выражения
+В настоящий момент, переиспользование выражения из секции WITH внутри подзапроса возможно только через дублирование.
 ```
 WITH ['hello'] AS hello
 SELECT
