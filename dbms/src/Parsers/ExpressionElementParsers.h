@@ -56,7 +56,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-
 /// Just *
 class ParserAsterisk : public IParserBase
 {
@@ -64,7 +63,6 @@ protected:
     const char * getName() const { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
-
 
 /** Something like t.* or db.table.*
   */
@@ -75,6 +73,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** COLUMNS('<regular expression>')
+  */
+class ParserColumnsMatcher : public IParserBase
+{
+protected:
+    const char * getName() const { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
 
 /** A function, for example, f(x, y + 1, g(z)).
   * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.

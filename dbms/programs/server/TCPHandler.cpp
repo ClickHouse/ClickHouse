@@ -384,7 +384,10 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     {
         const auto & db_and_table = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-            sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        {
+            if (!db_and_table.second.empty())
+                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        }
     }
 
     /// Send block to the client - table structure.

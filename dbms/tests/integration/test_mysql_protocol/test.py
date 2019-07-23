@@ -43,6 +43,13 @@ def golang_container():
     yield docker.from_env().containers.get(cluster.project_name + '_golang1_1')
 
 
+@pytest.fixture(scope='module')
+def php_container():
+    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'php-mysqlnd', 'docker_compose.yml')
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
+
+
 def test_mysql_client(mysql_client, server_address):
     # type: (Container, str) -> None
     code, (stdout, stderr) = mysql_client.exec_run('''
@@ -138,3 +145,10 @@ def test_golang_client(server_address, golang_container):
     with open(os.path.join(SCRIPT_DIR, 'clients', 'golang', '0.reference')) as fp:
         reference = fp.read()
         assert stdout == reference
+
+
+def test_php_client(server_address, php_container):
+    # type: (str, Container) -> None
+    code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'tables\n'
