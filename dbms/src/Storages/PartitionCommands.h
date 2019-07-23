@@ -50,16 +50,16 @@ struct PartitionCommand
     /// For FREEZE PARTITION
     String with_name;
 
-    enum SpaceToMove
+    enum MoveDestinationType
     {
         DISK,
         VOLUME,
         NONE,
     };
 
-    SpaceToMove space_to_move = SpaceToMove::NONE;
+    MoveDestinationType move_destination_type = MoveDestinationType::NONE;
 
-    String space_to_move_name;
+    String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
 };

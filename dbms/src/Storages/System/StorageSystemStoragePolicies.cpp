@@ -49,14 +49,14 @@ BlockInputStreams StorageSystemStoragePolicies::read(
         for (size_t i = 0; i != volumes.size(); ++i)
         {
             col_policy_name_mut->insert(name);
-            col_volume_name_mut->insert(volumes[i].getName());
+            col_volume_name_mut->insert(volumes[i]->getName());
             col_priority_mut->insert(i);
             Array disks;
-            disks.reserve(volumes[i].disks.size());
-            for (const auto & disk_ptr : volumes[i].disks)
+            disks.reserve(volumes[i]->disks.size());
+            for (const auto & disk_ptr : volumes[i]->disks)
                 disks.push_back(disk_ptr->getName());
             col_disks_mut->insert(disks);
-            col_max_part_size_mut->insert(volumes[i].max_data_part_size);
+            col_max_part_size_mut->insert(volumes[i]->max_data_part_size);
         }
     }
 

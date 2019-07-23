@@ -40,16 +40,16 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         switch (command_ast->move_destination_type)
         {
             case ASTAlterCommand::MoveDestinationType::DISK:
-                res.space_to_move = PartitionCommand::SpaceToMove::DISK;
+                res.move_destination_type = PartitionCommand::MoveDestinationType::DISK;
                 break;
             case ASTAlterCommand::MoveDestinationType::VOLUME:
-                res.space_to_move = PartitionCommand::SpaceToMove::VOLUME;
+                res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
                 break;
             case ASTAlterCommand::MoveDestinationType::NONE:
-                res.space_to_move = PartitionCommand::SpaceToMove::NONE;
+                res.move_destination_type = PartitionCommand::MoveDestinationType::NONE;
                 break;
         }
-        res.space_to_move_name = command_ast->move_destination_name;
+        res.move_destination_name = command_ast->move_destination_name;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)

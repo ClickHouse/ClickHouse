@@ -273,7 +273,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    const DiskSpaceMonitor::ReservationPtr reservation,
+    const DiskSpace::ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
 
