@@ -78,7 +78,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         struct sigevent sev;
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
+
+#if defined(__FreeBSD__)
+        sev._sigev_un._threadid = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
+#endif
+
         if (timer_create(clock_type, &sev, &timer_id))
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
 
