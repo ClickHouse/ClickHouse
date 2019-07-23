@@ -41,8 +41,6 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
-
-    initQueryProfiler();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -124,6 +122,7 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 #endif
 
     initPerformanceCounters();
+    initQueryProfiler();
 
     thread_state = ThreadState::AttachedToQuery;
 }
@@ -155,7 +154,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    if (!global_context->hasTraceCollector())
+    if (!global_context || !global_context->hasTraceCollector())
         return;
 
     const auto & settings = query_context->getSettingsRef();
