@@ -152,3 +152,7 @@ def test_php_client(server_address, php_container):
     code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == 'tables\n'
+
+    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'tables\n'
