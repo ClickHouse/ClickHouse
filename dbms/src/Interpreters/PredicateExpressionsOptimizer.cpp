@@ -138,7 +138,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     const std::vector<IdentifierWithQualifier> & dependencies,
     OptimizeKind & optimize_kind)
 {
-    if (!subquery || subquery->final() || subquery->limitBy() || subquery->limitLength() || subquery->with())
+    if (!subquery ||
+        (!settings.allow_push_predicate_to_final_subquery && subquery->final()) ||
+        subquery->limitBy() || subquery->limitLength() ||
+        subquery->with())
         return false;
     else
     {
