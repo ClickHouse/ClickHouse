@@ -921,8 +921,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                // TODO
-                throw DB::Exception("Not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                dropDetached(command.partition, command.part, context);
+                break;
 
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, context);
@@ -993,6 +993,34 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
+void StorageMergeTree::dropDetached(const ASTPtr & partition, bool part, const Context & /*context*/)
+{
+    if (!part)      // TODO
+        throw DB::Exception("DROP DETACHED PARTITION is not implemented, use DROP DETACHED PART", ErrorCodes::NOT_IMPLEMENTED);
+
+    String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    Poco::Path part_path(part_id);
+    const bool file_zero_depth = part_path.isFile()      && part_path.depth() == 0 && part_path.getFileName() != "..";
+    const bool dir_zero_depth  = part_path.isDirectory() && part_path.depth() == 1 && part_path.directory(0)  != "..";
+    const bool zero_depth = file_zero_depth || dir_zero_depth;
+    if (!part_path.isRelative() || !zero_depth)
+        throw DB::Exception("Part name must contain exactly one path component: name of detached part", ErrorCodes::INCORRECT_FILE_NAME);
+
+    part_id = part_path.isFile() ? part_path.getFileName() : part_path.directory(0);
+    Poco::Path base_dir(full_path + "detached");
+    Poco::File detached_part_dir(Poco::Path(base_dir, part_id));
+    if (!detached_part_dir.exists())
+        throw DB::Exception("Detached part \"" + part_id + "\" not found" , ErrorCodes::INCORRECT_FILE_NAME);
+
+    DetachedPartInfo info;
+    DetachedPartInfo::tryParseDetachedPartName(part_id, &info, format_version);
+    MergeTreeDataPart detached_part(*this, part_id, info);
+    detached_part.relative_path = "detached/" + part_id;
+
+    // TODO make sure it's ok
+    detached_part.remove();
+}
+
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
@@ -1039,6 +1067,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         LOG_DEBUG(log, "Checking data");
         MutableDataPartPtr part = loadPartAndFixMetadata(source_path);
 
+        // TODO fix race with DROP DETACHED PARTITION
         LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
         renameTempPartAndAdd(part, &increment);
 
