@@ -211,7 +211,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
 void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
     Node * config_root = getRootNode(&*config);
-    const Node * with_root = getRootNode(&*with);
+    Node * with_root = getRootNode(&*with);
 
     if (config_root->nodeName() != with_root->nodeName())
         throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
