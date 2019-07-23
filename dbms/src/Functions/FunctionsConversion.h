@@ -2018,7 +2018,7 @@ private:
         {
             /// Conversion from Nullable to non-Nullable.
 
-            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [wrapper, skip_not_null_check] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
 
