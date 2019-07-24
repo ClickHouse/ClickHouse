@@ -2,6 +2,7 @@
 
 #include <Common/Arena.h>
 #include <Core/SettingsCommon.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -48,6 +49,7 @@ private:
     /// Params
     bool overflow_row;
     ExpressionActionsPtr expression;
+    ExpressionActions::Cache cache;
     String filter_column_name;
     TotalsMode totals_mode;
     double auto_include_threshold;

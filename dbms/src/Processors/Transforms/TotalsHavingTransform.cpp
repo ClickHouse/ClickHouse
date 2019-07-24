@@ -168,9 +168,9 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     {
         /// Compute the expression in HAVING.
         auto & cur_header = final ? finalized_header : getInputPort().getHeader();
-        auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
-        expression->execute(finalized_block);
-        auto columns = finalized_block.getColumns();
+        size_t num_rows = finalized.getNumRows();
+        auto columns = finalized.detachColumns();
+        expression->execute(cur_header, columns, num_rows, cache);
 
         ColumnPtr filter_column_ptr = columns[filter_column_pos];
         ConstantFilterDescription const_filter_description(*filter_column_ptr);
@@ -209,7 +209,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             }
         }
 
-        auto num_rows = columns.front()->size();
+        num_rows = columns.front()->size();
         chunk.setColumns(std::move(columns), num_rows);
     }
 
