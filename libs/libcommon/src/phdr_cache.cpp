@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <vector>
 #include <cstddef>
-#include <exception>
+#include <stdexcept>
 
 namespace
 {
