@@ -1,5 +1,7 @@
 SELECT 6103;
 
+SELECT sleep(1);
+
 SYSTEM FLUSH LOGS;
 
 SELECT count(query) > 0
