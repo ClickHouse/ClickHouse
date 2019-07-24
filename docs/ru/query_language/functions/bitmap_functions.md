@@ -1,6 +1,6 @@
 # Функции для битмапов
 
-## bitmapBuild
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Создаёт битмап из массива целочисленных значений.
 
@@ -48,6 +48,37 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapContains {#bitmap_functions-bitmapcontains}
+
+Проверяет вхождение элемента в битовый массив.
+
+```
+bitmapContains(haystack, needle)
+```
+
+**Параметры**
+
+- `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
+- `needle` – значение, которое функция ищет. Тип — [UInt32](../../data_types/int_uint.md).
+
+**Возвращаемые значения**
+
+- 0 — если в `haystack` нет `needle`.
+- 1 — если в `haystack` есть `needle`.
+
+Тип — `UInt8`.
+
+**Пример**
+
+``` sql
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+```
+```text
+┌─res─┐
+│  1  │
+└─────┘
+```
+
 ## bitmapHasAny
 
 Проверяет, имеют ли два битмапа хотя бы один общий элемент.
@@ -55,6 +86,8 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 bitmapHasAny(bitmap1, bitmap2)
 ```
+
+Если вы уверены, что `bitmap2` содержит строго один элемент, используйте функцию  [bitmapContains](#bitmap_functions-bitmapcontains). Она работает эффективнее.
 
 **Параметры**
 
