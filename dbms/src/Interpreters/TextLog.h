@@ -34,5 +34,4 @@ class TextLog : public SystemLog<TextLogElement>
     using SystemLog<TextLogElement>::SystemLog;
 };
 
-
 }
