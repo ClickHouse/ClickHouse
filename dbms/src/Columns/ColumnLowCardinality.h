@@ -194,6 +194,8 @@ public:
 
     ColumnPtr countKeys() const;
 
+    bool containsNull() const;
+
     class Index
     {
     public:
@@ -223,6 +225,8 @@ public:
         void attachPositions(ColumnPtr positions_);
 
         void countKeys(ColumnUInt64::Container & counts) const;
+
+        bool containsDefault() const;
 
     private:
         WrappedPtr positions;
