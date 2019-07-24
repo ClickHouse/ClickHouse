@@ -377,6 +377,9 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 namespace
 {
 
+/// There are two interfaces which can be used to execute expression actions: on block or on vector of columns.
+/// The second one uses cache with headers from each step and assumes that blocks have the same structure.
+
 class ActionsOnBlock
 {
 public:
