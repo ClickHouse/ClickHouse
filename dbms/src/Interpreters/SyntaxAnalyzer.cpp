@@ -482,8 +482,8 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const NameSet & source_columns, const String & current_database, bool join_use_nulls)
+void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
+                          const Aliases & aliases, const String & current_database, bool join_use_nulls)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -505,7 +505,11 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     }
     else if (table_join.on_expression)
     {
-        CollectJoinOnKeysVisitor::Data data{analyzed_join};
+        NameSet joined_columns;
+        for (const auto & col : analyzed_join.columns_from_joined_table)
+            joined_columns.insert(col.original_name);
+
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, joined_columns, aliases};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
@@ -662,7 +666,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, context.getCurrentDatabase(), settings.join_use_nulls);
+        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases,
+                             context.getCurrentDatabase(), settings.join_use_nulls);
     }
 
     return std::make_shared<const SyntaxAnalyzerResult>(result);
