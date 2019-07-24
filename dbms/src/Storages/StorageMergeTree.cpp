@@ -256,10 +256,10 @@ void StorageMergeTree::alter(
         {
             auto & storage_ast = ast.as<ASTStorage &>();
             if (!new_changes.empty())
-                storage_ast.settings->changes.insert(storage_ast.settings->changes.begin(), new_changes.begin(), new_changes.end());
+                storage_ast.settings->changes.insert(storage_ast.settings->changes.end(), new_changes.begin(), new_changes.end());
         };
 
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
         setColumns(std::move(new_columns));
         settings.applyChanges(new_changes);
         return;

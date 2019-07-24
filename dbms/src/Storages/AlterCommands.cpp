@@ -317,7 +317,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == MODIFY_SETTING)
     {
-        changes.insert(changes.begin(), settings_changes.begin(), settings_changes.end());
+        changes.insert(changes.end(), settings_changes.begin(), settings_changes.end());
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
@@ -344,7 +344,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, changes);
+            command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);

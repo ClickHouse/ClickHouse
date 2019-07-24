@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -28,6 +29,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
+    ParserKeyword s_modify_setting("MODIFY SETTING");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -63,6 +65,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserList parser_assignment_list(
         std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
+    ParserSetQuery parser_settings(true);
 
     if (s_add_column.ignore(pos, expected))
     {
@@ -288,6 +291,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parser_exp_elem.parse(pos, command->ttl, expected))
             return false;
         command->type = ASTAlterCommand::MODIFY_TTL;
+    }
+    else if (s_modify_setting.ignore(pos, expected))
+    {
+        if (!parser_settings.parse(pos, command->settings_changes, expected))
+            return false;
+        command->type = ASTAlterCommand::MODIFY_SETTING;
     }
     else
         return false;
