@@ -17,7 +17,7 @@ INSERT INTO indexed_table SELECT toDateTime('2019-05-27 10:00:00') + number % 10
 INSERT INTO indexed_table
 SELECT
     toDateTime('2019-05-27 10:00:00') + number % 100,
-    concat('hhhhhhhhhhhhhhhhhhhhhhhhh', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'yyyyyyyyyyyyyyyyyyyyyyyyyy', reinterpretAsString(rand()))
+    concat('hhhhhhhhhhhhhhhhhhhhhhhhh', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'yyyyyyyyyyyyyyyyyyyyyyyyyy', toString(rand()))
 FROM numbers(1000);
 
 OPTIMIZE TABLE indexed_table FINAL;
@@ -46,7 +46,7 @@ INSERT INTO another_indexed_table SELECT toDateTime('2019-05-27 10:00:00') + num
 INSERT INTO another_indexed_table
 SELECT
   toDateTime('2019-05-27 10:00:00') + number % 100,
-  concat('hhhhhhhhhhhhhhhhhhhhhhhhh', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'yyyyyyyyyyyyyyyyyyyyyyyyyy', reinterpretAsString(rand()))
+  concat('hhhhhhhhhhhhhhhhhhhhhhhhh', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'yyyyyyyyyyyyyyyyyyyyyyyyyy', toString(rand()))
   FROM numbers(1000);
 
 OPTIMIZE TABLE another_indexed_table FINAL;
