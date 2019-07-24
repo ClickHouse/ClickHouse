@@ -52,8 +52,10 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
     if (-1 == pipe_size)
         throwFromErrno("Cannot get pipe capacity", ErrorCodes::CANNOT_FCNTL);
     for (errno = 0; errno != EPERM && pipe_size <= 1048576; pipe_size *= 2)
-        if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETPIPE_SZ, pipe_size) && errno != EPERM)
-            throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size), ErrorCodes::CANNOT_FCNTL);
+        if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETPIPE_SZ, pipe_size * 2) && errno != EPERM)
+            throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
+
+    LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(pipe_size));
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
 }
