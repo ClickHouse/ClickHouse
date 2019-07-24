@@ -1,6 +1,5 @@
-#include "config_formats.h"
+#include "ParquetBlockOutputStream.h"
 #if USE_PARQUET
-#    include "ParquetBlockOutputStream.h"
 
 // TODO: clean includes
 #    include <Columns/ColumnDecimal.h>
