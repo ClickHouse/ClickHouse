@@ -28,6 +28,7 @@ public:
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_TTL,
+        MODIFY_SETTING,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -69,7 +70,7 @@ public:
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
      */
-     ASTPtr index;
+    ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
@@ -87,6 +88,9 @@ public:
 
     /// For MODIFY TTL query
     ASTPtr ttl;
+
+    /// FOR MODIFY_SETTING
+    ASTPtr settings_changes;
 
     bool detach = false;        /// true for DETACH PARTITION
 

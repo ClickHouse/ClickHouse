@@ -629,7 +629,7 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const MergeTreeSettings settings;
+    MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

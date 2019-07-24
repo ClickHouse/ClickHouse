@@ -87,6 +87,7 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int BAD_TTL_EXPRESSION;
+    extern const int UNKNOWN_SETTING;
 }
 
 
@@ -1174,7 +1175,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+    SettingsChanges new_changes;
+    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
     if (getIndices().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
@@ -1261,6 +1263,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
             new_columns, new_indices, /* only_check = */ true);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
+
+    for (const auto & setting : new_changes)
+    {
+        if (!hasSetting(setting.name))
+            throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
+
+    }
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

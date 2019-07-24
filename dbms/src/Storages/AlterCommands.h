@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -27,6 +28,7 @@ struct AlterCommand
         DROP_INDEX,
         MODIFY_TTL,
         UKNOWN_TYPE,
+        MODIFY_SETTING,
     };
 
     Type type = UKNOWN_TYPE;
@@ -71,6 +73,9 @@ struct AlterCommand
     /// For ADD and MODIFY
     CompressionCodecPtr codec;
 
+    /// For MODIFY SETTING
+    SettingsChanges settings_changes;
+
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
@@ -84,7 +89,7 @@ struct AlterCommand
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-            ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
@@ -95,11 +100,12 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
 
-    /// For storages that don't support MODIFY_ORDER_BY.
-    void apply(ColumnsDescription & columns_description) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
+        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
+
+    /// Used for primiteive table engines, where only columns metadata can be changed
+    void applyForColumnsOnly(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);
     bool isMutable() const;

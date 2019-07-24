@@ -12,6 +12,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Common/SettingsChanges.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -129,6 +130,9 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    /// Check storage has setting
+    virtual bool hasSetting(const String & setting_name) const;
+
 protected: /// still thread-unsafe part.
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
     void setIndices(IndicesDescription indices_);
@@ -136,7 +140,6 @@ protected: /// still thread-unsafe part.
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
-
 private:
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};

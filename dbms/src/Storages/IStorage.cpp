@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
+    extern const int SETTINGS_ARE_NOT_SUPPORTED;
 }
 
 IStorage::IStorage(ColumnsDescription columns_)
@@ -292,6 +293,11 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
+bool IStorage::hasSetting(const String & /* setting_name */) const
+{
+    throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
+}
+
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
 {
     TableStructureReadLockHolder result;
@@ -362,7 +368,7 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto new_columns = getColumns();
     auto new_indices = getIndices();
-    params.apply(new_columns);
+    params.applyForColumnsOnly(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }

@@ -350,7 +350,7 @@ void StorageDistributed::alter(
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
-    params.apply(new_columns);
+    params.applyForColumnsOnly(new_columns);
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
