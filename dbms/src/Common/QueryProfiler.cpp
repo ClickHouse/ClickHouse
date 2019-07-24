@@ -9,6 +9,12 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event QueryProfilerCannotWriteTrace;
+}
+
 namespace DB
 {
 
@@ -31,7 +37,10 @@ namespace
                 ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
                 if ((-1 == res || 0 == res) && errno != EINTR)
+                {
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerCannotWriteTrace);
                     break;  /// Discard
+                }
 
                 if (res > 0)
                     bytes_written += res;
