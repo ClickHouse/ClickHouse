@@ -209,7 +209,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
