@@ -16,6 +16,33 @@ extern LazyPipe trace_pipe;
 
 namespace
 {
+    /** Write to file descriptor but drop the data if write would block or fail.
+      * To use within signal handler. Motivating example: a signal handler invoked during execution of malloc
+      *  should not block because some mutex (or even worse - a spinlock) may be held.
+      */
+    class WriteBufferDiscardOnFailure : public WriteBufferFromFileDescriptor
+    {
+    protected:
+        void nextImpl() override
+        {
+            size_t bytes_written = 0;
+            while (bytes_written != offset())
+            {
+                ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+
+                if ((-1 == res || 0 == res) && errno != EINTR)
+                    break;  /// Discard
+
+                if (res > 0)
+                    bytes_written += res;
+            }
+        }
+
+    public:
+        using WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor;
+        ~WriteBufferDiscardOnFailure() override {}
+    };
+
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
@@ -33,7 +60,7 @@ namespace
                                     sizeof(StackTrace) + // collected stack trace
                                     sizeof(TimerType); // timer type
         char buffer[buf_size];
-        WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1], buf_size, buffer);
+        WriteBufferDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
