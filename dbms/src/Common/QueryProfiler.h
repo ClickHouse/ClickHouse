@@ -34,7 +34,7 @@ template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(const Int32 thread_id, const int clock_type, const UInt32 period, const int pause_signal = SIGALRM);
+    QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal = SIGALRM);
 
     ~QueryProfilerBase();
 
