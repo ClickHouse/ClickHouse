@@ -5,6 +5,8 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/OutputStreamToOutputFormat.h>
 
 
 namespace DB
@@ -18,14 +20,14 @@ namespace ErrorCodes
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
 }
 
-
-const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
-{
-    auto it = dict.find(name);
-    if (dict.end() != it)
-        return it->second;
-    throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
-}
+//
+//const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
+//{
+//    auto it = dict.find(name);
+//    if (dict.end() != it)
+//        return it->second;
+//    throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
+//}
 
 const FormatFactory::ProcessorCreators & FormatFactory::getProcessorCreators(const String & name) const
 {
@@ -81,36 +83,30 @@ BlockInputStreamPtr FormatFactory::getInput(
     UInt64 rows_portion_size,
     ReadCallback callback) const
 {
-    const auto & input_getter = getCreators(name).first;
-    if (!input_getter)
-        throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
-
-    const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getInputFormatSetting(settings);
-
-    return input_getter(
-        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
+    return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
 {
-    const auto & output_getter = getCreators(name).second;
-    if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
-
-    const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getOutputFormatSetting(settings);
+    auto format = getOutputFormat(name, buf, sample, context);
 
     /** Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    return std::make_shared<MaterializingBlockOutputStream>(
-        output_getter(buf, sample, context, format_settings), sample);
+    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format));
 }
 
 
-InputFormatPtr FormatFactory::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+InputFormatPtr FormatFactory::getInputFormat(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const Context & context,
+    UInt64 max_block_size,
+    UInt64 rows_portion_size,
+    ReadCallback callback) const
 {
     const auto & input_getter = getProcessorCreators(name).first;
     if (!input_getter)
@@ -123,6 +119,8 @@ InputFormatPtr FormatFactory::getInputFormat(const String & name, ReadBuffer & b
     params.max_block_size = max_block_size;
     params.allow_errors_num = format_settings.input_allow_errors_num;
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+    params.rows_portion_size = rows_portion_size;
+    params.callback = std::move(callback);
 
     return input_getter(buf, sample, context, params, format_settings);
 }
@@ -144,20 +142,20 @@ OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer 
 }
 
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
+void FormatFactory::registerInputFormat(const String & /*name*/, InputCreator /*input_creator*/)
 {
-    auto & target = dict[name].first;
-    if (target)
-        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(input_creator);
+//    auto & target = dict[name].first;
+//    if (target)
+//        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+//    target = std::move(input_creator);
 }
 
-void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
+void FormatFactory::registerOutputFormat(const String & /*name*/, OutputCreator /*output_creator*/)
 {
-    auto & target = dict[name].second;
-    if (target)
-        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(output_creator);
+//    auto & target = dict[name].second;
+//    if (target)
+//        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+//    target = std::move(output_creator);
 }
 
 void FormatFactory::registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator)

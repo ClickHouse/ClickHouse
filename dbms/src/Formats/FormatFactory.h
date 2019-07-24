@@ -89,8 +89,14 @@ public:
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;
 
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;
@@ -102,19 +108,19 @@ public:
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
-    const FormatsDictionary & getAllFormats() const
+    const FormatProcessorsDictionary & getAllFormats() const
     {
-        return dict;
+        return processors_dict;
     }
 
 private:
-    FormatsDictionary dict;
+    /// FormatsDictionary dict;
     FormatProcessorsDictionary processors_dict;
 
     FormatFactory();
     friend class ext::singleton<FormatFactory>;
 
-    const Creators & getCreators(const String & name) const;
+    //const Creators & getCreators(const String & name) const;
     const ProcessorCreators & getProcessorCreators(const String & name) const;
 };
 
