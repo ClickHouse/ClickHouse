@@ -82,12 +82,15 @@ namespace
                                     8 * sizeof(char) + // maximum VarUInt length for string size
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
                                     sizeof(StackTrace) + // collected stack trace
-                                    sizeof(TimerType); // timer type
+                                    sizeof(TimerType) + // timer type
+                                    sizeof(UInt32); // thread_number
         char buffer[buf_size];
         WriteBufferDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
+
+        UInt32 thread_number = CurrentThread::get().thread_number;
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
@@ -96,6 +99,7 @@ namespace
         writeStringBinary(query_id, out);
         writePODBinary(stack_trace, out);
         writePODBinary(timer_type, out);
+        writePODBinary(thread_number, out);
         out.next();
     }
 

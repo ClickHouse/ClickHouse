@@ -48,14 +48,15 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
 
     /** Increase pipe size to avoid slowdown during fine-grained trace collection.
       */
+    constexpr int max_pipe_capacity_to_set = 1048576;
     int pipe_size = fcntl(trace_pipe.fds_rw[1], F_GETPIPE_SZ);
     if (-1 == pipe_size)
         throwFromErrno("Cannot get pipe capacity", ErrorCodes::CANNOT_FCNTL);
-    for (errno = 0; errno != EPERM && pipe_size <= 1048576; pipe_size *= 2)
+    for (errno = 0; errno != EPERM && pipe_size < max_pipe_capacity_to_set; pipe_size *= 2)
         if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETPIPE_SZ, pipe_size * 2) && errno != EPERM)
             throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
 
-    LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(pipe_size));
+    LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, max_pipe_capacity_to_set)));
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
 }
@@ -104,10 +105,12 @@ void TraceCollector::run()
         std::string query_id;
         StackTrace stack_trace(NoCapture{});
         TimerType timer_type;
+        UInt32 thread_number;
 
         readStringBinary(query_id, in);
         readPODBinary(stack_trace, in);
         readPODBinary(timer_type, in);
+        readPODBinary(thread_number, in);
 
         const auto size = stack_trace.getSize();
         const auto & frames = stack_trace.getFrames();
@@ -117,7 +120,7 @@ void TraceCollector::run()
         for (size_t i = 0; i < size; i++)
             trace.emplace_back(UInt64(reinterpret_cast<uintptr_t>(frames[i])));
 
-        TraceLogElement element{std::time(nullptr), timer_type, query_id, trace};
+        TraceLogElement element{std::time(nullptr), timer_type, thread_number, query_id, trace};
 
         trace_log->add(element);
     }
