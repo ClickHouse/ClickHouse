@@ -973,6 +973,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrd
             streams_per_thread.push_back(source_stream);
         }
 
+        if (sorting_info->actions && !sorting_info->actions->getActions().empty())
+            for (auto & stream : streams_per_thread)
+                stream = std::make_shared<ExpressionBlockInputStream>(stream, sorting_info->actions);
+
         if (streams_per_thread.size() > 1)
             streams.push_back(std::make_shared<MergingSortedBlockInputStream>(
                 streams_per_thread, sorting_info->prefix_order_descr, max_block_size));

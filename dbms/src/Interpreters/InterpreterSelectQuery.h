@@ -152,7 +152,8 @@ private:
         ExpressionActionsPtr before_where;
         ExpressionActionsPtr before_aggregation;
         ExpressionActionsPtr before_having;
-        ExpressionActionsPtr before_order_and_select;
+        ExpressionActionsPtr before_order;
+        ExpressionActionsPtr before_select;
         ExpressionActionsPtr before_limit_by;
         ExpressionActionsPtr final_projection;
 
