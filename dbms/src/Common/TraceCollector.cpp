@@ -41,12 +41,16 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
       * when QueryProfiler is invoked under locks and TraceCollector cannot pull data from pipe.
       */
     int flags = fcntl(trace_pipe.fds_rw[1], F_GETFL, 0);
+    if (-1 == flags)
+        throwFromErrno("Cannot get file status flags of pipe", ErrorCodes::CANNOT_FCNTL);
     if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETFL, flags | O_NONBLOCK))
         throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 
     /** Increase pipe size to avoid slowdown during fine-grained trace collection.
       */
     int pipe_size = fcntl(trace_pipe.fds_rw[1], F_GETPIPE_SZ);
+    if (-1 == pipe_size)
+        throwFromErrno("Cannot get pipe capacity", ErrorCodes::CANNOT_FCNTL);
     for (errno = 0; errno != EPERM && pipe_size <= 1048576; pipe_size *= 2)
         if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETPIPE_SZ, pipe_size) && errno != EPERM)
             throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size), ErrorCodes::CANNOT_FCNTL);
