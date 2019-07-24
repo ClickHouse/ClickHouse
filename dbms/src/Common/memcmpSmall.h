@@ -3,7 +3,13 @@
 #include <cstdint>
 #include <algorithm>
 
-#ifdef __SSE2__
+#include <Core/Defines.h>
+
+/// We can process uninitialized memory in the functions below.
+/// Results don't depend on the values inside uninitialized memory but Memory Sanitizer cannot see it.
+/// Disable optimized functions if compile with Memory Sanitizer.
+
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
 #include <emmintrin.h>
 
 
