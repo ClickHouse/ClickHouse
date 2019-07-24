@@ -38,9 +38,12 @@ struct SortingInfo
 {
     SortDescription prefix_order_descr;
     int direction;
+    ExpressionActionsPtr actions;
 
-    SortingInfo(const SortDescription prefix_order_descr_, int direction_)
+    SortingInfo(const SortDescription & prefix_order_descr_, int direction_)
         : prefix_order_descr(prefix_order_descr_), direction(direction_) {}
+
+    void setActions(const ExpressionActionsPtr & actions_) { actions = actions_; }
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
