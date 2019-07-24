@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace ActionLocks
@@ -245,9 +247,21 @@ void StorageMergeTree::alter(
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
-        params.apply(new_columns);
+        ASTPtr new_order_by_ast = order_by_ast;
+        ASTPtr new_primary_key_ast = primary_key_ast;
+        ASTPtr new_ttl_table_ast = ttl_table_ast;
+        SettingsChanges new_changes;
+        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+        IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
+        {
+            auto & storage_ast = ast.as<ASTStorage &>();
+            if (!new_changes.empty())
+                storage_ast.settings->changes.insert(storage_ast.settings->changes.begin(), new_changes.begin(), new_changes.end());
+        };
+
         context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
         setColumns(std::move(new_columns));
+        settings.applyChanges(new_changes);
         return;
     }
 
@@ -263,7 +277,8 @@ void StorageMergeTree::alter(
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+    SettingsChanges new_changes;
+    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
@@ -844,7 +859,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    SettingsChanges ignore_settings_changes;
+
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignore_settings_changes);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -1008,6 +1025,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     clearOldPartsFromFilesystem();
 }
 
+
+
+bool StorageMergeTree::hasSetting(const String & setting_name) const
+{
+    return settings.findIndex(setting_name) != MergeTreeSettings::npos;
+}
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
