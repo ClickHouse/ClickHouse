@@ -3,6 +3,7 @@
 #include <optional>
 #include <common/unaligned.h>
 #include <common/demangle.h>
+#include <common/SimpleCache.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -62,6 +63,23 @@ public:
         return true;
     }
 
+    static std::string addressToSymbol(UInt64 uint_address)
+    {
+        void * addr = unalignedLoad<void *>(&uint_address);
+
+        /// This is extremely slow.
+        Dl_info info;
+        if (dladdr(addr, &info) && info.dli_sname)
+        {
+            int demangling_status = 0;
+            return demangle(info.dli_sname, demangling_status);
+        }
+        else
+        {
+            return {};
+        }
+    }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
@@ -73,36 +91,19 @@ public:
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
-        std::unordered_map<void *, std::string> cache;
+        static SimpleCache<decltype(addressToSymbol), &addressToSymbol> func_cached;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            void * addr = unalignedLoad<void *>(&data[i]);
-
-            if (auto it = cache.find(addr); it != cache.end())
-            {
-                result_column->insertDataWithTerminatingZero(it->second.data(), it->second.size() + 1);
-            }
-            else
-            {
-                /// This is extremely slow.
-                Dl_info info;
-                if (dladdr(addr, &info) && info.dli_sname)
-                {
-                    int demangling_status = 0;
-                    std::string demangled_name = demangle(info.dli_sname, demangling_status);
-                    result_column->insertDataWithTerminatingZero(demangled_name.data(), demangled_name.size() + 1);
-                    cache.emplace(addr, demangled_name);
-                }
-                else
-                {
-                    cache.emplace(addr, std::string());
-                    result_column->insertDefault();
-                }
-            }
+            std::string symbol = func_cached(data[i]);
+            result_column->insertDataWithTerminatingZero(symbol.data(), symbol.size() + 1);
         }
 
         block.getByPosition(result).column = std::move(result_column);
+
+        /// Do not let our cache to grow indefinitely (simply drop it)
+        if (func_cached.size() > 1000000)
+            func_cached.drop();
     }
 };
 
