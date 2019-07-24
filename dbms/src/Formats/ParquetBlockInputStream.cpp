@@ -1,6 +1,6 @@
 #include "ParquetBlockInputStream.h"
-#if USE_PARQUET
 
+#if USE_PARQUET
 #    include <algorithm>
 #    include <iterator>
 #    include <vector>
