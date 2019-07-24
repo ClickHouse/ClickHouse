@@ -13,6 +13,7 @@
 namespace ProfileEvents
 {
     extern const Event QueryProfilerCannotWriteTrace;
+    extern const Event QueryProfilerSignalOverruns;
 }
 
 namespace DB
@@ -63,11 +64,19 @@ namespace
         /// Quickly drop if signal handler is called too frequently.
         /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
         ++write_trace_iteration;
-        if (info
-            && info->si_overrun > 0
+        if (info && info->si_overrun > 0)
+        {
             /// But pass with some frequency to avoid drop of all traces.
-            && write_trace_iteration % info->si_overrun != 0)
-            return;
+            if (write_trace_iteration % info->si_overrun == 0)
+            {
+                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun);
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun + 1);
+                return;
+            }
+        }
 
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
