@@ -61,10 +61,14 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, const UInt32 period, const int pause_signal)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal)
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal)
 {
+    /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
+    if (period < 1000000)
+        period = 1000000;
+
     struct sigaction sa{};
     sa.sa_sigaction = ProfilerImpl::signalHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
