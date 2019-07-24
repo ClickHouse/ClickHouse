@@ -572,7 +572,7 @@ void ExpressionAction::execute(
 
     auto checkPosition = [](const NameWithPosition & name)
     {
-        if (name.position == INDEX_NOT_FOUND)
+        if (unlikely(name.position == INDEX_NOT_FOUND))
             throw Exception("Position was not set for " + name.name + " column", ErrorCodes::LOGICAL_ERROR);
     };
 
@@ -1102,13 +1102,13 @@ void ExpressionActions::execute(const Block & header, Columns & columns, size_t 
     }
     else
     {
-        ColumnNumbers index = cache.index;
+        cache.index_buf = cache.index;
 
         for (size_t i = 0, size = actions.size(); i < size; ++i)
         {
             ActionsOnColumns container(cache.headers[i], cache.headers[i + 1], columns);
 
-            actions[i].execute(container, num_rows, index, enumerated_columns, dry_run);
+            actions[i].execute(container, num_rows, cache.index_buf, enumerated_columns, dry_run);
             checkLimits(container);
         }
     }

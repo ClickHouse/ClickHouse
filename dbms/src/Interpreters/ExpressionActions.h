@@ -252,6 +252,8 @@ public:
         Blocks headers;
         /// Index for the first execution step.
         ColumnNumbers index;
+        /// Buffer to reduce the number of allocations.
+        ColumnNumbers index_buf;
 
         bool is_initialized = false;
     };
