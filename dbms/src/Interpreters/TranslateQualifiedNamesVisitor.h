@@ -24,7 +24,7 @@ public:
 
     struct Data
     {
-        NameSet source_columns;
+        const NameSet source_columns;
         const std::vector<TableWithColumnNames> & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
