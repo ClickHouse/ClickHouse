@@ -21,6 +21,11 @@ public:
         return typeid_cast<BufferType *>(buffer.get());
     }
 
+    void reset()
+    {
+        BufferBase::set(nullptr, 0, 0);
+    }
+
 protected:
     // XXX: don't know how to guarantee that the next call to this method is done after we read all previous data.
     bool nextImpl() override
