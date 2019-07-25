@@ -322,6 +322,14 @@
     </part_log>
     -->
 
+    <!-- Uncomment to write text log into table.
+         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </text_log>
+    -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
