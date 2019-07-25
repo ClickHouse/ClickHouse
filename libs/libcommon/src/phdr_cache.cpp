@@ -12,8 +12,16 @@
     #if __has_feature(address_sanitizer)
         #define ADDRESS_SANITIZER 1
     #endif
-#elif defined(__SANITIZE_ADDRESS__)
-    #define ADDRESS_SANITIZER 1
+    #if __has_feature(thread_sanitizer)
+        #define THREAD_SANITIZER 1
+    #endif
+#else
+    #if defined(__SANITIZE_ADDRESS__)
+        #define ADDRESS_SANITIZER 1
+    #endif
+    #if defined(__SANITIZE_THREAD__)
+        #define THREAD_SANITIZER 1
+    #endif
 #endif
 
 extern "C"
@@ -25,6 +33,9 @@ void __lsan_ignore_object(const void *) {}
 #endif
 }
 
+
+/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
+#ifndef THREAD_SANITIZER
 
 namespace
 {
@@ -74,10 +85,12 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
     return result;
 }
 
+#endif
+
 
 void updatePHDRCache()
 {
-#if defined(__linux__)
+#if defined(__linux__) && !defined(THREAD_SANITIZER)
     // Fill out ELF header cache for access without locking.
     // This assumes no dynamic object loading/unloading after this point
 
