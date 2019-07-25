@@ -28,7 +28,6 @@ public:
 protected:
     explicit StorageSystemDetachedParts()
     {
-        // TODO add column "directory_name" or "is_valid_name"
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
@@ -37,7 +36,8 @@ protected:
             {"reason", std::make_shared<DataTypeString>()},
             {"min_block_number", std::make_shared<DataTypeInt64>()},
             {"max_block_number", std::make_shared<DataTypeInt64>()},
-            {"level", std::make_shared<DataTypeUInt32>()}
+            {"level", std::make_shared<DataTypeUInt32>()},
+            {"directory_name", std::make_shared<DataTypeString>()}
         }});
     }
 
@@ -63,12 +63,13 @@ protected:
                 int i = 0;
                 columns[i++]->insert(info.database);
                 columns[i++]->insert(info.table);
-                columns[i++]->insert(p.partition_id);
-                columns[i++]->insert(p.getPartName());
+                columns[i++]->insert(p.valid_name ? p.partition_id : "");
+                columns[i++]->insert(p.valid_name ? p.getPartName() : "");
                 columns[i++]->insert(p.prefix);
                 columns[i++]->insert(p.min_block);
                 columns[i++]->insert(p.max_block);
                 columns[i++]->insert(p.level);
+                columns[i++]->insert(p.fullDirName());
             }
         }
 
