@@ -14,8 +14,8 @@ void OutputStreamToOutputFormat::write(const Block & block)
     output_format->write(block);
 }
 
-void OutputStreamToOutputFormat::writePrefix() { output_format->writePrefix(); }
-void OutputStreamToOutputFormat::writeSuffix() { output_format->writeSuffix(); }
+void OutputStreamToOutputFormat::writePrefix() { output_format->doWritePrefix(); }
+void OutputStreamToOutputFormat::writeSuffix() { output_format->doWriteSuffix(); }
 
 void OutputStreamToOutputFormat::flush() { output_format->flush(); }
 
