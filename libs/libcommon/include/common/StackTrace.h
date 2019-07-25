@@ -35,7 +35,14 @@ public:
     StackTrace(NoCapture);
 
     /// Fills stack trace frames with provided sequence
-    StackTrace(const std::vector<void *> & source_frames);
+    template <typename Iterator>
+    StackTrace(Iterator it, Iterator end)
+    {
+        while (size < capacity && it != end)
+        {
+            frames[size++] = *(it++);
+        }
+    }
 
     size_t getSize() const;
     const Frames & getFrames() const;

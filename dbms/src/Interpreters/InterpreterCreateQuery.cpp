@@ -161,7 +161,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
-        database->loadTables(context, thread_pool, has_force_restore_data_flag);
+        database->loadTables(context, has_force_restore_data_flag);
     }
     catch (...)
     {
