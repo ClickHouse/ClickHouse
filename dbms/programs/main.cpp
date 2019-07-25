@@ -149,7 +149,7 @@ int main(int argc_, char ** argv_)
 
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen) won't work.
-    enablePHDRCache();
+    updatePHDRCache();
 
 #if USE_EMBEDDED_COMPILER
     if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
