@@ -688,6 +688,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
         MonotonicFunctionsChain chain;
         std::string func_name = func->name;
+        const auto atom_it = atom_map.find(func_name);
+        if (atom_it == std::end(atom_map))
+            return false;
 
         if (args.size() == 1)
         {
@@ -772,10 +775,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
                 castValueToType(key_expr_type, const_value, const_type, node);
         }
         else
-            return false;
-
-        const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
             return false;
 
         out.key_column = key_column_num;
