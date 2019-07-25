@@ -710,6 +710,7 @@ void ExpressionAction::execute(
 
         case JOIN:
         {
+            /// TODO: support interface with columns vector for JOIN.
             num_rows = container.executeJoin(*join, join_key_names_left, columns_added_by_join, false);
             index = makeIndex(container.getResultHeader(), enumerated_columns);
 
