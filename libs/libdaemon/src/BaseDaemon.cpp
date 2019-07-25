@@ -1,5 +1,4 @@
 #include <daemon/BaseDaemon.h>
-
 #include <Common/Config/ConfigProcessor.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -15,6 +14,7 @@
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
+#include <common/Pipe.h>
 #include <common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -53,55 +53,6 @@
 #include <ucontext.h>
 
 
-/** For transferring information from signal handler to a separate thread.
-  * If you need to do something serious in case of a signal (example: write a message to the log),
-  *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
-  *  - is probably the only safe method for doing it.
-  * (Because it's only safe to use reentrant functions in signal handlers.)
-  */
-struct Pipe
-{
-    union
-    {
-        int fds[2];
-        struct
-        {
-            int read_fd;
-            int write_fd;
-        };
-    };
-
-    Pipe()
-    {
-        read_fd = -1;
-        write_fd = -1;
-
-        if (0 != pipe(fds))
-            DB::throwFromErrno("Cannot create pipe", 0);
-    }
-
-    void close()
-    {
-        if (-1 != read_fd)
-        {
-            ::close(read_fd);
-            read_fd = -1;
-        }
-
-        if (-1 != write_fd)
-        {
-            ::close(write_fd);
-            write_fd = -1;
-        }
-    }
-
-    ~Pipe()
-    {
-        close();
-    }
-};
-
-
 Pipe signal_pipe;
 
 
@@ -123,7 +74,7 @@ using signal_function = void(int, siginfo_t*, void*);
 static void writeSignalIDtoSignalPipe(int sig)
 {
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 }
@@ -151,7 +102,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     already_signal_handled = true;
 
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -194,7 +145,7 @@ public:
     void run()
     {
         char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.read_fd, buf_size, buf);
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
 
         while (!in.eof())
         {
@@ -296,7 +247,7 @@ static void terminate_handler()
         log_message.resize(buf_size - 16);
 
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     DB::writeBinary(getThreadNumber(), out);
@@ -532,7 +483,7 @@ void BaseDaemon::closeFDs()
         for (const auto & fd_str : fds)
         {
             int fd = DB::parse<int>(fd_str);
-            if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
     }
@@ -545,7 +496,7 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
-            if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
     }
 }

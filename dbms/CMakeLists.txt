@@ -231,12 +231,14 @@ target_link_libraries(clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
         PUBLIC
     roaring
 )
 
 if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
+    target_link_libraries(clickhouse_common_io PUBLIC ${ZSTD_LIBRARY})
 endif()
 
 if (USE_RDKAFKA)
@@ -285,10 +287,6 @@ target_link_libraries (dbms
     ${Boost_SYSTEM_LIBRARY}
     Threads::Threads
 )
-
-if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
-endif()
 
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
@@ -389,6 +387,7 @@ endif()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)

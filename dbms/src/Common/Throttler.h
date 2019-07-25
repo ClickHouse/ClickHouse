@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <port/clock.h>
 
@@ -76,12 +77,7 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
-                ::timespec sleep_ts;
-                sleep_ts.tv_sec = sleep_ns / 1000000000;
-                sleep_ts.tv_nsec = sleep_ns % 1000000000;
-
-                /// NOTE: Returns early in case of a signal. This is considered normal.
-                ::nanosleep(&sleep_ts, nullptr);
+                sleepForNanoseconds(sleep_ns);
 
                 ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }

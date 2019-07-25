@@ -1,6 +1,6 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 
 The basic idea for `MergeTree` engines family is the following. When you have tremendous amount of a data that should be inserted into the table, you should write them quickly part by part and then merge parts by some rules in background. This method is much more efficient than constantly rewriting data in the storage at the insert.
 
@@ -72,7 +72,7 @@ For a description of request parameters, see [request description](../../query_l
     It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    For more details, see [TTL for columns and tables](mergetree.md)
+    For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).

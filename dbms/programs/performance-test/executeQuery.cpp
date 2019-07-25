@@ -2,9 +2,11 @@
 #include <IO/Progress.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Core/Block.h>
+#include <Poco/UUIDGenerator.h>
 
 namespace DB
 {
+
 namespace
 {
 
@@ -36,7 +38,7 @@ void checkFulfilledConditionsAndUpdate(
     }
 }
 
-}
+} // anonymous namespace
 
 void executeQuery(
     Connection & connection,
@@ -47,12 +49,18 @@ void executeQuery(
     Context & context,
     const Settings & settings)
 {
+    static const std::string query_id_prefix
+        = Poco::UUIDGenerator::defaultGenerator().create().toString() + "-";
+    static int next_query_id = 1;
+
     statistics.watch_per_query.restart();
     statistics.last_query_was_cancelled = false;
     statistics.last_query_rows_read = 0;
     statistics.last_query_bytes_read = 0;
+    statistics.query_id = query_id_prefix + std::to_string(next_query_id++);
 
     RemoteBlockInputStream stream(connection, query, {}, context, &settings);
+    stream.setQueryId(statistics.query_id);
 
     stream.setProgressCallback(
         [&](const Progress & value)
@@ -70,4 +78,5 @@ void executeQuery(
 
     statistics.setTotalTime();
 }
+
 }

@@ -6,7 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -1039,7 +1038,28 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
-        required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    {
+        /// We will find a column with minimum compressed size. Because it is the column that is cheapest to read.
+        size_t min_data_compressed = 0;
+        String min_column_name;
+        if (storage)
+        {
+            auto column_sizes = storage->getColumnSizes();
+            for (auto & [column_name, column_size] : column_sizes)
+            {
+                if (min_data_compressed == 0 || min_data_compressed > column_size.data_compressed)
+                {
+                    min_data_compressed = column_size.data_compressed;
+                    min_column_name = column_name;
+                }
+            }
+        }
+        if (min_data_compressed > 0)
+            required.insert(min_column_name);
+        else
+            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
+            required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    }
 
     NameSet unknown_required_source_columns = required;
 
