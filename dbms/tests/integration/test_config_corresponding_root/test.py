@@ -16,7 +16,7 @@ def start_cluster():
     try:
         cluster.start()
     except Exception as e:
-	caught_exception = str(e)
+        caught_exception = str(e)
 
 def test_work(start_cluster):
-	assert caught_exception.find("Root element doesn't have the corresponding root element as the config file.") != -1
+    assert caught_exception.find("Root element doesn't have the corresponding root element as the config file.") != -1
