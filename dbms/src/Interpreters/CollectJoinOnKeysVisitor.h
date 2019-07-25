@@ -110,6 +110,9 @@ private:
 
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
     {
+        if (identifier->compound())
+            return identifier;
+
         UInt32 max_attempts = 100;
         for (auto it = aliases.find(identifier->name); it != aliases.end();)
         {
