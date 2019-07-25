@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <common/likely.h>
 #include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
@@ -48,6 +49,7 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+    static Int64 & getUntrackedMemory();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -71,7 +73,12 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static StringRef getQueryId();
+    static StringRef getQueryId()
+    {
+        if (unlikely(!current_thread))
+            return {};
+        return current_thread->getQueryId();
+    }
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
