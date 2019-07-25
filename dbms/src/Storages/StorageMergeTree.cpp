@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 namespace ActionLocks
@@ -999,25 +1000,13 @@ void StorageMergeTree::dropDetached(const ASTPtr & partition, bool part, const C
         throw DB::Exception("DROP DETACHED PARTITION is not implemented, use DROP DETACHED PART", ErrorCodes::NOT_IMPLEMENTED);
 
     String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    Poco::Path part_path(part_id);
-    const bool file_zero_depth = part_path.isFile()      && part_path.depth() == 0 && part_path.getFileName() != "..";
-    const bool dir_zero_depth  = part_path.isDirectory() && part_path.depth() == 1 && part_path.directory(0)  != "..";
-    const bool zero_depth = file_zero_depth || dir_zero_depth;
-    if (!part_path.isRelative() || !zero_depth)
-        throw DB::Exception("Part name must contain exactly one path component: name of detached part", ErrorCodes::INCORRECT_FILE_NAME);
-
-    part_id = part_path.isFile() ? part_path.getFileName() : part_path.directory(0);
-    Poco::Path base_dir(full_path + "detached");
-    Poco::File detached_part_dir(Poco::Path(base_dir, part_id));
-    if (!detached_part_dir.exists())
-        throw DB::Exception("Detached part \"" + part_id + "\" not found" , ErrorCodes::INCORRECT_FILE_NAME);
+    validateDetachedPartName(part_id);
 
     DetachedPartInfo info;
     DetachedPartInfo::tryParseDetachedPartName(part_id, &info, format_version);
     MergeTreeDataPart detached_part(*this, part_id, info);
     detached_part.relative_path = "detached/" + part_id;
 
-    // TODO make sure it's ok
     detached_part.remove();
 }
 
@@ -1038,6 +1027,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     Strings parts;
     if (attach_part)
     {
+        validateDetachedPartName(partition_id);
         parts.push_back(partition_id);
     }
     else
@@ -1048,6 +1038,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         {
             const String & name = it.name();
             MergeTreePartInfo part_info;
+            /// Parts with prefix in name (e.g. attaching_1_3_3_0, delete_tmp_1_3_3_0) will be ignored
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
                 || part_info.partition_id != partition_id)
             {
@@ -1062,16 +1053,38 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     for (const auto & source_part_name : parts)
     {
-        String source_path = source_dir + source_part_name;
+        MutableDataPartPtr part;
+        try
+        {
+            part = std::make_shared<DataPart>(*this, source_part_name);
+            part->relative_path = "detached/" + source_part_name;
+            part->renameTo("detached/attaching_" + source_part_name, false);
 
-        LOG_DEBUG(log, "Checking data");
-        MutableDataPartPtr part = loadPartAndFixMetadata(source_path);
+            LOG_DEBUG(log, "Checking data in " << part->relative_path);
+            loadPartAndFixMetadata(part);
 
-        // TODO fix race with DROP DETACHED PARTITION
-        LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
-        renameTempPartAndAdd(part, &increment);
+            LOG_INFO(log, "Attaching part " << source_part_name << " from " << part->relative_path);
+            renameTempPartAndAdd(part, &increment);
 
-        LOG_INFO(log, "Finished attaching part");
+            LOG_INFO(log, "Finished attaching part");
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, String(__PRETTY_FUNCTION__) + ": cannot attach part " + source_part_name);
+
+            if (part->relative_path == "detached/attaching_" + source_part_name)
+            {
+                try
+                {
+                    part->renameTo("detached/" + source_part_name, false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                }
+            }
+
+        }
     }
 
     /// New parts with other data may appear in place of deleted parts.
@@ -1148,6 +1161,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
         throw;
     }
+}
+
+void StorageMergeTree::validateDetachedPartName(const String & name) const
+{
+    if (name.find('/') != std::string::npos || name == "." || name == "..")
+        throw DB::Exception("Invalid part name", ErrorCodes::INCORRECT_FILE_NAME);
+
+    Poco::File detached_part_dir(full_path + "detached/" + name);
+    if (!detached_part_dir.exists())
+        throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
 }
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)

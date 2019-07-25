@@ -210,4 +210,13 @@ bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, Detache
     part_info->prefix = dir_name.substr(0, first_separator);
     return part_info->valid_name = true;
 }
+
+String DetachedPartInfo::fullDirName() const
+{
+    if (!valid_name)
+        return prefix;
+    if (prefix.empty())
+        return getPartName();
+    return prefix + "_" + fullDirName();
+}
 }
