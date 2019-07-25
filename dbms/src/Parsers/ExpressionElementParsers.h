@@ -274,13 +274,12 @@ protected:
 class ParserWithOptionalAlias : public IParserBase
 {
 public:
-    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_),
-      prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
+    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
-    bool prefer_alias_to_column_name;
 
     const char * getName() const { return "element of expression with optional alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
