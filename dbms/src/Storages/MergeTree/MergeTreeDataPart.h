@@ -241,7 +241,7 @@ struct MergeTreeDataPart
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
-    void remove() const;
+    void remove(bool force_recursive = false) const;
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly

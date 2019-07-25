@@ -1,0 +1,17 @@
+=== cannot attach active ===
+OK
+0_1_1_0
+1_2_2_0
+2_3_3_0
+3_4_4_0
+16	120
+=== attach all valid parts ===
+0_5_5_0
+0_6_6_0
+1_2_2_0
+1_4_4_0
+16	120
+=== detached ===
+0_5_5_0
+delete_tmp_0_7_7
+attaching_0_6_6
