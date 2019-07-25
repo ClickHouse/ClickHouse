@@ -655,7 +655,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 
 static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
-    const Context & context, const NamesAndTypesList & required_columns)
+    const Context & context, const ExpressionActionsPtr & expressions)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -668,7 +668,8 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
     auto order_by_expr = query.orderBy();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, required_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr,
+        expressions->getRequiredColumnsWithTypes(), expressions->getSampleBlock().getNames());
     for (size_t i = 0; i < prefix_size; ++i)
     {
         /// Read in pk order in case of exact match with order key element
@@ -729,7 +730,7 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     if (prefix_order_descr.empty())
         return {};
 
-    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), read_direction);
+    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), expressions, read_direction);
 }
 
 
@@ -791,6 +792,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
+
     if (dry_run)
     {
         if constexpr (pipeline_with_processors)
@@ -806,9 +808,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
         {
             if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                sorting_info = optimizeSortingWithPK(*merge_tree_data, query,context, expressions.before_order->getSampleBlock().getNamesAndTypesList());
-            if (sorting_info)
-                sorting_info->setActions(expressions.before_order);
+                sorting_info = optimizeSortingWithPK(*merge_tree_data, query,context, expressions.before_order);
         }
 
         if (expressions.prewhere_info)
@@ -850,9 +850,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
         {
             if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                sorting_info = optimizeSortingWithPK(*merge_tree_data, query, context, expressions.before_order->getSampleBlock().getNamesAndTypesList());
-            if (sorting_info)
-                sorting_info->setActions(expressions.before_order);
+                sorting_info = optimizeSortingWithPK(*merge_tree_data, query,context, expressions.before_order);
         }
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
