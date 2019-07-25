@@ -214,7 +214,11 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
 
     for (const auto & attr_name : keys)
     {
+        if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
+            throw Exception("Volume name can contain only alphanumeric and '_' (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         volumes.push_back(std::make_shared<Volume>(attr_name, config, volumes_prefix + "." + attr_name, disks));
+        if (volumes_names.find(attr_name) != volumes_names.end())
+            throw Exception("Volumes names must be unique (" + attr_name + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
         volumes_names[attr_name] = volumes.size() - 1;
     }
 
