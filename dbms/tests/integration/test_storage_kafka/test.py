@@ -174,6 +174,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
         result += instance.query('SELECT * FROM test.kafka')
         if kafka_check_result(result):
             break
+        print result
     kafka_check_result(result, True)
 
 
