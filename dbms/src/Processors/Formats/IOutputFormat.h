@@ -64,8 +64,8 @@ public:
 
     void write(const Block & block) { consume(Chunk(block.getColumns(), block.rows())); }
 
-    void writePrefix() {}
-    void writeSuffix() { finalize(); }
+    void doWritePrefix() {}
+    void doWriteSuffix() { finalize(); }
 
     void setTotals(const Block & totals) { consume(Chunk(totals.getColumns(), totals.rows())); }
     void setExtremes(const Block & extremes) { consume(Chunk(extremes.getColumns(), extremes.rows())); }
