@@ -4,7 +4,7 @@
 
 ## halfMD5 {#hash_functions-halfmd5}
 
-[Интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш MD5 для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
+[Интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш [MD5](https://ru.wikipedia.org/wiki/MD5) для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
 
 ```
 halfMD5(par1, ...)
@@ -47,9 +47,14 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 sipHash64(par1,...)
 ```
 
-Эта функция [интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш MD5 для каждой из них. Затем комбинирует хэши.
-
 Это криптографическая хэш-функция. Она работает по крайней мере в три раза быстрее, чем функция [MD5](#hash_functions-md5).
+
+Функция [интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш MD5 для каждой из них. Затем комбинирует хэши по следующему алгоритму.
+
+1. После хэширования всех входных параметров функция получает массив хэшей.
+2. Функция принимает первый и второй элементы и вычисляет хэш для массива из них.
+3. Затем функция принимает хэш-значение, вычисленное на предыдущем шаге, и третий элемент исходного хэш-массива, и вычисляет хэш для массива из них.
+4. Предыдущий шаг повторяется для всех остальных элементов исходного хэш-массива.
 
 **Параметры**
 
@@ -79,13 +84,13 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## cityHash64
 
-Генерирует 64-х битный хэш.
+Генерирует 64-х битное значение [CityHash](https://github.com/google/cityhash).
 
 ```
 cityHash64(par1,...)
 ```
 
-Это не криптографическая хэш-функция. Она использует алгоритм [CityHash](https://github.com/google/cityhash) для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
+Это не криптографическая хэш-функция. Она использует CityHash алгоритм  для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
 
 **Параметры**
 
@@ -102,17 +107,16 @@ cityHash64(par1,...)
 ```sql
 SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
 ```
-
-```
+```text
 ┌─────────────CityHash─┬─type───┐
 │ 12072650598913549138 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-Например, так вы можете вычислить чексумму всей таблицы с точностью до порядка строк:
+А вот так вы можете вычислить чексумму всей таблицы с точностью до порядка строк:
 
-```
-SELECT sum(cityHash64(*)) FROM table
+```sql
+SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
 ## intHash32
@@ -151,7 +155,7 @@ SELECT sum(cityHash64(*)) FROM table
 farmHash64(par1, ...)
 ```
 
-Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h)  функция использует `Hash64` .
+Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h)  функция использует `Hash64`.
 
 **Параметры**
 
@@ -175,15 +179,14 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash {#hash_functions-javahash}
 
-Вычисляет JavaHash от строки.
+Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки.
 Принимает аргумент типа String. Возвращает значение типа Int32.
-Дополнительную информацию смотрите по ссылке: [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452)
 
 ## hiveHash
 
 Вычисляет HiveHash от строки.
 Принимает аргумент типа String. Возвращает значение типа Int32.
-Работает аналогично [JavaHash](#hash_functions-javahash), за исключением того, что возвращаемое значение не может быть отрицательным.
+HiveHash — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа.  Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии  3.0.
 
 ## metroHash64
 
