@@ -16,6 +16,7 @@ public:
         , port(input_format->getPort().getHeader(), input_format.get())
     {
         connect(input_format->getPort(), port);
+        port.setNeeded();
     }
 
     String getName() const override { return input_format->getName(); }
