@@ -347,7 +347,7 @@ UInt64 MergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
     return res;
 }
 
-void MergeTreeDataPart::remove() const
+void MergeTreeDataPart::remove(bool force_recursive /*= false*/) const
 {
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
@@ -395,6 +395,13 @@ void MergeTreeDataPart::remove() const
         LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
+        return;
+    }
+
+    if (force_recursive)
+    {
+        /// Part is not loaded (we don't know which files are there), so remove dir recursively.
+        to_dir.remove(true);
         return;
     }
 

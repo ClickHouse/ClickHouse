@@ -1007,7 +1007,7 @@ void StorageMergeTree::dropDetached(const ASTPtr & partition, bool part, const C
     MergeTreeDataPart detached_part(*this, part_id, info);
     detached_part.relative_path = "detached/" + part_id;
 
-    detached_part.remove();
+    detached_part.remove(true);
 }
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
@@ -1070,9 +1070,9 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         }
         catch (...)
         {
-            tryLogCurrentException(log, String(__PRETTY_FUNCTION__) + ": cannot attach part " + source_part_name);
+            LOG_INFO(log, "Cannot attach part " << source_part_name << " :" << getCurrentExceptionMessage(false));
 
-            if (part->relative_path == "detached/attaching_" + source_part_name)
+            if (part && part->relative_path == "detached/attaching_" + source_part_name)
             {
                 try
                 {
