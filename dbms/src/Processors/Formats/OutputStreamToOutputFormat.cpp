@@ -24,8 +24,17 @@ void OutputStreamToOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
     output_format->setRowsBeforeLimit(rows_before_limit);
 }
 
-void OutputStreamToOutputFormat::setTotals(const Block & totals) { output_format->setTotals(totals); }
-void OutputStreamToOutputFormat::setExtremes(const Block & extremes) { output_format->setExtremes(extremes); }
+void OutputStreamToOutputFormat::setTotals(const Block & totals)
+{
+    if (totals)
+        output_format->setTotals(totals);
+}
+
+void OutputStreamToOutputFormat::setExtremes(const Block & extremes)
+{
+    if (extremes)
+        output_format->setExtremes(extremes);
+}
 
 void OutputStreamToOutputFormat::onProgress(const Progress & progress) { output_format->onProgress(progress); }
 
