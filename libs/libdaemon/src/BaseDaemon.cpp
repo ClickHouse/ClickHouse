@@ -509,15 +509,16 @@ namespace
 /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
 /// whatever errors that occur, because it's just a debugging aid and we don't
 /// care if it breaks.
-#if defined(__linux__) and not defined(NDEBUG)
+#if defined(__linux__) && !defined(NDEBUG)
 void debugIncreaseOOMScore()
 {
     const std::string new_score = "555";
-    try {
+    try
+    {
         DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
         buf.write(new_score.c_str(), new_score.size());
     }
-    catch (Poco::Exception & e)
+    catch (const Poco::Exception & e)
     {
         LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
                     e.displayText() + "'.");
