@@ -34,6 +34,7 @@ const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
 namespace Authentication
 {
+    const String Native = "mysql_native_password";
     const String SHA256 = "sha256_password"; /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
 }
 
@@ -285,7 +286,12 @@ public:
         result.append(1, auth_plugin_data.size());
         result.append(10, 0x0);
         result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(Authentication::SHA256);
+
+        // A workaround for PHP mysqlnd extension bug which occurs when sha256_password is used as a default authentication plugin.
+        // Instead of using client response for mysql_native_password plugin, the server will always generate authentication method mismatch
+        // and switch to sha256_password to simulate that mysql_native_password is used as a default plugin.
+        result.append(Authentication::Native);
+
         result.append(1, 0x0);
         return result;
     }
