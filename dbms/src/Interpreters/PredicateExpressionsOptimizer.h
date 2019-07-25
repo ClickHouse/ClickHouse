@@ -39,6 +39,7 @@ class PredicateExpressionsOptimizer
 
         /// for PredicateExpressionsOptimizer
         const bool enable_optimize_predicate_expression;
+        const bool enable_optimize_predicate_expression_to_final_subquery;
         const bool join_use_nulls;
 
         template<typename T>
@@ -47,6 +48,7 @@ class PredicateExpressionsOptimizer
             max_expanded_ast_elements(settings.max_expanded_ast_elements),
             count_distinct_implementation(settings.count_distinct_implementation),
             enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
+            enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery),
             join_use_nulls(settings.join_use_nulls)
         {}
     };
