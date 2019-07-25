@@ -98,6 +98,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
     /// (directory name was not successfully parsed).
     bool valid_name;
 
+    String fullDirName() const;
+
     static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo * part_info, MergeTreeDataFormatVersion format_version);
 };
 

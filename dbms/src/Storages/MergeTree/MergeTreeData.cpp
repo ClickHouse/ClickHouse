@@ -2336,6 +2336,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 {
     MutableDataPartPtr part = std::make_shared<DataPart>(*this, Poco::Path(relative_path).getFileName());
     part->relative_path = relative_path;
+    loadPartAndFixMetadata(part);
+    return part;
+}
+
+void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
+{
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
@@ -2357,8 +2363,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
         Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
     }
-
-    return part;
 }
 
 
