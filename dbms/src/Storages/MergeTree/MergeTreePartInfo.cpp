@@ -217,6 +217,6 @@ String DetachedPartInfo::fullDirName() const
         return prefix;
     if (prefix.empty())
         return getPartName();
-    return prefix + "_" + fullDirName();
+    return prefix + "_" + getPartName();
 }
 }
