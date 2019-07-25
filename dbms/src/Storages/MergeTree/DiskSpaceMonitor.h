@@ -325,6 +325,8 @@ public:
 
         for (size_t i = 0; i != volumes.size(); ++i)
         {
+            if (volumes_names.find(volumes[i]->getName()) != volumes_names.end())
+                throw Exception("Volumes names must be unique (" + volumes[i]->getName() + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
             volumes_names[volumes[i]->getName()] = i;
         }
     }
