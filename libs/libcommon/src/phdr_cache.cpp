@@ -1,13 +1,5 @@
 /// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
-#include <link.h>
-#include <dlfcn.h>
-#include <vector>
-#include <atomic>
-#include <cstddef>
-#include <stdexcept>
-
-
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer)
         #define ADDRESS_SANITIZER 1
@@ -24,18 +16,21 @@
     #endif
 #endif
 
-extern "C"
-{
-#ifdef ADDRESS_SANITIZER
-void __lsan_ignore_object(const void *);
-#else
-void __lsan_ignore_object(const void *) {}
+#if defined(__linux__) && !defined(THREAD_SANITIZER)
+    #define USE_PHDR_CACHE 1
 #endif
-}
 
 
 /// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
-#ifndef THREAD_SANITIZER
+#ifdef USE_PHDR_CACHE
+
+#include <link.h>
+#include <dlfcn.h>
+#include <vector>
+#include <atomic>
+#include <cstddef>
+#include <stdexcept>
+
 
 namespace
 {
@@ -85,12 +80,19 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
     return result;
 }
 
+
+extern "C"
+{
+#ifdef ADDRESS_SANITIZER
+void __lsan_ignore_object(const void *);
+#else
+void __lsan_ignore_object(const void *) {}
 #endif
+}
 
 
 void updatePHDRCache()
 {
-#if defined(__linux__) && !defined(THREAD_SANITIZER)
     // Fill out ELF header cache for access without locking.
     // This assumes no dynamic object loading/unloading after this point
 
@@ -104,6 +106,17 @@ void updatePHDRCache()
 
     /// Memory is intentionally leaked.
     __lsan_ignore_object(new_phdr_cache);
+}
+
+
+bool hasPHDRCache()
+{
+    return phdr_cache.load() != nullptr;
+}
+
+#else
+
+void updatePHDRCache() {}
+bool hasPHDRCache() { return false; }
 
 #endif
-}

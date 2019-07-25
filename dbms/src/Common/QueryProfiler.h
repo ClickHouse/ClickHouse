@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <time.h>
 
+
 namespace Poco
 {
     class Logger;

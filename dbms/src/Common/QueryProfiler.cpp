@@ -1,6 +1,8 @@
 #include "QueryProfiler.h"
 
 #include <common/Pipe.h>
+#include <common/phdr_cache.h>
+#include <common/config_common.h>
 #include <common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
@@ -120,6 +122,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal)
 {
+#if USE_INTERNAL_UNWIND_LIBRARY
+    /// Sanity check.
+    if (!hasPHDRCache())
+        throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
+
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
     if (period < 1000000)
         period = 1000000;
@@ -156,6 +163,9 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         tryCleanup();
         throw;
     }
+#else
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+#endif
 }
 
 template <typename ProfilerImpl>
