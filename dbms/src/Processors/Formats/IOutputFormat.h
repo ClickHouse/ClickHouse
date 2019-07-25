@@ -67,8 +67,8 @@ public:
     void doWritePrefix() {}
     void doWriteSuffix() { finalize(); }
 
-    void setTotals(const Block & totals) { consume(Chunk(totals.getColumns(), totals.rows())); }
-    void setExtremes(const Block & extremes) { consume(Chunk(extremes.getColumns(), extremes.rows())); }
+    void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
+    void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
 };
 }
 
