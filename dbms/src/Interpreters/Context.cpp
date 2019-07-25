@@ -1692,12 +1692,24 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     return shared->system_logs->part_log;
 }
 
+
+std::shared_ptr<TextLog> Context::getTextLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->text_log)
+        return {};
+
+    return shared->system_logs->text_log;
+}
+
+
 std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->trace_log)
-        return nullptr;
+        return {};
 
     return shared->system_logs->trace_log;
 }
