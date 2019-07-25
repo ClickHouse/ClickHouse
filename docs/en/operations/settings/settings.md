@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 **Usage**
 
@@ -116,7 +116,7 @@ Default value: 0.
 
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
-Enables or disables sending of the `X-ClickHouse-Progress` HTTP response headers in an answer from `clickhouse-server`.
+Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
 
@@ -199,20 +199,10 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
-
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
-
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
-
-Operations where you may need the extended data exchange enabled:
-
-- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
-
-For all other operations, ClickHouse doesn't apply the setting.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
+    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
 
 Possible values:
 
@@ -241,6 +231,25 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables inserting of JSON data with nested objects.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -259,17 +268,39 @@ Possible values:
 
 Default value: 1.
 
+## date_time_input_format {#settings-date_time_input_format}
+
+Enables or disables extended parsing of date and time formatted strings.
+
+The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic format.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+
 ## join_default_strictness {#settings-join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
-**Possible values**
+Possible values:
 
-- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
-**Default value**: `ALL`
+Default value: `ALL`.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -295,12 +326,24 @@ Default value: 0.
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
-**Possible values**
+Possible values:
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-**Default value**: 0.
+Default value: 0.
+
+
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row, if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 ## max_block_size

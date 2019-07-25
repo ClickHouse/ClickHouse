@@ -7,11 +7,14 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdavl.c
   ${RDKAFKA_SOURCE_DIR}/rdbuf.c
   ${RDKAFKA_SOURCE_DIR}/rdcrc32.c
+  ${RDKAFKA_SOURCE_DIR}/rddl.c
+  ${RDKAFKA_SOURCE_DIR}/rdhdrhistogram.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_background.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_broker.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_buf.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_cert.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_event.c
@@ -27,13 +30,16 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_op.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_partition.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_pattern.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_plugin.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_queue.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_range_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_request.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_roundrobin_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_timer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_topic.c

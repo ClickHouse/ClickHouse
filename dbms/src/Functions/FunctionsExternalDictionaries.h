@@ -1894,7 +1894,7 @@ private:
 template <typename T>
 static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
 {
-    if (!column.isColumnConst())
+    if (!isColumnConst(column))
     {
         if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
         {

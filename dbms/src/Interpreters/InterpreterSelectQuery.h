@@ -13,6 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 
+#include <Processors/QueryPipeline.h>
 
 namespace Poco { class Logger; }
 
@@ -68,6 +69,9 @@ public:
 
     /// Execute the query and return multuple streams for parallel processing.
     BlockInputStreams executeWithMultipleStreams();
+
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
 
     Block getSampleBlock();
 
@@ -125,10 +129,13 @@ private:
         {
             return hasMoreThanOneStream() || union_stream;
         }
+
+        bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
+        bool initialized() const { return !streams.empty(); }
     };
 
-    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
-
+    template <typename TPipeline>
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
     struct AnalysisResult
     {
@@ -177,7 +184,8 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
+    template <typename TPipeline>
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
                              const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
@@ -197,6 +205,22 @@ private:
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline);
+    void executeLimitBy(QueryPipeline & pipeline);
+    void executeLimit(QueryPipeline & pipeline);
+    void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(QueryPipeline & pipeline);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+
     /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
     void unifyStreams(Pipeline & pipeline);
 
@@ -207,6 +231,8 @@ private:
     };
 
     void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
+
+    void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

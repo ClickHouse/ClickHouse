@@ -7,7 +7,7 @@ endif ()
 option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ${ENABLE_JEMALLOC_DEFAULT})
 if (OS_LINUX AND NOT ARCH_ARM)
     option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" ${NOT_UNBUNDLED})
-elseif ()
+else()
     option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" OFF)
 endif()
 
@@ -30,7 +30,7 @@ if (ENABLE_JEMALLOC)
 
     if (JEMALLOC_LIBRARIES)
         set (USE_JEMALLOC 1)
-    else ()
+    elseif (NOT MISSING_INTERNAL_JEMALLOC_LIBRARY)
         message (FATAL_ERROR "ENABLE_JEMALLOC is set to true, but library was not found")
     endif ()
 

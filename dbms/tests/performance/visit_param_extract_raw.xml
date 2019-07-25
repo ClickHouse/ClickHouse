@@ -1,5 +1,4 @@
 <test>
-    <name>visit_param_extract_raw</name>
     <type>once</type>
 
     <stop_conditions>

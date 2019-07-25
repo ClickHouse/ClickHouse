@@ -18,12 +18,18 @@
 #include <limits>
 #include <ext/scope_guard.h>
 
+#include <openssl/rsa.h>
+
 
 namespace DB
 {
+
 using namespace MySQLProtocol;
+
+
 using Poco::Net::SecureStreamSocket;
 using Poco::Net::SSLManager;
+
 
 namespace ErrorCodes
 {
@@ -48,7 +54,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 void MySQLHandler::run()
 {
     connection_context = server.context();
-    connection_context.setSessionContext(connection_context);
+    connection_context.makeSessionContext();
     connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -299,9 +305,9 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         LOG_TRACE(log, "Received empty password");
     }
 
-    if (!password.empty())
+    if (!password.empty() && password.back() == 0)
     {
-        password.pop_back(); /// terminating null byte
+        password.pop_back();
     }
 
     try

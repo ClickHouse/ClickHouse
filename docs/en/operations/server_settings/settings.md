@@ -322,8 +322,8 @@ Writing to the syslog is also supported. Config example:
 
 Keys:
 
-- user_syslog — Required setting if you want to write to the syslog.
-- address — The host[:порт] of syslogd. If omitted, the local daemon is used.
+- use_syslog — Required setting if you want to write to the syslog.
+- address — The host[:port] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
 - facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
@@ -514,7 +514,7 @@ Use the following parameters to configure logging:
 ```
 
 
-## path
+## path {#server_settings-path}
 
 The path to the directory containing data.
 

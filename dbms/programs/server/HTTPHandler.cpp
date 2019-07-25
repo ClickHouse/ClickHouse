@@ -211,7 +211,6 @@ void HTTPHandler::processQuery(
     Output & used_output)
 {
     Context context = server.context();
-    context.setGlobalContext(server.context());
 
     CurrentThread::QueryScope query_scope(context);
 
@@ -475,9 +474,9 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    bool isExternalData = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
 
-    if (isExternalData)
+    if (has_external_data)
     {
         /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
         reserved_param_suffixes.reserve(3);
@@ -501,6 +500,12 @@ void HTTPHandler::processQuery(
         else if (param_could_be_skipped(key))
         {
         }
+        else if (startsWith(key, "param_"))
+        {
+            /// Save name and values of substitution in dictionary.
+            const String parameter_name = key.substr(strlen("param_"));
+            context.setQueryParameter(parameter_name, value);
+        }
         else
         {
             /// All other query parameters are treated as settings.
@@ -516,7 +521,7 @@ void HTTPHandler::processQuery(
     std::string full_query;
 
     /// Support for "external data for query processing".
-    if (isExternalData)
+    if (has_external_data)
     {
         ExternalTablesHandler handler(context, params);
         params.load(request, istr, handler);
