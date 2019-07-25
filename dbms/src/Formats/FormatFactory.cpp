@@ -95,7 +95,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     /** Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format));
+    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
 
