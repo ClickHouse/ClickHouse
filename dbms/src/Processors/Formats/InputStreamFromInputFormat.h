@@ -13,7 +13,7 @@ class InputStreamFromInputFormat : public IBlockInputStream
 public:
     explicit InputStreamFromInputFormat(InputFormatPtr input_format_)
         : input_format(std::move(input_format_))
-        , port(input_format->getPort().getHeader())
+        , port(input_format->getPort().getHeader(), input_format.get())
     {
         connect(input_format->getPort(), port);
     }
