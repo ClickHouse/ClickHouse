@@ -1068,13 +1068,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                   *  - therefore, we merge the sorted streams from remote servers.
                   */
 
-                if (!query_info.sorting_info) // Otherwise we have executed them while reading
-                    executeExpression(pipeline, expressions.before_order);
-
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
+                {
+                    if (!query_info.sorting_info) // Otherwise we have executed them while reading
+                        executeExpression(pipeline, expressions.before_order);
                     executeOrder(pipeline, query_info.sorting_info);
+                }
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
