@@ -2,13 +2,13 @@
 
 <storage_configuration>
     <disks>
-        <!--default> <! - - path for default disk is provided in main config - - >
-            <keep_free_space_bytes>0</keep_free_space_bytes>
-        </default-->
-        <mainstorage>
-            <path>/mainstorage/</path><!-- trailing slash is mandatory -->
-            <keep_free_space_bytes>1000000</keep_free_space_bytes>
-        </mainstorage>
+        <default> <!--path for default disk is provided in main config-->
+            <keep_free_space_bytes>1000</keep_free_space_bytes>
+        </default>
+<!--        <mainstorage>-->
+<!--            <path>/mainstorage/</path>&lt;!&ndash; trailing slash is mandatory &ndash;&gt;-->
+<!--            <keep_free_space_bytes>1000000</keep_free_space_bytes>-->
+<!--        </mainstorage>-->
         <jbod1>
             <path>/jbod1/</path>
             <keep_free_space_bytes>10000000</keep_free_space_bytes>
@@ -19,56 +19,63 @@
         </jbod2>
         <external>
             <path>/external/</path>
-            <keep_free_space_bytes>10000000</keep_free_space_bytes>
         </external>
     </disks>
 
     <policies>
         <!-- default: store on mainstorage -->
-        <default>
-            <volume>
-                <disk>mainstorage</disk>
-                <max_data_part_size_bytes>20000000</max_data_part_size_bytes>
-            </volume>
-        </default>
+<!--        <default>-->
+<!--            <volumes>-->
+<!--                <volume>-->
+<!--                    <disk>mainstorage</disk>-->
+<!--                    <max_data_part_size_bytes>20000000</max_data_part_size_bytes>-->
+<!--                </volume>-->
+<!--            </volumes>-->
+<!--        </default>-->
 
         <!-- store local by default, store big parts on external -->
         <default_disk_with_external>
-            <volume>
-                <!-- names for the volumes should be added to allow moving parts between volumed with DDL commands -->
-                <disk>default</disk>
-                <max_data_part_size_bytes>2000000</max_data_part_size_bytes>
-            </volume>
-            <volume>
-                <disk>external</disk>
-                <max_data_part_size_bytes>20000000</max_data_part_size_bytes>
-            </volume>
+            <volumes>
+                <small>
+                    <!-- names for the volumes should be added to allow moving parts between volumed with DDL commands -->
+                    <disk>default</disk>
+                    <max_data_part_size_bytes>2000000</max_data_part_size_bytes>
+                </small>
+                <big>
+                    <disk>external</disk>
+                    <max_data_part_size_bytes>20000000</max_data_part_size_bytes>
+                </big>
+            </volumes>
         </default_disk_with_external>
 
         <!-- store on JBOD by default (round-robin), store big parts on external -->
         <jbod_with_external>
-            <volume>
-                <disk>jbod1</disk>
-                <disk>jbod2</disk>
-                <max_data_part_size_bytes>10000000</max_data_part_size_bytes>
-                <!-- max_data_part_size_ratio>0.2</max_data_part_size_ratio -->
-            </volume>
-            <volume>
-                <disk>external</disk>
-                <!--max_data_part_size_bytes>30000000</max_data_part_size_bytes-->
-            </volume>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                    <disk>jbod2</disk>
+                    <max_data_part_size_bytes>10000000</max_data_part_size_bytes>
+                    <!-- max_data_part_size_ratio>0.2</max_data_part_size_ratio -->
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <!--max_data_part_size_bytes>30000000</max_data_part_size_bytes-->
+                </external>
+            </volumes>
         </jbod_with_external>
 
-        <mainstorage_only>
-            <volume>
-                <disk>mainstorage</disk>
-                <max_data_part_size_bytes>9000000</max_data_part_size_bytes>
-            </volume>
-            <volume>
-                <disk>external</disk>
-                <max_data_part_size_bytes>20000000</max_data_part_size_bytes>
-            </volume>
-       </mainstorage_only>
+<!--        <mainstorage_only>-->
+<!--            <volumes>-->
+<!--                <main>-->
+<!--                    <disk>mainstorage</disk>-->
+<!--                    <max_data_part_size_bytes>9000000</max_data_part_size_bytes>-->
+<!--                </main>-->
+<!--                <extra>-->
+<!--                    <disk>external</disk>-->
+<!--                    <max_data_part_size_bytes>20000000</max_data_part_size_bytes>-->
+<!--                </extra>-->
+<!--            </volumes>-->
+<!--        </mainstorage_only>-->
 
 
     </policies>

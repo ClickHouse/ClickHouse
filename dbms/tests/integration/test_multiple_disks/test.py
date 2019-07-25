@@ -18,20 +18,99 @@ node2 = cluster.add_instance('node2',
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
 
-#node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'], with_zookeeper=True)
+# node2 = cluster.add_instance('node2',
+#                              main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'],
+#                              with_zookeeper=True)
 
 @pytest.fixture(scope="module")
-
 def test_cluster():
     try:
         cluster.start()
+
+        # for node in [node1, node2]:
+        #     node.query('''
+        #     CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
+        #     ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+        #         '''.format(replica=node.name))
+        #
+        # node1.query('''
+        #     CREATE TABLE non_replicated_mt(date Date, id UInt32, value Int32)
+        #     ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id;
+        # ''')
+
         yield cluster
 
     finally:
         cluster.shutdown()
 
-def test_run_shell(test_cluster):
-    test_cluster.open_bash_shell('node1')
+
+# def test_run_shell(test_cluster):
+#     test_cluster.open_bash_shell('node1')
+
+# Check that configuration is valid
+def test_config(test_cluster):
+    assert node1.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
+    assert node2.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
+    assert node1.query("select * from system.storage_policies") == "" \
+               "default\tdefault\t0\t['default']\t18446744073709551615\n" \
+               "default_disk_with_external\tsmall\t0\t['default']\t2000000\n" \
+               "default_disk_with_external\tbig\t1\t['external']\t20000000\n" \
+               "jbod_with_external\tmain\t0\t['jbod1','jbod2']\t10000000\n" \
+               "jbod_with_external\texternal\t1\t['external']\t18446744073709551615\n"
+    assert node2.query("select * from system.storage_policies") == "" \
+               "default\tdefault\t0\t['default']\t18446744073709551615\n" \
+               "default_disk_with_external\tsmall\t0\t['default']\t2000000\n" \
+               "default_disk_with_external\tbig\t1\t['external']\t20000000\n" \
+               "jbod_with_external\tmain\t0\t['jbod1','jbod2']\t10000000\n" \
+               "jbod_with_external\texternal\t1\t['external']\t18446744073709551615\n"
+
+
+def test_write_on_second_volume(test_cluster):
+    assert node1.query("create table node1_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='jbod_with_external'") == ""
+    n = 1000
+    flag = True
+    i = 0
+    used_disks = set()
+    # Keep insert while external disk do not contain parts
+    while flag:
+        s = ["(" + str(n * i + k) + ")" for k in range(n)]
+        assert node1.query("insert into node1_mt values " + ', '.join(s)) == ""
+        used_disks_ = node1.query("select distinct disk_name from system.parts where table == 'node1_mt'").strip().split("\n")
+        used_disks.update(used_disks_)
+        flag = "external" not in used_disks_
+        i += 1
+
+    # Check if all disks from policy was used
+    assert used_disks == {'jbod1', 'jbod2', 'external'}
+    assert node1.query("drop table node1_mt") == ""
+    assert node1.query("select distinct disk_name from system.parts where table == 'node1_mt'").strip().split("\n") == ['']
+
+
+def test_default(test_cluster):
+    assert node1.query("create table node1_default_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d") == ""
+    assert node1.query("select storage_policy from system.tables where name == 'node1_default_mt'") == "default\n"
+    assert node1.query("insert into node1_default_mt values (1)") == ""
+    assert node1.query("select disk_name from system.parts where table == 'node1_default_mt'") == "default\n"
+
+
+def test_move(test_cluster):
+    assert node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'") == ""
+    assert node1.query("insert into node1_move_mt values (1)") == ""
+    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+    # move from default to external
+    assert node1.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'external'") == ""
+    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "external\n"
+    # move back
+    assert node1.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'default'") == ""
+    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+
+
+def test_no_policy(test_cluster):
+    try:
+        node2.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
+    except Exception as e:
+        assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
+
 
 #################################
 # root@node1:/# clickhouse client -m
@@ -145,7 +224,7 @@ def test_run_shell(test_cluster):
 '''
 ## Test stand for multiple disks feature
 
-Currently for namual tests, can be easily scripted to be the part of inntergration tests.
+Currently for manual tests, can be easily scripted to be the part of intergration tests.
 
 To run you need to have docker & docker-compose.
 

@@ -62,11 +62,11 @@ public:
 
     class Stat
     {
-        struct statvfs fs;
+        struct statvfs fs = {};
         UInt64 keep_free_space_bytes;
 
     public:
-        Stat(const Disk & disk)
+        explicit Stat(const Disk & disk)
         {
             if (statvfs(disk.path.c_str(), &fs) != 0)
                 throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
@@ -105,14 +105,16 @@ public:
     {
         auto avaliable_space = getAvailableSpace();
         std::lock_guard lock(mutex);
-        if (bytes == 0) {
+        if (bytes == 0)
+        {
             LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserve 0 bytes on disk " << name);
             ++reservation_count;
             return true;
         }
         avaliable_space -= std::min(avaliable_space, reserved_bytes);
         LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << avaliable_space << " , to reserve " << bytes << " on disk " << name);
-        if (avaliable_space >= bytes) {
+        if (avaliable_space >= bytes)
+        {
             ++reservation_count;
             reserved_bytes += bytes;
             return true;
@@ -268,7 +270,7 @@ public:
 
     Volume(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
 
-    Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks), name(other.name) { }
+    Volume(const Volume & other) : Space(other), max_data_part_size(other.max_data_part_size), disks(other.disks), name(other.name) { }
 
     Volume & operator=(const Volume & other)
     {
