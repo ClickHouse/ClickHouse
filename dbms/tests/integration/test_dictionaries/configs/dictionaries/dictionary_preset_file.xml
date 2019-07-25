@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 <yandex>
-  <dictionaries>
     <dictionary>
       <name>file</name>
       <source>
@@ -51,5 +50,4 @@
         </attribute>
       </structure>
     </dictionary>
-  </dictionaries>
 </yandex>
