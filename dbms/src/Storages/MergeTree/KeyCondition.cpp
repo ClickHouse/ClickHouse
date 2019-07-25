@@ -654,6 +654,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         if (args.size() != 2)
             return false;
 
+        if (atom_map.find(func->name) == std::end(atom_map))
+            return false;
+
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
@@ -728,8 +731,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         out.monotonic_functions_chain = std::move(chain);
 
         const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
