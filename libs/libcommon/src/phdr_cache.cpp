@@ -1,4 +1,4 @@
-/// This code was developed by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
+/// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
 #include <link.h>
 #include <dlfcn.h>
