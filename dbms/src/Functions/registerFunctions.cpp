@@ -40,6 +40,7 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
+void registerFunctionSymbolizeAddress(FunctionFactory &);
 
 void registerFunctions()
 {
@@ -75,10 +76,10 @@ void registerFunctions()
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
     registerFunctionsGeo(factory);
-    registerFunctionsIntrospection(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
+    registerFunctionSymbolizeAddress(factory);
 }
 
 }
