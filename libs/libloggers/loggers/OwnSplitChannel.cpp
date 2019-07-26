@@ -50,35 +50,33 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     }
 
     /// Also log to system.internal_text_log table
+    ThreadGroupStatusPtr thread_group = CurrentThread::getGroup();
+    if (thread_group && thread_group->global_context)
+    {
+        if (auto text_log = thread_group->global_context->getTextLog())
+        {
+            TextLogElement elem;
 
-    if (CurrentThread::getGroup() != nullptr &&
-        CurrentThread::getGroup()->global_context != nullptr &&
-        CurrentThread::getGroup()->global_context->getTextLog() != nullptr) {
+            elem.event_time = msg_ext.time_seconds;
+            elem.microseconds = msg_ext.time_microseconds;
 
-        const auto text_log = CurrentThread::getGroup()->global_context->getTextLog();
-        TextLogElement elem;
+            elem.thread_name = getThreadName();
+            elem.thread_number = msg_ext.thread_number;
+            elem.os_thread_id = CurrentThread::get().os_thread_id;
 
-        elem.event_time = msg_ext.time_seconds;
-        elem.microseconds = msg_ext.time_microseconds;
+            elem.query_id = msg_ext.query_id;
 
-        elem.thread_name = getThreadName();
-        elem.thread_number = msg_ext.thread_number;
-        elem.os_thread_id = CurrentThread::get().os_thread_id;
+            elem.message = msg.getText();
+            elem.logger_name = msg.getSource();
+            elem.level = msg.getPriority();
 
-        elem.query_id = msg_ext.query_id;
+            if (msg.getSourceFile() != nullptr)
+                elem.source_file = msg.getSourceFile();
+            elem.source_line = msg.getSourceLine();
 
-        elem.message = msg.getText();
-        elem.logger_name = msg.getSource();
-        elem.level = msg.getPriority();
-
-        if (msg.getSourceFile() != nullptr) {
-            elem.source_file = msg.getSourceFile();
+            text_log->add(elem);
         }
-        elem.source_line = msg.getSourceLine();
-
-        text_log->add(elem);
     }
-
 }
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
