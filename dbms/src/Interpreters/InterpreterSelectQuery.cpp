@@ -535,18 +535,12 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
             }
         }
 
+        /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer->appendSelect(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.selected_columns = chain.getLastStep().required_output;
-        res.before_select = chain.getLastActions();
+        res.has_order_by = query_analyzer->appendOrderBy(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
+        res.before_order_and_select = chain.getLastActions();
         chain.addStep();
-
-        /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-        if (query_analyzer->appendOrderBy(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage)))
-        {
-            res.has_order_by = true;
-            res.before_order = chain.getLastActions();
-            chain.addStep();
-        }
 
         if (query_analyzer->appendLimitBy(chain, dry_run || !res.second_stage))
         {
@@ -654,8 +648,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
-    const Context & context, const ExpressionActionsPtr & expressions)
+static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -667,11 +660,19 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
+    auto is_virtual_column = [](const String & column_name)
+    {
+        return column_name == "_part" || column_name == "_part_index"
+            || column_name == "_partition_id" || column_name == "_sample_factor";
+    };
+
     auto order_by_expr = query.orderBy();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr,
-        expressions->getRequiredColumnsWithTypes(), expressions->getSampleBlock().getNames());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAll());
     for (size_t i = 0; i < prefix_size; ++i)
     {
+        if (is_virtual_column(order_descr[i].column_name))
+            break;
+
         /// Read in pk order in case of exact match with order key element
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
@@ -730,7 +731,7 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     if (prefix_order_descr.empty())
         return {};
 
-    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), expressions, read_direction);
+    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), read_direction);
 }
 
 
@@ -792,6 +793,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
+    if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    {
+        if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+            sorting_info = optimizeSortingWithPK(*merge_tree_data, query, context);
+    }
 
     if (dry_run)
     {
@@ -804,12 +810,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
-
-        if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
-        {
-            if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                sorting_info = optimizeSortingWithPK(*merge_tree_data, query,context, expressions.before_order);
-        }
 
         if (expressions.prewhere_info)
         {
@@ -846,12 +846,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
-
-        if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
-        {
-            if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                sorting_info = optimizeSortingWithPK(*merge_tree_data, query,context, expressions.before_order);
-        }
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
@@ -960,7 +954,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
             else
             {
-                executeExpression(pipeline, expressions.before_select);
+                executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
             }
 
@@ -972,11 +966,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                {
-                    if (!query_info.sorting_info) // Otherwise we have executed expressions while reading
-                        executeExpression(pipeline, expressions.before_order);
                     executeOrder(pipeline, query_info.sorting_info);
-                }
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -1030,7 +1020,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
 
-                executeExpression(pipeline, expressions.before_select);
+                executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
                 need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
@@ -1071,11 +1061,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                {
-                    if (!query_info.sorting_info) // Otherwise we have executed them while reading
-                        executeExpression(pipeline, expressions.before_order);
                     executeOrder(pipeline, query_info.sorting_info);
-                }
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
