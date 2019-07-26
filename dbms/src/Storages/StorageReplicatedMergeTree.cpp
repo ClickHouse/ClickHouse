@@ -3365,6 +3365,15 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             }
             break;
 
+            case PartitionCommand::MOVE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
+                auto from_storage = query_context.getTable(from_database, command.from_table);
+                movePartitionTo(from_storage, command.partition, command.replace, query_context);
+            }
+            break;
+
             case PartitionCommand::FETCH_PARTITION:
                 fetchPartition(command.partition, command.from_zookeeper_path, query_context);
                 break;
@@ -4906,6 +4915,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     /// If necessary, wait until the operation is performed on all replicas.
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
         waitForAllReplicasToProcessLogEntry(entry);
+}
+
+void StorageReplicatedMergeTree::movePartitionTo(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*replace*/,
+                                                      const Context & /*context*/)
+{
+    // TODO: Implement
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(

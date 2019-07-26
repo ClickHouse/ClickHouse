@@ -137,6 +137,19 @@ void ASTAlterCommand::formatImpl(
         }
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
     }
+    else if (type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE PARTITION "
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+        if (!from_database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
+    }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "
