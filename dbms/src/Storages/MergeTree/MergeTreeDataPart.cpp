@@ -356,16 +356,18 @@ void MergeTreeDataPart::remove(bool force_recursive /*= false*/) const
       * - rename directory to temporary name;
       * - remove it recursive.
       *
-      * For temporary name we use "delete_tmp_" prefix.
+      * For temporary name we use "detached/deleting_" prefix.
       *
-      * NOTE: We cannot use "tmp_delete_" prefix, because there is a second thread,
+      * NOTE: We cannot use "tmp_*" prefix, because there is a second thread,
       *  that calls "clearOldTemporaryDirectories" and removes all directories, that begin with "tmp_" and are old enough.
       * But when we removing data part, it can be old enough. And rename doesn't change mtime.
       * And a race condition can happen that will lead to "File not found" error here.
+      * We move directory to detached/, because if an attempt to remove directory after renaming failed for some reason
+      * there would be no way to remove directory from storage.full_path (except manually).
       */
 
     String from = storage.full_path + relative_path;
-    String to = storage.full_path + "delete_tmp_" + name;
+    String to = storage.full_path + getRelativePathForDetachedPart("deleting_");
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};

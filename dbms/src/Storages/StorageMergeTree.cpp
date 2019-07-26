@@ -36,7 +36,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int BAD_DATA_PART_NAME;
 }
 
 namespace ActionLocks
@@ -1003,7 +1002,7 @@ void StorageMergeTree::dropDetached(const ASTPtr & partition, bool part, const C
     validateDetachedPartName(part_id);
 
     DetachedPartInfo info;
-    DetachedPartInfo::tryParseDetachedPartName(part_id, &info, format_version);
+    DetachedPartInfo::tryParseDetachedPartName(part_id, info, format_version);
     MergeTreeDataPart detached_part(*this, part_id, info);
     detached_part.relative_path = "detached/" + part_id;
 
@@ -1038,7 +1037,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         {
             const String & name = it.name();
             MergeTreePartInfo part_info;
-            /// Parts with prefix in name (e.g. attaching_1_3_3_0, delete_tmp_1_3_3_0) will be ignored
+            /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
+            // TODO what if name contains "_tryN" suffix?
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
                 || part_info.partition_id != partition_id)
             {
@@ -1163,15 +1163,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-void StorageMergeTree::validateDetachedPartName(const String & name) const
-{
-    if (name.find('/') != std::string::npos || name == "." || name == "..")
-        throw DB::Exception("Invalid part name", ErrorCodes::INCORRECT_FILE_NAME);
-
-    Poco::File detached_part_dir(full_path + "detached/" + name);
-    if (!detached_part_dir.exists())
-        throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
-}
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {

@@ -3554,6 +3554,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     Strings parts;
     if (attach_part)
     {
+        validateDetachedPartName(partition_id);
         parts.push_back(partition_id);
     }
     else
@@ -3566,6 +3567,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         {
             String name = it.name();
             MergeTreePartInfo part_info;
+            // TODO what if name contains "_tryN" suffix?
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
                 continue;
             if (part_info.partition_id != partition_id)

@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
@@ -31,13 +32,12 @@ protected:
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
-            {"partition_id", std::make_shared<DataTypeString>()},
+            {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
             {"name", std::make_shared<DataTypeString>()},
-            {"reason", std::make_shared<DataTypeString>()},
-            {"min_block_number", std::make_shared<DataTypeInt64>()},
-            {"max_block_number", std::make_shared<DataTypeInt64>()},
-            {"level", std::make_shared<DataTypeUInt32>()},
-            {"directory_name", std::make_shared<DataTypeString>()}
+            {"reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+            {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
         }});
     }
 
@@ -63,13 +63,12 @@ protected:
                 int i = 0;
                 columns[i++]->insert(info.database);
                 columns[i++]->insert(info.table);
-                columns[i++]->insert(p.valid_name ? p.partition_id : "");
-                columns[i++]->insert(p.valid_name ? p.getPartName() : "");
-                columns[i++]->insert(p.prefix);
-                columns[i++]->insert(p.min_block);
-                columns[i++]->insert(p.max_block);
-                columns[i++]->insert(p.level);
-                columns[i++]->insert(p.fullDirName());
+                columns[i++]->insert(p.valid_name ? p.partition_id : Field());
+                columns[i++]->insert(p.dir_name);
+                columns[i++]->insert(p.valid_name ? p.prefix : Field());
+                columns[i++]->insert(p.valid_name ? p.min_block : Field());
+                columns[i++]->insert(p.valid_name ? p.max_block : Field());
+                columns[i++]->insert(p.valid_name ? p.level : Field());
             }
         }
 

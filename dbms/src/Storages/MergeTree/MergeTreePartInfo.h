@@ -92,15 +92,14 @@ struct MergeTreePartInfo
 /// addition to the above fields.
 struct DetachedPartInfo : public MergeTreePartInfo
 {
+    /// Suddenly, name of detached part may contain suffix (such as _tryN), which is ignored by MergeTreePartInfo::tryParsePartName(...)
+    String dir_name;
     String prefix;
 
-    /// If false, prefix contains full directory name and MergeTreePartInfo may be in invalid state
-    /// (directory name was not successfully parsed).
+    /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 
-    String fullDirName() const;
-
-    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo * part_info, MergeTreeDataFormatVersion format_version);
+    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
 };
 
 }

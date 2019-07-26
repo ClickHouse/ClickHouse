@@ -124,7 +124,6 @@ private:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void validateDetachedPartName(const String & name) const;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
