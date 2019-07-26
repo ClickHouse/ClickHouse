@@ -87,6 +87,8 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int BAD_TTL_EXPRESSION;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 
@@ -2583,9 +2585,19 @@ MergeTreeData::getDetachedParts() const
         res.emplace_back();
         auto & part = res.back();
 
-        DetachedPartInfo::tryParseDetachedPartName(dir_name, &part, format_version);
+        DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
     }
     return res;
+}
+
+void MergeTreeData::validateDetachedPartName(const String & name) const
+{
+    if (name.find('/') != std::string::npos || name == "." || name == "..")
+        throw DB::Exception("Invalid part name", ErrorCodes::INCORRECT_FILE_NAME);
+
+    Poco::File detached_part_dir(full_path + "detached/" + name);
+    if (!detached_part_dir.exists())
+        throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const

@@ -389,6 +389,8 @@ public:
     /// Returns all detached parts
     std::vector<DetachedPartInfo> getDetachedParts() const;
 
+    void validateDetachedPartName(const String & name) const;
+
     /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
