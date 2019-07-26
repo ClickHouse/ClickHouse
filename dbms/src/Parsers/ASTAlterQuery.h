@@ -112,7 +112,10 @@ public:
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
-
+    /// MOVE PARTITION partition TO db.table
+    String to_database;
+    String to_table;
+ 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
     ASTPtr clone() const override;
