@@ -953,6 +953,15 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             }
             break;
 
+            case PartitionCommand::MOVE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                movePartitionTo(from_storage, command.partition, context);
+            }
+            break;
+
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
@@ -1137,6 +1146,78 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
+void StorageMergeTree::movePartitionTo(const StoragePtr & source_table, const ASTPtr & partition, const Context & context)
+{
+    auto source_table_storage = (StorageMergeTree *)(source_table.get());
+    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
+
+    Stopwatch watch;
+
+    MergeTreeData & src_data = *dynamic_cast<MergeTreeData *>(this);
+    String partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MutableDataPartsVector dst_parts;
+
+    static const String TMP_PREFIX = "tmp_replace_from_";
+
+    for (const DataPartPtr & src_part : src_parts)
+    {
+        if (!source_table_storage->canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = insert_increment.get();
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+        std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
+        dst_parts.emplace_back(cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info));
+    }
+
+    /// ATTACH empty part set
+    if (dst_parts.empty())
+        return;
+
+    MergeTreePartInfo drop_range;
+        drop_range.partition_id = partition_id;
+        drop_range.min_block = 0;
+        drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
+        drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+
+    /// Atomically add new parts and remove old ones
+    try
+    {
+        {
+            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
+            ///  and we should be able to rollback already added (Precomitted) parts
+            Transaction transaction(*source_table_storage);
+
+            auto data_parts_lock = lockParts();
+
+            /// Populate transaction
+            for (MutableDataPartPtr & part : dst_parts)
+                source_table_storage->renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+
+            transaction.commit(&data_parts_lock);
+
+            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+            /*source_table_storage->*/removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        }
+
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+
+}
+
+
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
@@ -1201,3 +1282,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 }
 
 }
+#include "StorageMergeTree.h"
+
+#include <Databases/IDatabase.h>
+#include <Common/escapeForFileName.h>

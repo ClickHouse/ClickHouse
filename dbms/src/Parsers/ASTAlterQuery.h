@@ -35,6 +35,7 @@ public:
         DROP_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
+        MOVE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,

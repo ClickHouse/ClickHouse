@@ -25,6 +25,7 @@ struct PartitionCommand
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
         REPLACE_PARTITION,
+        MOVE_PARTITION,
     };
 
     Type type;
