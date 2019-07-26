@@ -20,6 +20,9 @@
 
 #include <Common/StringUtils/StringUtils.h>
 
+#include <common/phdr_cache.h>
+
+
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -143,6 +146,10 @@ int main(int argc_, char ** argv_)
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
+
+    /// PHDR cache is required for query profiler to work reliably
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen) won't work.
+    updatePHDRCache();
 
 #if USE_EMBEDDED_COMPILER
     if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
