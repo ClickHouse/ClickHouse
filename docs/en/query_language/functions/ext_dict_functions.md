@@ -21,7 +21,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 **Returned value**
 
 - If ClickHouse parses the attribute successfully in the [attribute's data type](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
-- If there is no requested `id_expr` in the dictionary, then:
+- If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
     - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
     - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
@@ -165,7 +165,7 @@ Functions:
 - `dictGetUUID`
 - `dictGetString`
 
-All these functions take the `OrDefault` modifier. For example, `dictGetDateOrDefault`.
+All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
 
 Syntax:
 

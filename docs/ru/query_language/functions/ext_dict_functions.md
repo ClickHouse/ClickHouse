@@ -20,9 +20,9 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Возвращаемое значение**
 
-- Если ClickHouse успешно обработал атрибут в соответствии с  [заданным типом данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), то функции возвращают значение атрибута, соответствующее ключу `id_expr`.
+- Значение атрибута, соответствующее ключу `id_expr`, если ClickHouse смог привести это значение к [заданному типу данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes).
 
-- Если запрошенного `id_expr` в словаре нет, то:
+- Если ключа, соответствущего `id_expr` в словаре нет, то:
     - `dictGet` возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
     - `dictGetOrDefault` возвращает атрибут `default_value_expr`.
 
@@ -190,4 +190,3 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 Если значение атрибута не удалось обработать или оно не соответствует типу данных атрибута, то ClickHouse генерирует исключение.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->
-
