@@ -2771,7 +2771,6 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage * sour
     return *src_data;
 }
 
-
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
 {
     return checkStructureAndGetMergeTreeData(source_table.get());

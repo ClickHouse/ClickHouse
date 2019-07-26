@@ -3368,9 +3368,9 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::MOVE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
-                auto from_storage = query_context.getTable(from_database, command.from_table);
-                movePartitionTo(from_storage, command.partition, command.replace, query_context);
+                String dest_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
+                auto dest_storage = query_context.getTable(dest_database, command.from_table);
+                movePartitionTo(dest_storage, command.partition, query_context);
             }
             break;
 
@@ -4917,8 +4917,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         waitForAllReplicasToProcessLogEntry(entry);
 }
 
-void StorageReplicatedMergeTree::movePartitionTo(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*replace*/,
-                                                      const Context & /*context*/)
+void StorageReplicatedMergeTree::movePartitionTo(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, const Context & /*context*/)
 {
     // TODO: Implement
 }
