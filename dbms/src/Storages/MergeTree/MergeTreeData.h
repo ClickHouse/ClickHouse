@@ -569,7 +569,6 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage * source_table) const;
 
-
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
                                                            const MergeTreePartInfo & dst_part_info);
 
