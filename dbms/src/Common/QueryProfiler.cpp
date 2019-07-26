@@ -1,5 +1,7 @@
 #include "QueryProfiler.h"
 
+#include <random>
+#include <pcg_random.hpp>
 #include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
@@ -8,6 +10,7 @@
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
@@ -60,6 +63,7 @@ namespace
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
     thread_local size_t write_trace_iteration = 0;
+    thread_local pcg64 rng{randomSeed()};
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -153,8 +157,16 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         if (timer_create(clock_type, &sev, &timer_id))
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
 
+        /// Randomize offset as uniform random value from 0 to period - 1.
+        /// It will allow to sample short queries even if timer period is large.
+        /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
+        /// It also helps to avoid interference (moire).
+        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(rng);
+
         struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
-        struct itimerspec timer_spec = {.it_interval = interval, .it_value = interval};
+        struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
+
+        struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
         if (timer_settime(timer_id, 0, &timer_spec, nullptr))
             throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
     }
