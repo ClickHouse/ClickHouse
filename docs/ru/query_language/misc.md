@@ -30,7 +30,7 @@ CHECK TABLE [db.]name
 - 0 - данные в таблице повреждены;
 - 1 - данные не повреждены.
 
-Запрос `CHECK TABLE` поддержан для следующих движков таблиц:
+Запрос `CHECK TABLE` поддерживает следующие движки таблиц:
 
 - [Log](../operations/table_engines/log.md)
 - [TinyLog](../operations/table_engines/tinylog.md)
