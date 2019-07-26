@@ -17,7 +17,7 @@ struct NoCapture
 };
 
 /// Tries to capture current stack trace using libunwind or signal context
-/// NOTE: StackTrace calculation is signal safe only if enablePHDRCache() was called beforehand.
+/// NOTE: StackTrace calculation is signal safe only if updatePHDRCache() was called beforehand.
 class StackTrace
 {
 public:

@@ -14,6 +14,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
+#include <common/phdr_cache.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
@@ -509,7 +510,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
-    global_context->initializeTraceCollector();
+    if (hasPHDRCache())
+        global_context->initializeTraceCollector();
 
     global_context->setCurrentDatabase(default_database);
 
