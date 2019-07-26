@@ -148,7 +148,8 @@ int main(int argc_, char ** argv_)
     std::set_new_handler(nullptr);
 
     /// PHDR cache is required for query profiler to work reliably
-    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen) won't work.
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+    ///  will work only after additional call of this function.
     updatePHDRCache();
 
 #if USE_EMBEDDED_COMPILER
