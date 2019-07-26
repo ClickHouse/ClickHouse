@@ -44,6 +44,10 @@ struct PartitionCommand
     String from_table;
     bool replace = true;
 
+    /// For MOVE PARTITION
+    String to_database;
+    String to_table;
+ 
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_zookeeper_path;
 

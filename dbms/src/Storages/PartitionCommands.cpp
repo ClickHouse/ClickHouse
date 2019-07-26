@@ -46,8 +46,8 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = MOVE_PARTITION;
         res.partition = command_ast->partition;
-        res.from_database = command_ast->from_database;
-        res.from_table = command_ast->from_table;
+        res.to_database = command_ast->to_database;
+        res.to_table = command_ast->to_table;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)

@@ -3368,8 +3368,8 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::MOVE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String dest_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
-                auto dest_storage = query_context.getTable(dest_database, command.from_table);
+                String dest_database = command.to_database.empty() ? query_context.getCurrentDatabase() : command.to_database;
+                auto dest_storage = query_context.getTable(dest_database, command.to_table);
                 movePartitionTo(dest_storage, command.partition, query_context);
             }
             break;

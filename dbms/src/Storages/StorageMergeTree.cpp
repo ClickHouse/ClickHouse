@@ -956,8 +956,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::MOVE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String dest_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-                auto dest_storage = context.getTable(dest_database, command.from_table);
+                String dest_database = command.to_database.empty() ? context.getCurrentDatabase() : command.to_database;
+                auto dest_storage = context.getTable(dest_database, command.to_table);
                 movePartitionTo(dest_storage, command.partition, context);
             }
             break;

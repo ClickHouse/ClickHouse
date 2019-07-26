@@ -193,7 +193,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!s_to.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+        if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
             return false;
 
         command->type = ASTAlterCommand::MOVE_PARTITION;

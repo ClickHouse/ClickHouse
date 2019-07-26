@@ -145,10 +145,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
         if (!from_database.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_table) << (settings.hilite ? hilite_none : "");
     }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
