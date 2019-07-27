@@ -826,8 +826,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrd
     auto split_ranges = [max_block_size](const auto & ranges, size_t rows_granularity, size_t num_marks_in_part)
     {
         /// Constants is just a guess.
-        const size_t min_rows_in_range = max_block_size * 4;
-        const size_t max_num_ranges = 32;
+        const size_t min_rows_in_range = max_block_size;
+        const size_t max_num_ranges = 64;
 
         size_t min_marks_in_range = std::max(
             (min_rows_in_range + rows_granularity - 1) / rows_granularity,
