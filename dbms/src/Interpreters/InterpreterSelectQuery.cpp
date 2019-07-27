@@ -675,7 +675,7 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
             ExpressionActionsPtr actions;
             try
             {
-                ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
+                actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
             }
             catch (const Exception &)
             {
