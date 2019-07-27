@@ -37,6 +37,7 @@ public:
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
+    MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

@@ -29,8 +29,6 @@ public:
         bool require_nonempty,
         BlockPtr saved_block = nullptr);
 
-    std::exception_ptr getCreationException() const override { return creation_exception; }
-
     std::string getName() const override { return name; }
 
     std::string getTypeName() const override { return "Flat"; }
@@ -57,8 +55,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -243,10 +239,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-
-    std::exception_ptr creation_exception;
 
     BlockPtr saved_block;
 };

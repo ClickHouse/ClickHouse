@@ -30,6 +30,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTCheckQuery.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -2394,7 +2395,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
     auto results = zookeeper->multi(ops);
 
-    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results[0]).path_created;
+    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
     log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
     queue.insert(zookeeper, log_entry);
 }
@@ -3055,8 +3056,12 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             if (!selected)
             {
-                LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
-                return handle_noop(disable_reason);
+                std::stringstream message;
+                message << "Cannot select parts for optimization";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                LOG_INFO(log, message.rdbuf());
+                return handle_noop(message.str());
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
@@ -3982,8 +3987,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     /// there is no sense to send query to leader, because he will receive it from own DDLWorker
     if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        LOG_DEBUG(log, "Not leader replica received query from DDLWorker, skipping it.");
-        return;
+        throw Exception("Cannot execute DDL query, because leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
     }
 
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
@@ -4809,6 +4813,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         /// Save deduplication block ids with special prefix replace_partition
 
         auto & src_part = src_all_parts[i];
+
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
         String hash_hex = src_part->checksums.getTotalChecksumHex();
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 
@@ -5124,6 +5134,33 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     return true;
+}
+
+
+CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const Context & context)
+{
+    CheckResults results;
+    DataPartsVector data_parts;
+    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    {
+        String partition_id = getPartitionIDFromQuery(check_query.partition, context);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    }
+    else
+        data_parts = getDataPartsVector();
+
+    for (auto & part : data_parts)
+    {
+        try
+        {
+            results.push_back(part_check_thread.checkPart(part->name));
+        }
+        catch (const Exception & ex)
+        {
+            results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+        }
+    }
+    return results;
 }
 
 }

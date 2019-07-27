@@ -43,7 +43,7 @@ bool ProtobufRowInputStream::read(MutableColumns & columns, RowReadExtension & e
                 read_columns[column_index] = true;
                 allow_add_row = false;
             }
-        } while (reader.maybeCanReadValue());
+        } while (reader.canReadMoreValues());
     }
 
     // Fill non-visited columns with the default values.
@@ -62,7 +62,7 @@ bool ProtobufRowInputStream::allowSyncAfterError() const
 
 void ProtobufRowInputStream::syncAfterError()
 {
-    reader.endMessage();
+    reader.endMessage(true);
 }
 
 
@@ -74,11 +74,12 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         const Context & context,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
+        FormatFactory::ReadCallback callback,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<ProtobufRowInputStream>(buf, sample, FormatSchemaInfo(context, "Protobuf")),
-            sample, max_block_size, rows_portion_size, settings);
+            sample, max_block_size, rows_portion_size, callback, settings);
     });
 }
 

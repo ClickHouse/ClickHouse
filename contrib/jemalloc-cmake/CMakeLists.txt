@@ -15,7 +15,6 @@ ${JEMALLOC_SOURCE_DIR}/src/extent_mmap.c
 ${JEMALLOC_SOURCE_DIR}/src/hash.c
 ${JEMALLOC_SOURCE_DIR}/src/hook.c
 ${JEMALLOC_SOURCE_DIR}/src/jemalloc.c
-${JEMALLOC_SOURCE_DIR}/src/jemalloc_cpp.cpp
 ${JEMALLOC_SOURCE_DIR}/src/large.c
 ${JEMALLOC_SOURCE_DIR}/src/log.c
 ${JEMALLOC_SOURCE_DIR}/src/malloc_io.c

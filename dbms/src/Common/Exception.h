@@ -6,7 +6,7 @@
 
 #include <Poco/Exception.h>
 
-#include <Common/StackTrace.h>
+#include <common/StackTrace.h>
 
 namespace Poco { class Logger; }
 

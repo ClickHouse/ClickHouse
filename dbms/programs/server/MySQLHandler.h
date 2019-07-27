@@ -4,7 +4,6 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/MySQLProtocol.h>
-#include <openssl/rsa.h>
 #include "IServer.h"
 
 

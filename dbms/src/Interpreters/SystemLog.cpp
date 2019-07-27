@@ -2,6 +2,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/TraceLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -44,6 +45,7 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
     query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
     part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
+    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
 
     part_log_database = config.getString("part_log.database", "system");
 }
@@ -51,12 +53,20 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
 SystemLogs::~SystemLogs()
 {
+    shutdown();
+}
+
+
+void SystemLogs::shutdown()
+{
     if (query_log)
         query_log->shutdown();
     if (query_thread_log)
         query_thread_log->shutdown();
     if (part_log)
         part_log->shutdown();
+    if (trace_log)
+        trace_log->shutdown();
 }
 
 }

@@ -3,6 +3,7 @@
 namespace DB
 {
 
+using namespace std::chrono_literals;
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_)
     : ReadBuffer(nullptr, 0)
@@ -17,7 +18,10 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
+    /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
     consumer->unsubscribe();
+    consumer->unassign();
+    while (consumer->get_consumer_queue().next_event(1s));
 }
 
 void ReadBufferFromKafkaConsumer::commit()
@@ -45,16 +49,32 @@ void ReadBufferFromKafkaConsumer::commit()
             "Committed offset " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
                                 << ", partition: " << topic_part.get_partition() << ")");
     }
+
+    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 {
+    {
+        String message = "Subscribed to topics:";
+        for (const auto & topic : consumer->get_subscription())
+            message += " " + topic;
+        LOG_TRACE(log, message);
+    }
+
+    {
+        String message = "Assigned to topics:";
+        for (const auto & toppar : consumer->get_assignment())
+            message += " " + toppar.get_topic();
+        LOG_TRACE(log, message);
+    }
+
+    consumer->resume();
+
     // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     if (consumer->get_subscription().empty())
     {
-        using namespace std::chrono_literals;
-
         consumer->pause(); // don't accidentally read any messages
         consumer->subscribe(topics);
         consumer->poll(5s);
@@ -70,10 +90,15 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
+
+    messages.clear();
+    current = messages.begin();
+    BufferBase::set(nullptr, 0, 0);
+
     consumer->unsubscribe();
 }
 
-/// Try to commit messages implicitly after we processed the previous batch.
+/// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
@@ -86,16 +111,19 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     {
         if (intermediate_commit)
             commit();
-        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
+
+        /// Don't drop old messages immediately, since we may need them for virtual columns.
+        auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
+        if (new_messages.empty())
+        {
+            LOG_TRACE(log, "Stalled");
+            stalled = true;
+            return false;
+        }
+        messages = std::move(new_messages);
         current = messages.begin();
 
         LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
-    }
-
-    if (messages.empty())
-    {
-        stalled = true;
-        return false;
     }
 
     if (auto err = current->get_error())
