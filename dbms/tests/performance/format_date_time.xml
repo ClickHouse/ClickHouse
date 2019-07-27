@@ -13,6 +13,7 @@
 
     <substitutions>
        <substitution>
+           <name>format</name>
            <values>
                <value>%F %T</value>
                <value>%H:%M:%S</value>

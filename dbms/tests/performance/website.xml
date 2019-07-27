@@ -26,6 +26,7 @@
 
     <substitutions>
         <substitution>
+           <name>table</name>
            <values>
                <value>hits_10m_single</value>
                <value>hits_100m_single</value>

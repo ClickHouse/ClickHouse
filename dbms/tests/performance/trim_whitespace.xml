@@ -16,6 +16,7 @@
 
     <substitutions>
         <substitution>
+           <name>func</name>
            <values>
                <value>value</value>
                <value>trimLeft(value)</value>

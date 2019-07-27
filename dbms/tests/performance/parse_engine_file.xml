@@ -23,6 +23,7 @@
 
     <substitutions>
         <substitution>
+            <name>format</name>
             <values>
                 <value>TabSeparated</value>
                 <value>TabSeparatedWithNames</value>
