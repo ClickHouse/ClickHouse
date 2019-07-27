@@ -64,7 +64,6 @@
     <query>SELECT count(n) FROM mon_{table_suffix} LIMIT 100000 SETTINGS max_threads=1</query>
     <query>SELECT count(n) FROM rnd_{table_suffix} LIMIT 100000 SETTINGS max_threads=1</query>
 
-
     <drop_query>DROP TABLE IF EXISTS seq_{table_suffix}</drop_query>
     <drop_query>DROP TABLE IF EXISTS mon_{table_suffix}</drop_query>
     <drop_query>DROP TABLE IF EXISTS rnd_{table_suffix}</drop_query>
