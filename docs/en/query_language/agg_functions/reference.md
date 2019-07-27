@@ -879,10 +879,11 @@ There are 4 customizable parameters. They are passed to the function sequentiall
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
-2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
+1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `1.0`.
+2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.5`.
 3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
-4. `method for updating weights`, there are 3 of them: `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods. Default is `'SGD'`.
+4. `method for updating weights`, there are 4 of them: `SGD`, `Momentum`, `Nesterov` and `Adam`. `Momentum` and `Nesterov` require little bit more computations and memory than `SGD`, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
+`Adam` converges quite efficiently and usually doesn't require any parameters tuning but needs more data than other methods, so if you don't have large amounts of data then consider other parameters. Default is `Adam`.
 
 
 ### Usage {#agg_functions-stochasticlinearregression-usage}
@@ -997,7 +998,10 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 ## incrementalClustering {#agg_functions-incrementalclustering}
 
-This function implements incremental clustering. You may think of it as a streaming version of k-means algorithm. The difference is that we don't store all points to run k-means algorithm, but store and update limited number of clusters (basically desired number of output clusters multiplied by some factor), which are updated on each new object added. Then to predict we run k-means algorithm on these inner clusters. So this function may be used to run approximate clustering if there is too much data.
+This function implements incremental clustering. It processes data stream, stores and updates
+limited number of clusters (basically desired number of output clusters multiplied by some factor), which are updated on each new object added.
+Then to predict on this limited data we run k-means algorithm on these inner clusters.
+So this function may be used to run approximate clustering if there is too much data.
 
 ### Parameters {#agg_functions-incrementalclustering-parameters}
 
@@ -1013,10 +1017,35 @@ All input data must be of numeric types. Clusters are returned as integer number
 
 1. Predicting on data
 
-`evalMLMethod` returns predicted clusters for input elements of the function.
+    Prediction (using clusterization of trained data we predict, which cluster does new point belong to) is done same way
+    as for regression methods with only difference that there is no column for answer on train data.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS train_data
+    (
+        param1 Float64,
+        param2 Float64
+    ) ENGINE = Memory;
+
+    CREATE TABLE your_model ENGINE = Memory AS SELECT
+    incrementalClustering(4)(param1, param2)
+    AS state FROM train_data;
+
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+
+    Here we predict clusters of `test_data` based on clusterization of `train_data` on 6 clusters in two-dimensional space.
+    `evalMLMethod` returns predicted clusters for input elements of the function as integers from `0` to `5`.
 
 2. Fetching cluster centers
 
-No `-State` combinator query returns a `Float64` array, which stores all clusters in raw format - an array of size `clusters_number * dimensions`, where each sequential `dimensions` number of elements represent one cluster.
+    No `-State` combinator query returns a `Float64` array, which stores all clusters in raw format - an array of size `clusters_number * dimensions`, where each sequential `dimensions` number of elements represent one cluster.
+
+    ```sql
+    SELECT incrementalClustering(2)(param1, param2, param3, param4)
+    ```
+    Such query will return an array of 8 elements. First 4 of them are the coordinates of the first predicted cluster and second 4
+    are the coordinates of the second cluster.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
