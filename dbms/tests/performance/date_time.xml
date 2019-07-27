@@ -15,7 +15,6 @@
 
     <substitutions>
        <substitution>
-           <name>datetime_transform</name>
            <values>
                <value>toSecond</value>
                <value>toMinute</value>
@@ -57,7 +56,6 @@
            </values>
        </substitution>
        <substitution>
-           <name>date_transform</name>
            <values>
                <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
@@ -86,7 +84,6 @@
            </values>
        </substitution>
        <substitution>
-           <name>time_zone</name>
            <values>
                <value>UTC</value>
                <value>Europe/Moscow</value>

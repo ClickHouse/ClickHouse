@@ -21,7 +21,6 @@
 
     <substitutions>
         <substitution>
-           <name>func</name>
            <values>
                <value>right(URL, 16)</value>
                <value>substring(URL, greatest(minus(plus(length(URL), 1), 16), 1))</value>

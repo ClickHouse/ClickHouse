@@ -20,7 +20,6 @@
 
     <substitutions>
        <substitution>
-           <name>expr</name>
            <values>
                <value>toString(1 / rand())</value>
                <value>toString(rand() / 0xFFFFFFFF)</value>

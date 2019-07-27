@@ -21,7 +21,6 @@
 
     <substitutions>
         <substitution>
-           <name>string</name>
            <values>
                <value>SearchPhrase</value>
                <value>MobilePhoneModel</value>

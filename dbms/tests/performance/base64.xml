@@ -17,7 +17,6 @@
 
     <substitutions>
         <substitution>
-           <name>string</name>
            <values>
                <value>materialize('Hello, world!')</value>
                <value>materialize('This is a long string to test ClickHouse base64 functions impl..')</value>
@@ -25,7 +24,6 @@
            </values>
         </substitution>
         <substitution>
-           <name>table</name>
            <values>
                <value>numbers</value>
                <value>numbers_mt</value>

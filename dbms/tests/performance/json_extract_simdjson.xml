@@ -21,13 +21,11 @@
 
     <substitutions>
         <substitution>
-           <name>json</name>
            <values>
                <value>'{"sparam":"test_string","nparam": 772}'</value>
            </values>
         </substitution>
         <substitution>
-           <name>long_json</name>
            <values>
                <value>'{"sparam":{"nested_1":"test_string","nested_2":"test_2"}, "nparam":8495, "fparam":{"nested_1":91.15,"nested_2":[334, 89.05, 1000.01]}, "bparam":false}'</value>
            </values>

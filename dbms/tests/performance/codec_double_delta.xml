@@ -1,5 +1,4 @@
 <test>
-    <name>Codec DoubleDelta</name>
 
     <type>loop</type>
     <stop_conditions>
@@ -15,7 +14,6 @@
 
     <substitutions>
         <substitution>
-            <name>table_suffix</name>
             <values>
                 <value>dd</value>
                 <value>lz4</value>

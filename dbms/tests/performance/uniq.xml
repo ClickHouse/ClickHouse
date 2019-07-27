@@ -23,7 +23,6 @@
 
     <substitutions>
         <substitution>
-           <name>key</name>
            <values>
                <value>1</value>
                <value>SearchEngineID</value>
@@ -33,7 +32,6 @@
            </values>
        </substitution>
         <substitution>
-           <name>func</name>
            <values>
                <value>sum</value>
                <value>uniq</value>

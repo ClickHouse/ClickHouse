@@ -17,7 +17,6 @@
 
     <substitutions>
         <substitution>
-           <name>func</name>
            <values>
                <value>trim(</value>
                <value>ltrim(</value>
