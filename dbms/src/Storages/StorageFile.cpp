@@ -97,16 +97,15 @@ StorageFile::StorageFile(
             if ((path.find('*') != std::string::npos) || (path.find('?') != std::string::npos) || (path.find('{') != std::string::npos))
             {
                 path_with_globs = true;
-                std::string path_pattern = makeRegexpPatternFromGlobs(path);
-                re2::RE2 matcher(path_pattern);
+                re2::RE2 matcher(makeRegexpPatternFromGlobs(path));
                 fs::path cur_dir(db_dir_path);
                 fs::directory_iterator end;
                 for (fs::directory_iterator it(cur_dir); it != end; ++it)
                 {
-                    const fs::path file = (*it);
-                    if (re2::RE2::FullMatch(file.string(), matcher))
+                    std::string file = it->path().string();
+                    if (re2::RE2::FullMatch(file, matcher))
                     {
-                        matched_paths.push_back(file.string());
+                        matched_paths.push_back(file);
                         checkCreationIsAllowed(context_global, db_dir_path, matched_paths.back(), table_fd);
                     }
                 }
