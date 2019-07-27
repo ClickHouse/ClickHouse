@@ -36,7 +36,7 @@ AggregateFunctionPtr createAggregateFunctionIncrementalClustering(
 
 void registerAggregateFunctionIncrementalClustering(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("IncrementalClustering", createAggregateFunctionIncrementalClustering);
+    factory.registerFunction("incrementalClustering", createAggregateFunctionIncrementalClustering);
 }
 
 }

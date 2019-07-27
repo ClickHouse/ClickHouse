@@ -7,6 +7,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
@@ -144,13 +145,12 @@ public:
         size_t rows_num = block.rows();
 
         if (offset > rows_num || offset + limit > rows_num)
-            throw Exception("Invalid offset and limit for IncrementalClustering::predict. "
+            throw Exception("Invalid offset and limit for incrementalClustering::predict. "
                             "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
                             " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
 
         make_prediction();
         std::vector<std::vector<Float64>> distances(
-//            block.rows(),
             limit,
             std::vector<Float64>(predicted_clusters.size(), 0.0)
         );
@@ -177,7 +177,6 @@ public:
             }
         }
 
-//        container.reserve(block.rows());
         container.reserve(container.size() + limit);
         for (size_t row = 0; row != limit; ++row)
         {
@@ -203,8 +202,8 @@ public:
         size_t old_size = offsets_to.back();
         offsets_to.push_back(old_size + size);
 
-        typename ColumnUInt32 ::Container & val_to
-                = static_cast<ColumnUInt32 &>(arr_to.getData()).getData();
+        typename ColumnFloat64::Container & val_to
+                = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
         val_to.reserve(old_size + size);
         for (size_t cluster_idx = 0; cluster_idx != clusters_num; ++cluster_idx)
@@ -256,7 +255,6 @@ private:
             for (size_t i = 0; i != coordinates.size(); ++i)
             {
                 coordinates[i] = cluster_weight * coordinates[i] + point_weight * columns[i]->getFloat64(row_num);
-//                                 point_weight * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
             }
         }
 
@@ -342,7 +340,6 @@ private:
         Float64 distance = 0;
         for (size_t i = 0; i != point.size(); ++i)
         {
-//            Float64 coordinate_diff = point[i] - static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
             Float64 coordinate_diff = point[i] - columns[i]->getFloat64(row_num);
             distance += coordinate_diff * coordinate_diff;
         }
@@ -443,10 +440,9 @@ private:
 
     void k_means_initialize_clusters() const
     {
-        std::uniform_int_distribution<int> distribution(clusters.size() - 1);
+        std::uniform_int_distribution<int> distribution(0, clusters.size() - 1);
         size_t first_cluster = distribution(random_generator_);
 
-//        std::vector<std::vector<Float64>> init_clusters;
         predicted_clusters.reserve(clusters_num);
         predicted_clusters.emplace_back(clusters[first_cluster].center());
         for (size_t i = 1; i != clusters_num; ++i)
@@ -520,7 +516,8 @@ private:
         Float64 mean_distance{0.0};
         for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
             mean_distance += compute_distance(predicted_clusters[closest_cluster[point_idx]], clusters[point_idx].center());
-        mean_distance /= clusters.size();
+        if (!clusters.empty())
+            mean_distance /= clusters.size();
 
         return mean_distance;
     }
@@ -535,13 +532,6 @@ private:
             auto best_prediction = predicted_clusters;
             for (size_t i = 1; i != max_tries_to_predict + 1; ++i)
             {
-//                Float64 mean_distance;
-//                auto new_predicted_clusters = k_means(clusters, clusters_num, mean_distance);
-//                if (mean_distance < min_mean_distance)
-//                {
-//                    min_mean_distance = mean_distance;
-//                    predicted_clusters = std::move(new_predicted_clusters);
-//                }
                 Float64 cur_mean_distance = k_means();
                 if (cur_mean_distance < min_mean_distance)
                 {
@@ -574,7 +564,7 @@ private:
 class AggregateFunctionIncrementalClustering final : public IAggregateFunctionDataHelper<ClusteringData, AggregateFunctionIncrementalClustering>
 {
 public:
-    String getName() const override { return "IncrementalClustering"; }
+    String getName() const override { return "incrementalClustering"; }
 
     explicit AggregateFunctionIncrementalClustering(UInt32 clusters_num,
                                                     UInt32 dimensions,
@@ -584,10 +574,10 @@ public:
     clusters_num(clusters_num), dimensions(dimensions)
     {}
 
-    /// This function is called when SELECT IncrementalClustering(...) is called
+    /// This function is called when SELECT incrementalClustering(...) is called
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<UInt32>>();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
     /// This function is called from evalMLMethod function for correct predictValues call
