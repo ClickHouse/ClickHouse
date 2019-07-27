@@ -85,14 +85,15 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     {
         /// Creating block for update
         Block indices_update_block(skip_indexes_columns);
+        size_t skip_index_current_mark = 0;
+
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-        for (size_t i = 0; i < skip_indices.size(); ++i)
+        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
-            const auto index = skip_indices[i];
+            const auto index = storage.skip_indices[i];
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
-
-            size_t current_mark = 0;
+            skip_index_current_mark = skip_index_mark;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
@@ -102,7 +103,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
                 }
                 else
                 {
-                    limit = index_granularity.getMarkRows(current_mark);
+                    limit = index_granularity.getMarkRows(skip_index_current_mark);
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -115,8 +116,10 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
                         writeIntBinary(stream.compressed.offset(), stream.marks);
                         /// Actually this numbers is redundant, but we have to store them
                         /// to be compatible with normal .mrk2 file format
-                        if (storage.index_granularity_info.is_adaptive)
+                        if (storage.canUseAdaptiveGranularity())
                             writeIntBinary(1UL, stream.marks);
+
+                        ++skip_index_current_mark;
                     }
                 }
 
@@ -135,9 +138,9 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
                     }
                 }
                 prev_pos = pos;
-                current_mark++;
             }
         }
+        skip_index_mark = skip_index_current_mark;
     }
 
     size_t new_index_offset = 0;

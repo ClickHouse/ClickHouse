@@ -32,6 +32,7 @@ private:
     bool initialized = false;
     bool sync;
     bool skip_offsets;
+    size_t skip_index_mark = 0;
 
     std::vector<MergeTreeIndexPtr> skip_indices;
     std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
