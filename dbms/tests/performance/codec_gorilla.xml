@@ -1,5 +1,4 @@
 <test>
-    <name>Codec Gorilla</name>
 
     <type>loop</type>
     <stop_conditions>
