@@ -56,7 +56,7 @@
     <query>INSERT INTO mon_{table_suffix} (n) SELECT number*67+(rand()%67) FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</query>
     <query>INSERT INTO rnd_{table_suffix} (n) SELECT rand() FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</query>
 
-    <!-- INSERTs above will be run unspecified amount of times, hence size of table is unknow.
+    <!-- INSERTs above will be run unspecified amount of times, hence size of table is unknown.
     To make test more reliable, we SELECT fixed number of rows. -->
     <query>SELECT count(n) FROM seq_{table_suffix} LIMIT 1000000 SETTINGS max_threads=1</query>
     <query>SELECT count(n) FROM mon_{table_suffix} LIMIT 1000000 SETTINGS max_threads=1</query>
