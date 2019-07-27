@@ -68,7 +68,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
-        MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
         {

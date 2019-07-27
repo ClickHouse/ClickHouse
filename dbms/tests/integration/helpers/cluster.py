@@ -527,6 +527,10 @@ class ClickHouseInstance:
     def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
         return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
 
+    # The same as query_and_get_error but ignores successful query.
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
+
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None):
         return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()

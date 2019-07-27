@@ -1896,11 +1896,17 @@ private:
             };
         }
 
-        auto wrapper = prepareRemoveNullable(from_nested, to_nested);
+        bool skip_not_null_check = false;
+
+        if (from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable())
+            /// Disable check for dictionary. Will check that column doesn't contain NULL in wrapper below.
+            skip_not_null_check = true;
+
+        auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check);
         if (!from_low_cardinality && !to_low_cardinality)
             return wrapper;
 
-        return [wrapper, from_low_cardinality, to_low_cardinality]
+        return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto & arg = block.getByPosition(arguments[0]);
@@ -1925,6 +1931,11 @@ private:
                 if (from_low_cardinality)
                 {
                     auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(prev_arg_col.get());
+
+                    if (skip_not_null_check && col_low_cardinality->containsNull())
+                        throw Exception{"Cannot convert NULL value to non-Nullable type",
+                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+
                     arg.column = col_low_cardinality->getDictionary().getNestedColumn();
                     arg.type = from_low_cardinality->getDictionaryType();
 
@@ -1966,7 +1977,7 @@ private:
         };
     }
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -2007,19 +2018,23 @@ private:
         {
             /// Conversion from Nullable to non-Nullable.
 
-            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [wrapper, skip_not_null_check] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
 
                 /// Check that all values are not-NULL.
+                /// Check can be skipped in case if LowCardinality dictionary is transformed.
+                /// In that case, correctness will be checked beforehand.
+                if (!skip_not_null_check)
+                {
+                    const auto & col = block.getByPosition(arguments[0]).column;
+                    const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+                    const auto & null_map = nullable_col.getNullMapData();
 
-                const auto & col = block.getByPosition(arguments[0]).column;
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                const auto & null_map = nullable_col.getNullMapData();
-
-                if (!memoryIsZero(null_map.data(), null_map.size()))
-                    throw Exception{"Cannot convert NULL value to non-Nullable type",
-                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                    if (!memoryIsZero(null_map.data(), null_map.size()))
+                        throw Exception{"Cannot convert NULL value to non-Nullable type",
+                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                }
 
                 wrapper(tmp_block, arguments, result, input_rows_count);
                 block.getByPosition(result).column = tmp_block.getByPosition(result).column;
