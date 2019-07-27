@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
@@ -125,12 +126,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
-            if (with_final_mark)
+            if (with_final_mark && rows_count != 0)
                 writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
         }
     }
 
-    if (with_final_mark)
+    if (with_final_mark && rows_count != 0)
         index_granularity.appendMark(0); /// last mark
 
     /// Finish skip index serialization
@@ -153,7 +154,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (index_stream)
     {
-        if (with_final_mark)
+        if (with_final_mark && rows_count != 0)
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
@@ -379,18 +380,18 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     rows_count += rows;
-
     {
         /// Creating block for update
         Block indices_update_block(skip_indexes_columns);
+        size_t skip_index_current_mark = 0;
+
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
         for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
             const auto index = storage.skip_indices[i];
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
-
-            size_t current_mark = 0;
+            skip_index_current_mark = skip_index_mark;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
@@ -400,7 +401,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
                 else
                 {
-                    limit = index_granularity.getMarkRows(current_mark);
+                    limit = index_granularity.getMarkRows(skip_index_current_mark);
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -413,8 +414,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                         writeIntBinary(stream.compressed.offset(), stream.marks);
                         /// Actually this numbers is redundant, but we have to store them
                         /// to be compatible with normal .mrk2 file format
-                        if (storage.index_granularity_info.is_adaptive)
+                        if (storage.canUseAdaptiveGranularity())
                             writeIntBinary(1UL, stream.marks);
+
+                        ++skip_index_current_mark;
                     }
                 }
 
@@ -433,9 +436,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     }
                 }
                 prev_pos = pos;
-                current_mark++;
             }
         }
+        skip_index_mark = skip_index_current_mark;
     }
 
     {

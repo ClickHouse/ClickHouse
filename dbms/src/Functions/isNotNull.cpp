@@ -38,11 +38,11 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-        if (elem.column->isColumnNullable())
+        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
-            const auto & src_data = static_cast<const ColumnNullable &>(*elem.column).getNullMapData();
+            const auto & src_data = nullable->getNullMapData();
             auto & res_data = static_cast<ColumnUInt8 &>(*res_column).getData();
 
             for (size_t i = 0; i < input_rows_count; ++i)

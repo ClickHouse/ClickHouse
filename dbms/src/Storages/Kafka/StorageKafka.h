@@ -20,9 +20,6 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
-    friend class KafkaBlockInputStream;
-    friend class KafkaBlockOutputStream;
-
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
@@ -39,13 +36,30 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
 
     void updateDependencies() override;
+
+    BufferPtr createBuffer();
+    BufferPtr claimBuffer();
+    BufferPtr tryClaimBuffer(long wait_ms);
+    void pushBuffer(BufferPtr buf);
+
+    const auto & getTopics() const { return topics; }
+    const auto & getFormatName() const { return format_name; }
+    const auto & getSchemaName() const { return schema_name; }
+    const auto & skipBroken() const { return skip_broken; }
+
+protected:
+    StorageKafka(
+        const std::string & table_name_,
+        const std::string & database_name_,
+        Context & context_,
+        const ColumnsDescription & columns_,
+        const String & brokers_, const String & group_, const Names & topics_,
+        const String & format_name_, char row_delimiter_, const String & schema_name_,
+        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
+        bool intermediate_commit_);
 
 private:
     // Configuration and state
@@ -56,18 +70,15 @@ private:
     const String brokers;
     const String group;
     const String format_name;
-    // Optional row delimiter for generating char delimited stream
-    // in order to make various input stream parsers happy.
-    char row_delimiter;
+    char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;
-    /// Total number of consumers
-    size_t num_consumers;
-    /// Maximum block size for insertion into this table
-    UInt64 max_block_size;
-    /// Number of actually created consumers.
+    size_t num_consumers; /// total number of consumers
+    UInt64 max_block_size; /// maximum block size for insertion into this table
+
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0;
+    size_t num_created_consumers = 0; /// number of actually created consumers.
+
     Poco::Logger * log;
 
     // Consumer list
@@ -84,25 +95,10 @@ private:
     std::atomic<bool> stream_cancelled{false};
 
     cppkafka::Configuration createConsumerConfiguration();
-    BufferPtr createBuffer();
-    BufferPtr claimBuffer();
-    BufferPtr tryClaimBuffer(long wait_ms);
-    void pushBuffer(BufferPtr buf);
 
     void streamThread();
     bool streamToViews();
     bool checkDependencies(const String & database_name, const String & table_name);
-
-protected:
-    StorageKafka(
-        const std::string & table_name_,
-        const std::string & database_name_,
-        Context & context_,
-        const ColumnsDescription & columns_,
-        const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
-        bool intermediate_commit_);
 };
 
 }

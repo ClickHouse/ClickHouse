@@ -18,11 +18,6 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 
-#include "config_core.h"
-#if USE_MYSQL
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
-#endif
-
 
 namespace DB
 {
@@ -96,41 +91,6 @@ struct RegionHierarchyImpl
 {
     static UInt32 toParent(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toParent(x); }
 };
-
-
-#if USE_MYSQL
-
-struct OSToRootImpl
-{
-    static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToMostAncestor(x); }
-};
-
-struct SEToRootImpl
-{
-    static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToMostAncestor(x); }
-};
-
-struct OSInImpl
-{
-    static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isOSIn(x, y); }
-};
-
-struct SEInImpl
-{
-    static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isSEIn(x, y); }
-};
-
-struct OSHierarchyImpl
-{
-    static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToParent(x); }
-};
-
-struct SEHierarchyImpl
-{
-    static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToParent(x); }
-};
-
-#endif
 
 
 /** Auxiliary thing, allowing to get from the dictionary a specific dictionary, corresponding to the point of view
@@ -515,18 +475,6 @@ struct NameRegionHierarchy             { static constexpr auto name = "regionHie
 struct NameRegionIn                    { static constexpr auto name = "regionIn"; };
 
 
-#if USE_MYSQL
-
-struct NameOSToRoot                    { static constexpr auto name = "OSToRoot"; };
-struct NameSEToRoot                    { static constexpr auto name = "SEToRoot"; };
-struct NameOSIn                        { static constexpr auto name = "OSIn"; };
-struct NameSEIn                        { static constexpr auto name = "SEIn"; };
-struct NameOSHierarchy                 { static constexpr auto name = "OSHierarchy"; };
-struct NameSEHierarchy                 { static constexpr auto name = "SEHierarchy"; };
-
-#endif
-
-
 struct FunctionRegionToCity :
     public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,    RegionsHierarchyGetter,    NameRegionToCity>
 {
@@ -607,65 +555,6 @@ struct FunctionRegionHierarchy :
         return std::make_shared<base_type>(context.getEmbeddedDictionaries().getRegionsHierarchies());
     }
 };
-
-
-#if USE_MYSQL
-
-struct FunctionOSToRoot :
-    public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEToRoot :
-    public FunctionTransformWithDictionary<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionOSIn :
-    public FunctionIsInWithDictionary<UInt8,    OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEIn :
-    public FunctionIsInWithDictionary<UInt8,    SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionOSHierarchy :
-    public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEHierarchy :
-    public FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-#endif
 
 
 /// Converts a region's numeric identifier to a name in the specified language using a dictionary.

@@ -3,7 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
-
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -144,7 +144,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             const ColumnPtr & src = block.safeGetByPosition(i).column;
 
-            if (src->isColumnConst())
+            if (isColumnConst(*src))
             {
                 /// Equal min and max.
                 extremes_columns[i] = src->cloneResized(2);
@@ -171,7 +171,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             ColumnPtr & old_extremes = extremes.safeGetByPosition(i).column;
 
-            if (old_extremes->isColumnConst())
+            if (isColumnConst(*old_extremes))
                 continue;
 
             Field min_value = (*old_extremes)[0];
@@ -255,13 +255,7 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     if (desired_microseconds > total_elapsed_microseconds)
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
-        ::timespec sleep_ts;
-        sleep_ts.tv_sec = sleep_microseconds / 1000000;
-        sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
-
-        /// NOTE: Returns early in case of a signal. This is considered normal.
-        /// NOTE: It's worth noting that this behavior affects kill of queries.
-        ::nanosleep(&sleep_ts, nullptr);
+        sleepForMicroseconds(sleep_microseconds);
 
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
     }

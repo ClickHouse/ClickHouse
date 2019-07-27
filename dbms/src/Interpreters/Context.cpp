@@ -41,6 +41,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -49,9 +50,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 
 
@@ -152,6 +155,8 @@ struct ContextShared
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
+    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -244,15 +249,12 @@ struct ContextShared
             return;
         shutdown_called = true;
 
-        {
-            std::lock_guard lock(mutex);
+        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
+          *  Note that part changes at shutdown won't be logged to part log.
+          */
 
-            /** After this point, system logs will shutdown their threads and no longer write any data.
-            * It will prevent recreation of system tables at shutdown.
-            * Note that part changes at shutdown won't be logged to part log.
-            */
-            system_logs.reset();
-        }
+        if (system_logs)
+            system_logs->shutdown();
 
         /** At this point, some tables may have threads that block our mutex.
           * To shutdown them correctly, we will copy the current list of tables,
@@ -280,12 +282,29 @@ struct ContextShared
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
 
+        system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries.reset();
         external_models.reset();
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
+
+        /// Stop trace collector if any
+        trace_collector.reset();
+    }
+
+    bool hasTraceCollector()
+    {
+        return trace_collector != nullptr;
+    }
+
+    void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
+    {
+        if (trace_log == nullptr)
+            return;
+
+        trace_collector = std::make_unique<TraceCollector>(trace_log);
     }
 
 private:
@@ -497,7 +516,6 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
         return {};
     return it->second;
 }
-
 
 String Context::getPath() const
 {
@@ -964,7 +982,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
-        res = table_function_ptr->execute(table_expression, *this);
+        res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
     }
 
     return res;
@@ -1459,6 +1477,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::resetZooKeeper() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    shared->zookeeper.reset();
+}
+
 bool Context::hasZooKeeper() const
 {
     return getConfigRef().has("zookeeper");
@@ -1618,6 +1642,16 @@ void Context::initializeSystemLogs()
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
+bool Context::hasTraceCollector()
+{
+    return shared->hasTraceCollector();
+}
+
+void Context::initializeTraceCollector()
+{
+    shared->initializeTraceCollector(getTraceLog());
+}
+
 
 std::shared_ptr<QueryLog> Context::getQueryLog()
 {
@@ -1656,6 +1690,16 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
         return {};
 
     return shared->system_logs->part_log;
+}
+
+std::shared_ptr<TraceLog> Context::getTraceLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->trace_log)
+        return nullptr;
+
+    return shared->system_logs->trace_log;
 }
 
 
@@ -1774,6 +1818,11 @@ BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer &
     return FormatFactory::instance().getOutput(name, buf, sample, *this);
 }
 
+OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
+}
+
 
 time_t Context::getUptimeSeconds() const
 {
@@ -1845,6 +1894,25 @@ void Context::setFormatSchemaPath(const String & path)
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     return getQueryContext().sample_block_cache;
+}
+
+
+bool Context::hasQueryParameters() const
+{
+    return !query_parameters.empty();
+}
+
+
+const NameToNameMap & Context::getQueryParameters() const
+{
+    return query_parameters;
+}
+
+
+void Context::setQueryParameter(const String & name, const String & value)
+{
+    if (!query_parameters.emplace(name, value).second)
+        throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

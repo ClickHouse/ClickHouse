@@ -126,6 +126,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (0 == strcmp(name.c_str(), func[0]))
                 {
+                    if (frame.need_parens)
+                        settings.ostr << '(';
+
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
                     /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
@@ -138,6 +141,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                     arguments->formatImpl(settings, state, nested_need_parens);
                     written = true;
+
+                    if (frame.need_parens)
+                        settings.ostr << ')';
                 }
             }
         }
@@ -209,11 +215,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "arrayElement"))
             {
+                if (frame.need_parens)
+                    settings.ostr << '(';
+
                 arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                 settings.ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
-                arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+                arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
                 settings.ostr << (settings.hilite ? hilite_operator : "") << ']' << (settings.hilite ? hilite_none : "");
                 written = true;
+
+                if (frame.need_parens)
+                    settings.ostr << ')';
             }
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
@@ -223,10 +235,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 {
                     if (lit->value.getType() == Field::Types::UInt64)
                     {
+                        if (frame.need_parens)
+                            settings.ostr << '(';
+
                         arguments->children[0]->formatImpl(settings, state, nested_need_parens);
                         settings.ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
-                        arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+                        arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
                         written = true;
+
+                        if (frame.need_parens)
+                            settings.ostr << ')';
                     }
                 }
             }

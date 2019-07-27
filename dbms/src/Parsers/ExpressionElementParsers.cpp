@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
 
@@ -28,6 +29,7 @@
 
 #include <Parsers/queryToString.h>
 #include <boost/algorithm/string.hpp>
+#include "ASTColumnsMatcher.h"
 
 
 namespace DB
@@ -1167,6 +1169,34 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword columns("COLUMNS");
+    ParserStringLiteral regex;
+
+    if (!columns.ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ASTPtr regex_node;
+    if (!regex.parse(pos, regex_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto res = std::make_shared<ASTColumnsMatcher>();
+    res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+    res->children.push_back(regex_node);
+    node = std::move(res);
+    return true;
+}
+
+
 bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     if (pos->type == TokenType::Asterisk)
@@ -1199,6 +1229,52 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 
+bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::OpeningCurlyBrace)
+        return false;
+
+    ++pos;
+
+    if (pos->type != TokenType::BareWord)
+    {
+        expected.add(pos, "substitution name (identifier)");
+        return false;
+    }
+
+    String name(pos->begin, pos->end);
+    ++pos;
+
+    if (pos->type != TokenType::Colon)
+    {
+        expected.add(pos, "colon between name and type");
+        return false;
+    }
+
+    ++pos;
+
+    auto old_pos = pos;
+    ParserIdentifierWithOptionalParameters type_parser;
+    if (!type_parser.ignore(pos, expected))
+    {
+        expected.add(pos, "substitution type");
+        return false;
+    }
+
+    String type(old_pos->begin, pos->begin);
+
+    if (pos->type != TokenType::ClosingCurlyBrace)
+    {
+        expected.add(pos, "closing curly brace");
+        return false;
+    }
+
+    ++pos;
+    node = std::make_shared<ASTQueryParameter>(name, type);
+    return true;
+}
+
+
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
@@ -1215,10 +1291,12 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserLeftExpression().parse(pos, node, expected)
         || ParserRightExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)
+        || ParserColumnsMatcher().parse(pos, node, expected) /// before ParserFunction because it can be also parsed as a function.
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier().parse(pos, node, expected);
+        || ParserCompoundIdentifier().parse(pos, node, expected)
+        || ParserSubstitution().parse(pos, node, expected);
 }
 
 
@@ -1259,7 +1337,6 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             getIdentifierName(alias_node, ast_with_alias->alias);
-            ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;
         }
         else
         {
