@@ -1,5 +1,4 @@
 <test>
-    <name>Codec DoubleDelta</name>
 
     <type>loop</type>
     <stop_conditions>

@@ -1,5 +1,4 @@
 <test>
-    <name>order_by_pk_order</name>
     <type>loop</type>
 
     <stop_conditions>
