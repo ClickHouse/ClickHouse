@@ -13,10 +13,10 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
+class MergeTreeReverseSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
 {
 public:
-    MergeTreeSelectBlockInputStream(
+    MergeTreeReverseSelectBlockInputStream(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
@@ -34,9 +34,9 @@ public:
         size_t part_index_in_query = 0,
         bool quiet = false);
 
-    ~MergeTreeSelectBlockInputStream() override;
+    ~MergeTreeReverseSelectBlockInputStream() override;
 
-    String getName() const override { return "MergeTree"; }
+    String getName() const override { return "MergeTreeReverse"; }
 
     Block getHeader() const override;
 
@@ -46,6 +46,7 @@ public:
 protected:
 
     bool getNewTask() override;
+    Block readFromPart() override;
 
 private:
     Block header;
@@ -70,11 +71,11 @@ private:
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
 
-    bool check_columns;
     String path;
-    bool is_first_task = true;
 
-    Logger * log = &Logger::get("MergeTreeSelectBlockInputStream");
+    Blocks blocks;
+
+    Logger * log = &Logger::get("MergeTreeReverseSelectBlockInputStream");
 };
 
 }
