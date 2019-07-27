@@ -17,6 +17,7 @@
 
     <substitutions>
         <substitution>
+           <name>param</name>
            <values>
                <value>'{"myparam":"test_string"}'</value>
                <value>'{"myparam":{"nested_1":"test_string","nested_2":"test_2"}}'</value>

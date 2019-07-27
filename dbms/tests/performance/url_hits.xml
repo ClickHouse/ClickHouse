@@ -21,6 +21,7 @@
 
     <substitutions>
         <substitution>
+           <name>func</name>
            <values>
                <value>protocol</value>
                <value>domain</value>

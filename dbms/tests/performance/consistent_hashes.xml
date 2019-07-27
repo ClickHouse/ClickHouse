@@ -15,12 +15,14 @@
 
     <substitutions>
        <substitution>
+           <name>hash_func</name>
            <values>
                <value>yandexConsistentHash</value>
                <value>jumpConsistentHash</value>
            </values>
        </substitution>
        <substitution>
+           <name>buckets</name>
            <values>
                <value>2</value>
                <value>500</value>

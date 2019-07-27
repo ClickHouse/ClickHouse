@@ -21,6 +21,7 @@
 
     <substitutions>
         <substitution>
+           <name>args</name>
            <values>
                <value>SearchEngineID</value>
                <value>SearchPhrase</value>

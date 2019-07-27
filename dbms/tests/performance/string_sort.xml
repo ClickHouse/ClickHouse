@@ -18,6 +18,7 @@
 
     <substitutions>
        <substitution>
+           <name>str1</name>
            <values>
                <value>URL</value>
                <value>Referer</value>
@@ -28,6 +29,7 @@
            </values>
        </substitution>
        <substitution>
+           <name>str2</name>
            <values>
                <value>URL</value>
                <value>Referer</value>
