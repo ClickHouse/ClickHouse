@@ -66,4 +66,15 @@ private:
 /// It finds columns and translate their names to the normal form. Expand asterisks and qualified asterisks with column names.
 using TranslateQualifiedNamesVisitor = TranslateQualifiedNamesMatcher::Visitor;
 
+/// Restore ASTIdentifiers to long form
+struct RestoreQualifiedNamesData
+{
+    using TypeToVisit = ASTIdentifier;
+
+    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+};
+
+using RestoreQualifiedNamesMatcher = OneTypeMatcher<RestoreQualifiedNamesData>;
+using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
+
 }
