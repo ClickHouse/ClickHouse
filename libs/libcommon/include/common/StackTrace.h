@@ -17,7 +17,7 @@ struct NoCapture
 };
 
 /// Tries to capture current stack trace using libunwind or signal context
-/// NOTE: All StackTrace constructors are signal safe
+/// NOTE: StackTrace calculation is signal safe only if updatePHDRCache() was called beforehand.
 class StackTrace
 {
 public:
@@ -35,7 +35,14 @@ public:
     StackTrace(NoCapture);
 
     /// Fills stack trace frames with provided sequence
-    StackTrace(const std::vector<void *> & source_frames);
+    template <typename Iterator>
+    StackTrace(Iterator it, Iterator end)
+    {
+        while (size < capacity && it != end)
+        {
+            frames[size++] = *(it++);
+        }
+    }
 
     size_t getSize() const;
     const Frames & getFrames() const;
@@ -46,7 +53,7 @@ protected:
     static std::string toStringImpl(const Frames & frames, size_t size);
 
     size_t size = 0;
-    Frames frames;
+    Frames frames{};
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
