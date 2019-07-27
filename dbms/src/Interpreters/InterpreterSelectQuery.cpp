@@ -660,19 +660,10 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
-    auto is_virtual_column = [](const String & column_name)
-    {
-        return column_name == "_part" || column_name == "_part_index"
-            || column_name == "_partition_id" || column_name == "_sample_factor";
-    };
-
     auto order_by_expr = query.orderBy();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAll());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        if (is_virtual_column(order_descr[i].column_name))
-            break;
-
         /// Read in pk order in case of exact match with order key element
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
@@ -680,8 +671,18 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
             prefix_order_descr.push_back(order_descr[i]);
         else
         {
-            const auto & ast = query.orderBy()->children[0];
-            auto actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
+            const auto & ast = query.orderBy()->children[i];
+            ExpressionActionsPtr actions;
+            try
+            {
+                ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
+            }
+            catch (const Exception &)
+            {
+                /// Can't analyze order expression at this stage.
+                /// May be some actions required for order will be executed later.
+                break;
+            }
 
             const auto & input_columns = actions->getRequiredColumnsWithTypes();
             if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
