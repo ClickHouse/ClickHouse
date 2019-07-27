@@ -28,6 +28,7 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
+#include <common/logger_useful.h>
 
 #include <Processors/Formats/LazyOutputFormat.h>
 
@@ -172,12 +173,13 @@ void TCPHandler::runImpl()
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
+            const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && query_context->getSettingsRef().send_logs_level.value != LogsLevel::none)
+                && client_logs_level.value != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
-                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef().send_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
             }
 
             query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
@@ -382,7 +384,10 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     {
         const auto & db_and_table = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-            sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        {
+            if (!db_and_table.second.empty())
+                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+        }
     }
 
     /// Send block to the client - table structure.
