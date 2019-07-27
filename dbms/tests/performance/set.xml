@@ -20,14 +20,12 @@
 
     <substitutions>
        <substitution>
-           <name>table</name>
            <values>
                <value>system.numbers</value>
                <value>system.numbers_mt</value>
            </values>
        </substitution>
        <substitution>
-           <name>size</name>
            <values>
                <value>1</value>
                <value>16</value>

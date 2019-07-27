@@ -17,7 +17,6 @@
 
     <substitutions>
         <substitution>
-           <name>gp_hash_func</name>
            <values>
                <value>cityHash64</value>
                <value>farmHash64</value>
@@ -35,7 +34,6 @@
            </values>
         </substitution>
         <substitution>
-           <name>string</name>
            <values>
                <value>materialize('')</value>
                <value>toString(1000000000+number)</value>
@@ -43,7 +41,6 @@
            </values>
         </substitution>
         <substitution>
-           <name>table</name>
            <values>
                <value>numbers</value>
                <value>numbers_mt</value>

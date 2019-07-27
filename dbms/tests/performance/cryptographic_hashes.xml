@@ -17,7 +17,6 @@
 
     <substitutions>
         <substitution>
-           <name>crypto_hash_func</name>
            <values>
                <value>MD5</value>
                <value>SHA1</value>
@@ -29,7 +28,6 @@
            </values>
         </substitution>
         <substitution>
-           <name>string</name>
            <values>
                <value>materialize('')</value>
                <value>toString(1000000000+number)</value>
@@ -37,7 +35,6 @@
            </values>
         </substitution>
         <substitution>
-           <name>table</name>
            <values>
                <value>numbers</value>
                <value>numbers_mt</value>
