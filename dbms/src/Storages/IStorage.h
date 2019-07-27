@@ -64,6 +64,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>
 public:
     IStorage() = default;
     explicit IStorage(ColumnsDescription columns_);
+    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_);
     IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_);
 
     virtual ~IStorage() = default;
@@ -102,6 +103,7 @@ public:
 
 public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    const ColumnsDescription & getVirtuals() const;
     const IndicesDescription & getIndices() const;
 
     /// NOTE: these methods should include virtual columns,
