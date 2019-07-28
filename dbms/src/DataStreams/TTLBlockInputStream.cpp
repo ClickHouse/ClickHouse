@@ -63,22 +63,19 @@ TTLBlockInputStream::TTLBlockInputStream(
 
 Block TTLBlockInputStream::readImpl()
 {
+    /// Skip all data if table ttl is expired for part
+    if (storage.hasTableTTL() && old_ttl_infos.table_ttl.max <= current_time)
+    {
+        rows_removed = data_part->rows_count;
+        return {};
+    }
+
     Block block = children.at(0)->read();
     if (!block)
         return block;
 
-    if (storage.hasTableTTL())
-    {
-        /// Skip all data if table ttl is expired for part
-        if (old_ttl_infos.table_ttl.max <= current_time)
-        {
-            rows_removed = data_part->rows_count;
-            return {};
-        }
-
-        if (old_ttl_infos.table_ttl.min <= current_time)
-            removeRowsWithExpiredTableTTL(block);
-    }
+    if (storage.hasTableTTL() && old_ttl_infos.table_ttl.min <= current_time)
+        removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
 
@@ -88,9 +85,9 @@ Block TTLBlockInputStream::readImpl()
 void TTLBlockInputStream::readSuffixImpl()
 {
     for (const auto & elem : new_ttl_infos.columns_ttl)
-        new_ttl_infos.updatePartMinTTL(elem.second.min);
+        new_ttl_infos.updatePartMinMaxTTL(elem.second.min, elem.second.max);
 
-    new_ttl_infos.updatePartMinTTL(new_ttl_infos.table_ttl.min);
+    new_ttl_infos.updatePartMinMaxTTL(new_ttl_infos.table_ttl.min, new_ttl_infos.table_ttl.max);
 
     data_part->ttl_infos = std::move(new_ttl_infos);
     data_part->empty_columns = std::move(empty_columns);
