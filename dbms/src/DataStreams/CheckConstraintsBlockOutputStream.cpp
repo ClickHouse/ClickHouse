@@ -12,11 +12,23 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
     for (size_t i = 0; i < expressions.size(); ++i)
     {
         auto constraint_expr = expressions[i];
-        if (!checkConstraintOnBlock(block, constraint_expr))
-            throw Exception{"Constraint " + constraints.constraints[i]->name + " is not satisfied, constraint expression: " +
-            serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::LOGICAL_ERROR};
+        auto res_column_uint8 = executeOnBlock(block, constraint_expr);
+        if (!memoryIsByte(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize(), 0x1))
+        {
+            auto indices_wrong = findAllWrong(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize());
+            std::string indices_str = "{";
+            for (size_t j = 0; j < indices_wrong.size(); ++j) {
+                indices_str += std::to_string(indices_wrong[j]);
+                indices_str += (j != indices_wrong.size() - 1) ? ", " : "}";
+            }
+
+            throw Exception{"Violated constraint " + constraints.constraints[i]->name +
+                            " in table " + table + " at indices " + indices_str + ", constraint expression: " +
+                            serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::LOGICAL_ERROR};
+        }
     }
     output->write(block);
+    rows_written += block.rows();
 }
 
 void CheckConstraintsBlockOutputStream::flush()
@@ -34,18 +46,34 @@ void CheckConstraintsBlockOutputStream::writeSuffix()
     output->writeSuffix();
 }
 
-bool CheckConstraintsBlockOutputStream::checkImplMemory(const Block & block, const ExpressionActionsPtr & constraint)
+const ColumnUInt8 *CheckConstraintsBlockOutputStream::executeOnBlock(
+        const Block & block,
+        const ExpressionActionsPtr & constraint)
 {
     Block res = block;
+
     constraint->execute(res);
     ColumnWithTypeAndName res_column = res.safeGetByPosition(res.columns() - 1);
-    auto res_column_uint8 = checkAndGetColumn<ColumnUInt8>(res_column.column.get());
-    return memoryIsByte(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize(), 0x1);
+    return checkAndGetColumn<ColumnUInt8>(res_column.column.get());
 }
 
-bool CheckConstraintsBlockOutputStream::checkConstraintOnBlock(const Block & block, const ExpressionActionsPtr & constraint)
+std::vector<size_t> CheckConstraintsBlockOutputStream::findAllWrong(const void *data, size_t size)
 {
-    return checkImplMemory(block, constraint);
-}
+    std::vector<size_t> res;
 
+    if (size == 0)
+        return res;
+
+    auto ptr = reinterpret_cast<const uint8_t *>(data);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (*(ptr + i) == 0x0)
+        {
+            res.push_back(i);
+        }
+    }
+
+    return res;
+}
 }
