@@ -120,8 +120,9 @@ private:
 template <typename Base>
 struct AggregationDataWithNullKeyTwoLevel : public Base
 {
-    using Base::Base;
     using Base::impls;
+    
+    AggregationDataWithNullKeyTwoLevel() {}
 
     template <typename Other>
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
