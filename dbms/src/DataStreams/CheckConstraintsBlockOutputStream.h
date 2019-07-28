@@ -17,14 +17,17 @@ class CheckConstraintsBlockOutputStream : public IBlockOutputStream
 {
 public:
     CheckConstraintsBlockOutputStream(
+            const String & table_,
             const BlockOutputStreamPtr & output_,
             const Block & header_,
             const ConstraintsDescription & constraints_,
             const Context & context_)
-            : output(output_),
+            : table(table_),
+              output(output_),
               header(header_),
               constraints(constraints_),
-              expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+              expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList())),
+              rows_written(0)
     { }
 
     Block getHeader() const override { return header; }
@@ -35,14 +38,15 @@ public:
     void writePrefix() override;
     void writeSuffix() override;
 
-    bool checkImplMemory(const Block & block, const ExpressionActionsPtr & constraint);
-    bool checkImplBool(const Block & block, const ExpressionActionsPtr & constraint);
-    bool checkConstraintOnBlock(const Block & block, const ExpressionActionsPtr & constraint);
-
 private:
+    const ColumnUInt8* executeOnBlock(const Block & block, const ExpressionActionsPtr & constraint);
+    std::vector<size_t> findAllWrong(const void *data, size_t size);
+
+    String table;
     BlockOutputStreamPtr output;
     Block header;
     const ConstraintsDescription constraints;
     const ConstraintsExpressions expressions;
+    size_t rows_written;
 };
 }

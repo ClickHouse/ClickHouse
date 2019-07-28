@@ -119,7 +119,7 @@ BlockIO InterpreterInsertQuery::execute()
         out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
 
     out = std::make_shared<CheckConstraintsBlockOutputStream>(
-            out, query_sample_block, table->getConstraints(), context);
+            query.table, out, query_sample_block, table->getConstraints(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
