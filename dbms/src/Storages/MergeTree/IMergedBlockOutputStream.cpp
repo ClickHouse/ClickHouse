@@ -18,7 +18,7 @@ namespace
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeData & storage_,
-    String part_path_,
+    const String & part_path_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
     CompressionCodecPtr codec_,
