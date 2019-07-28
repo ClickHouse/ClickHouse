@@ -227,9 +227,9 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 
 void MySQLHandler::authenticate(const String & user_name, const String & auth_plugin_name, const String & initial_auth_response)
 {
-    // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when it is possible. If password is specified using SHA-2, then SHA256 plugin is used.
+    // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
     auto user = connection_context.getUser(user_name);
-    if (!user->password_sha256_hex.empty())
+    if (user->password_double_sha1_hex.empty())
         auth_plugin = std::make_unique<Authentication::Sha256Password>(public_key, private_key, log);
 
     try {
