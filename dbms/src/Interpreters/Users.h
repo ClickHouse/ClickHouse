@@ -56,6 +56,7 @@ struct User
     /// Required password. Could be stored in plaintext or in SHA256.
     String password;
     String password_sha256_hex;
+    String password_double_sha1_hex;
 
     String profile;
     String quota;
