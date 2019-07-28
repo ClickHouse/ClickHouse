@@ -589,15 +589,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings);
     }
-    else if (settings.optimize_pk_order && query_info.sorting_info)
+    else if (settings.optimize_read_in_order && query_info.sorting_info)
     {
-        res = spreadMarkRangesAmongStreamsPKOrder(
+        size_t prefix_size = query_info.sorting_info->prefix_order_descr.size();
+        auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
+        order_key_prefix_ast->children.resize(prefix_size);
+
+        auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
+        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
+
+        res = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
             query_info,
+            sorting_key_prefix_expr,
             virt_column_names,
             settings);
     }
@@ -807,13 +815,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     return res;
 }
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrder(
+BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
     const SelectQueryInfo & query_info,
+    const ExpressionActionsPtr & sorting_key_prefix_expr,
     const Names & virt_columns,
     const Settings & settings) const
 {
@@ -981,7 +990,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrd
                     sorting_info->direction, 1);
 
             for (auto & stream : streams_per_thread)
-                stream = std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_expr);
+                stream = std::make_shared<ExpressionBlockInputStream>(stream, sorting_key_prefix_expr);
 
             streams.push_back(std::make_shared<MergingSortedBlockInputStream>(
                 streams_per_thread, sort_description, max_block_size));
