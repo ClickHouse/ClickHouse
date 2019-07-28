@@ -648,7 +648,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
+static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -794,10 +794,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeSortingWithPK(*merge_tree_data, query, context);
+            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
     }
 
     if (dry_run)

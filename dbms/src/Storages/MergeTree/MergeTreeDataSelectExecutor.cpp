@@ -589,7 +589,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings);
     }
-    else if (settings.optimize_pk_order && query_info.sorting_info)
+    else if (settings.optimize_read_in_order && query_info.sorting_info)
     {
         size_t prefix_size = query_info.sorting_info->prefix_order_descr.size();
         auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
@@ -598,7 +598,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
         auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActions(false);
 
-        res = spreadMarkRangesAmongStreamsPKOrder(
+        res = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
@@ -815,7 +815,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     return res;
 }
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsPKOrder(
+BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
