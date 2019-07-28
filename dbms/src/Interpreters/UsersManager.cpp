@@ -77,18 +77,15 @@ UserPtr UsersManager::authorizeAndGetUser(
     }
     else if (!it->second->password_double_sha1_hex.empty())
     {
-        /// MySQL compatibility server passes SHA1 instead of a password. If password length equals to 20, it is treated as a SHA1. Server stores double SHA1.
         Poco::SHA1Engine engine;
-        if (password.size() == Poco::SHA1Engine::DIGEST_SIZE)
-        {
-            engine.update(password);
-        }
-        else
-        {
-            engine.update(password);
-            const auto & first_sha1 = engine.digest();
-            engine.update(first_sha1.data(), first_sha1.size());
-        }
+        engine.update(password);
+        const auto & first_sha1 = engine.digest();
+
+        /// If it was MySQL compatibility server, then first_sha1 already contains double SHA1.
+        if (Poco::SHA1Engine::digestToHex(first_sha1) != it->second->password_double_sha1_hex)
+            return it->second;
+
+        engine.update(first_sha1.data(), first_sha1.size());
 
         if (Poco::SHA1Engine::digestToHex(engine.digest()) != it->second->password_double_sha1_hex)
             on_wrong_password();
