@@ -865,7 +865,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::CLEAR_COLUMN)
+    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::CLEAR_INDEX)
     {
         executeClearColumnOrIndexInPartition(entry);
         return true;
