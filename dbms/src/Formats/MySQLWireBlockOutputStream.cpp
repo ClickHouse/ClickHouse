@@ -12,9 +12,9 @@ using namespace MySQLProtocol;
 MySQLWireBlockOutputStream::MySQLWireBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context)
     : header(header)
     , context(context)
-    , packet_sender(std::make_shared<PacketSender>(buf, context.sequence_id))
+    , packet_sender(std::make_shared<PacketSender>(buf, context.mysql.sequence_id))
 {
-    packet_sender->max_packet_size = context.max_packet_size;
+    packet_sender->max_packet_size = context.mysql.max_packet_size;
 }
 
 void MySQLWireBlockOutputStream::writePrefix()
@@ -30,7 +30,7 @@ void MySQLWireBlockOutputStream::writePrefix()
         packet_sender->sendPacket(column_definition);
     }
 
-    if (!(context.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+    if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
     {
         packet_sender->sendPacket(EOF_Packet(0, 0));
     }
@@ -45,12 +45,9 @@ void MySQLWireBlockOutputStream::write(const Block & block)
         ResultsetRow row_packet;
         for (const ColumnWithTypeAndName & column : block)
         {
-            String column_value;
-            WriteBufferFromString ostr(column_value);
+            WriteBufferFromOwnString ostr;
             column.type->serializeAsText(*column.column.get(), i, ostr, format_settings);
-            ostr.finish();
-
-            row_packet.appendColumn(std::move(column_value));
+            row_packet.appendColumn(std::move(ostr.str()));
         }
         packet_sender->sendPacket(row_packet);
     }
@@ -70,10 +67,10 @@ void MySQLWireBlockOutputStream::writeSuffix()
         << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
 
     if (header.columns() == 0)
-        packet_sender->sendPacket(OK_Packet(0x0, context.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender->sendPacket(OK_Packet(0x0, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
     else
-        if (context.client_capabilities & CLIENT_DEPRECATE_EOF)
-            packet_sender->sendPacket(OK_Packet(0xfe, context.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        if (context.mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
+            packet_sender->sendPacket(OK_Packet(0xfe, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
         else
             packet_sender->sendPacket(EOF_Packet(0, 0), true);
 }

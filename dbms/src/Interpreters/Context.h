@@ -499,10 +499,14 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    /// MySQL wire protocol state.
-    size_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
-    size_t max_packet_size = 0;
+    struct MySQLWireContext
+    {
+        uint8_t sequence_id = 0;
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+    };
+
+    MySQLWireContext mysql;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
