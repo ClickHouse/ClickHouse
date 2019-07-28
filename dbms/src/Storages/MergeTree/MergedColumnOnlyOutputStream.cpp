@@ -3,10 +3,6 @@
 namespace DB
 {
 
-namespace
-{
-    constexpr auto INDEX_FILE_EXTENSION = ".idx";
-}
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
@@ -15,13 +11,14 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns & already_written_offset_columns,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergedBlockOutputStream(
-        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io,
-        false,
-        index_granularity_),
-    header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
-    skip_indices(indices_to_recalc), already_written_offset_columns(already_written_offset_columns)
+        false, indices_to_recalc, index_granularity_)
+    , header(header_)
+    , sync(sync_)
+    , skip_offsets(skip_offsets_)
+    , already_written_offset_columns(already_written_offset_columns)
 {
 }
 
@@ -46,19 +43,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
         }
 
-        for (const auto & index : skip_indices)
-        {
-            String stream_name = index->getFileName();
-            skip_indices_streams.emplace_back(
-                    std::make_unique<ColumnStream>(
-                            stream_name,
-                            part_path + stream_name, INDEX_FILE_EXTENSION,
-                            part_path + stream_name, marks_file_extension,
-                            codec, max_compress_block_size,
-                            0, aio_threshold));
-            skip_indices_aggregators.push_back(index->createIndexAggregator());
-            skip_index_filling.push_back(0);
-        }
+        initSkipIndices();
 
         initialized = true;
     }
@@ -82,66 +67,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!rows)
         return;
 
-    {
-        /// Creating block for update
-        Block indices_update_block(skip_indexes_columns);
-        size_t skip_index_current_mark = 0;
-
-        /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
-        {
-            const auto index = storage.skip_indices[i];
-            auto & stream = *skip_indices_streams[i];
-            size_t prev_pos = 0;
-            skip_index_current_mark = skip_index_mark;
-            while (prev_pos < rows)
-            {
-                UInt64 limit = 0;
-                if (prev_pos == 0 && index_offset != 0)
-                {
-                    limit = index_offset;
-                }
-                else
-                {
-                    limit = index_granularity.getMarkRows(skip_index_current_mark);
-                    if (skip_indices_aggregators[i]->empty())
-                    {
-                        skip_indices_aggregators[i] = index->createIndexAggregator();
-                        skip_index_filling[i] = 0;
-
-                        if (stream.compressed.offset() >= min_compress_block_size)
-                            stream.compressed.next();
-
-                        writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                        writeIntBinary(stream.compressed.offset(), stream.marks);
-                        /// Actually this numbers is redundant, but we have to store them
-                        /// to be compatible with normal .mrk2 file format
-                        if (storage.canUseAdaptiveGranularity())
-                            writeIntBinary(1UL, stream.marks);
-
-                        ++skip_index_current_mark;
-                    }
-                }
-
-                size_t pos = prev_pos;
-                skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
-
-                if (pos == prev_pos + limit)
-                {
-                    ++skip_index_filling[i];
-
-                    /// write index if it is filled
-                    if (skip_index_filling[i] == index->granularity)
-                    {
-                        skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-                        skip_index_filling[i] = 0;
-                    }
-                }
-                prev_pos = pos;
-            }
-        }
-        skip_index_mark = skip_index_current_mark;
-    }
+    calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
     size_t new_index_offset = 0;
     size_t new_current_mark = 0;
@@ -181,14 +107,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
             writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
     }
 
-    /// Finish skip index serialization
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-    {
-        auto & stream = *skip_indices_streams[i];
-        if (!skip_indices_aggregators[i]->empty())
-            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-    }
-
     MergeTreeData::DataPart::Checksums checksums;
 
     for (auto & column_stream : column_streams)
@@ -200,19 +118,11 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column_stream.second->addToChecksums(checksums);
     }
 
-    for (auto & stream : skip_indices_streams)
-    {
-        stream->finalize();
-        stream->addToChecksums(checksums);
-    }
+    finishSkipIndicesSerialization(checksums);
 
     column_streams.clear();
     serialization_states.clear();
     initialized = false;
-
-    skip_indices_streams.clear();
-    skip_indices_aggregators.clear();
-    skip_index_filling.clear();
 
     return checksums;
 }

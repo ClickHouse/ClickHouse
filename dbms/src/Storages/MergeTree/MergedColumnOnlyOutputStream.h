@@ -26,18 +26,10 @@ public:
 
 private:
     Block header;
-    SerializationStates serialization_states;
-    String part_path;
 
     bool initialized = false;
     bool sync;
     bool skip_offsets;
-    size_t skip_index_mark = 0;
-
-    std::vector<MergeTreeIndexPtr> skip_indices;
-    std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
-    MergeTreeIndexAggregators skip_indices_aggregators;
-    std::vector<size_t> skip_index_filling;
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns & already_written_offset_columns;
