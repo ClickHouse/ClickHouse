@@ -56,7 +56,7 @@ private:
         const Names & virt_columns,
         const Settings & settings) const;
 
-    BlockInputStreams spreadMarkRangesAmongStreamsPKOrder(
+    BlockInputStreams spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
