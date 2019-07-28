@@ -3,7 +3,6 @@
 namespace DB
 {
 
-
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
