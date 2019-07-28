@@ -381,18 +381,18 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     rows_count += rows;
-
     {
         /// Creating block for update
         Block indices_update_block(skip_indexes_columns);
+        size_t skip_index_current_mark = 0;
+
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
         for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
             const auto index = storage.skip_indices[i];
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
-
-            size_t skip_index_current_mark = 0;
+            skip_index_current_mark = skip_index_mark;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
@@ -417,6 +417,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                         /// to be compatible with normal .mrk2 file format
                         if (storage.canUseAdaptiveGranularity())
                             writeIntBinary(1UL, stream.marks);
+
+                        ++skip_index_current_mark;
                     }
                 }
 
@@ -435,9 +437,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     }
                 }
                 prev_pos = pos;
-                ++skip_index_current_mark;
             }
         }
+        skip_index_mark = skip_index_current_mark;
     }
 
     {

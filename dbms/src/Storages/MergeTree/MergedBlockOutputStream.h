@@ -68,6 +68,7 @@ private:
     String part_path;
 
     size_t rows_count = 0;
+    size_t skip_index_mark = 0;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
