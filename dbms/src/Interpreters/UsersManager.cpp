@@ -1,17 +1,17 @@
 #include <Interpreters/UsersManager.h>
 
-#include <Poco/Net/IPAddress.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
+#include "config_core.h"
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include "config_core.h"
-#if USE_SSL
-#   include <openssl/sha.h>
-#endif
+#include <Poco/Crypto/DigestEngine.h>
+#include <Poco/Net/IPAddress.h>
+#include <Poco/SHA1Engine.h>
+#include <Poco/SHA2Engine.h>
+#include <Poco/String.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -70,32 +70,40 @@ UserPtr UsersManager::authorizeAndGetUser(
 
     if (!it->second->password_sha256_hex.empty())
     {
-#if USE_SSL
-        unsigned char hash[32];
-
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(password.data()), password.size());
-        SHA256_Final(hash, &ctx);
-
-        String hash_hex;
+        Poco::SHA2Engine engine;
+        engine.update(password);
+        if (Poco::SHA2Engine::digestToHex(engine.digest()) != it->second->password_sha256_hex)
+            on_wrong_password();
+    }
+    else if (!it->second->password_double_sha1_hex.empty())
+    {
+        /// MySQL compatibility server passes SHA1 instead of a password. If password length equals to 20, it is treated as a SHA1. Server stores double SHA1.
+        Poco::SHA1Engine engine;
+        if (password.size() == Poco::SHA1Engine::DIGEST_SIZE)
         {
-            WriteBufferFromString buf(hash_hex);
-            HexWriteBuffer hex_buf(buf);
-            hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
+            engine.update(password);
+        }
+        else
+        {
+            engine.update(password);
+            const auto & first_sha1 = engine.digest();
+            engine.update(first_sha1.data(), first_sha1.size());
         }
 
-        Poco::toLowerInPlace(hash_hex);
-
-        if (hash_hex != it->second->password_sha256_hex)
+        if (Poco::SHA1Engine::digestToHex(engine.digest()) != it->second->password_double_sha1_hex)
             on_wrong_password();
-#else
-        throw DB::Exception("SHA256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
     }
     else if (password != it->second->password)
     {
-        on_wrong_password();
+        /// MySQL compatibility server passes SHA1 instead of a password.
+        if (password.size() != Poco::SHA1Engine::DIGEST_SIZE)
+            on_wrong_password();
+
+        Poco::SHA1Engine engine;
+        engine.update(it->second->password);
+
+        if (engine.digest() != Poco::SHA1Engine::Digest(password.begin(), password.end()))
+            on_wrong_password();
     }
 
     return it->second;
