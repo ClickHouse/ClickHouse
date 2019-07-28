@@ -65,11 +65,7 @@ void MySQLHandler::run()
     {
         String scramble = generateScramble();
 
-        /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
-         *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
-         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
-         */
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, scramble + '\0');
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, Authentication::Native, scramble + '\0');
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -239,6 +235,10 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     AuthSwitchResponse response;
     if (handshake_response.auth_plugin_name != Authentication::SHA256)
     {
+        /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
+         *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
+         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
+         */
         packet_sender->sendPacket(AuthSwitchRequest(Authentication::SHA256, scramble + '\0'), true);
         if (in->eof())
             throw Exception(

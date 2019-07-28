@@ -300,7 +300,12 @@ protected:
         }
         else if (total_left > 0 || payload_length == MAX_PACKET_LENGTH)
         {
+            // Starting new packet, since packets of size greater than MAX_PACKET_LENGTH should be split.
             startPacket();
+        } else {
+            // Finished writing packet. Buffer is set to empty to prevent rewriting (pos will be set to the beginning of a working buffer in next()).
+            // Further attempts to write will stall in the infinite loop.
+            working_buffer = WriteBuffer::Buffer(out.position(), out.position());
         }
     }
 };
@@ -408,15 +413,17 @@ class Handshake : public WritePacket
     uint32_t capability_flags;
     uint8_t character_set;
     uint32_t status_flags;
+    String auth_plugin_name;
     String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t capability_flags, uint32_t connection_id, String server_version, String auth_plugin_data)
+    explicit Handshake(uint32_t capability_flags, uint32_t connection_id, String server_version, String auth_plugin_name, String auth_plugin_data)
         : protocol_version(0xa)
         , server_version(std::move(server_version))
         , connection_id(connection_id)
         , capability_flags(capability_flags)
         , character_set(CharacterSet::utf8_general_ci)
         , status_flags(0)
+        , auth_plugin_name(std::move(auth_plugin_name))
         , auth_plugin_data(std::move(auth_plugin_data))
     {
     }
@@ -424,7 +431,7 @@ public:
 protected:
     size_t getPayloadSize() const override
     {
-        return 26 + server_version.size() + auth_plugin_data.size() + Authentication::SHA256.size();
+        return 26 + server_version.size() + auth_plugin_data.size() + auth_plugin_name.size();
     }
 
     void writePayloadImpl(WriteBuffer & buffer) const override
@@ -443,7 +450,7 @@ protected:
         // A workaround for PHP mysqlnd extension bug which occurs when sha256_password is used as a default authentication plugin.
         // Instead of using client response for mysql_native_password plugin, the server will always generate authentication method mismatch
         // and switch to sha256_password to simulate that mysql_native_password is used as a default plugin.
-        writeString(Authentication::Native, buffer);
+        writeString(auth_plugin_name, buffer);
         writeChar(0x0, 1, buffer);
     }
 };
