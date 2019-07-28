@@ -1000,7 +1000,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 }
             }
         }
-        /// TODO: add indices from materialize
 
         if (!indices_to_recalc.empty())
         {
