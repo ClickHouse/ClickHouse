@@ -302,7 +302,9 @@ protected:
         {
             // Starting new packet, since packets of size greater than MAX_PACKET_LENGTH should be split.
             startPacket();
-        } else {
+        }
+        else
+        {
             // Finished writing packet. Buffer is set to empty to prevent rewriting (pos will be set to the beginning of a working buffer in next()).
             // Further attempts to write will stall in the infinite loop.
             working_buffer = WriteBuffer::Buffer(out.position(), out.position());
