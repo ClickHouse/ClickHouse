@@ -899,26 +899,13 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (!user->password_sha256_hex.empty())
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password is specified using SHA256.", ErrorCodes::UNKNOWN_EXCEPTION);
+        if (user->password_double_sha1_hex.empty())
+            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
 
-        Poco::SHA1Engine::Digest double_sha1_value;
+        Poco::SHA1Engine::Digest double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
+        assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
+
         Poco::SHA1Engine engine;
-
-        /// If password is specified using double SHA1, than it is non-empty (unlike plaintext password, which can be empty).
-        if (!user->password_double_sha1_hex.empty())
-        {
-            double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
-            assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
-        }
-        else
-        {
-            engine.update(user->password);
-            const Poco::SHA1Engine::Digest & first_sha1 = engine.digest();
-            engine.update(first_sha1.data(), first_sha1.size());
-            double_sha1_value = engine.digest();
-        }
-
         engine.update(scramble.data(), SCRAMBLE_LENGTH);
         engine.update(double_sha1_value.data(), double_sha1_value.size());
 
@@ -948,8 +935,8 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (char & c : scramble)
-            generator >> c;
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+            generator >> scramble[i];
     }
 
     String getName() override
@@ -975,7 +962,8 @@ public:
             packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
 
             if (packet_sender->in->eof())
-                throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+                throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
+                    ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);

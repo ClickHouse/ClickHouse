@@ -82,7 +82,7 @@ UserPtr UsersManager::authorizeAndGetUser(
         const auto & first_sha1 = engine.digest();
 
         /// If it was MySQL compatibility server, then first_sha1 already contains double SHA1.
-        if (Poco::SHA1Engine::digestToHex(first_sha1) != it->second->password_double_sha1_hex)
+        if (Poco::SHA1Engine::digestToHex(first_sha1) == it->second->password_double_sha1_hex)
             return it->second;
 
         engine.update(first_sha1.data(), first_sha1.size());
@@ -92,15 +92,7 @@ UserPtr UsersManager::authorizeAndGetUser(
     }
     else if (password != it->second->password)
     {
-        /// MySQL compatibility server passes SHA1 instead of a password.
-        if (password.size() != Poco::SHA1Engine::DIGEST_SIZE)
-            on_wrong_password();
-
-        Poco::SHA1Engine engine;
-        engine.update(it->second->password);
-
-        if (engine.digest() != Poco::SHA1Engine::Digest(password.begin(), password.end()))
-            on_wrong_password();
+        on_wrong_password();
     }
 
     return it->second;
