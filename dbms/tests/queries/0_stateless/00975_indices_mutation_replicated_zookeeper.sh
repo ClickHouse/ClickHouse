@@ -3,7 +3,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.indices_mutaions1;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.indices_mutaions2;"
 
 
 $CLICKHOUSE_CLIENT -n --query="
