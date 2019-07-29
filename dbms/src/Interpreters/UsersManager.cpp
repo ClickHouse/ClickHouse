@@ -6,7 +6,6 @@
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Crypto/DigestEngine.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/SHA1Engine.h>
 #include <Poco/SHA2Engine.h>

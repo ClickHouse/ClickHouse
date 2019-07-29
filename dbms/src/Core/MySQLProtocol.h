@@ -20,8 +20,6 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/Crypto/DigestEngine.h>
-#include <Poco/DigestEngine.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
