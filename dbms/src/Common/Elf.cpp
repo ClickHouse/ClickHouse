@@ -1,7 +1,7 @@
 #include <Common/Elf.h>
 #include <Common/Exception.h>
 
-#include <iostream>
+#include <string.h>
 
 
 namespace DB
@@ -16,8 +16,6 @@ namespace ErrorCodes
 Elf::Elf(const std::string & path)
     : in(path, 0)
 {
-    std::cerr << "Processing path " << path << "\n";
-
     /// Check if it's an elf.
     size = in.buffer().size();
     if (size < sizeof(ElfEhdr))
@@ -98,6 +96,12 @@ std::optional<Elf::Section> Elf::findSection(std::function<bool(const Section & 
 }
 
 
+std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
+{
+    return findSection([&](const Section & section, size_t) { return 0 == strcmp(name, section.name()); });
+}
+
+
 const char * Elf::Section::name() const
 {
     if (!elf.section_names)
@@ -115,7 +119,12 @@ const char * Elf::Section::begin() const
 
 const char * Elf::Section::end() const
 {
-    return elf.mapped + header.sh_offset + header.sh_size;
+    return begin() + size();
+}
+
+size_t Elf::Section::size() const
+{
+    return header.sh_size;
 }
 
 }
