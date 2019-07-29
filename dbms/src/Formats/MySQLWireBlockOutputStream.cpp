@@ -55,16 +55,18 @@ void MySQLWireBlockOutputStream::write(const Block & block)
 
 void MySQLWireBlockOutputStream::writeSuffix()
 {
-    QueryStatus * process_list_elem = context.getProcessListElement();
-    CurrentThread::finalizePerformanceCounters();
-    QueryStatusInfo info = process_list_elem->getInfo();
-    size_t affected_rows = info.written_rows;
-
+    size_t affected_rows = 0;
     std::stringstream human_readable_info;
-    human_readable_info << std::fixed << std::setprecision(3)
-        << "Read " << info.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(info.read_bytes) << " in " << info.elapsed_seconds << " sec., "
-        << static_cast<size_t>(info.read_rows / info.elapsed_seconds) << " rows/sec., "
-        << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
+    if (QueryStatus * process_list_elem = context.getProcessListElement())
+    {
+        CurrentThread::finalizePerformanceCounters();
+        QueryStatusInfo info = process_list_elem->getInfo();
+        affected_rows = info.written_rows;
+        human_readable_info << std::fixed << std::setprecision(3)
+                            << "Read " << info.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(info.read_bytes) << " in " << info.elapsed_seconds << " sec., "
+                            << static_cast<size_t>(info.read_rows / info.elapsed_seconds) << " rows/sec., "
+                            << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
+    }
 
     if (header.columns() == 0)
         packet_sender.sendPacket(OK_Packet(0x0, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
