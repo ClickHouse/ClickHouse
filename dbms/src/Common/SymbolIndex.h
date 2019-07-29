@@ -19,21 +19,31 @@ public:
         const void * address_end;
         const char * object;
         std::string name;   /// demangled NOTE Can use Arena for strings
+    };
 
-        bool operator< (const Symbol & rhs) const { return address_begin < rhs.address_begin; }
-        bool operator< (const void * addr) const { return address_begin <= addr; }
+    struct Object
+    {
+        const void * address_begin;
+        const void * address_end;
+        std::string name;
     };
 
     SymbolIndex() { update(); }
     void update();
 
-    const Symbol * find(const void * address) const;
+    const Symbol * findSymbol(const void * address) const;
+    const Object * findObject(const void * address) const;
 
-    auto begin() const { return symbols.cbegin(); }
-    auto end() const { return symbols.cend(); }
+    const std::vector<Symbol> & symbols() const { return data.symbols; }
+    const std::vector<Object> & objects() const { return data.objects; }
 
+    struct Data
+    {
+        std::vector<Symbol> symbols;
+        std::vector<Object> objects;
+    };
 private:
-    std::vector<Symbol> symbols;
+    Data data;
 };
 
 }

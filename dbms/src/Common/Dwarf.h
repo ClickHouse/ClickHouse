@@ -52,7 +52,7 @@ class Elf;
  * kept as a vector of strings instead of re-executing the program to look for
  * DW_LNE_define_file instructions, etc.
  */
-class Dwarf
+class Dwarf final
 {
     // Note that Dwarf uses (and returns) std::string_view a lot.
     // The std::string_view point within sections in the ELF file, and so will
@@ -126,8 +126,8 @@ public:
     };
 
     /**
-   * Find the file and line number information corresponding to address.
-   */
+      * Find the file and line number information corresponding to address.
+      */
     bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode) const;
 
 private:
