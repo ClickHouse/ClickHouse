@@ -530,7 +530,11 @@ bool StorageMergeTree::merge(
         }
 
         if (!selected)
+        {
+            if (out_disable_reason)
+                *out_disable_reason = "Cannot select parts for optimization";
             return false;
+        }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
@@ -886,8 +890,16 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
+                std::stringstream message;
+                message << "Cannot OPTIMIZE table";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                else
+                    message << " by some reason.";
+                LOG_INFO(log, message.rdbuf());
+
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
                 return false;
             }
         }
@@ -900,8 +912,16 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
+            std::stringstream message;
+            message << "Cannot OPTIMIZE table";
+            if (!disable_reason.empty())
+                message << ": " << disable_reason;
+            else
+                message << " by some reason.";
+            LOG_INFO(log, message.rdbuf());
+
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
             return false;
         }
     }

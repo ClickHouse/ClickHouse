@@ -142,7 +142,10 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(
+    const MergeTreeData & storage_,
+    const String & name_,
+    const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
