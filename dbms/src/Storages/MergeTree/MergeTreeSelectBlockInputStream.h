@@ -55,8 +55,8 @@ private:
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
     NameSet column_name_set;
-    NamesAndTypesList columns;
-    NamesAndTypesList pre_columns;
+
+    MergeTreeReadTaskColumns task_columns;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;

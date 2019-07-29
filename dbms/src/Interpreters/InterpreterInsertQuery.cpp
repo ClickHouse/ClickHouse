@@ -48,7 +48,8 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
     {
         const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
-        return factory.get(table_function->name, context)->execute(query.table_function, context);
+        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+        return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
     /// Into what table to write.

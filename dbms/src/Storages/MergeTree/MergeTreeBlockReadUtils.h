@@ -64,6 +64,18 @@ struct MergeTreeReadTask
     virtual ~MergeTreeReadTask();
 };
 
+struct MergeTreeReadTaskColumns
+{
+    /// column names to read during WHERE
+    NamesAndTypesList columns;
+    /// column names to read during PREWHERE
+    NamesAndTypesList pre_columns;
+    /// resulting block may require reordering in accordance with `ordered_names`
+    bool should_reorder;
+};
+
+MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns);
 
 struct MergeTreeBlockSizePredictor
 {
