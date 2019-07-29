@@ -71,8 +71,8 @@ public:
         {
             StringRef source = column_concrete->getDataAt(i);
             int status = 0;
-            std::string result = demangle(source.data, status);
-            result_column->insertDataWithTerminatingZero(result.data(), result.size() + 1);
+            std::string demangled = demangle(source.data, status);
+            result_column->insertDataWithTerminatingZero(demangled.data(), demangled.size() + 1);
         }
 
         block.getByPosition(result).column = std::move(result_column);
