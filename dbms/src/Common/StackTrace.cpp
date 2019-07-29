@@ -1,16 +1,16 @@
-#include <common/StackTrace.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 
-#include <sstream>
-#include <cstring>
-#include <cxxabi.h>
-#include <execinfo.h>
+#include <Common/StackTrace.h>
+#include <Common/SymbolIndex.h>
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
 
-#if USE_UNWIND
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-#endif
+#include <sstream>
+#include <filesystem>
+#include <unordered_map>
+#include <cstring>
+
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
@@ -168,9 +168,9 @@ void * getCallerAddress(const ucontext_t & context)
 #endif
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#endif
-
+#else
     return nullptr;
+#endif
 }
 
 StackTrace::StackTrace()
@@ -194,6 +194,12 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 StackTrace::StackTrace(NoCapture)
 {
 }
+
+
+#if USE_UNWIND
+extern "C" int unw_backtrace(void **, int);
+#endif
+
 
 void StackTrace::tryCapture()
 {
@@ -227,50 +233,43 @@ std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
     if (size == 0)
         return "<Empty trace>";
 
-    char ** symbols = backtrace_symbols(frames.data(), size);
-    if (!symbols)
-        return "<Invalid trace>";
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    std::stringstream backtrace;
-    try
+    std::stringstream out;
+
+    for (size_t i = 0; i < size; ++i)
     {
-        for (size_t i = 0; i < size; i++)
+        out << "#" << i << " " << frames[i] << " ";
+        auto symbol = symbol_index.findSymbol(frames[i]);
+        if (symbol)
         {
-            /// We do "demangling" of names. The name is in parenthesis, before the '+' character.
-
-            char * name_start = nullptr;
-            char * name_end = nullptr;
-            std::string demangled_name;
             int status = 0;
-
-            if (nullptr != (name_start = strchr(symbols[i], '('))
-                && nullptr != (name_end = strchr(name_start, '+')))
-            {
-                ++name_start;
-                *name_end = '\0';
-                demangled_name = demangle(name_start, status);
-                *name_end = '+';
-            }
-
-            backtrace << i << ". ";
-
-            if (0 == status && name_start && name_end)
-            {
-                backtrace.write(symbols[i], name_start - symbols[i]);
-                backtrace << demangled_name << name_end;
-            }
-            else
-                backtrace << symbols[i];
-
-            backtrace << std::endl;
+            out << demangle(symbol->name, status);
         }
-    }
-    catch (...)
-    {
-        free(symbols);
-        throw;
+        else
+            out << "?";
+
+        out << " ";
+
+        if (auto object = symbol_index.findObject(frames[i]))
+        {
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(object->address_begin) + uintptr_t(frames[i]), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line;
+                else
+                    out << object->name;
+            }
+        }
+        else
+            out << "?";
+
+        out << "\n";
     }
 
-    free(symbols);
-    return backtrace.str();
+    return out.str();
 }

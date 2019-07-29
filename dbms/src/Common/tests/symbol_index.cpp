@@ -18,9 +18,9 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    SymbolIndex symbol_index;
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    for (const auto & elem : symbol_index.objects())
+    for (const auto & elem : symbol_index.symbols())
         std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
@@ -41,10 +41,12 @@ int main(int argc, char ** argv)
     Dwarf dwarf(elf);
 
     Dwarf::LocationInfo location;
-    if (dwarf.findAddress(uintptr_t(address), location, Dwarf::LocationInfoMode::FULL))
+    if (dwarf.findAddress(uintptr_t(address), location, Dwarf::LocationInfoMode::FAST))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else
         std::cerr << "Dwarf: Not found\n";
+
+    std::cerr << StackTrace().toString() << "\n";
 
     return 0;
 }
