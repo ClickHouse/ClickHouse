@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNKNOWN_SETTING;
+    extern const int TOO_BIG_AST;
 }
 
 namespace ActionLocks
@@ -649,6 +650,10 @@ bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
+    static constexpr size_t reserve_ast_elements = 256;
+    size_t column_size = getColumns().getAll().size();
+    size_t max_ast_elements = global_context.getSettingsRef().max_ast_elements;
+
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
     /// You must call destructor with unlocked `currently_merging_mutex`.
@@ -672,9 +677,10 @@ bool StorageMergeTree::tryMutatePart()
             if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
-            static constexpr size_t reserve_ast_elements = 10;
-            size_t column_size = getColumns().getAll().size();
-            size_t current_remain_ast_elements = global_context.getSettingsRef().max_ast_elements - column_size - reserve_ast_elements;
+            if (max_ast_elements <= reserve_ast_elements + column_size)
+                throw Exception("max_ast_elements must be greater than " + toString(reserve_ast_elements + column_size), ErrorCodes::TOO_BIG_AST);
+
+            size_t current_remain_ast_elements = max_ast_elements - column_size - reserve_ast_elements;
 
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
             {
@@ -686,7 +692,7 @@ bool StorageMergeTree::tryMutatePart()
                     if (current_remain_ast_elements <= ast_elements_size)
                         break;
 
-                    commands.emplace_back(commands_it);
+                    commands.push_back(*commands_it);
                     current_remain_ast_elements -= ast_elements_size;
                 }
             }
