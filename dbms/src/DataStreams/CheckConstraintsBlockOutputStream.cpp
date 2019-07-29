@@ -17,7 +17,8 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
         {
             auto indices_wrong = findAllWrong(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize());
             std::string indices_str = "{";
-            for (size_t j = 0; j < indices_wrong.size(); ++j) {
+            for (size_t j = 0; j < indices_wrong.size(); ++j)
+            {
                 indices_str += std::to_string(indices_wrong[j]);
                 indices_str += (j != indices_wrong.size() - 1) ? ", " : "}";
             }
