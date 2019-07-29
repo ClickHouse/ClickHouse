@@ -25,7 +25,8 @@ friend class TinyLogBlockOutputStream;
 
 public:
     std::string getName() const override { return "TinyLog"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -48,7 +49,7 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+    std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
 
     String getDataPath() const override { return full_path(); }
 
@@ -56,7 +57,8 @@ public:
 
 private:
     String path;
-    String name;
+    String table_name;
+    String database_name;
 
     size_t max_compress_block_size;
 
@@ -72,7 +74,8 @@ private:
 protected:
     StorageTinyLog(
         const std::string & path_,
-        const std::string & name_,
+        const std::string & database_name_,
+        const std::string & table_name_,
         const ColumnsDescription & columns_,
         bool attach,
         size_t max_compress_block_size_);

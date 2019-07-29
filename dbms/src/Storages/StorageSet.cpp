@@ -88,9 +88,10 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 
 StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & path_,
+    const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_)
+    : IStorage{columns_}, table_name(table_name_), database_name(database_name_)
 {
     if (path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -102,9 +103,10 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 StorageSet::StorageSet(
     const String & path_,
-    const String & name_,
+    const String & database_name_,
+    const String & table_name_,
     const ColumnsDescription & columns_)
-    : StorageSetOrJoinBase{path_, name_, columns_},
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_},
     set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();
@@ -186,7 +188,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 }
 
 
-void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     /// Rename directory with data.
     String new_path = new_path_to_db + escapeForFileName(new_table_name);
@@ -194,6 +196,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & 
 
     path = new_path + "/";
     table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 
@@ -206,7 +209,7 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(args.data_path, args.table_name, args.columns);
+        return StorageSet::create(args.data_path, args.database_name, args.table_name, args.columns);
     });
 }
 
