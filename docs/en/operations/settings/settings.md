@@ -209,7 +209,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
@@ -306,8 +306,8 @@ Default value: `ALL`.
 
 Changes behavior of join operations with `ANY` strictness.
 
-!!! note "Attention"
-    This setting applies only for the [Join](../table_engines/join.md) table engine.
+!!! warning "Attention"
+    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
 
 Possible values:
 
@@ -336,7 +336,7 @@ Default value: 0.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
-Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row, if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
 
 Possible values:
 
