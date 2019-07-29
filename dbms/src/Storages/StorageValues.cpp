@@ -11,12 +11,13 @@ StorageValues::StorageValues(const std::string & database_name_, const std::stri
         setColumns(ColumnsDescription(res_block.getNamesAndTypesList()));
     }
 
-BlockInputStreams StorageValues::read(const Names & column_names,
-   const SelectQueryInfo &,
-   const Context & /*context*/,
-   QueryProcessingStage::Enum /*processed_stage*/,
-   size_t /*max_block_size*/,
-   unsigned /*num_streams*/)
+BlockInputStreams StorageValues::read(
+    const Names & column_names,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
+    unsigned /*num_streams*/)
 {
     check(column_names);
 

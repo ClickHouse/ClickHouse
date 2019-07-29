@@ -25,7 +25,7 @@ void TableFunctionFactory::registerFunction(const std::string & name, Creator cr
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), creator).second)
-        throw Exception("TableFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
+        throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
 
