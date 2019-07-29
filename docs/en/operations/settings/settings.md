@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 **Usage**
 

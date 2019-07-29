@@ -208,7 +208,7 @@ size_t StackTrace::getSize() const
     return size;
 }
 
-const StackTrace::Frames& StackTrace::getFrames() const
+const StackTrace::Frames & StackTrace::getFrames() const
 {
     return frames;
 }
