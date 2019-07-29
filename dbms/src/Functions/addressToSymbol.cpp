@@ -18,13 +18,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class FunctionSymbolizeAddress : public IFunction
+class FunctionAddressToSymbol : public IFunction
 {
 public:
-    static constexpr auto name = "symbolizeAddress";
+    static constexpr auto name = "addressToSymbol";
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionSymbolizeAddress>();
+        return std::make_shared<FunctionAddressToSymbol>();
     }
 
     String getName() const override
@@ -82,9 +82,9 @@ public:
     }
 };
 
-void registerFunctionSymbolizeAddress(FunctionFactory & factory)
+void registerFunctionAddressToSymbol(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionSymbolizeAddress>();
+    factory.registerFunction<FunctionAddressToSymbol>();
 }
 
 }
