@@ -1186,7 +1186,7 @@ void StorageMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTP
         return;
 
     MergeTreePartInfo drop_range;
-    
+
     drop_range.partition_id = partition_id;
     drop_range.min_block = 0;
     drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
