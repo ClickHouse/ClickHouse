@@ -1,5 +1,5 @@
 #include <Common/SymbolIndex.h>
-#include <IO/MMapReadBufferFromFile.h>
+#include <Common/Elf.h>
 #include <common/demangle.h>
 
 #include <algorithm>
@@ -162,38 +162,27 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
 
 void collectSymbolsFromELFSymbolTable(
     dl_phdr_info * info,
-    const char * mapped_elf,
-    size_t elf_size,
-    const ElfW(Shdr) * symbol_table,
-    const ElfW(Shdr) * string_table,
+    const DB::Elf & elf,
+    const DB::Elf::Section & symbol_table,
+    const DB::Elf::Section & string_table,
     std::vector<DB::SymbolIndex::Symbol> & symbols)
 {
-    if (symbol_table->sh_offset + symbol_table->sh_size > elf_size
-        || string_table->sh_offset + string_table->sh_size > elf_size)
-        return;
-
     /// Iterate symbol table.
-    const ElfW(Sym) * symbol_table_entry = reinterpret_cast<const ElfW(Sym) *>(mapped_elf + symbol_table->sh_offset);
-    const ElfW(Sym) * symbol_table_end = reinterpret_cast<const ElfW(Sym) *>(mapped_elf + symbol_table->sh_offset + symbol_table->sh_size);
+    const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
+    const ElfSym * symbol_table_end = reinterpret_cast<const ElfSym *>(symbol_table.end());
 
-//    std::cerr << "Symbol table has: " << (symbol_table_end - symbol_table_entry) << "\n";
-
-    const char * strings = reinterpret_cast<const char *>(mapped_elf + string_table->sh_offset);
+    const char * strings = string_table.begin();
 
     for (; symbol_table_entry < symbol_table_end; ++symbol_table_entry)
     {
         if (!symbol_table_entry->st_name
             || !symbol_table_entry->st_value
             || !symbol_table_entry->st_size
-            || string_table->sh_offset + symbol_table_entry->st_name >= elf_size)
+            || strings + symbol_table_entry->st_name >= elf.end())
             continue;
-
-//        std::cerr << "Symbol Ok" << "\n";
 
         /// Find the name in strings table.
         const char * symbol_name = strings + symbol_table_entry->st_name;
-
-//        std::cerr << "Symbol name: " << symbol_name << "\n";
 
         DB::SymbolIndex::Symbol symbol;
         symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
@@ -207,45 +196,32 @@ void collectSymbolsFromELFSymbolTable(
 }
 
 
-bool collectSymbolsFromELFSymbolTable(
+bool searchAndCollectSymbolsFromELFSymbolTable(
     dl_phdr_info * info,
-    const char * mapped_elf,
-    size_t elf_size,
-    const ElfW(Shdr) * section_headers,
-    size_t section_header_num_entries,
-    ElfW(Off) section_names_offset,
-    const char * section_names,
-    ElfW(Word) section_header_type,
+    const DB::Elf & elf,
+    unsigned section_header_type,
     const char * string_table_name,
     std::vector<DB::SymbolIndex::Symbol> & symbols)
 {
-    const ElfW(Shdr) * symbol_table = nullptr;
-    const ElfW(Shdr) * string_table = nullptr;
+    std::optional<DB::Elf::Section> symbol_table;
+    std::optional<DB::Elf::Section> string_table;
 
-    for (size_t section_header_idx = 0; section_header_idx < section_header_num_entries; ++section_header_idx)
-    {
-        auto & entry = section_headers[section_header_idx];
+    if (!elf.iterateSections([&](const DB::Elf::Section & section, size_t)
+        {
+            if (section.header.sh_type == section_header_type)
+                symbol_table.emplace(section);
+            else if (section.header.sh_type == SHT_STRTAB && 0 == strcmp(section.name(), string_table_name))
+                string_table.emplace(section);
 
-//        std::cerr << entry.sh_type << ", " << (section_names + entry.sh_name) << "\n";
-
-        if (section_names_offset + entry.sh_name >= elf_size)
+            if (symbol_table && string_table)
+                return true;
             return false;
-
-        if (entry.sh_type == section_header_type)
-            symbol_table = &entry;
-        else if (entry.sh_type == SHT_STRTAB && 0 == strcmp(section_names + entry.sh_name, string_table_name))
-            string_table = &entry;
-
-        if (symbol_table && string_table)
-            break;
+        }))
+    {
+        return false;
     }
 
-    if (!symbol_table || !string_table)
-        return false;
-
-//    std::cerr << "Found tables for " << string_table_name << "\n";
-
-    collectSymbolsFromELFSymbolTable(info, mapped_elf, elf_size, symbol_table, string_table, symbols);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
     return true;
 }
 
@@ -266,69 +242,10 @@ void collectSymbolsFromELF(dl_phdr_info * info, std::vector<DB::SymbolIndex::Sym
     if (ec)
         return;
 
-//    std::cerr << object_name << "\n";
+    DB::Elf elf(object_name);
 
-    /// Read elf file.
-    DB::MMapReadBufferFromFile in(object_name, 0);
-
-    /// Check if it's an elf.
-    size_t elf_size = in.buffer().size();
-    if (elf_size < sizeof(ElfW(Ehdr)))
-        return;
-
-//    std::cerr << "Size Ok" << "\n";
-
-    const char * mapped_elf = in.buffer().begin();
-    const ElfW(Ehdr) * elf_header = reinterpret_cast<const ElfW(Ehdr) *>(mapped_elf);
-
-    if (memcmp(elf_header->e_ident, "\x7F""ELF", 4) != 0)
-        return;
-
-//    std::cerr << "Header Ok" << "\n";
-
-    /// Get section header.
-    ElfW(Off) section_header_offset = elf_header->e_shoff;
-    uint16_t section_header_num_entries = elf_header->e_shnum;
-
-//    std::cerr << section_header_offset << ", " << section_header_num_entries << ", " << (section_header_num_entries * sizeof(ElfW(Shdr))) << ", " << elf_size << "\n";
-
-    if (!section_header_offset
-        || !section_header_num_entries
-        || section_header_offset + section_header_num_entries * sizeof(ElfW(Shdr)) > elf_size)
-        return;
-
-//    std::cerr << "Section header Ok" << "\n";
-
-    /// Find symtab, strtab or dyndym, dynstr.
-    const ElfW(Shdr) * section_headers = reinterpret_cast<const ElfW(Shdr) *>(mapped_elf + section_header_offset);
-
-    /// The string table with section names.
-    ElfW(Off) section_names_offset = 0;
-    const char * section_names = nullptr;
-    for (size_t section_header_idx = 0; section_header_idx < section_header_num_entries; ++section_header_idx)
-    {
-        auto & entry = section_headers[section_header_idx];
-        if (entry.sh_type == SHT_STRTAB && elf_header->e_shstrndx == section_header_idx)
-        {
-//            std::cerr << "Found section names\n";
-            section_names_offset = entry.sh_offset;
-            if (section_names_offset >= elf_size)
-                return;
-            section_names = reinterpret_cast<const char *>(mapped_elf + section_names_offset);
-            break;
-        }
-    }
-
-    if (!section_names)
-        return;
-
-    collectSymbolsFromELFSymbolTable(
-        info, mapped_elf, elf_size, section_headers, section_header_num_entries,
-        section_names_offset, section_names, SHT_SYMTAB, ".strtab", symbols);
-
-    collectSymbolsFromELFSymbolTable(
-        info, mapped_elf, elf_size, section_headers, section_header_num_entries,
-        section_names_offset, section_names, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_DYNSYM, ".dynstr", symbols);
 }
 
 
