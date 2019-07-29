@@ -13,12 +13,13 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
 
-    BlockInputStreams read(const Names & column_names,
-       const SelectQueryInfo & query_info,
-       const Context & context,
-       QueryProcessingStage::Enum processed_stage,
-       size_t max_block_size,
-       unsigned num_streams) override;
+    BlockInputStreams read(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     std::string database_name;
