@@ -178,6 +178,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureW
         LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
     }
 
+    clearOldMutations(true);
     clearOldPartsFromFilesystem();
 }
 
@@ -826,31 +827,34 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
     return it->first;
 }
 
-void StorageMergeTree::clearOldMutations()
+void StorageMergeTree::clearOldMutations(bool truncate)
 {
     const auto settings = getSettings();
-    if (!settings->finished_mutations_to_keep)
+    if (!truncate && !settings->finished_mutations_to_keep)
         return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        if (current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
+        if (!truncate && current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
             return;
 
-        auto begin_it = current_mutations_by_version.begin();
-
-        std::optional<Int64> min_version = getMinPartDataVersion();
         auto end_it = current_mutations_by_version.end();
-        if (min_version)
-            end_it = current_mutations_by_version.upper_bound(*min_version);
+        auto begin_it = current_mutations_by_version.begin();
+        size_t to_delete_count = std::distance(begin_it, end_it);
 
-        size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= settings->finished_mutations_to_keep)
-            return;
+        if (!truncate)
+        {
+            if (std::optional<Int64> min_version = getMinPartDataVersion())
+                end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        size_t to_delete_count = done_count - settings->finished_mutations_to_keep;
+            size_t done_count = std::distance(begin_it, end_it);
+            if (done_count <= settings->finished_mutations_to_keep)
+                return;
+
+            to_delete_count = done_count - settings->finished_mutations_to_keep;
+        }
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
