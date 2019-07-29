@@ -240,8 +240,10 @@ std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
 
     for (size_t i = 0; i < size; ++i)
     {
-        out << "#" << i << " " << frames[i] << " ";
-        auto symbol = symbol_index.findSymbol(frames[i]);
+        const void * addr = frames[i];
+
+        out << "#" << i << " " << addr << " ";
+        auto symbol = symbol_index.findSymbol(addr);
         if (symbol)
         {
             int status = 0;
@@ -252,14 +254,14 @@ std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
 
         out << " ";
 
-        if (auto object = symbol_index.findObject(frames[i]))
+        if (auto object = symbol_index.findObject(addr))
         {
             if (std::filesystem::exists(object->name))
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(object->address_begin) + uintptr_t(frames[i]), location, DB::Dwarf::LocationInfoMode::FAST))
+                if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST))
                     out << location.file.toString() << ":" << location.line;
                 else
                     out << object->name;
