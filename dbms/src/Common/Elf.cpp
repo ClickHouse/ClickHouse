@@ -17,8 +17,8 @@ Elf::Elf(const std::string & path)
     : in(path, 0)
 {
     /// Check if it's an elf.
-    size = in.buffer().size();
-    if (size < sizeof(ElfEhdr))
+    elf_size = in.buffer().size();
+    if (elf_size < sizeof(ElfEhdr))
         throw Exception("The size of supposedly ELF file is too small", ErrorCodes::CANNOT_PARSE_ELF);
 
     mapped = in.buffer().begin();
@@ -33,7 +33,7 @@ Elf::Elf(const std::string & path)
 
     if (!section_header_offset
         || !section_header_num_entries
-        || section_header_offset + section_header_num_entries * sizeof(ElfShdr) > size)
+        || section_header_offset + section_header_num_entries * sizeof(ElfShdr) > elf_size)
         throw Exception("The ELF is truncated (section header points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
 
     section_headers = reinterpret_cast<const ElfShdr *>(mapped + section_header_offset);
@@ -48,7 +48,7 @@ Elf::Elf(const std::string & path)
         throw Exception("The ELF doesn't have string table with section names", ErrorCodes::CANNOT_PARSE_ELF);
 
     ElfOff section_names_offset = section_names_strtab->header.sh_offset;
-    if (section_names_offset >= size)
+    if (section_names_offset >= elf_size)
         throw Exception("The ELF is truncated (section names string table points after end of file)", ErrorCodes::CANNOT_PARSE_ELF);
 
     section_names = reinterpret_cast<const char *>(mapped + section_names_offset);
@@ -68,7 +68,7 @@ bool Elf::iterateSections(std::function<bool(const Section & section, size_t idx
         Section section(section_headers[idx], *this);
 
         /// Sections spans after end of file.
-        if (section.header.sh_offset + section.header.sh_size > size)
+        if (section.header.sh_offset + section.header.sh_size > elf_size)
             continue;
 
         if (pred(section, idx))

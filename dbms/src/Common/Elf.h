@@ -41,17 +41,19 @@ public:
         const Elf & elf;
     };
 
-    Elf(const std::string & path);
+    explicit Elf(const std::string & path);
 
     bool iterateSections(std::function<bool(const Section & section, size_t idx)> && pred) const;
     std::optional<Section> findSection(std::function<bool(const Section & section, size_t idx)> && pred) const;
     std::optional<Section> findSectionByName(const char * name) const;
 
-    const char * end() const { return mapped + size; }
+    const char * begin() const { return mapped; }
+    const char * end() const { return mapped + elf_size; }
+    size_t size() const { return elf_size; }
 
 private:
     MMapReadBufferFromFile in;
-    size_t size;
+    size_t elf_size;
     const char * mapped;
     const ElfEhdr * header;
     const ElfShdr * section_headers;

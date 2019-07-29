@@ -24,7 +24,8 @@ namespace
 
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
-void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::SymbolIndex::Symbol> & symbols)
+void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
+    std::vector<DB::SymbolIndex::Symbol> & symbols)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself) */
@@ -40,8 +41,6 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
          */
         const ElfW(Dyn) * dyn_begin = reinterpret_cast<const ElfW(Dyn) *>(info->dlpi_addr + info->dlpi_phdr[header_index].p_vaddr);
 
-//        std::cerr << "dlpi_addr: " << info->dlpi_addr << "\n";
-
         /// For unknown reason, addresses are sometimes relative sometimes absolute.
         auto correct_address = [](ElfW(Addr) base, ElfW(Addr) ptr)
         {
@@ -53,25 +52,17 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
          * an entry with d_tag == DT_NULL.
          */
 
-/*        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
-            std::cerr << it->d_tag << "\n";*/
-
         size_t sym_cnt = 0;
         for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_HASH)
             {
                 const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
-
-//                std::cerr << it->d_un.d_ptr << ", " << it->d_un.d_val << "\n";
-
                 sym_cnt = hash[1];
                 break;
             }
             else if (it->d_tag == DT_GNU_HASH)
             {
-//                std::cerr << it->d_un.d_ptr << ", " << it->d_un.d_val << "\n";
-
                 /// This code based on Musl-libc.
 
                 const uint32_t * buckets = nullptr;
@@ -100,7 +91,6 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
             }
         }
 
-//        std::cerr << "sym_cnt: " << sym_cnt << "\n";
         if (!sym_cnt)
             continue;
 
@@ -116,8 +106,6 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
 
         if (!strtab)
             continue;
-
-//        std::cerr << "Having strtab" << "\n";
 
         for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
@@ -140,8 +128,6 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info, std::vector<DB::Symbo
 
                     if (!sym_name)
                         continue;
-
-//                    std::cerr << sym_name << "\n";
 
                     DB::SymbolIndex::Symbol symbol;
                     symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
@@ -226,7 +212,9 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 }
 
 
-void collectSymbolsFromELF(dl_phdr_info * info, std::vector<DB::SymbolIndex::Symbol> & symbols)
+void collectSymbolsFromELF(dl_phdr_info * info,
+    std::vector<DB::SymbolIndex::Symbol> & symbols,
+    std::vector<DB::SymbolIndex::Object> & objects)
 {
     std::string object_name = info->dlpi_name;
 
@@ -244,6 +232,12 @@ void collectSymbolsFromELF(dl_phdr_info * info, std::vector<DB::SymbolIndex::Sym
 
     DB::Elf elf(object_name);
 
+    DB::SymbolIndex::Object object;
+    object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
+    object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf.size());
+    object.name = object_name;
+    objects.push_back(std::move(object));
+
     searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_SYMTAB, ".strtab", symbols);
     searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_DYNSYM, ".dynstr", symbols);
 }
@@ -253,19 +247,39 @@ void collectSymbolsFromELF(dl_phdr_info * info, std::vector<DB::SymbolIndex::Sym
  * Is called by dl_iterate_phdr for every loaded shared lib until something
  * else than 0 is returned by one call of this function.
  */
-int collectSymbols(dl_phdr_info * info, size_t, void * out_symbols)
+int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     /* ElfW is a macro that creates proper typenames for the used system architecture
      * (e.g. on a 32 bit system, ElfW(Dyn*) becomes "Elf32_Dyn*")
      */
 
-    std::vector<DB::SymbolIndex::Symbol> & symbols = *reinterpret_cast<std::vector<DB::SymbolIndex::Symbol> *>(out_symbols);
+    DB::SymbolIndex::Data & data = *reinterpret_cast<DB::SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, symbols);
-    collectSymbolsFromELF(info, symbols);
+    collectSymbolsFromProgramHeaders(info, data.symbols);
+    collectSymbolsFromELF(info, data.symbols, data.objects);
 
     /* Continue iterations */
     return 0;
+}
+
+
+template <typename T>
+const T * find(const void * address, const std::vector<T> & vec)
+{
+    /// First range that has left boundary greater than address.
+
+    auto it = std::lower_bound(vec.begin(), vec.end(), address,
+        [](const T & symbol, const void * addr) { return symbol.address_begin <= addr; });
+
+    if (it == vec.begin())
+        return nullptr;
+    else
+        --it; /// Last range that has left boundary less or equals than address.
+
+    if (address >= it->address_begin && address < it->address_end)
+        return &*it;
+    else
+        return nullptr;
 }
 
 }
@@ -276,28 +290,18 @@ namespace DB
 
 void SymbolIndex::update()
 {
-    dl_iterate_phdr(collectSymbols, &symbols);
-    std::sort(symbols.begin(), symbols.end());
+    dl_iterate_phdr(collectSymbols, &data.symbols);
+    std::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
 }
 
-const SymbolIndex::Symbol * SymbolIndex::find(const void * address) const
+const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 {
-    /// First range that has left boundary greater than address.
+    return find(address, data.symbols);
+}
 
-//    std::cerr << "Searching " << address << "\n";
-
-    auto it = std::lower_bound(symbols.begin(), symbols.end(), address);
-    if (it == symbols.begin())
-        return nullptr;
-    else
-        --it; /// Last range that has left boundary less or equals than address.
-
-//    std::cerr << "Range: " << it->address_begin << " ... " << it->address_end << "\n";
-
-    if (address >= it->address_begin && address < it->address_end)
-        return &*it;
-    else
-        return nullptr;
+const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
+{
+    return find(address, data.objects);
 }
 
 }
