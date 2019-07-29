@@ -261,7 +261,7 @@ void StorageMergeTree::alter(
 
         context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
         setColumns(std::move(new_columns));
-        settings.applyChanges(new_changes);
+        settings.updateFromChanges(new_changes);
         return;
     }
 
