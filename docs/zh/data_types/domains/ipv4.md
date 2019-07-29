@@ -3,7 +3,7 @@
 `IPv4` 是基于 `UInt32` 的domain类型，用来存储IPv4地址。它使用紧凑的存储方式，提供用户友好的输入输出格式，
 自动检查列类型。
 
-### Basic Usage
+### 基本使用
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;
@@ -18,7 +18,7 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-或者你可以使用IPv4 domain作主键：
+您也可以使用IPv4 domain作主键：
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
