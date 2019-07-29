@@ -22,7 +22,7 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            loadFromChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {

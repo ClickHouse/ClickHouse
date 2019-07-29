@@ -17,6 +17,10 @@ class Field;
 class ReadBuffer;
 class WriteBuffer;
 
+namespace ErrorCodes
+{
+    extern const int IMMUTABLE_SETTING;
+}
 
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
@@ -317,6 +321,7 @@ private:
         size_t offset_of_changed;
         StringRef name;
         StringRef description;
+        bool immutable;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
@@ -396,6 +401,7 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
+        bool isImmutable() const { return member->immutable; }
         bool isChanged() const { return member->isChanged(*collection); }
         Field getValue() const { return member->get_field(*collection); }
         String getValueAsString() const { return member->get_string(*collection); }
@@ -497,6 +503,40 @@ public:
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
     void set(const String & name, const String & value) { (*this)[name].setValue(value); }
 
+    /// Updates setting's value.
+    void update(size_t index, const Field & value)
+    {
+        auto ref = (*this)[index];
+        if (ref.isImmutable())
+            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
+        ref.setValue(value);
+    }
+
+    void update(const String & name, const Field & value)
+    {
+        auto ref = (*this)[name];
+        if (ref.isImmutable())
+            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
+        ref.setValue(value);
+    }
+
+    /// Updates setting's value. Read value in text form from string (for example, from configuration file or from URL parameter).
+    void update(size_t index, const String & value)
+    {
+        auto ref = (*this)[index];
+        if (ref.isImmutable())
+            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
+        (*this)[index].setValue(value);
+    }
+
+    void update(const String & name, const String & value)
+    {
+        auto ref = (*this)[name];
+        if (ref.isImmutable())
+            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
+        (*this)[name].setValue(value);
+    }
+
     /// Returns value of a setting.
     Field get(size_t index) const { return (*this)[index].getValue(); }
     Field get(const String & name) const { return (*this)[name].getValue(); }
@@ -561,16 +601,29 @@ public:
     }
 
     /// Applies changes to the settings.
-    void applyChange(const SettingChange & change)
+    void loadFromChange(const SettingChange & change)
     {
         set(change.name, change.value);
     }
 
-    void applyChanges(const SettingsChanges & changes)
+    void loadFromChanges(const SettingsChanges & changes)
     {
         for (const SettingChange & change : changes)
-            applyChange(change);
+            loadFromChange(change);
     }
+
+    /// Applies changes to the settings.
+    void updateFromChange(const SettingChange & change)
+    {
+        update(change.name, change.value);
+    }
+
+    void updateFromChanges(const SettingsChanges & changes)
+    {
+        for (const SettingChange & change : changes)
+            updateFromChange(change);
+    }
+
 
     void copyChangesFrom(const Derived & src)
     {
@@ -615,7 +668,7 @@ public:
 };
 
 #define DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS_MACRO) \
-    LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
+    LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_, DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -625,9 +678,9 @@ public:
         using Derived = DERIVED_CLASS_NAME; \
         struct Functions \
         { \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
-        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
+        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_) \
     }
 
 
@@ -645,13 +698,22 @@ public:
     static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); }
 
 
-#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
     static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
     add({offsetof(Derived, NAME.changed), \
-         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), \
+         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
          &Functions::NAME##_castValueWithoutApplying });
+
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
+    add({offsetof(Derived, NAME.changed),                               \
+        StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
+        &Functions::NAME##_getString, &Functions::NAME##_getField, \
+        &Functions::NAME##_setString, &Functions::NAME##_setField, \
+        &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
+        &Functions::NAME##_castValueWithoutApplying });
 
 }
