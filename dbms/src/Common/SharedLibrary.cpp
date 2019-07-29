@@ -20,6 +20,9 @@ SharedLibrary::SharedLibrary(const std::string & path, int flags)
         throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
 
     updatePHDRCache();
+
+    /// NOTE: race condition exists when loading multiple shared libraries concurrently.
+    /// We don't care (or add global mutex for this method).
 }
 
 SharedLibrary::~SharedLibrary()
