@@ -219,65 +219,16 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_columns_lock.emplace_back(part.data_part->columns_lock);
 
-        /// inject column names required for DEFAULT evaluation in current part
-        auto required_column_names = column_names;
+        auto [required_columns, required_pre_columns, should_reorder] =
+            getReadTaskColumns(data, part.data_part, column_names, prewhere_info, check_columns);
 
-        const auto injected_columns = injectRequiredColumns(data, part.data_part, required_column_names);
-        auto should_reoder = !injected_columns.empty();
+        /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+        const auto & required_column_names = required_columns.getNames();
+        per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
 
-        Names required_pre_column_names;
-
-        if (prewhere_info)
-        {
-            /// collect columns required for PREWHERE evaluation
-            if (prewhere_info->alias_actions)
-                required_pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
-            else
-                required_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
-
-            /// there must be at least one column required for PREWHERE
-            if (required_pre_column_names.empty())
-                required_pre_column_names.push_back(required_column_names[0]);
-
-            /// PREWHERE columns may require some additional columns for DEFAULT evaluation
-            const auto injected_pre_columns = injectRequiredColumns(data, part.data_part, required_pre_column_names);
-            if (!injected_pre_columns.empty())
-                should_reoder = true;
-
-            /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-            const NameSet pre_name_set(required_pre_column_names.begin(), required_pre_column_names.end());
-
-            Names post_column_names;
-            for (const auto & name : required_column_names)
-                if (!pre_name_set.count(name))
-                    post_column_names.push_back(name);
-
-            required_column_names = post_column_names;
-        }
-
-        per_part_column_name_set.emplace_back(std::begin(required_column_names), std::end(required_column_names));
-
-        if (check_columns)
-        {
-            /** Under part->columns_lock check that all requested columns in part are of same type that in table.
-                *    This could be violated during ALTER MODIFY.
-                */
-            if (!required_pre_column_names.empty())
-                data.check(part.data_part->columns, required_pre_column_names);
-            if (!required_column_names.empty())
-                data.check(part.data_part->columns, required_column_names);
-
-            const NamesAndTypesList & physical_columns = data.getColumns().getAllPhysical();
-            per_part_pre_columns.push_back(physical_columns.addTypes(required_pre_column_names));
-            per_part_columns.push_back(physical_columns.addTypes(required_column_names));
-        }
-        else
-        {
-            per_part_pre_columns.push_back(part.data_part->columns.addTypes(required_pre_column_names));
-            per_part_columns.push_back(part.data_part->columns.addTypes(required_column_names));
-        }
-
-        per_part_should_reorder.push_back(should_reoder);
+        per_part_pre_columns.push_back(std::move(required_pre_columns));
+        per_part_columns.push_back(std::move(required_columns));
+        per_part_should_reorder.push_back(should_reorder);
 
         parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
 

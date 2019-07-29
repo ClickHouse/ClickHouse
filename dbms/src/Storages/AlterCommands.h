@@ -104,7 +104,7 @@ public:
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
         ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
-    /// Used for primiteive table engines, where only columns metadata can be changed
+    /// Used for primitive table engines, where only columns metadata can be changed
     void applyForColumnsOnly(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);

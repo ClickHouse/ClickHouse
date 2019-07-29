@@ -6,6 +6,8 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -23,8 +25,6 @@
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <Core/SettingsCommon.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/ASTFunction.h>

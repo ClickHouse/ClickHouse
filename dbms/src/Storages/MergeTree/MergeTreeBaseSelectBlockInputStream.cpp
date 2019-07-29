@@ -51,23 +51,59 @@ Block MergeTreeBaseSelectBlockInputStream::readImpl()
 
     while (!res && !isCancelled())
     {
-        if (!task && !getNewTask())
+        if ((!task || task->isFinished()) && !getNewTask())
             break;
 
         res = readFromPart();
 
         if (res)
             injectVirtualColumns(res);
-
-        if (task->isFinished())
-            task.reset();
     }
 
     return res;
 }
 
 
-Block MergeTreeBaseSelectBlockInputStream::readFromPart()
+void MergeTreeBaseSelectBlockInputStream::initializeRangeReaders(MergeTreeReadTask & current_task)
+{
+    if (prewhere_info)
+    {
+        if (reader->getColumns().empty())
+        {
+            current_task.range_reader = MergeTreeRangeReader(
+                pre_reader.get(), nullptr,
+                prewhere_info->alias_actions, prewhere_info->prewhere_actions,
+                &prewhere_info->prewhere_column_name, &current_task.ordered_names,
+                current_task.should_reorder, current_task.remove_prewhere_column, true);
+        }
+        else
+        {
+            MergeTreeRangeReader * pre_reader_ptr = nullptr;
+            if (pre_reader != nullptr)
+            {
+                current_task.pre_range_reader = MergeTreeRangeReader(
+                    pre_reader.get(), nullptr,
+                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
+                    &prewhere_info->prewhere_column_name, &current_task.ordered_names,
+                    current_task.should_reorder, current_task.remove_prewhere_column, false);
+                pre_reader_ptr = &current_task.pre_range_reader;
+            }
+
+            current_task.range_reader = MergeTreeRangeReader(
+                reader.get(), pre_reader_ptr, nullptr, nullptr,
+                nullptr, &current_task.ordered_names, true, false, true);
+        }
+    }
+    else
+    {
+        current_task.range_reader = MergeTreeRangeReader(
+            reader.get(), nullptr, nullptr, nullptr,
+            nullptr, &current_task.ordered_names, current_task.should_reorder, false, true);
+    }
+}
+
+
+Block MergeTreeBaseSelectBlockInputStream::readFromPartImpl()
 {
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -113,44 +149,6 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };
 
-    if (!task->range_reader.isInitialized())
-    {
-        if (prewhere_info)
-        {
-            if (reader->getColumns().empty())
-            {
-                task->range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), nullptr,
-                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                    &prewhere_info->prewhere_column_name, &task->ordered_names,
-                    task->should_reorder, task->remove_prewhere_column, true);
-            }
-            else
-            {
-                MergeTreeRangeReader * pre_reader_ptr = nullptr;
-                if (pre_reader != nullptr)
-                {
-                    task->pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), nullptr,
-                        prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
-                        task->should_reorder, task->remove_prewhere_column, false);
-                    pre_reader_ptr = &task->pre_range_reader;
-                }
-
-                task->range_reader = MergeTreeRangeReader(
-                    reader.get(), pre_reader_ptr, nullptr, nullptr,
-                    nullptr, &task->ordered_names, true, false, true);
-            }
-        }
-        else
-        {
-            task->range_reader = MergeTreeRangeReader(
-                reader.get(),  nullptr, nullptr, nullptr,
-                nullptr, &task->ordered_names, task->should_reorder, false, true);
-        }
-    }
-
     UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
@@ -182,6 +180,15 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
     read_result.block.checkNumberOfRows();
 
     return read_result.block;
+}
+
+
+Block MergeTreeBaseSelectBlockInputStream::readFromPart()
+{
+    if (!task->range_reader.isInitialized())
+        initializeRangeReaders(*task);
+
+    return readFromPartImpl();
 }
 
 
