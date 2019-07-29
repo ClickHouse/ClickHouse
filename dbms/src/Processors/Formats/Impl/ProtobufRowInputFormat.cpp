@@ -43,7 +43,7 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
                 read_columns[column_index] = true;
                 allow_add_row = false;
             }
-        } while (reader.maybeCanReadValue());
+        } while (reader.canReadMoreValues());
     }
 
     // Fill non-visited columns with the default values.
@@ -62,7 +62,7 @@ bool ProtobufRowInputFormat::allowSyncAfterError() const
 
 void ProtobufRowInputFormat::syncAfterError()
 {
-    reader.endMessage();
+    reader.endMessage(true);
 }
 
 

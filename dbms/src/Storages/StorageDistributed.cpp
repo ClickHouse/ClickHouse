@@ -34,6 +34,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -78,10 +79,20 @@ namespace
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table, ASTPtr table_function_ptr = nullptr)
 {
     auto modified_query_ast = query->clone();
+
+    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
+
+    /// restore long column names in JOIN ON expressions
+    if (auto tables = select_query.tables())
+    {
+        RestoreQualifiedNamesVisitor::Data data;
+        RestoreQualifiedNamesVisitor(data).visit(tables);
+    }
+
     if (table_function_ptr)
-        modified_query_ast->as<ASTSelectQuery &>().addTableFunction(table_function_ptr);
+        select_query.addTableFunction(table_function_ptr);
     else
-        modified_query_ast->as<ASTSelectQuery &>().replaceDatabaseAndTable(database, table);
+        select_query.replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 

@@ -39,9 +39,11 @@ The `CHECK TABLE` query supports the following table engines:
 - [StripeLog](../operations/table_engines/stripelog.md)
 - [MergeTree family](../operations/table_engines/mergetree.md)
 
-The `*Log` engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+Performed over the tables with another table engines causes an exception.
 
-For the `MergeTree` family engines the `CHECK TABLE` query shows a check status for every individual table data part at the local server.
+Engines from the `*Log` family don't provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+
+For `MergeTree` family engines, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
 
 **If the data is corrupted**
 
