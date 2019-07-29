@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -16,14 +17,18 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 class FunctionDemangle : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(const Context & context)
     {
+        if (!context.getSettingsRef().allow_introspection_functions)
+            throw Exception("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+
         return std::make_shared<FunctionDemangle>();
     }
 
