@@ -21,7 +21,9 @@ using ElfSym = ElfW(Sym);
 namespace DB
 {
 
-class Elf
+/** Allow to navigate sections in ELF.
+  */
+class Elf final
 {
 public:
     struct Section
@@ -31,6 +33,7 @@ public:
 
         const char * begin() const;
         const char * end() const;
+        size_t size() const;
 
         Section(const ElfShdr & header, const Elf & elf);
 
@@ -40,8 +43,9 @@ public:
 
     Elf(const std::string & path);
 
-    std::optional<Section> findSection(std::function<bool(const Section & section, size_t idx)> && pred) const;
     bool iterateSections(std::function<bool(const Section & section, size_t idx)> && pred) const;
+    std::optional<Section> findSection(std::function<bool(const Section & section, size_t idx)> && pred) const;
+    std::optional<Section> findSectionByName(const char * name) const;
 
     const char * end() const { return mapped + size; }
 
