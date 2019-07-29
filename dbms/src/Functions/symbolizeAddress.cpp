@@ -1,9 +1,4 @@
-#include <dlfcn.h>
-#include <unordered_map>
-#include <optional>
-#include <common/unaligned.h>
-#include <common/demangle.h>
-#include <common/SimpleCache.h>
+#include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -63,25 +58,10 @@ public:
         return true;
     }
 
-    static std::string addressToSymbol(UInt64 uint_address)
-    {
-        void * addr = unalignedLoad<void *>(&uint_address);
-
-        /// This is extremely slow.
-        Dl_info info;
-        if (dladdr(addr, &info) && info.dli_sname)
-        {
-            int demangling_status = 0;
-            return demangle(info.dli_sname, demangling_status);
-        }
-        else
-        {
-            return {};
-        }
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        static SymbolIndex symbol_index;
+
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
@@ -91,19 +71,15 @@ public:
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
-        static SimpleCache<decltype(addressToSymbol), &addressToSymbol> func_cached;
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string symbol = func_cached(data[i]);
-            result_column->insertDataWithTerminatingZero(symbol.data(), symbol.size() + 1);
+            if (const auto * symbol = symbol_index.find(reinterpret_cast<const void *>(data[i])))
+                result_column->insertDataWithTerminatingZero(symbol->name.data(), symbol->name.size() + 1);
+            else
+                result_column->insertDefault();
         }
 
         block.getByPosition(result).column = std::move(result_column);
-
-        /// Do not let our cache to grow indefinitely (simply drop it)
-        if (func_cached.size() > 1000000)
-            func_cached.drop();
     }
 };
 
