@@ -183,66 +183,6 @@ void skipPadding(std::string_view & sp, const char * start, size_t alignment)
     }
 }
 
-// Simplify a path -- as much as we can while not moving data around...
-/*void simplifyPath(std::string_view & sp)
-{
-    // Strip leading slashes and useless patterns (./), leaving one initial
-    // slash.
-    for (;;)
-    {
-        if (sp.empty())
-        {
-            return;
-        }
-
-        // Strip leading slashes, leaving one.
-        while (sp.startsWith("//"))
-        {
-            sp.remove_prefix(1);
-        }
-
-        if (sp.startsWith("/./"))
-        {
-            // Note 2, not 3, to keep it absolute
-            sp.remove_prefix(2);
-            continue;
-        }
-
-        if (sp.removePrefix("./"))
-        {
-            // Also remove any subsequent slashes to avoid making this path absolute.
-            while (sp.startsWith('/'))
-            {
-                sp.remove_prefix(1);
-            }
-            continue;
-        }
-
-        break;
-    }
-
-    // Strip trailing slashes and useless patterns (/.).
-    for (;;)
-    {
-        if (sp.empty())
-        {
-            return;
-        }
-
-        // Strip trailing slashes, except when this is the root path.
-        while (sp.size() > 1 && sp.removeSuffix('/'))
-        {
-        }
-
-        if (sp.removeSuffix("/."))
-        {
-            continue;
-        }
-
-        break;
-    }
-}*/
-
 }
 
 
@@ -270,10 +210,6 @@ Dwarf::Path::Path(std::string_view baseDir, std::string_view subDir, std::string
     {
         baseDir_ = {}; // subDir_ is absolute
     }
-
-//    simplifyPath(baseDir_);
-//    simplifyPath(subDir_);
-//    simplifyPath(file_);
 
     // Make sure it's never the case that baseDir_ is empty, but subDir_ isn't.
     if (baseDir_.empty())

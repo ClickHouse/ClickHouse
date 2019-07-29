@@ -1,6 +1,4 @@
 #include <Common/SymbolIndex.h>
-#include <Common/Elf.h>
-#include <common/demangle.h>
 
 #include <algorithm>
 #include <optional>
@@ -10,6 +8,9 @@
 //#include <iostream>
 #include <filesystem>
 
+
+namespace DB
+{
 
 namespace
 {
@@ -25,7 +26,7 @@ namespace
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
-    std::vector<DB::SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself) */
@@ -129,13 +130,10 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                     if (!sym_name)
                         continue;
 
-                    DB::SymbolIndex::Symbol symbol;
+                    SymbolIndex::Symbol symbol;
                     symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
                     symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
-                    int unused = 0;
-                    symbol.name = demangle(sym_name, unused);
-                    symbol.object = info->dlpi_name;
-
+                    symbol.name = sym_name;
                     symbols.push_back(std::move(symbol));
                 }
 
@@ -148,10 +146,10 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
 
 void collectSymbolsFromELFSymbolTable(
     dl_phdr_info * info,
-    const DB::Elf & elf,
-    const DB::Elf::Section & symbol_table,
-    const DB::Elf::Section & string_table,
-    std::vector<DB::SymbolIndex::Symbol> & symbols)
+    const Elf & elf,
+    const Elf::Section & symbol_table,
+    const Elf::Section & string_table,
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
     /// Iterate symbol table.
     const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
@@ -170,13 +168,13 @@ void collectSymbolsFromELFSymbolTable(
         /// Find the name in strings table.
         const char * symbol_name = strings + symbol_table_entry->st_name;
 
-        DB::SymbolIndex::Symbol symbol;
+        if (!symbol_name)
+            continue;
+
+        SymbolIndex::Symbol symbol;
         symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
         symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
-        int unused = 0;
-        symbol.name = demangle(symbol_name, unused);
-        symbol.object = info->dlpi_name;
-
+        symbol.name = symbol_name;
         symbols.push_back(std::move(symbol));
     }
 }
@@ -184,15 +182,15 @@ void collectSymbolsFromELFSymbolTable(
 
 bool searchAndCollectSymbolsFromELFSymbolTable(
     dl_phdr_info * info,
-    const DB::Elf & elf,
+    const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
-    std::vector<DB::SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols)
 {
-    std::optional<DB::Elf::Section> symbol_table;
-    std::optional<DB::Elf::Section> string_table;
+    std::optional<Elf::Section> symbol_table;
+    std::optional<Elf::Section> string_table;
 
-    if (!elf.iterateSections([&](const DB::Elf::Section & section, size_t)
+    if (!elf.iterateSections([&](const Elf::Section & section, size_t)
         {
             if (section.header.sh_type == section_header_type)
                 symbol_table.emplace(section);
@@ -213,8 +211,8 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
 
 void collectSymbolsFromELF(dl_phdr_info * info,
-    std::vector<DB::SymbolIndex::Symbol> & symbols,
-    std::vector<DB::SymbolIndex::Object> & objects)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    std::vector<SymbolIndex::Object> & objects)
 {
     std::string object_name = info->dlpi_name;
 
@@ -230,16 +228,17 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     if (ec)
         return;
 
-    DB::Elf elf(object_name);
-
-    DB::SymbolIndex::Object object;
+    SymbolIndex::Object object;
+    object.elf = std::make_unique<Elf>(object_name);
     object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
-    object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf.size());
+    object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + object.elf->size());
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_SYMTAB, ".strtab", symbols);
-    searchAndCollectSymbolsFromELFSymbolTable(info, elf, SHT_DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+
+    /// Unneeded because they were parsed from "program headers" of loaded objects.
+    //searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
 }
 
 
@@ -253,7 +252,7 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
      * (e.g. on a 32 bit system, ElfW(Dyn*) becomes "Elf32_Dyn*")
      */
 
-    DB::SymbolIndex::Data & data = *reinterpret_cast<DB::SymbolIndex::Data *>(data_ptr);
+    SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
     collectSymbolsFromELF(info, data.symbols, data.objects);
@@ -284,9 +283,6 @@ const T * find(const void * address, const std::vector<T> & vec)
 
 }
 
-
-namespace DB
-{
 
 void SymbolIndex::update()
 {

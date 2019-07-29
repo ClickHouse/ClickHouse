@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -60,7 +59,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        static SymbolIndex symbol_index;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
@@ -74,7 +73,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertDataWithTerminatingZero(symbol->name.data(), symbol->name.size() + 1);
+                result_column->insertDataWithTerminatingZero(symbol->name, strlen(symbol->name) + 1);
             else
                 result_column->insertDefault();
         }
