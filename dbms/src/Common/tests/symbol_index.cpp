@@ -26,6 +26,7 @@ int main(int argc, char ** argv)
 
     for (const auto & elem : symbol_index.symbols())
         std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";
+    std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
@@ -50,6 +51,7 @@ int main(int argc, char ** argv)
     else
         std::cerr << "Dwarf: Not found\n";
 
+    std::cerr << "\n";
     std::cerr << StackTrace().toString() << "\n";
 
     return 0;
