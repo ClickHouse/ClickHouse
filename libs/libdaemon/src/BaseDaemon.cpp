@@ -15,7 +15,7 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/Pipe.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>

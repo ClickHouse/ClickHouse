@@ -3,7 +3,7 @@
 #include <Core/Field.h>
 #include <Poco/Logger.h>
 #include <common/Pipe.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
