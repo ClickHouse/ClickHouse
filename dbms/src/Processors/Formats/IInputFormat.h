@@ -27,6 +27,12 @@ public:
         : ISource(std::move(header)), in(in)
     {
     }
+
+    virtual const BlockMissingValues & getMissingValues() const
+    {
+        static const BlockMissingValues none;
+        return none;
+    }
 };
 
 }

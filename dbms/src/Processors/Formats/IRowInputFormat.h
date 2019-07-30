@@ -66,11 +66,15 @@ protected:
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
 
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
 private:
     Params params;
 
     size_t total_rows = 0;
     size_t num_errors = 0;
+
+    BlockMissingValues block_missing_values;
 };
 
 }

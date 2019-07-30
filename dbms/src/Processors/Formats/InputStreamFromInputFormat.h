@@ -22,6 +22,8 @@ public:
     String getName() const override { return input_format->getName(); }
     Block getHeader() const override { return input_format->getPort().getHeader(); }
 
+    const BlockMissingValues & getMissingValues() const override { return input_format->getMissingValues(); }
+
 protected:
 
     Block readImpl() override
