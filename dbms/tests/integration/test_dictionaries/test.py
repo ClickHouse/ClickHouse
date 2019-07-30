@@ -294,7 +294,7 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('cmd', 'a', toUInt64(7))") == "83\n"
 
 
-def test_reload_after_fail(started_cluster):
+def test_reload_after_fail_by_system_reload(started_cluster):
     query = instance.query
 
     # dictionaries_lazy_load == false, so this dictionary is not loaded.
@@ -321,3 +321,32 @@ def test_reload_after_fail(started_cluster):
     query("SYSTEM RELOAD DICTIONARY 'no_file'")
     query("SELECT dictGetInt32('no_file', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file") == "LOADED"
+
+
+def test_reload_after_fail_by_timer(started_cluster):
+    query = instance.query
+
+    # dictionaries_lazy_load == false, so this dictionary is not loaded.
+    assert get_status("no_file_2") == "NOT_LOADED"
+
+    # We expect an error because the file source doesn't exist.
+    expected_error = "No such file"
+    assert expected_error in instance.query_and_get_error("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))")
+    assert get_status("no_file_2") == "FAILED"
+
+    # Passed time should not change anything now, the status is still FAILED.
+    time.sleep(6);
+    assert expected_error in instance.query_and_get_error("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))")
+    assert get_status("no_file_2") == "FAILED"
+
+    # Creating the file source makes the dictionary able to load.
+    instance.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/dictionaries/dictionary_preset_file.txt"), "/etc/clickhouse-server/config.d/dictionary_preset_no_file_2.txt")
+    time.sleep(6);
+    query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    assert get_status("no_file_2") == "LOADED"
+
+    # Removing the file source should not spoil the loaded dictionary.
+    instance.exec_in_container("rm /etc/clickhouse-server/config.d/dictionary_preset_no_file_2.txt")
+    time.sleep(6);
+    query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    assert get_status("no_file_2") == "LOADED"

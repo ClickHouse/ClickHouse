@@ -348,6 +348,9 @@ public:
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
+    /// Returns names of primary key + secondary sorting columns
+    virtual Names getSortingKeyColumns() const { return {}; }
+
     /// Returns storage policy if table supports it
     virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
 

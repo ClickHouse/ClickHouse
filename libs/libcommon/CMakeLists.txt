@@ -25,6 +25,7 @@ add_library (common
     src/argsToConfig.cpp
     src/StackTrace.cpp
     src/Pipe.cpp
+    src/phdr_cache.cpp
 
     include/common/SimpleCache.h
     include/common/StackTrace.h
@@ -51,6 +52,7 @@ add_library (common
     include/common/getThreadNumber.h
     include/common/sleep.h
     include/common/SimpleCache.h
+    include/common/phdr_cache.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

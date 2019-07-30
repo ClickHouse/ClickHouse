@@ -437,9 +437,10 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_TIMER = 460;
     extern const int CANNOT_SET_TIMER_PERIOD = 461;
     extern const int CANNOT_DELETE_TIMER = 462;
-    extern const int UNKNOWN_POLICY = 463;
-    extern const int UNKNOWN_DISK = 464;
-    extern const int UNKNOWN_PROTOCOL = 465;
+    extern const int CANNOT_FCNTL = 463;
+    extern const int UNKNOWN_POLICY = 464;
+    extern const int UNKNOWN_DISK = 465;
+    extern const int UNKNOWN_PROTOCOL = 466;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

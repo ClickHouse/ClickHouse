@@ -143,7 +143,11 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(
+    const MergeTreeData & storage_,
+    const DiskSpace::DiskPtr & disk_,
+    const String & name_,
+    const MergeTreePartInfo & info_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
