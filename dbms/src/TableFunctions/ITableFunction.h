@@ -26,6 +26,8 @@ class Context;
 class ITableFunction
 {
 public:
+    static inline std::string getDatabaseName() { return "_table_function"; }
+
     /// Get the main function name.
     virtual std::string getName() const = 0;
 

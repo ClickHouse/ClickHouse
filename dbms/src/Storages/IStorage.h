@@ -62,7 +62,7 @@ public:
 
     /// The name of the table.
     virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const { return {}; }  // FIXME: should be an abstract method!
+    virtual std::string getDatabaseName() const = 0;
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
