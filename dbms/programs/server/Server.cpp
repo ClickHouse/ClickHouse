@@ -818,9 +818,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 current_connections += server->currentConnections();
             }
 
-            LOG_DEBUG(log,
+            LOG_INFO(log,
                 "Closed all listening sockets."
                     << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
+
+            /// Killing remaining queries.
+            global_context->getProcessList().killAllQueries();
 
             if (current_connections)
             {
@@ -839,13 +842,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 }
             }
 
-            LOG_DEBUG(
+            LOG_INFO(
                 log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             dns_cache_updater.reset();
             main_config_reloader.reset();
             users_config_reloader.reset();
+
+            if (current_connections)
+            {
+                /// There is no better way to force connections to close in Poco.
+                /// Otherwise connection handlers will continue to live
+                /// (they are effectively dangling objects, but they use global thread pool
+                ///  and global thread pool destructor will wait for threads, preventing server shutdown).
+
+                LOG_INFO(log, "Will shutdown forcefully.");
+                _exit(Application::EXIT_OK);
+            }
         });
 
         /// try to load dictionaries immediately, throw on error and die
