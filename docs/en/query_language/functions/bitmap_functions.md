@@ -66,10 +66,10 @@ bitmapContains(haystack, needle)
 
 **Parameters**
 
-- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the functions searches.
+- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
 - `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
 
-**Returned value**
+**Returned values**
 
 - 0 — If `haystack` doesn't contain `needle`.
 - 1 — If `haystack` contains `needle`.
