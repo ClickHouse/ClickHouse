@@ -2370,7 +2370,9 @@ MergeTreeData::DataPartPtr MergeTreeData::swapActivePart(MergeTreeData::DataPart
             if (it == data_parts_by_info.end())
                 throw Exception("No such active part by info. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
 
+            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             data_parts_indexes.erase(it);
+
             auto part_it = data_parts_indexes.insert(part).first;
             modifyPartState(part_it, DataPartState::Committed);
             return active_part;
@@ -2547,6 +2549,12 @@ void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSp
     if (!reservation || !reservation->isValid())
         throw Exception("Move is not possible. Not enough space " + space->getName(), ErrorCodes::NOT_ENOUGH_SPACE);
 
+    auto & reserved_disk = reservation->getDisk();
+    String path_to_clone = getFullPathOnDisk(reserved_disk);
+
+    if (Poco::File(path_to_clone + part->name).exists())
+        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
     LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
     part->makeCloneOnDiskDetached(reservation);
 
@@ -2557,9 +2565,13 @@ void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSp
 
     copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
 
+    if (Poco::File(path_to_clone + part->name).exists())
+        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
     copied_part->renameTo(part->name);
 
     auto old_active_part = swapActivePart(copied_part);
+
+    std::cerr << old_active_part.use_count() << std::endl;
 
     old_active_part->deleteOnDestroy();
 }
@@ -2594,7 +2606,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 
     auto volume = storage_policy->getVolumeByName(name);
     if (!volume)
-        throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+        throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
     for (const auto & disk : volume->disks)
         if (part->disk->getName() == disk->getName())

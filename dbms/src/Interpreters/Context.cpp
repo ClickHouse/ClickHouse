@@ -1736,7 +1736,7 @@ const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
 }
 
 
-    DiskSpace::DiskSelector & Context::getDiskSelector() const
+DiskSpace::DiskSelector & Context::getDiskSelector() const
 {
     auto lock = getLock();
 
