@@ -5,7 +5,7 @@
 #include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>

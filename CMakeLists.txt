@@ -106,6 +106,10 @@ endif ()
 if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
+    # generate ranges for fast "addr2line" search
+    if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
+    endif ()
 endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
