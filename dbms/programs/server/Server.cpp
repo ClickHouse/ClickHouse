@@ -621,162 +621,164 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (const auto & listen_host : listen_hosts)
         {
-            /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-            uint16_t listen_port = 0;
-            try
+            auto create_server = [&](const char * port_name, auto && func)
             {
-                /// HTTP
-                if (config().has("http_port"))
-                {
-                    Poco::Net::ServerSocket socket;
-                    listen_port = config().getInt("http_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port);
-                    socket.setReceiveTimeout(settings.http_receive_timeout);
-                    socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
+                if (!config().has(port_name))
+                    return;
 
-                    LOG_INFO(log, "Listening http://" + address.toString());
+                try
+                {
+                    auto port = config().getInt(port_name);
+                    func(port);
                 }
-
-                /// HTTPS
-                if (config().has("https_port"))
+                catch (const Poco::Exception & e)
                 {
-#if USE_POCO_NETSSL
-                    Poco::Net::SecureServerSocket socket;
-                    listen_port = config().getInt("https_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
-                    socket.setReceiveTimeout(settings.http_receive_timeout);
-                    socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                        new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                    std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
 
-                    LOG_INFO(log, "Listening https://" + address.toString());
+                    if (listen_try)
+                    {
+                        LOG_ERROR(log, message
+                            << ". If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                            "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                            "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                            " Example for disabled IPv4: <listen_host>::</listen_host>");
+                    }
+                    else
+                    {
+                        throw Exception{message, ErrorCodes::NETWORK_ERROR};
+                    }
+                }
+            };
+
+            /// HTTP
+            create_server("http_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening http://" + address.toString());
+            });
+
+            /// HTTPS
+            create_server("https_port", [&](UInt16 port)
+            {
+#if USE_POCO_NETSSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening https://" + address.toString());
 #else
-                    throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
+                throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
+                    ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+            });
+
+            /// TCP
+            create_server("tcp_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
+            });
+
+            /// TCP with SSL
+            create_server("tcp_port_secure", [&](UInt16 port)
+            {
+#if USE_POCO_NETSSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure= */ true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+                LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
+#else
+                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                    ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+            });
+
+            /// Interserver IO HTTP
+            create_server("interserver_http_port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
+            });
+
+            create_server("interserver_https_port", [&](UInt16 port)
+            {
+#if USE_POCO_NETSSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
+#else
+                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
-                }
+            });
 
-                /// TCP
-                if (config().has("tcp_port"))
-                {
-                    Poco::Net::ServerSocket socket;
-                    listen_port = config().getInt("tcp_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port);
-                    socket.setReceiveTimeout(settings.receive_timeout);
-                    socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                        new TCPHandlerFactory(*this),
-                        server_pool,
-                        socket,
-                        new Poco::Net::TCPServerParams));
-
-                    LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
-                }
-
-                /// TCP with SSL
-                if (config().has("tcp_port_secure"))
-                {
+            create_server("mysql_port", [&](UInt16 port)
+            {
 #if USE_POCO_NETSSL
-                    Poco::Net::SecureServerSocket socket;
-                    listen_port = config().getInt("tcp_port_secure");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
-                    socket.setReceiveTimeout(settings.receive_timeout);
-                    socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure= */ true),
-                        server_pool,
-                        socket,
-                        new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new MySQLHandlerFactory(*this),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
 #else
-                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
-                }
-
-                /// At least one of TCP and HTTP servers must be created.
-                if (servers.empty())
-                    throw Exception("No 'tcp_port' and 'http_port' is specified in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-
-                /// Interserver IO HTTP
-                if (config().has("interserver_http_port"))
-                {
-                    Poco::Net::ServerSocket socket;
-                    listen_port = config().getInt("interserver_http_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port);
-                    socket.setReceiveTimeout(settings.http_receive_timeout);
-                    socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                        new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-
-                    LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
-                }
-
-                if (config().has("interserver_https_port"))
-                {
-#if USE_POCO_NETSSL
-                    Poco::Net::SecureServerSocket socket;
-                    listen_port = config().getInt("interserver_https_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
-                    socket.setReceiveTimeout(settings.http_receive_timeout);
-                    socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                        new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-
-                    LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
-#else
-                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-                }
-
-                if (config().has("mysql_port"))
-                {
-#if USE_POCO_NETSSL
-                    Poco::Net::ServerSocket socket;
-                    listen_port = config().getInt("mysql_port");
-                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
-                    socket.setReceiveTimeout(Poco::Timespan());
-                    socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                        new MySQLHandlerFactory(*this),
-                        server_pool,
-                        socket,
-                        new Poco::Net::TCPServerParams));
-
-                    LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                    throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-                }
-            }
-            catch (const Poco::Exception & e)
-            {
-                std::string message = "Listen [" + listen_host + "]:" + std::to_string(listen_port) + " failed: " + std::to_string(e.code()) + ": " + e.what() + ": " + e.message();
-                if (listen_try)
-                    LOG_ERROR(log, message
-                        << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
-                        "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
-                        "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                        " Example for disabled IPv4: <listen_host>::</listen_host>");
-                else
-                    throw Exception{message, ErrorCodes::NETWORK_ERROR};
-            }
+            });
         }
 
         if (servers.empty())
