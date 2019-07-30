@@ -28,7 +28,8 @@ using DB::CurrentThread;
         std::stringstream oss_internal_rare;                                                    \
         oss_internal_rare << message;                                                           \
         if (auto channel = (logger)->getChannel()) {                                            \
-            channel->log(Message((logger)->name(), oss_internal_rare.str(), (PRIORITY)));       \
+            channel->log(Message((logger)->name(), oss_internal_rare.str(),                     \
+                                 (PRIORITY), __FILE__, __LINE__));                              \
         }                                                                                       \
     }                                                                                           \
 } while (false)

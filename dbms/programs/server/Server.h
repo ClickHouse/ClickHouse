@@ -57,6 +57,7 @@ protected:
 
 private:
     std::unique_ptr<Context> global_context;
+    std::shared_ptr<TextLog> text_log;
 };
 
 }
