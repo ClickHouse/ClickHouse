@@ -249,6 +249,19 @@ public:
 
     using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
 
+    struct PartsTemporaryRename : private boost::noncopyable
+    {
+        PartsTemporaryRename(const String & base_dir_) : base_dir(base_dir_) {}
+
+        /// Renames part from old_name to new_name
+        void addPart(const String & old_name, const String & new_name);
+
+        /// Renames all added parts from new_name to old_name if old name is not empty
+        ~PartsTemporaryRename();
+
+        String base_dir;
+        std::vector<std::pair<String, String>> old_and_new_names;
+    };
 
     /// Parameters for various modes.
     struct MergingParams
@@ -391,6 +404,8 @@ public:
     std::vector<DetachedPartInfo> getDetachedParts() const;
 
     void validateDetachedPartName(const String & name) const;
+
+    void dropDetached(const ASTPtr & partition, bool part, const Context & context);
 
     /// Returns Committed parts
     DataParts getDataParts() const;

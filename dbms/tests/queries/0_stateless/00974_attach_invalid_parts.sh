@@ -12,14 +12,13 @@ echo '=== cannot attach active ===';
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS attach_active";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE attach_active (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 4) ORDER BY n";
 $CLICKHOUSE_CLIENT --query="INSERT INTO attach_active SELECT number FROM system.numbers LIMIT 16";
-$CLICKHOUSE_CLIENT --query="ALTER TABLE attach_active ATTACH PART '../1_2_2_0'" 2>&1 | grep "Invalid part name" > /dev/null && echo 'OK'
+$CLICKHOUSE_CLIENT --query="ALTER TABLE attach_active ATTACH PART '../1_2_2_0'" 2>&1 | grep "Invalid part name" > /dev/null && echo 'OK1'
 $CLICKHOUSE_CLIENT --query="SElECT name FROM system.parts WHERE table='attach_active' AND database='${cur_db}' ORDER BY name FORMAT TSV";
 $CLICKHOUSE_CLIENT --query="SElECT count(), sum(n) FROM attach_active FORMAT TSV";
 $CLICKHOUSE_CLIENT --query="DROP TABLE attach_active";
 
 
 
-echo '=== attach all valid parts ===';
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES";
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS attach_partitions";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE attach_partitions (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n";
@@ -27,18 +26,28 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO attach_partitions SELECT number FROM sys
 $CLICKHOUSE_CLIENT --query="INSERT INTO attach_partitions SELECT number FROM system.numbers WHERE number % 2 = 1 LIMIT 8";
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions DETACH PARTITION 0";
-sudo -n mkdir $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/ 2>/dev/null || \
-        mkdir $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/             # broken part
+sudo -n mkdir --mode=777 $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/ 2>/dev/null || \
+        mkdir --mode=777 $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/             # broken part
 sudo -n cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/ 2>/dev/null || \
         cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/
 sudo -n cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/ 2>/dev/null || \
         cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/
-$CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions ATTACH PARTITION 0";
 
+echo '=== check all parts before attaching ===';
+$CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions ATTACH PARTITION 0" 2>&1 | grep "No columns in part 0_5_5_0" > /dev/null && echo 'OK2';
+$CLICKHOUSE_CLIENT --query="SElECT name FROM system.parts WHERE table='attach_partitions' AND database='${cur_db}' ORDER BY name FORMAT TSV";
+echo '=== detached ===';
+$CLICKHOUSE_CLIENT --query="SELECT name FROM system.detached_parts WHERE table='attach_partitions' AND database='${cur_db}' ORDER BY name FORMAT TSV";
+
+echo '=== attach ===';
+sudo -n rm -r $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/ 2>/dev/null || \
+        rm -r $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/
+$CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions ATTACH PARTITION 0";
 $CLICKHOUSE_CLIENT --query="SElECT name FROM system.parts WHERE table='attach_partitions' AND database='${cur_db}' ORDER BY name FORMAT TSV";
 $CLICKHOUSE_CLIENT --query="SElECT count(), sum(n) FROM attach_partitions FORMAT TSV";
+
 echo '=== detached ===';
-$CLICKHOUSE_CLIENT --query="SELECT name FROM system.detached_parts WHERE table='attach_partitions' AND database='${cur_db}' FORMAT TSV";
+$CLICKHOUSE_CLIENT --query="SELECT name FROM system.detached_parts WHERE table='attach_partitions' AND database='${cur_db}' ORDER BY name FORMAT TSV";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE attach_partitions";
 $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES";

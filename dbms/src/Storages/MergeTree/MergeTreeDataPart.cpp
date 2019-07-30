@@ -142,10 +142,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(
-    const MergeTreeData & storage_,
-    const String & name_,
-    const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
@@ -350,7 +347,7 @@ UInt64 MergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
     return res;
 }
 
-void MergeTreeDataPart::remove(bool force_recursive /*= false*/) const
+void MergeTreeDataPart::remove() const
 {
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
@@ -359,18 +356,18 @@ void MergeTreeDataPart::remove(bool force_recursive /*= false*/) const
       * - rename directory to temporary name;
       * - remove it recursive.
       *
-      * For temporary name we use "detached/deleting_" prefix.
+      * For temporary name we use "delete_tmp_" prefix.
       *
-      * NOTE: We cannot use "tmp_*" prefix, because there is a second thread,
+      * NOTE: We cannot use "tmp_delete_" prefix, because there is a second thread,
       *  that calls "clearOldTemporaryDirectories" and removes all directories, that begin with "tmp_" and are old enough.
       * But when we removing data part, it can be old enough. And rename doesn't change mtime.
       * And a race condition can happen that will lead to "File not found" error here.
-      * We move directory to detached/, because if an attempt to remove directory after renaming failed for some reason
-      * there would be no way to remove directory from storage.full_path (except manually).
       */
 
+    // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
+
     String from = storage.full_path + relative_path;
-    String to = storage.full_path + getRelativePathForDetachedPart("deleting_");
+    String to = storage.full_path + "delete_tmp_" + name;
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};
@@ -400,13 +397,6 @@ void MergeTreeDataPart::remove(bool force_recursive /*= false*/) const
         LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
-        return;
-    }
-
-    if (force_recursive)
-    {
-        /// Part is not loaded (we don't know which files are there), so remove dir recursively.
-        to_dir.remove(true);
         return;
     }
 

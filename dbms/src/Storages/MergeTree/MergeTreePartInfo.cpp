@@ -194,6 +194,7 @@ bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, Detache
     part_info.dir_name = dir_name;
 
     /// First, try to parse as <part_name>.
+    // TODO what if tryParsePartName will parse prefix as partition_id?
     if (MergeTreePartInfo::tryParsePartName(dir_name, &part_info, format_version))
         return part_info.valid_name = true;
 
