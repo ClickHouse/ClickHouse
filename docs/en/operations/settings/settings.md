@@ -750,7 +750,7 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## max_network_bytes {#settings-max_network_bytes}
-Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
 Possible values:
 
@@ -761,7 +761,7 @@ Default value: 0.
 
 ## max_network_bandwidth {#settings-max_network_bandwidth}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
 Possible values:
 
@@ -772,7 +772,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
 
 Possible values:
 
@@ -783,7 +783,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
 
 Possible values:
 
