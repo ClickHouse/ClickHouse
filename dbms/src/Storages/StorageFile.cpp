@@ -94,7 +94,7 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             path = poco_path.absolute().toString();
-            if ((path.find('*') != std::string::npos) || (path.find('?') != std::string::npos) || (path.find('{') != std::string::npos))
+            if (path.find_first_of("*?{") != std::string::npos)
             {
                 path_with_globs = true;
                 re2::RE2 matcher(makeRegexpPatternFromGlobs(path));

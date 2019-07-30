@@ -151,17 +151,9 @@ BlockInputStreams StorageHDFS::read(
     unsigned /*num_streams*/)
 {
     Strings path_parts;
-    Poco::URI poco_uri(uri);
-    poco_uri.getPathSegments(path_parts);
-    String path_without_globs;
-    for (const auto & part : path_parts)
-    {
-        if ((part.find('*') != std::string::npos) || (part.find('?') != std::string::npos) || (part.find('{') != std::string::npos))
-            break;
-        path_without_globs.push_back('/');
-        path_without_globs.append(part);
-    }
-    if (path_without_globs == poco_uri.getPath())
+    size_t first_glob = uri.find_first_of("*?{");
+
+    if (first_glob == std::string::npos)
         return {std::make_shared<HDFSBlockInputStream>(
                 uri,
                 format_name,
@@ -169,26 +161,39 @@ BlockInputStreams StorageHDFS::read(
                 context_,
                 max_block_size)};
 
-    String path_pattern = makeRegexpPatternFromGlobs(poco_uri.getPath());
+    String uri_without_globs = uri.substr(0, first_glob);
+    size_t end_of_path_without_globs = uri_without_globs.rfind('/');
+    uri_without_globs = uri_without_globs.substr(0, end_of_path_without_globs + 1);
+
+    size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    String path_from_uri = uri.substr(begin_of_path);
+    String uri_without_path = uri.substr(0, begin_of_path);
+
+    String path_pattern = makeRegexpPatternFromGlobs(path_from_uri);
     re2::RE2 matcher(path_pattern);
-    path_without_globs.push_back('/');
-    poco_uri.setPath(path_without_globs);
-    HDFSBuilderPtr builder = createHDFSBuilder(poco_uri);
+
+    HDFSBuilderPtr builder = createHDFSBuilder(Poco::URI(uri_without_globs));
     HDFSFSPtr fs = createHDFSFS(builder.get());
 //    Strings res_paths = recursiveLSWithRegexpMatching(path_without_globs, fs.get(), matcher);
+
     HDFSFileInfo ls;
+    String path_without_globs = uri_without_globs.substr(begin_of_path);
     ls.file_info = hdfsListDirectory(fs.get(), path_without_globs.data(), &ls.length);
     BlockInputStreams result;
     for (int i = 0; i < ls.length; ++i)
     {
         if (ls.file_info[i].mKind == 'F')
         {
-            String cur_path = path_without_globs + String(ls.file_info[i].mName);
+            String cur_path = String(ls.file_info[i].mName);
+            if (cur_path[1] == '/')
+            {
+                cur_path = cur_path.substr(1);
+            }
+
             if (re2::RE2::FullMatch(cur_path, matcher))
             {
-                poco_uri.setPath(cur_path);
                 result.push_back(
-                        std::make_shared<HDFSBlockInputStream>(poco_uri.toString(), format_name, getSampleBlock(), context_,
+                        std::make_shared<HDFSBlockInputStream>(uri_without_path + String(ls.file_info[i].mName), format_name, getSampleBlock(), context_,
                                                                max_block_size));
             }
         }

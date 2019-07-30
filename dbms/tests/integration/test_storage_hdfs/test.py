@@ -41,10 +41,12 @@ def test_read_write_table(started_cluster):
     hdfs_api = HDFSApi("root")
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function", data)
+    hdfs_api.write_data("/dir/file", data)
 
-    assert hdfs_api.read_data("/simple_table_function") == data
+    assert hdfs_api.read_data("/dir/file") == data
 
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')") == data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_functio?', 'TSV', 'id UInt64, text String, number Float64')") == data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/fil?', 'TSV', 'id UInt64, text String, number Float64')") == data
 
 
 def test_write_table(started_cluster):
