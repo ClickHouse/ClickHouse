@@ -2,6 +2,7 @@
 #include <Storages/StorageValues.h>
 #include <DataStreams/OneBlockInputStream.h>
 
+
 namespace DB
 {
 
@@ -23,4 +24,5 @@ BlockInputStreams StorageValues::read(
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block));
 }
+
 }

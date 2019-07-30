@@ -1,10 +1,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
-
 #include <Common/Exception.h>
-
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
