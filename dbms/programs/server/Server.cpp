@@ -637,7 +637,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
                     func(port);
                 }
-                catch (const Poco::Exception & e)
+                catch (const Poco::Exception &)
                 {
                     std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
 
