@@ -52,6 +52,10 @@
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
 
+#include <Interpreters/TextLog.h>
+#include <Interpreters/SystemLog.h>
+#include <Interpreters/SystemLog.cpp>
+
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
 #include <sys/mman.h>
@@ -167,12 +171,15 @@ void Server::defineOptions(Poco::Util::OptionSet & _options)
     BaseDaemon::defineOptions(_options);
 }
 
+
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
+
 
     registerFunctions();
     registerAggregateFunctions();
@@ -269,12 +276,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+        if (text_log)
+            text_log->shutdown();
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        text_log.reset();
         global_context.reset();
 
         LOG_DEBUG(log, "Destroyed global context.");
@@ -397,6 +407,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
+    /// Create text_log instance
+    text_log = createSystemLog<TextLog>(*global_context, "system", "text_log", global_context->getConfigRef(), "text_log");
+
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
@@ -406,6 +419,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            setTextLog(text_log);
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
@@ -491,6 +505,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata from " + path);
+
     try
     {
         loadMetadataSystem(*global_context);

@@ -49,34 +49,36 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         logs_queue->emplace(std::move(columns));
     }
 
-    /// Also log to system.internal_text_log table
-    ThreadGroupStatusPtr thread_group = CurrentThread::getGroup();
-    if (thread_group && thread_group->global_context)
+
+    /// Also log to system.text_log table
+    TextLogElement elem;
+
+    elem.event_time = msg_ext.time_seconds;
+    elem.microseconds = msg_ext.time_microseconds;
+
+    elem.thread_name = getThreadName();
+    elem.thread_number = msg_ext.thread_number;
+    try
     {
-        if (auto text_log = thread_group->global_context->getTextLog())
-        {
-            TextLogElement elem;
-
-            elem.event_time = msg_ext.time_seconds;
-            elem.microseconds = msg_ext.time_microseconds;
-
-            elem.thread_name = getThreadName();
-            elem.thread_number = msg_ext.thread_number;
-            elem.os_thread_id = CurrentThread::get().os_thread_id;
-
-            elem.query_id = msg_ext.query_id;
-
-            elem.message = msg.getText();
-            elem.logger_name = msg.getSource();
-            elem.level = msg.getPriority();
-
-            if (msg.getSourceFile() != nullptr)
-                elem.source_file = msg.getSourceFile();
-            elem.source_line = msg.getSourceLine();
-
-            text_log->add(elem);
-        }
+        elem.os_thread_id = CurrentThread::get().os_thread_id;
+    } catch (...)
+    {
+        elem.os_thread_id = 0;
     }
+
+    elem.query_id = msg_ext.query_id;
+
+    elem.message = msg.getText();
+    elem.logger_name = msg.getSource();
+    elem.level = msg.getPriority();
+
+    if (msg.getSourceFile() != nullptr)
+        elem.source_file = msg.getSourceFile();
+
+    elem.source_line = msg.getSourceLine();
+
+    if (auto log = text_log.lock())
+        log->add(elem);
 }
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
@@ -84,5 +86,9 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
     channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
 }
 
+void OwnSplitChannel::addTextLog(std::weak_ptr<DB::TextLog> log)
+{
+    text_log = log;
+}
 
 }

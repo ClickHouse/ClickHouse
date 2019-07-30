@@ -428,7 +428,6 @@ public:
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
-    std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<TraceLog> getTraceLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
