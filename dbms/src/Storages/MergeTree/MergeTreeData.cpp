@@ -1718,6 +1718,29 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
     }
 }
 
+void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
+{
+    Poco::File(base_dir + old_name).renameTo(base_dir + new_name);
+    old_and_new_names.push_back({old_name, new_name});
+}
+
+MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+{
+    for (const auto & names : old_and_new_names)
+    {
+        if (names.first.empty())
+            continue;
+        try
+        {
+            Poco::File(base_dir + names.second).renameTo(base_dir + names.first);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     const MergeTreePartInfo & new_part_info,
@@ -2598,6 +2621,23 @@ void MergeTreeData::validateDetachedPartName(const String & name) const
     Poco::File detached_part_dir(full_path + "detached/" + name);
     if (!detached_part_dir.exists())
         throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
+}
+
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Context &)
+{
+    if (!part)      // TODO
+        throw DB::Exception("DROP DETACHED PARTITION is not implemented, use DROP DETACHED PART", ErrorCodes::NOT_IMPLEMENTED);
+
+    String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    validateDetachedPartName(part_id);
+    if (startsWith(part_id, "attaching_") || startsWith(part_id, "deleting_"))
+        throw DB::Exception("Cannot drop part " + part_id + ": "
+                            "most likely it is used by another DROP or ATTACH query.", ErrorCodes::BAD_DATA_PART_NAME);
+
+    PartsTemporaryRename renamed_parts(full_path + "detached/");
+    renamed_parts.addPart(part_id, "deleting_" + part_id);
+    Poco::File(renamed_parts.base_dir + renamed_parts.old_and_new_names.front().second).remove(true);
+    renamed_parts.old_and_new_names.front().first.clear();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const

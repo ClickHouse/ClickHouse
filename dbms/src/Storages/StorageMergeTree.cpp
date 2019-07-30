@@ -994,6 +994,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 
         /// TODO: should we include PreComitted parts like in Replicated case?
         auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
         if (detach)
@@ -1012,22 +1013,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     clearOldPartsFromFilesystem();
 }
 
-
-void StorageMergeTree::dropDetached(const ASTPtr & partition, bool part, const Context & /*context*/)
-{
-    if (!part)      // TODO
-        throw DB::Exception("DROP DETACHED PARTITION is not implemented, use DROP DETACHED PART", ErrorCodes::NOT_IMPLEMENTED);
-
-    String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    validateDetachedPartName(part_id);
-
-    DetachedPartInfo info;
-    DetachedPartInfo::tryParseDetachedPartName(part_id, info, format_version);
-    MergeTreeDataPart detached_part(*this, part_id, info);
-    detached_part.relative_path = "detached/" + part_id;
-
-    detached_part.remove(true);
-}
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
@@ -1069,42 +1054,30 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         parts = active_parts.getParts();
+
+        // TODO should we rename inactive parts? (see StorageReplicatedMergeTree::attachPartition)
     }
 
+    PartsTemporaryRename renamed_parts(full_path + source_dir);
     for (const auto & source_part_name : parts)
+        renamed_parts.addPart(source_part_name, "attaching_" + source_part_name);
+
+    std::vector<MutableDataPartPtr> loaded_parts;
+    for (const auto & part_names : renamed_parts.old_and_new_names)
     {
-        MutableDataPartPtr part;
-        try
-        {
-            part = std::make_shared<DataPart>(*this, source_part_name);
-            part->relative_path = "detached/" + source_part_name;
-            part->renameTo("detached/attaching_" + source_part_name, false);
-
-            LOG_DEBUG(log, "Checking data in " << part->relative_path);
+            LOG_DEBUG(log, "Checking data in " << part_names.second);
+            MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_names.first);
+            part->relative_path = source_dir + part_names.second;
             loadPartAndFixMetadata(part);
+            loaded_parts.push_back(part);
+    }
 
-            LOG_INFO(log, "Attaching part " << source_part_name << " from " << part->relative_path);
-            renameTempPartAndAdd(part, &increment);
-
-            LOG_INFO(log, "Finished attaching part");
-        }
-        catch (...)
-        {
-            LOG_INFO(log, "Cannot attach part " << source_part_name << " :" << getCurrentExceptionMessage(false));
-
-            if (part && part->relative_path == "detached/attaching_" + source_part_name)
-            {
-                try
-                {
-                    part->renameTo("detached/" + source_part_name, false);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                }
-            }
-
-        }
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
+    {
+        LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
+        renameTempPartAndAdd(loaded_parts[i], &increment);
+        renamed_parts.old_and_new_names[i].first.clear();
+        LOG_INFO(log, "Finished attaching part");
     }
 
     /// New parts with other data may appear in place of deleted parts.

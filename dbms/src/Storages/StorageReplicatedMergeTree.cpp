@@ -3353,8 +3353,8 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                // TODO
-                throw DB::Exception("Not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                dropDetached(command.partition, command.part, query_context);
+                break;
 
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, query_context);
@@ -3600,6 +3600,8 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         LOG_DEBUG(log, "Checking part " << part);
         loaded_parts.push_back(loadPartAndFixMetadata(source_dir + part));
     }
+
+    // TODO fix race with DROP DETACHED
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
     for (auto & part : loaded_parts)
