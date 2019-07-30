@@ -441,6 +441,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY = 464;
     extern const int UNKNOWN_DISK = 465;
     extern const int UNKNOWN_PROTOCOL = 466;
+    extern const int PATH_ACCESS_DENIED = 467;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

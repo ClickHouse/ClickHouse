@@ -94,20 +94,33 @@ def test_default(test_cluster):
 
 
 def test_move(test_cluster):
-    assert node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'") == ""
-    assert node1.query("insert into node1_move_mt values (1)") == ""
-    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+    assert node2.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'") == ""
+    assert node2.query("insert into node1_move_mt values (1)") == ""
+    assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+
+    test_cluster.open_bash_shell('node2')
     # move from default to external
-    assert node1.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'external'") == ""
-    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "external\n"
-    # move back
-    assert node1.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'default'") == ""
-    assert node1.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+    assert node2.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'external'") == ""
+    assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "external\n"
+    time.sleep(5)
+    # Check that it really moved
+    assert node2.query("detach table node1_move_mt") == ""
+    assert node2.query("attach table node1_move_mt") == ""
+    assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "external\n"
+
+    # move back by volume small, that contains only 'default' disk
+    assert node2.query("alter table node1_move_mt move PART 'all_1_1_0' to volume 'small'") == ""
+    assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
+    time.sleep(5)
+    # Check that it really moved
+    assert node2.query("detach table node1_move_mt") == ""
+    assert node2.query("attach table node1_move_mt") == ""
+    assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
 
 
 def test_no_policy(test_cluster):
     try:
-        node2.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
+        node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
     except Exception as e:
         assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
 

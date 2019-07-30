@@ -41,7 +41,13 @@ using ReservationPtr = std::unique_ptr<Reservation>;
 class Space : public std::enable_shared_from_this<Space>
 {
 public:
+    Space() = default;
+
     virtual ~Space() = default;
+    Space(const Space &) = default;
+    Space(Space &&) = default;
+    Space& operator=(const Space &) = default;
+    Space& operator=(Space &&) = default;
 
     virtual ReservationPtr reserve(UInt64 bytes) const = 0;
 
