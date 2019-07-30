@@ -51,6 +51,56 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapRange
+
+将位图指定范围（不包含range_end）转换为另一个位图。
+
+```
+bitmapRange(bitmap, range_start, range_end)
+```
+
+**参数**
+
+- `bitmap` – 位图对象.
+- `range_start` – 范围起始点（含）.
+- `range_end` – 范围结束点（不含）.
+
+**示例**
+
+``` sql
+SELECT bitmapToArray(bitmapRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+```
+┌─res───────────────┐
+│ [30,31,32,33,100] │
+└───────────────────┘
+```
+
+## bitmapContains
+
+检查位图是否包含指定元素。
+
+```
+bitmapContains(haystack, needle)
+```
+
+**参数**
+
+- `haystack` – 位图对象.
+- `needle` – 元素，类型UInt32.
+
+**示例**
+
+``` sql
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+```
+```text
+┌─res─┐
+│  1  │
+└─────┘
+```
+
 ## bitmapHasAny
 
 与`hasAny(array，array)`类似，如果位图有任何公共元素则返回1，否则返回0。
