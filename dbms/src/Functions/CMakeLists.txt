@@ -22,6 +22,7 @@ target_link_libraries(clickhouse_functions
         ${BASE64_LIBRARY}
 
     PRIVATE
+        ${ZLIB_LIBRARIES}
         ${Boost_FILESYSTEM_LIBRARY}
         ${ZLIB_LIBRARIES} # crc32
         ${CMAKE_DL_LIBS} # dladdr
