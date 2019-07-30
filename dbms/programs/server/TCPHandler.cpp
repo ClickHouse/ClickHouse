@@ -132,7 +132,8 @@ void TCPHandler::runImpl()
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(connection_settings.poll_interval * 1000000) && !server.isCancelled())
+            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(
+                std::min(connection_settings.poll_interval, connection_settings.idle_connection_timeout) * 1000000))
             {
                 if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
                 {
