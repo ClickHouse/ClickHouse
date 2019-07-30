@@ -145,6 +145,7 @@ void CSVRowInputFormat::readPrefix()
 
     size_t num_columns = data_types.size();
     String tmp;
+    auto & header = getPort().getHeader();
 
     if (with_names)
     {
@@ -154,7 +155,7 @@ void CSVRowInputFormat::readPrefix()
         {
             /// Look at the file header to see which columns we have there.
             /// The missing columns are filled with defaults.
-            read_columns.assign(getPort().getHeader().columns(), false);
+            read_columns.assign(header.columns(), false);
             do
             {
                 String column_name;
