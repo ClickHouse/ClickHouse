@@ -753,7 +753,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("mysql_port"), /* secure = */ true);
+                    listen_port = config().getInt("mysql_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(Poco::Timespan());
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
