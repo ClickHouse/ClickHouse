@@ -164,7 +164,7 @@ if (USE_UNWIND)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
 
     if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
+        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
     endif ()
 endif ()
 
