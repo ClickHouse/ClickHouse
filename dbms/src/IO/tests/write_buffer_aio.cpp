@@ -1,6 +1,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <Core/Defines.h>
 
+#include <functional>
 #include <filesystem>
 #include <iostream>
 #include <fstream>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -447,6 +448,43 @@ public:
             while (iterator.has_value)
             {
                 res_data.emplace_back(iterator.current_value);
+                roaring_advance_uint32_iterator(&iterator);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Return new set with specified range (not include the range_end)
+     */
+    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
+    {
+        UInt64 count = 0;
+        if(range_start >= range_end)
+            return count;
+        if (isSmall())
+        {
+            std::vector<T> ans;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if((UInt32)val >= range_start && (UInt32)val < range_end) {
+                    r1.add(val);
+                    count++;
+                }
+            }
+        }
+        else
+        {
+            roaring_uint32_iterator_t iterator;
+            roaring_init_iterator(rb, &iterator);
+            roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
+            while (iterator.has_value)
+            {
+                if((UInt32)iterator.current_value >= range_end)
+                    break;
+                r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
                 count++;
             }
