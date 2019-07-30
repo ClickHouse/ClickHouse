@@ -1,12 +1,16 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
+#include <Core/Defines.h>
 #include <common/demangle.h>
 #include <iostream>
 #include <dlfcn.h>
 
 
-void f() {}
+NO_INLINE const void * getAddress()
+{
+    return __builtin_return_address(0);
+}
 
 using namespace DB;
 
@@ -37,8 +41,8 @@ int main(int argc, char ** argv)
     else
         std::cerr << "dladdr: Not found\n";
 
-    Elf elf("/proc/self/exe");
-    Dwarf dwarf(elf);
+    auto object = symbol_index.findObject(getAddress());
+    Dwarf dwarf(*object->elf);
 
     Dwarf::LocationInfo location;
     if (dwarf.findAddress(uintptr_t(address), location, Dwarf::LocationInfoMode::FAST))

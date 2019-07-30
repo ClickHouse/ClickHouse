@@ -16,7 +16,10 @@ namespace
 {
 
 /// Notes: "PHDR" is "Program Headers".
-/// To look at program headers, you can run: objdump -p ./clickhouse-server
+/// To look at program headers, run:
+///  readelf -l ./clickhouse-server
+/// To look at section headers, run:
+///  readelf -S ./clickhouse-server
 /// Also look at: https://wiki.osdev.org/ELF
 /// Also look at: man elf
 /// http://www.linker-aliens.org/blogs/ali/entry/inside_elf_symbol_tables/
@@ -25,11 +28,14 @@ namespace
 
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
+/// It does not extract all the symbols (but only public - exported and used for dynamic linking),
+/// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
     /* Iterate over all headers of the current shared lib
-     * (first call is for the executable itself) */
+     * (first call is for the executable itself)
+     */
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         /* Further processing is only needed if the dynamic section is reached
@@ -223,10 +229,15 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         object_name = "/proc/self/exe";
 
     std::error_code ec;
-    object_name = std::filesystem::canonical(object_name, ec);
+    std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
 
     if (ec)
         return;
+
+    /// Debug info and symbol table sections may be splitted to separate binary.
+    std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path;
+
+    object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
     SymbolIndex::Object object;
     object.elf = std::make_unique<Elf>(object_name);
@@ -248,10 +259,6 @@ void collectSymbolsFromELF(dl_phdr_info * info,
  */
 int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
-    /* ElfW is a macro that creates proper typenames for the used system architecture
-     * (e.g. on a 32 bit system, ElfW(Dyn*) becomes "Elf32_Dyn*")
-     */
-
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
@@ -287,7 +294,15 @@ const T * find(const void * address, const std::vector<T> & vec)
 void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data.symbols);
+
+    std::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
     std::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
+
+    /// We found symbols both from loaded program headers and from ELF symbol tables.
+    data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
+    {
+        return a.address_begin == b.address_begin && a.address_end == b.address_end;
+    }), data.symbols.end());
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
