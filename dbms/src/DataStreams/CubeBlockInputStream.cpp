@@ -36,43 +36,58 @@ Block CubeBlockInputStream::getHeader() const
 
 Block CubeBlockInputStream::readImpl()
 {
-    /** After reading a block from input stream,
+    /** After reading all blocks from input stream,
       * we will calculate all subsets of columns on next iterations of readImpl
       * by zeroing columns at positions, where bits are zero in current bitmask.
       */
-    if (mask)
+
+    if (!is_data_read)
     {
-        --mask;
-        Block cube_block = source_block;
-        for (size_t i = 0; i < keys.size(); ++i)
+        BlocksList source_blocks;
+        while (auto block = children[0]->read())
+            source_blocks.push_back(block);
+
+        if (source_blocks.empty())
+            return {};
+
+        is_data_read = true;
+        mask = (1 << keys.size()) - 1;
+
+        if (source_blocks.size() > 1)
+            source_block = aggregator.mergeBlocks(source_blocks, false);
+        else
+            source_block = std::move(source_blocks.front());
+
+        zero_block = source_block.cloneEmpty();
+        for (auto key : keys)
         {
-            if (!((mask >> i) & 1))
-            {
-                size_t pos = keys.size() - i - 1;
-                auto & current = cube_block.getByPosition(keys[pos]);
-                current.column = zero_block.getByPosition(keys[pos]).column;
-            }
+            auto & current = zero_block.getByPosition(key);
+            current.column = current.column->cloneResized(source_block.rows());
         }
 
-        BlocksList cube_blocks = { cube_block };
-        Block finalized = aggregator.mergeBlocks(cube_blocks, true);
+        auto finalized = source_block;
+        finalizeBlock(finalized);
         return finalized;
     }
 
-    source_block = children[0]->read();
-    if (!source_block)
-        return source_block;
+    if (!mask)
+        return {};
 
-    zero_block = source_block.cloneEmpty();
-    for (auto key : keys)
+    --mask;
+    auto cube_block = source_block;
+
+    for (size_t i = 0; i < keys.size(); ++i)
     {
-        auto & current = zero_block.getByPosition(key);
-        current.column = current.column->cloneResized(source_block.rows());
+        if (!((mask >> i) & 1))
+        {
+            size_t pos = keys.size() - i - 1;
+            auto & current = cube_block.getByPosition(keys[pos]);
+            current.column = zero_block.getByPosition(keys[pos]).column;
+        }
     }
-    Block finalized = source_block;
-    finalizeBlock(finalized);
-    mask = (1 << keys.size()) - 1;
 
+    BlocksList cube_blocks = { cube_block };
+    Block finalized = aggregator.mergeBlocks(cube_blocks, true);
     return finalized;
 }
 }
