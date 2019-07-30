@@ -279,10 +279,6 @@ target_link_libraries (dbms
     Threads::Threads
 )
 
-if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
-endif()
-
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
@@ -291,6 +287,10 @@ target_include_directories(dbms SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
+
+if (ZSTD_LIBRARY)
+    target_link_libraries(dbms PRIVATE ${ZSTD_LIBRARY})
+endif()
 if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
     target_include_directories(dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
 endif ()
