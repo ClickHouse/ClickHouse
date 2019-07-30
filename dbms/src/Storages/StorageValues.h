@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
+
 namespace DB
 {
 
@@ -29,4 +30,5 @@ private:
 protected:
     StorageValues(const std::string & database_name_, const std::string & table_name_, const Block & res_block_);
 };
+
 }
