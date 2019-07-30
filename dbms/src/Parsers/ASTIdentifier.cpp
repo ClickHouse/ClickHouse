@@ -43,6 +43,15 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->special = special;
 }
 
+void ASTIdentifier::restoreCompoundName()
+{
+    if (name_parts.empty())
+        return;
+    name = name_parts[0];
+    for (size_t i = 1; i < name_parts.size(); ++i)
+        name += '.' + name_parts[i];
+}
+
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     auto format_element = [&](const String & elem_name)

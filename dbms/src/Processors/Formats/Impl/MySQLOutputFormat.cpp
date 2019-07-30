@@ -17,7 +17,7 @@ using namespace MySQLProtocol;
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings)
     : IOutputFormat(header, out_)
     , context(context)
-    , packet_sender(std::make_shared<PacketSender>(out, const_cast<size_t &>(context.sequence_id))) /// TODO: fix it
+    , packet_sender(std::make_shared<PacketSender>(out, const_cast<uint8_t &>(context.mysql.sequence_id))) /// TODO: fix it
     , format_settings(settings)
 {
 }
@@ -43,7 +43,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
                 packet_sender->sendPacket(column_definition);
             }
 
-            if (!(context.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+            if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
             {
                 packet_sender->sendPacket(EOF_Packet(0, 0));
             }
@@ -85,10 +85,10 @@ void MySQLOutputFormat::finalize()
     auto & header = getPort(PortKind::Main).getHeader();
 
     if (header.columns() == 0)
-        packet_sender->sendPacket(OK_Packet(0x0, context.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender->sendPacket(OK_Packet(0x0, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
     else
-    if (context.client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_sender->sendPacket(OK_Packet(0xfe, context.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+    if (context.mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
+        packet_sender->sendPacket(OK_Packet(0xfe, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
     else
         packet_sender->sendPacket(EOF_Packet(0, 0), true);
 }

@@ -1,6 +1,6 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 
 The basic idea for `MergeTree` engines family is the following. When you have tremendous amount of a data that should be inserted into the table, you should write them quickly part by part and then merge parts by some rules in background. This method is much more efficient than constantly rewriting data in the storage at the insert.
 
@@ -72,7 +72,7 @@ For a description of request parameters, see [request description](../../query_l
     It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    For more details, see [TTL for columns and tables](mergetree.md)
+    For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
@@ -238,11 +238,11 @@ The key for partitioning by month allows reading only those data blocks which co
 
 ### Use of Index for Partially-Monotonic Primary Keys
 
-Consider, for example, the days of the month. They are the [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) inside one month, but they are not monotonic for a more extended period. This is the partially-monotonic sequence. If a user creates the table with such partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from such a table, ClickHouse analyzes query conditions. If the user wants to get data between two marks of the index and both this marks are within one month, ClickHouse can use the index in this particular case because it can calculate the distance between parameters of query and index marks.
+Consider, for example, the days of the month. They form a [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) for one month, but not monotonic for more extended periods. This is a partially-monotonic sequence. If a user creates the table with partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from this kind of table, ClickHouse analyzes the query conditions. If the user wants to get data between two marks of the index and both these marks fall within one month, ClickHouse can use the index in this particular case because it can calculate the distance between the parameters of a query and index marks.
 
-ClickHouse cannot use an index if the values of the primary key on the query parameters range don't represent the monotonic sequence. In this case, ClickHouse uses full scan method.
+ClickHouse cannot use an index if the values of the primary key in the query parameter range don't represent a monotonic sequence. In this case, ClickHouse uses the full scan method.
 
-ClickHouse uses this logic not only for days of month sequences but for any primary key which represents a partially-monotonic sequence.
+ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
 ### Data Skipping Indices (Experimental)
 
