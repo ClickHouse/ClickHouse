@@ -1018,59 +1018,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
-    String partition_id;
-
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, context);
-
-    String source_dir = "detached/";
-
-    /// Let's make a list of parts to add.
-    Strings parts;
-    if (attach_part)
-    {
-        validateDetachedPartName(partition_id);
-        parts.push_back(partition_id);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts(format_version);
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-        {
-            const String & name = it.name();
-            MergeTreePartInfo part_info;
-            /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
-            // TODO what if name contains "_tryN" suffix?
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-                || part_info.partition_id != partition_id)
-            {
-                continue;
-            }
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-        }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
-
-        // TODO should we rename inactive parts? (see StorageReplicatedMergeTree::attachPartition)
-    }
-
-    PartsTemporaryRename renamed_parts(full_path + source_dir);
-    for (const auto & source_part_name : parts)
-        renamed_parts.addPart(source_part_name, "attaching_" + source_part_name);
-
-    std::vector<MutableDataPartPtr> loaded_parts;
-    for (const auto & part_names : renamed_parts.old_and_new_names)
-    {
-            LOG_DEBUG(log, "Checking data in " << part_names.second);
-            MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_names.first);
-            part->relative_path = source_dir + part_names.second;
-            loadPartAndFixMetadata(part);
-            loaded_parts.push_back(part);
-    }
+    PartsTemporaryRename renamed_parts(full_path + "detached/");
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {

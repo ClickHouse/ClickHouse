@@ -2640,6 +2640,77 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
     renamed_parts.old_and_new_names.front().first.clear();
 }
 
+MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+        const Context & context, PartsTemporaryRename & renamed_parts)
+{
+    String partition_id;
+
+    if (attach_part)
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    else
+        partition_id = getPartitionIDFromQuery(partition, context);
+
+    String source_dir = "detached/";
+
+    /// Let's compose a list of parts that should be added.
+    Strings parts;
+    if (attach_part)
+    {
+        validateDetachedPartName(partition_id);
+        parts.push_back(partition_id);
+    }
+    else
+    {
+        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
+        ActiveDataPartSet active_parts(format_version);
+
+        std::set<String> part_names;
+        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+        {
+            String name = it.name();
+            MergeTreePartInfo part_info;
+            // TODO what if name contains "_tryN" suffix?
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
+                continue;
+            if (part_info.partition_id != partition_id)
+                continue;
+            LOG_DEBUG(log, "Found part " << name);
+            active_parts.add(name);
+            part_names.insert(name);
+        }
+        LOG_DEBUG(log, active_parts.size() << " of them are active");
+        parts = active_parts.getParts();
+
+        /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
+        for (const auto & name : part_names)
+        {
+            // TODO maybe use PartsTemporaryRename here?
+            String containing_part = active_parts.getContainingPart(name);
+            if (!containing_part.empty() && containing_part != name)
+                Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+        }
+    }
+
+    /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
+    for (const auto & source_part_name : parts)
+        renamed_parts.addPart(source_part_name, "attaching_" + source_part_name);
+
+    /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
+    LOG_DEBUG(log, "Checking parts");
+    MutableDataPartsVector loaded_parts;
+    loaded_parts.reserve(parts.size());
+    for (const auto & part_names : renamed_parts.old_and_new_names)
+    {
+        LOG_DEBUG(log, "Checking part " << part_names.second);
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_names.first);
+        part->relative_path = source_dir + part_names.second;
+        loadPartAndFixMetadata(part);
+        loaded_parts.push_back(part);
+    }
+
+    return loaded_parts;
+}
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
