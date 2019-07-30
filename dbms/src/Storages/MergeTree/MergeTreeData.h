@@ -407,6 +407,9 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, const Context & context);
 
+    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+            const Context & context, PartsTemporaryRename & renamed_parts);
+
     /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
