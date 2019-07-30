@@ -632,9 +632,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (!config().has(port_name))
                     return;
 
+                auto port = config().getInt(port_name);
                 try
                 {
-                    auto port = config().getInt(port_name);
                     func(port);
                 }
                 catch (const Poco::Exception & e)
