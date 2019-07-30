@@ -182,6 +182,16 @@ void CSVRowInputFormat::readPrefix()
         else
             skipRow(in, format_settings.csv, num_columns);
     }
+
+    /// The default: map each column of the file to the column of the table with
+    /// the same index.
+    read_columns.assign(header.columns(), true);
+    column_indexes_for_input_fields.resize(header.columns());
+
+    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
+    {
+        column_indexes_for_input_fields[i] = i;
+    }
 }
 
 
