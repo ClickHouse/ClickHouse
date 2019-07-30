@@ -76,11 +76,11 @@
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Включает или отключает выполнение секции `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../query_language/select.md#select-group-by-in-external-memory).
+Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../query_language/select.md#select-group-by-in-external-memory).
 
 Возможные значения:
 
-- Максимальный объем RAM (байтах) который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
+- Максимальный объем RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
 - 0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -275,4 +275,3 @@
 > "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->
-

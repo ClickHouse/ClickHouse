@@ -761,7 +761,7 @@ Default value: 0.
 
 ## max_network_bandwidth {#settings-max_network_bandwidth}
 
-Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to every query.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
 Possible values:
 
@@ -772,7 +772,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
 
-Limits the speed that data id exchanged at over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
 
 Possible values:
 
