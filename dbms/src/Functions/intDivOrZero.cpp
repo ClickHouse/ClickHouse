@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 template <typename A, typename B>
 struct DivideIntegralOrZeroImpl
 {
@@ -23,10 +18,7 @@ struct DivideIntegralOrZeroImpl
         if (unlikely(divisionLeadsToFPE(a, b)))
             return 0;
 
-        if constexpr (!std::is_same_v<ResultType, NumberTraits::Error>)
-            return DivideIntegralImpl<A, B>::apply(a, b);
-        else
-            throw Exception("Logical error: the types are not divisable", ErrorCodes::LOGICAL_ERROR);
+        return DivideIntegralImpl<A, B>::template apply<Result>(a, b);
     }
 
 #if USE_EMBEDDED_COMPILER
