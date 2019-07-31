@@ -170,11 +170,14 @@ public:
 
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
+	  * Return the resulting head pointer, so that the caller can assert that
+	  * the allocation it intended to roll back was indeed the last one.
       */
-    void rollback(size_t size)
+    void * rollback(size_t size)
     {
         head->pos -= size;
         ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
+        return head->pos;
     }
 
     /** Begin or expand allocation of contiguous piece of memory without alignment.
