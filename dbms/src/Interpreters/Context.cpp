@@ -1707,11 +1707,10 @@ std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs) {
-        if (auto log = shared->system_logs->text_log.lock()) {
+    if (!shared->system_logs)
+        if (auto log = shared->system_logs->text_log.lock())
             return log;
-        }
-    }
+
     return {};
 }
 
