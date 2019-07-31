@@ -36,9 +36,11 @@ void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
+void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
+void registerFunctionsIntrospection(FunctionFactory &);
 
 void registerFunctions()
 {
@@ -77,6 +79,7 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
+    registerFunctionsIntrospection(factory);
 }
 
 }

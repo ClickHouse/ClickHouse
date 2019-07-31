@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
 
 #include <Storages/AlterCommands.h>
@@ -160,14 +161,6 @@ static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
   * But here it's too easy to get confused with the consistency of this flag.
   */
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
-
-
-/** For randomized selection of replicas. */
-/// avoid error: non-local variable 'DB::rng' declared '__thread' needs dynamic initialization
-#ifndef __APPLE__
-thread_local
-#endif
-    pcg64 rng{randomSeed()};
 
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
@@ -708,7 +701,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         part->columns, part->checksums);
 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-    std::shuffle(replicas.begin(), replicas.end(), rng);
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
     bool has_been_already_added = false;
 
     for (const String & replica : replicas)
@@ -2445,7 +2438,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), rng);
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
     for (const String & replica : replicas)
     {
@@ -2470,7 +2463,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), rng);
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
     for (const String & replica : replicas)
     {
@@ -2529,7 +2522,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), rng);
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
     String largest_part_found;
     String largest_replica_found;
@@ -3042,8 +3035,12 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             if (!selected)
             {
-                LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
-                return handle_noop(disable_reason);
+                std::stringstream message;
+                message << "Cannot select parts for optimization";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                LOG_INFO(log, message.rdbuf());
+                return handle_noop(message.str());
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;

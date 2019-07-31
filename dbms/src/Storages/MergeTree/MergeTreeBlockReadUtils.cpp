@@ -193,4 +193,64 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     }
 }
 
+
+MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns)
+{
+    Names column_names = required_columns;
+    Names pre_column_names;
+
+    /// inject columns required for defaults evaluation
+    bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
+
+    if (prewhere_info)
+    {
+        if (prewhere_info->alias_actions)
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+        else
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+
+        if (pre_column_names.empty())
+            pre_column_names.push_back(column_names[0]);
+
+        const auto injected_pre_columns = injectRequiredColumns(storage, data_part, pre_column_names);
+        if (!injected_pre_columns.empty())
+            should_reorder = true;
+
+        const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+
+        Names post_column_names;
+        for (const auto & name : column_names)
+            if (!pre_name_set.count(name))
+                post_column_names.push_back(name);
+
+        column_names = post_column_names;
+    }
+
+    MergeTreeReadTaskColumns result;
+
+    if (check_columns)
+    {
+        /// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
+        /// This may be not true in case of ALTER MODIFY.
+        if (!pre_column_names.empty())
+            storage.check(data_part->columns, pre_column_names);
+        if (!column_names.empty())
+            storage.check(data_part->columns, column_names);
+
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        result.pre_columns = physical_columns.addTypes(pre_column_names);
+        result.columns = physical_columns.addTypes(column_names);
+    }
+    else
+    {
+        result.pre_columns = data_part->columns.addTypes(pre_column_names);
+        result.columns = data_part->columns.addTypes(column_names);
+    }
+
+    result.should_reorder = should_reorder;
+
+    return result;
+}
+
 }

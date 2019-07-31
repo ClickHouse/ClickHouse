@@ -427,6 +427,7 @@ size_t MergeTreeRangeReader::numReadRowsInCurrentGranule() const
 {
     return prev_reader ? prev_reader->numReadRowsInCurrentGranule() : stream.numReadRowsInCurrentGranule();
 }
+
 size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
 {
     if (prev_reader)
