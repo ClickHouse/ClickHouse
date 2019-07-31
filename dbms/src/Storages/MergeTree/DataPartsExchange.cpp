@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
+    extern const int INSECURE_PATH;
 }
 
 namespace DataPartsExchange
@@ -225,7 +226,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        WriteBufferFromFile file_out(absolute_part_path + file_name);
+        /// File must be inside "absolute_part_path" directory.
+        /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
+        String file_absolute_path = Poco::Path(absolute_part_path + file_name).absolute().toString();
+        if (!startsWith(file_absolute_path, absolute_part_path))
+            throw Exception("File path doesn't appear to be inside part path."
+                " This may happen if we are trying to download part from malicious replica or logical error.",
+                ErrorCodes::INSECURE_PATH);
+
+        WriteBufferFromFile file_out(file_absolute_path);
         HashingWriteBuffer hashing_out(file_out);
         copyData(in, hashing_out, file_size, blocker.getCounter());
 
