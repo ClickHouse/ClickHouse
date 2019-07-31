@@ -30,6 +30,7 @@ private:
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
 
+    std::mutex text_log_mutex;
     std::weak_ptr<DB::TextLog> text_log;
 };
 
