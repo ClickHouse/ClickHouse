@@ -77,6 +77,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
     elem.source_line = msg.getSourceLine();
 
+    std::lock_guard<std::mutex> lock(text_log_mutex);
     if (auto log = text_log.lock())
         log->add(elem);
 }
@@ -88,6 +89,7 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
 
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log)
 {
+    std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
 }
 
