@@ -4,7 +4,9 @@
 
 namespace DB
 {
-
+/* values(structure, values...) - creates a temporary storage filling columns with values
+ * values is case-insensitive table function
+ */
 class TableFunctionValues : public ITableFunction
 {
 public:

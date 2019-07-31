@@ -5,9 +5,7 @@
 
 namespace DB
 {
-/* One block storage used for values table function
- * It's structure is similar to IStorageSystemOneBlock
- */
+
 StorageValues::StorageValues(const std::string & database_name_, const std::string & table_name_, const Block & res_block_)
     : database_name(database_name_), table_name(table_name_), res_block(res_block_)
 {
