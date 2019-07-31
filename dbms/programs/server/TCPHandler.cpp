@@ -56,10 +56,13 @@ void TCPHandler::runImpl()
     connection_context = server.context();
     connection_context.makeSessionContext();
 
-    Settings global_settings = connection_context.getSettings();
+    /// These timeouts can be changed after receiving query.
 
-    socket().setReceiveTimeout(global_settings.receive_timeout);
-    socket().setSendTimeout(global_settings.send_timeout);
+    auto global_receive_timeout = connection_context.getSettingsRef().receive_timeout;
+    auto global_send_timeout = connection_context.getSettingsRef().send_timeout;
+
+    socket().setReceiveTimeout(global_receive_timeout);
+    socket().setSendTimeout(global_send_timeout);
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -71,6 +74,7 @@ void TCPHandler::runImpl()
         return;
     }
 
+    /// User will be authenticated here. It will also set settings from user profile into connection_context.
     try
     {
         receiveHello();
@@ -114,6 +118,8 @@ void TCPHandler::runImpl()
         connection_context.setCurrentDatabase(default_database);
     }
 
+    Settings connection_settings = connection_context.getSettings();
+
     sendHello();
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
@@ -123,9 +129,10 @@ void TCPHandler::runImpl()
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
+            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(
+                std::min(connection_settings.poll_interval, connection_settings.idle_connection_timeout) * 1000000))
             {
-                if (idle_time.elapsedSeconds() > global_settings.idle_connection_timeout)
+                if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
@@ -178,13 +185,13 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
             }
 
-            query_context->setExternalTablesInitializer([&global_settings, this] (Context & context)
+            query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
             {
                 if (&context != &*query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
                 /// Get blocks of temporary tables
-                readData(global_settings);
+                readData(connection_settings);
 
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
@@ -311,12 +318,12 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::readData(const Settings & global_settings)
+void TCPHandler::readData(const Settings & connection_settings)
 {
     const auto receive_timeout = query_context->getSettingsRef().receive_timeout.value;
 
     /// Poll interval should not be greater than receive_timeout
-    const size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
+    const size_t default_poll_interval = connection_settings.poll_interval.value * 1000000;
     size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
@@ -366,7 +373,7 @@ void TCPHandler::readData(const Settings & global_settings)
 }
 
 
-void TCPHandler::processInsertQuery(const Settings & global_settings)
+void TCPHandler::processInsertQuery(const Settings & connection_settings)
 {
     /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
       *  client receive exception before sending data.
@@ -384,7 +391,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     /// Send block to the client - table structure.
     sendData(state.io.out->getHeader());
 
-    readData(global_settings);
+    readData(connection_settings);
     state.io.out->writeSuffix();
     state.io.onFinish();
 }
