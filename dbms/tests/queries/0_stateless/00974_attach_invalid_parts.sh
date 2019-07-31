@@ -28,10 +28,10 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO attach_partitions SELECT number FROM sys
 $CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions DETACH PARTITION 0";
 sudo -n mkdir --mode=777 $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/ 2>/dev/null || \
         mkdir --mode=777 $ch_dir/data/$cur_db/attach_partitions/detached/0_5_5_0/             # broken part
-sudo -n cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/ 2>/dev/null || \
-        cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/
-sudo -n cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/ 2>/dev/null || \
-        cp -r $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/
+sudo -n cp -pr $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/ 2>/dev/null || \
+        cp -pr $ch_dir/data/$cur_db/attach_partitions/detached/0_1_1_0/ $ch_dir/data/$cur_db/attach_partitions/detached/attaching_0_6_6_0/
+sudo -n cp -pr $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/ 2>/dev/null || \
+        cp -pr $ch_dir/data/$cur_db/attach_partitions/detached/0_3_3_0/ $ch_dir/data/$cur_db/attach_partitions/detached/deleting_0_7_7_0/
 
 echo '=== check all parts before attaching ===';
 $CLICKHOUSE_CLIENT --query="ALTER TABLE attach_partitions ATTACH PARTITION 0" 2>&1 | grep "No columns in part 0_5_5_0" > /dev/null && echo 'OK2';

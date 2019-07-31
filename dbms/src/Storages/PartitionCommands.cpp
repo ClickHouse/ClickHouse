@@ -25,9 +25,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     }
     else if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
-        if (!command_ast->part)     // TODO
-            throw DB::Exception("Not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
-
         PartitionCommand res;
         res.type = DROP_DETACHED_PARTITION;
         res.partition = command_ast->partition;

@@ -1018,7 +1018,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
-    PartsTemporaryRename renamed_parts(full_path + "detached/");
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)

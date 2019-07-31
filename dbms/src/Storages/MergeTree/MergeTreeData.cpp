@@ -1720,12 +1720,35 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
 {
-    Poco::File(base_dir + old_name).renameTo(base_dir + new_name);
     old_and_new_names.push_back({old_name, new_name});
+}
+
+void MergeTreeData::PartsTemporaryRename::tryRenameAll()
+{
+    renamed = true;
+    for (size_t i = 0; i < old_and_new_names.size(); ++i)
+    {
+        try
+        {
+            const auto & names = old_and_new_names[i];
+            if (names.first.empty() || names.second.empty())
+                throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::INCORRECT_FILE_NAME);
+            Poco::File(base_dir + names.first).renameTo(base_dir + names.second);
+        }
+        catch (...)
+        {
+            old_and_new_names.resize(i);
+            LOG_WARNING(storage.log, "Cannot rename parts to perform operation on them: " << getCurrentExceptionMessage(false));
+            throw;
+        }
+    }
 }
 
 MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
 {
+    // TODO what if server had crashed before this destructor was called?
+    if (!renamed)
+        return;
     for (const auto & names : old_and_new_names)
     {
         if (names.first.empty())
@@ -2621,46 +2644,60 @@ void MergeTreeData::validateDetachedPartName(const String & name) const
     Poco::File detached_part_dir(full_path + "detached/" + name);
     if (!detached_part_dir.exists())
         throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
+
+    if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
+        throw DB::Exception("Cannot drop part " + name + ": "
+                            "most likely it is used by another DROP or ATTACH query.",
+                            ErrorCodes::BAD_DATA_PART_NAME);
 }
 
-void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Context &)
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Context & context)
 {
-    if (!part)      // TODO
-        throw DB::Exception("DROP DETACHED PARTITION is not implemented, use DROP DETACHED PART", ErrorCodes::NOT_IMPLEMENTED);
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
 
-    String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    validateDetachedPartName(part_id);
-    if (startsWith(part_id, "attaching_") || startsWith(part_id, "deleting_"))
-        throw DB::Exception("Cannot drop part " + part_id + ": "
-                            "most likely it is used by another DROP or ATTACH query.", ErrorCodes::BAD_DATA_PART_NAME);
+    if (part)
+    {
+        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        validateDetachedPartName(part_name);
+        renamed_parts.addPart(part_name, "deleting_" + part_name);
+    }
+    else
+    {
+        String partition_id = getPartitionIDFromQuery(partition, context);
+        DetachedPartsInfo detached_parts = getDetachedParts();
+        for (const auto & part_info : detached_parts)
+            if (part_info.valid_name && part_info.partition_id == partition_id
+                && part_info.prefix != "attaching" && part_info.prefix != "deleting")
+                renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name);
+    }
 
-    PartsTemporaryRename renamed_parts(full_path + "detached/");
-    renamed_parts.addPart(part_id, "deleting_" + part_id);
-    Poco::File(renamed_parts.base_dir + renamed_parts.old_and_new_names.front().second).remove(true);
-    renamed_parts.old_and_new_names.front().first.clear();
+    LOG_DEBUG(log, "Will drop " << renamed_parts.old_and_new_names.size() << " detached parts.");
+
+    renamed_parts.tryRenameAll();
+
+    for (auto & names : renamed_parts.old_and_new_names)
+    {
+        Poco::File(renamed_parts.base_dir + names.second).remove(true);
+        LOG_DEBUG(log, "Dropped detached part " << names.first);
+        names.first.clear();
+    }
 }
 
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
         const Context & context, PartsTemporaryRename & renamed_parts)
 {
-    String partition_id;
-
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, context);
-
     String source_dir = "detached/";
 
     /// Let's compose a list of parts that should be added.
-    Strings parts;
     if (attach_part)
     {
-        validateDetachedPartName(partition_id);
-        parts.push_back(partition_id);
+        String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        validateDetachedPartName(part_id);
+        renamed_parts.addPart(part_id, "attaching_" + part_id);
     }
     else
     {
+        String partition_id = getPartitionIDFromQuery(partition, context);
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
 
@@ -2670,6 +2707,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             String name = it.name();
             MergeTreePartInfo part_info;
             // TODO what if name contains "_tryN" suffix?
+            /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
                 continue;
             if (part_info.partition_id != partition_id)
@@ -2679,26 +2717,26 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             part_names.insert(name);
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)
         {
-            // TODO maybe use PartsTemporaryRename here?
             String containing_part = active_parts.getContainingPart(name);
             if (!containing_part.empty() && containing_part != name)
+                // TODO maybe use PartsTemporaryRename here?
                 Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+            else
+                renamed_parts.addPart(name, "attaching_" + name);
         }
     }
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
-    for (const auto & source_part_name : parts)
-        renamed_parts.addPart(source_part_name, "attaching_" + source_part_name);
+    renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
     LOG_DEBUG(log, "Checking parts");
     MutableDataPartsVector loaded_parts;
-    loaded_parts.reserve(parts.size());
+    loaded_parts.reserve(renamed_parts.old_and_new_names.size());
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part " << part_names.second);
