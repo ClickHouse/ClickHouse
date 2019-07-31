@@ -28,16 +28,14 @@ void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log) {
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-    if (split) {
-        if (auto log = text_log.lock()) {
+    if (split)
+        if (auto log = text_log.lock())
             split->addTextLog(log);
-        }
-    }
 
     auto current_logger = config.getString("logger", "");
-    if (config_logger == current_logger) {
+    if (config_logger == current_logger)
         return;
-    }
+
     config_logger = current_logger;
 
     bool is_daemon = config.getBool("application.runAsDaemon", false);
