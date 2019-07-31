@@ -8,6 +8,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
 
 
 namespace DB
@@ -84,6 +85,9 @@ BlockInputStreamPtr FormatFactory::getInput(
     UInt64 rows_portion_size,
     ReadCallback callback) const
 {
+    if (name == "Native")
+        return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
+
     auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
