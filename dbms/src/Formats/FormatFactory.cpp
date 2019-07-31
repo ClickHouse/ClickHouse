@@ -94,7 +94,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     if (name == "PrettyCompactMonoBlock")
     {
         /// TODO: rewrite
-        auto format = getOutputFormat(name, buf, sample, context);
+        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
         return std::make_shared<MaterializingBlockOutputStream>(
                 std::make_shared<SquashingBlockOutputStream>(
                   std::make_shared<OutputStreamToOutputFormat>(format),
