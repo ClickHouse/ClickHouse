@@ -950,7 +950,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 
     /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
 
-    bool dummy_projection_added = false;
+    bool dummy_column_copied = false;
 
 
     /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
@@ -959,7 +959,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto colname = getSmallestColumn(input_columns);
         needed_columns.insert(colname);
         actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
-        dummy_projection_added = true;
+        dummy_column_copied = true;
     }
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
@@ -967,7 +967,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     {
         auto colname = getSmallestColumn(input_columns);
         final_columns.insert(DUMMY_COLUMN_NAME);
-        if (!dummy_projection_added) /// otherwise we already have this projection
+        if (!dummy_column_copied) /// otherwise we already have this column
             actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
     }
 
