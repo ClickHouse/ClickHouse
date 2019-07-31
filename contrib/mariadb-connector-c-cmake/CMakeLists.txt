@@ -60,7 +60,7 @@ endif()
 
 add_library(mysqlclient ${SRCS})
 
-target_link_libraries(mysqlclient PRIVATE ${CMAKE_DL_LIBS} m Threads::Threads)
+target_link_libraries(mysqlclient PRIVATE ${CMAKE_DL_LIBS} ${M_OR_GLIBC_LIBRARY} Threads::Threads)
 
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlclient PRIVATE ${OPENSSL_LIBRARIES})
