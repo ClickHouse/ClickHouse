@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-void parseColumnsList(const std::string & structure, Block & sample_block, const Context & context)
+void parseColumnsListFromString(const std::string & structure, Block & sample_block, const Context & context)
 {
     Expected expected;
 
