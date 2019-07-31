@@ -391,9 +391,7 @@ Columns:
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Query type. Possible values:
-    - 1 — Query was initiated by the client.
-    - 0 — Query was initiated by another query for distributed query execution.
+- `is_initial_query` (UInt8) — Flag that indicates whether the query is initiated by the client (1), or by another query for distributed query execution (0).
 - `user` (String) — Name of the user initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (FixedString(16)) — IP address the query was initiated from.

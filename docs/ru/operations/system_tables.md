@@ -38,7 +38,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **Смотрите также**
 
-- [Monitoring](monitoring.md) — основы мониторинга в ClickHouse.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 - [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 - [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 
@@ -130,7 +130,7 @@ SELECT * FROM system.events LIMIT 5
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 - [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
-- [Monitoring](monitoring.md) — основы мониторинга в ClickHouse.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.functions
 
@@ -212,7 +212,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
 - [system.events](#system_tables-events) — таблица с количеством произошедших событий.
-- [Monitoring](monitoring.md) — основы мониторинга в ClickHouse.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.numbers
 
@@ -669,4 +669,3 @@ path:           /clickhouse/tables/01-08/visits/replicas
 **latest_fail_reason** - Ошибка, возникшая при последней неудачной мутации куска.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
-
