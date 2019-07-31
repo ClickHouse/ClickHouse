@@ -93,7 +93,7 @@ LIMIT 3
 
 ## dictHas
 
-Проверяет, присутствует ли ключ в словаре.
+Проверяет, присутствует ли запись с указанным ключом в словаре.
 
 ```
 dictHas('dict_name', id)
@@ -132,7 +132,7 @@ dictGetHierarchy('dict_name', id)
 
 ## dictIsIn
 
-Проверяет предка ключа по всей цепочке иерархии в иерархическом словаре.
+Проверяет предка ключа по всей иерархической цепочке словаря.
 
 `dictIsIn ('dict_name', child_id_expr, ancestor_id_expr)`
 
@@ -140,7 +140,7 @@ dictGetHierarchy('dict_name', id)
 
 - `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 - `child_id_expr` — ключ для проверки. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
-- `ancestor_id_expr` — предполагаемый предок ключа `child_id_expr`. [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
+- `ancestor_id_expr` — предполагаемый предок ключа `child_id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -151,7 +151,7 @@ dictGetHierarchy('dict_name', id)
 
 ## Прочие функции {#ext_dict_functions-other}
 
-ClickHouse поддерживает специализированные функции, которые приводят значения атрибутов справочника к определенному типу данных независимо от конфигурации справочника.
+ClickHouse поддерживает специализированные функции, которые приводят значения атрибутов словаря к определённому типу данных независимо от конфигурации словаря.
 
 Функции:
 
