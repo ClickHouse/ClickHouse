@@ -29,14 +29,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Создание левой таблицы:
 
 ```sql
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog
+```
+```sql
+INSERT INTO id_val VALUES (1,11)(2,12)(3,13)
 ```
 
-Создание правой таблицы типа `Join`:
+Создание правой таблицы с движком `Join`:
 
 ```sql
-CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id)
+```
+```sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
 ```
 
@@ -54,7 +58,7 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 └────┴─────┴─────────────────┘
 ```
 
-Извлечение данных из таблицы `Join` с помощью значения ключа объединения:
+В качестве альтернативы, можно извлечь данные из таблицы `Join`, указав значение ключа объединения:
 
 ```sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1))
@@ -68,7 +72,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 ### Выборка и вставка данных
 
-Для добавления данных используйте запрос `INSERT`. Если задана строгость `ANY`, то данные с повторящимися ключами игнорируются. Если задана строгость `ALL`, то добавляются все строки.
+Для добавления данных в таблицы с движком `Join` используйте запрос `INSERT`. Если таблица создавалась со строгостью `ANY`, то данные с повторяющимися ключами игнорируются. Если задавалась строгость `ALL`, то добавляются все строки.
 
 Из таблиц нельзя выбрать данные с помощью запроса `SELECT`. Вместо этого, используйте один из следующих методов:
 
@@ -85,7 +89,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
 - [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
-Таблицы нельзя использовать в операциях `GLOBAL JOIN`.
+Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 
 ## Хранение данных
 

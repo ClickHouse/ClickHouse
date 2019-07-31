@@ -29,14 +29,18 @@ Enter `join_strictness` and `join_type` parameters without quotes, for example, 
 Creating the left-side table:
 
 ```sql
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
-INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog
+```
+```sql
+INSERT INTO id_val VALUES (1,11)(2,12)(3,13)
 ```
 
 Creating the right-side `Join` table:
 
 ```sql
-CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id)
+```
+```sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23)
 ```
 
@@ -53,7 +57,7 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 └────┴─────┴─────────────────┘
 ```
 
-Retrieving data from the `Join` table, specifying the join key value:
+As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
 
 ```sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1))
@@ -66,11 +70,11 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 ### Selecting and Inserting Data
 
-You can use `INSERT` to add data to tables. With the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
+You can use `INSERT` queries to add data to the `Join`-engine tables. If the table was created with the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
 
 You cannot perform a `SELECT` query directly from the table. Instead, use one of the following methods:
 
-- Place the table to the right in a `JOIN` clause.
+- Place the table to the right side in a `JOIN` clause.
 - Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Limitations and Settings
@@ -83,7 +87,7 @@ When creating a table, the following settings are applied:
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
 - [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
-Tables can't be used in `GLOBAL JOIN` operations.
+The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
 ## Data Storage
 
