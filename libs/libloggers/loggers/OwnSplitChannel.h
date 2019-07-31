@@ -22,7 +22,7 @@ public:
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
-    void addTextLog(std::weak_ptr<DB::TextLog> log);
+    void addTextLog(std::shared_ptr<DB::TextLog> log);
 
 private:
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;

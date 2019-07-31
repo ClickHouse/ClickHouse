@@ -28,9 +28,12 @@ void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log) {
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
-    if (split && !text_log.expired()) {
-        split->addTextLog(text_log);
+    if (split) {
+        if (auto log = text_log.lock()) {
+            split->addTextLog(log);
+        }
     }
+
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger) {
         return;

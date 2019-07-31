@@ -86,7 +86,7 @@ void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
     channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
 }
 
-void OwnSplitChannel::addTextLog(std::weak_ptr<DB::TextLog> log)
+void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log)
 {
     text_log = log;
 }
