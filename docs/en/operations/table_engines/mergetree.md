@@ -305,7 +305,9 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
 
-- `bloom_filter` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+
+    The `false_positive` optional parameter is the probability of false positive response from the filter. Default value: 0.025.
 
     Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
