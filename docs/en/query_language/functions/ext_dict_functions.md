@@ -132,7 +132,7 @@ Type: Array(UInt64).
 
 ## dictIsIn
 
-Checks the ancestor of a key through the whole hierarchical chain in the hierarchical dictionary.
+Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
 ```
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
