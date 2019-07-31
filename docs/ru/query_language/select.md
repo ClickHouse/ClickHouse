@@ -506,7 +506,7 @@ FROM <left_subquery>
 
 Вместо `<left_subquery>` и `<right_subquery>` можно указать имена таблиц. Это эквивалентно подзапросу `SELECT * FROM table`, за исключением особого случая таблицы с движком [Join](../operations/table_engines/join.md) – массива, подготовленного для присоединения.
 
-**Поддерживаемые типы `JOIN`**
+#### Поддерживаемые типы `JOIN` {#select-join-types}
 
 - `INNER JOIN` (or `JOIN`)
 - `LEFT JOIN` (or `LEFT OUTER JOIN`)
