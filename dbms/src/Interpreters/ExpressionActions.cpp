@@ -514,7 +514,10 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                 result.column = block.getByName(source_name).column;
             }
             else
-                block.insert({ block.getByName(source_name).column, result_type, result_name });
+            {
+                const auto & source_column = block.getByName(source_name);
+                block.insert({source_column.column, source_column.type, result_name});
+            }
 
             break;
     }
@@ -942,8 +945,9 @@ void ExpressionActions::finalize(const Names & output_columns)
     ///
     /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
     /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
-    /// to DUMMY_COLUMN_NAME with help of PROJECTION action. It doesn't affect any logic, but all streams will have same "redundant" column
-    /// in header called "_dummy".
+    /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
+    /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
+
     /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
 
     bool dummy_projection_added = false;
@@ -954,7 +958,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     {
         auto colname = getSmallestColumn(input_columns);
         needed_columns.insert(colname);
-        actions.insert(actions.begin(), ExpressionAction::project(NamesWithAliases{{colname, DUMMY_COLUMN_NAME}}));
+        actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
         dummy_projection_added = true;
     }
 
@@ -964,7 +968,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto colname = getSmallestColumn(input_columns);
         final_columns.insert(DUMMY_COLUMN_NAME);
         if (!dummy_projection_added) /// otherwise we already have this projection
-            actions.insert(actions.begin(), ExpressionAction::project(NamesWithAliases{{colname, DUMMY_COLUMN_NAME}}));
+            actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
     }
 
     for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
@@ -979,10 +983,10 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
-/*  std::cerr << "\n";
-    for (const auto & action : actions)
+/*    std::cerr << "\n";
+      for (const auto & action : actions)
           std::cerr << action.toString() << "\n";
-    std::cerr << "\n";*/
+      std::cerr << "\n";*/
 
     /// Deletes unnecessary temporary columns.
 
