@@ -97,8 +97,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
         auto format = getOutputFormat(name, buf, sample, context);
         return std::make_shared<MaterializingBlockOutputStream>(
                 std::make_shared<SquashingBlockOutputStream>(
-                  std::make_shared<OutputStreamToOutputFormat>(format), sample),
-                  sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+                  std::make_shared<OutputStreamToOutputFormat>(format),
+                  sample, context.getSettingsRef().output_format_pretty_max_rows, 0), sample);
     }
 
     auto format = getOutputFormat(name, buf, sample, context);
