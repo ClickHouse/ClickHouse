@@ -17,14 +17,12 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SYNTAX_ERROR;
 }
 
 static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, const Context & context)
