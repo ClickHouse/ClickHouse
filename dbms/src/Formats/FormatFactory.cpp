@@ -7,6 +7,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 
 
 namespace DB
@@ -90,6 +91,16 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
 {
+    if (name == "PrettyCompactMonoBlock")
+    {
+        /// TODO: rewrite
+        auto format = getOutputFormat(name, buf, sample, context);
+        return std::make_shared<MaterializingBlockOutputStream>(
+                std::make_shared<SquashingBlockOutputStream>(
+                  std::make_shared<OutputStreamToOutputFormat>(format), sample),
+                  sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+    }
+
     auto format = getOutputFormat(name, buf, sample, context);
 
     /** Materialization is needed, because formats can use the functions `IDataType`,
