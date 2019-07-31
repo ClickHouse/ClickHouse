@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_core.h"
 #if USE_MYSQL
 
 #include <ext/shared_ptr_helper.h>
@@ -20,7 +20,8 @@ class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorag
 {
 public:
     StorageMySQL(
-        const std::string & name,
+        const std::string & database_name_,
+        const std::string & table_name_,
         mysqlxx::Pool && pool,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
@@ -30,7 +31,8 @@ public:
         const Context & context);
 
     std::string getName() const override { return "MySQL"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -44,7 +46,8 @@ public:
 
 private:
     friend class StorageMySQLBlockOutputStream;
-    std::string name;
+    std::string table_name;
+    std::string database_name;
 
     std::string remote_database_name;
     std::string remote_table_name;

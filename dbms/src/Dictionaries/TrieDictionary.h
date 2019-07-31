@@ -33,8 +33,6 @@ public:
 
     std::string getKeyDescription() const { return key_description; }
 
-    std::exception_ptr getCreationException() const override { return creation_exception; }
-
     std::string getName() const override { return name; }
 
     std::string getTypeName() const override { return "Trie"; }
@@ -51,9 +49,9 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<TrieDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<TrieDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -61,8 +59,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {

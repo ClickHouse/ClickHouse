@@ -50,8 +50,6 @@ public:
 
     std::string getKeyDescription() const { return key_description; }
 
-    std::exception_ptr getCreationException() const override { return {}; }
-
     std::string getName() const override { return name; }
 
     std::string getTypeName() const override { return "ComplexKeyCache"; }
@@ -75,9 +73,9 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -85,8 +83,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {

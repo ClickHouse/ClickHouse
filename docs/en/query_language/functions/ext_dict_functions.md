@@ -96,7 +96,7 @@ LIMIT 3
 Checks whether a key is present in a dictionary.
 
 ```
-dictHas('dict_name', id)
+dictHas('dict_name', id_expr)
 ```
 
 **Parameters**
@@ -116,7 +116,7 @@ Type: `UInt8`.
 For the hierarchical dictionary, returns an array of dictionary keys starting from the passed `id_expr` and continuing along the chain of parent elements.
 
 ```
-dictGetHierarchy('dict_name', id)
+dictGetHierarchy('dict_name', id_expr)
 ```
 
 **Parameters**
@@ -132,7 +132,7 @@ Type: Array(UInt64).
 
 ## dictIsIn
 
-Checks the ancestor of a key in the hierarchical dictionary.
+Checks the ancestor of a key through the whole hierarchical chain in the hierarchical dictionary.
 
 ```
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)

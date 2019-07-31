@@ -30,8 +30,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         const size_t size);
 
-    std::exception_ptr getCreationException() const override { return {}; }
-
     std::string getName() const override { return name; }
 
     std::string getTypeName() const override { return "Cache"; }
@@ -51,9 +49,9 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -61,8 +59,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -284,8 +280,6 @@ private:
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
-
-    const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

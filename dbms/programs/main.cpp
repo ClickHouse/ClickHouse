@@ -10,8 +10,8 @@
 #if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
 #include <common/config_common.h>
 #endif
-#if __has_include(<Common/config.h>)
-#include <Common/config.h>
+#if __has_include("config_core.h")
+#include "config_core.h"
 #endif
 
 #if USE_TCMALLOC
@@ -19,6 +19,9 @@
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
+
+#include <common/phdr_cache.h>
+
 
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
@@ -143,6 +146,11 @@ int main(int argc_, char ** argv_)
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
+
+    /// PHDR cache is required for query profiler to work reliably
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+    ///  will work only after additional call of this function.
+    updatePHDRCache();
 
 #if USE_EMBEDDED_COMPILER
     if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))

@@ -23,7 +23,8 @@ namespace DB
                                unsigned num_streams) override;
 
 
-        StorageXDBC(const std::string & table_name_,
+        StorageXDBC(const std::string & database_name_,
+                    const std::string & table_name_,
                     const std::string & remote_database_name,
                     const std::string & remote_table_name,
                     const ColumnsDescription & columns_,

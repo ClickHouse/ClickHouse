@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Functions/GatherUtils/Algorithms.h>
-#include <Functions/GatherUtils/ArraySourceVisitor.h>
-#include <Functions/GatherUtils/ArraySinkVisitor.h>
-#include <Functions/GatherUtils/ValueSourceVisitor.h>
+#include "Algorithms.h"
+#include "ArraySourceVisitor.h"
+#include "ArraySinkVisitor.h"
+#include "ValueSourceVisitor.h"
 
 
 namespace DB::GatherUtils
