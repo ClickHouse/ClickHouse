@@ -107,7 +107,7 @@ class SSHConnection(object):
 def debsign(path, gpg_passphrase, gpg_sec_key_path, gpg_pub_key_path, gpg_user):
     try:
         with GpgKey(gpg_sec_key_path, gpg_pub_key_path):
-            cmd = ('debsign -k {key} -p"gpg --verbose --no-use-agent --batch '
+            cmd = ('debsign -k \'{key}\' -p"gpg --verbose --no-use-agent --batch '
                    '--no-tty --passphrase {passphrase}" {path}/*.changes').format(
                        key=gpg_user, passphrase=gpg_passphrase, path=path)
             logging.info("Build debsign cmd '%s'", cmd)

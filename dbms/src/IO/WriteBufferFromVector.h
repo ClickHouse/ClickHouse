@@ -57,7 +57,7 @@ public:
         : WriteBuffer(nullptr, 0), vector(vector_)
     {
         size_t old_size = vector.size();
-        vector.resize(vector.capacity() < initial_size ? initial_size : vector.capacity());
+        vector.resize(std::max(vector.size() + initial_size, vector.capacity()));
         set(reinterpret_cast<Position>(vector.data() + old_size), (vector.size() - old_size) * sizeof(typename VectorType::value_type));
     }
 

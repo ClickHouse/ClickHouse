@@ -106,6 +106,10 @@ endif ()
 if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
+    # generate ranges for fast "addr2line" search
+    if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
+    endif ()
 endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
@@ -321,7 +325,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lstdc++fs ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.

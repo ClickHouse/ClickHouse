@@ -159,6 +159,15 @@ if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
+if (USE_UNWIND)
+    target_compile_definitions (clickhouse_common_io PRIVATE USE_UNWIND=1)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+
+    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
+    endif ()
+endif ()
+
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
@@ -231,6 +240,8 @@ target_link_libraries(clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
         PUBLIC
     roaring
 )
