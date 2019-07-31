@@ -171,7 +171,7 @@ void CSVRowInputFormat::readPrefix()
 
             for (auto read_column : read_columns)
             {
-                if (read_column)
+                if (!read_column)
                 {
                     have_always_default_columns = true;
                     break;
