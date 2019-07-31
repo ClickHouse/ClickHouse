@@ -712,31 +712,27 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
 
 std::vector<std::pair<Float64, Float64>> geohashCoverBox(Float64 longitude_min, Float64 latitude_min, Float64 longitude_max, Float64 latitude_max, UInt8 precision, UInt32 max_items = 0);
 
+struct GeohashesInBoxPreparedArgs
+{
+    UInt64 items_count = 0;
+    UInt8 precision = 0;
 
-UInt64 geohashEstimateCoverAreaWithBoxesItems(const Float64 longitude_min,
+    Float64 longitude_min = 0.0;
+    Float64 latitude_min = 0.0;
+    Float64 longitude_max = 0.0;
+    Float64 latitude_max = 0.0;
+
+    Float64 longitude_step = 0.0;
+    Float64 latitude_step = 0.0;
+};
+
+GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
                                               const Float64 latitude_min,
                                               Float64 longitude_max,
                                               Float64 latitude_max,
                                               UInt8 precision);
 
-UInt64 geohashCoverAreaWithBoxes(const Float64 longitude_min,
-                                 const Float64 latitude_min,
-                                 Float64 longitude_max,
-                                 Float64 latitude_max,
-                                 UInt8 precision,
-                                 char * out);
-
-extern const UInt8 GEOHASH_MAX_PRECISION;
-
-inline UInt8 geohashPrecision(UInt8 precision)
-{
-    if (precision == 0 || precision > GEOHASH_MAX_PRECISION)
-    {
-        precision = GEOHASH_MAX_PRECISION;
-    }
-
-    return precision;
-}
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & estimation, char * out);
 
 } /// GeoUtils
 

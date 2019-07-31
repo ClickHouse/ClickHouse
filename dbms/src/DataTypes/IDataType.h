@@ -603,13 +603,6 @@ inline bool isStringOrFixedString(const T & data_type)
     return WhichDataType(data_type).isStringOrFixedString();
 }
 
-template <typename T, typename U>
-inline bool isSame(const T & data_type_left, const U & data_type_right)
-{
-    return WhichDataType(data_type_left).idx == WhichDataType(data_type_right).idx;
-}
-
-
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);

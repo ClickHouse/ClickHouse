@@ -210,33 +210,14 @@ inline Float64 getSpan(UInt8 precision, CoordType type)
     return ldexp(getMaxSpan(type), -1 * bits);
 }
 
-inline std::tuple<UInt64, Float64, Float64> geohashCoverAreaWithBoxesPrologue(Float64 longitude_min,
-                                              Float64 latitude_min,
-                                              Float64 & longitude_max,
-                                              Float64 & latitude_max,
-                                              UInt8 & precision)
+inline UInt8 geohashPrecision(UInt8 precision)
 {
-    precision = DB::GeoUtils::geohashPrecision(precision);
-
-    if (longitude_max < longitude_min || latitude_max < latitude_min)
+    if (precision == 0 || precision > MAX_PRECISION)
     {
-        return {0, 0.0, 0.0};
+        precision = MAX_PRECISION;
     }
 
-    const auto lon_step = getSpan(precision, LONGITUDE);
-    const auto lat_step = getSpan(precision, LATITUDE);
-
-    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
-    longitude_min = floor(longitude_min / lon_step) * lon_step;
-    latitude_min = floor(latitude_min / lat_step) * lat_step;
-    longitude_max = ceil(longitude_max / lon_step) * lon_step;
-    latitude_max = ceil(latitude_max / lat_step) * lat_step;
-    const auto lon_span = longitude_max - longitude_min;
-    const auto lat_span = latitude_max - latitude_min;
-
-    return {static_cast<size_t>(ceil((lon_span)/lon_step * (lat_span)/lat_step)),
-            lon_step,
-            lat_step};
+    return precision;
 }
 
 inline size_t geohashEncodeImpl(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
@@ -264,17 +245,15 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace GeoUtils
 {
 
-const UInt8 GEOHASH_MAX_PRECISION = MAX_PRECISION;
-
 size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char * out)
 {
-    precision = DB::GeoUtils::geohashPrecision(precision);
-    return geohashEncodeImpl(longitude, latitude, geohashPrecision(precision), out);
+    precision = geohashPrecision(precision);
+    return geohashEncodeImpl(longitude, latitude, precision, out);
 }
 
 void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude)
 {
-    const UInt8 precision = std::min(encoded_len, static_cast<size_t>(GEOHASH_MAX_PRECISION));
+    const UInt8 precision = std::min(encoded_len, static_cast<size_t>(MAX_PRECISION));
     if (precision == 0)
     {
         return;
@@ -287,32 +266,64 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
     *latitude = decodeCoordinate(lat_encoded, LAT_MIN, LAT_MAX, singleCoordBitsPrecision(precision, LATITUDE));
 }
 
-UInt64 geohashEstimateCoverAreaWithBoxesItems(const Float64 longitude_min,
+GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
                                               const Float64 latitude_min,
-                                              Float64 longitude_max,
-                                              Float64 latitude_max,
+                                              const Float64 longitude_max,
+                                              const Float64 latitude_max,
                                               UInt8 precision)
 {
-    return std::get<0>(geohashCoverAreaWithBoxesPrologue(longitude_min, latitude_min, longitude_max, latitude_max, precision));
+    precision = geohashPrecision(precision);
+
+    if (longitude_max < longitude_min || latitude_max < latitude_min)
+    {
+        return {};
+    }
+
+    const auto lon_step = getSpan(precision, LONGITUDE);
+    const auto lat_step = getSpan(precision, LATITUDE);
+
+    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
+    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
+    Float64 lon_min = floor(longitude_min / lon_step) * lon_step;
+    Float64 lat_min = floor(latitude_min / lat_step) * lat_step;
+    Float64 lon_max = ceil(longitude_max / lon_step) * lon_step;
+    Float64 lat_max = ceil(latitude_max / lat_step) * lat_step;
+
+    const auto lon_span = lon_max - lon_min;
+    const auto lat_span = lat_max - lat_min;
+
+    return GeohashesInBoxPreparedArgs{
+            static_cast<size_t>(ceil(lon_span/lon_step * lat_span/lat_step)),
+            precision,
+            longitude_min,
+            latitude_min,
+            lon_max,
+            lat_max,
+            lon_step,
+            lat_step
+    };
 }
 
-UInt64 geohashCoverAreaWithBoxes(const Float64 longitude_min,
-                                 const Float64 latitude_min,
-                                 Float64 longitude_max,
-                                 Float64 latitude_max,
-                                 UInt8 precision,
-                                 char * out)
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 {
-    // a hack to silence warning on estimited_items.
-    [[maybe_unused]] const auto [estimated_items, lon_step, lat_step] = geohashCoverAreaWithBoxesPrologue(
-            longitude_min, latitude_min, longitude_max, latitude_max, precision);
+    if (args.precision == 0
+            || args.precision > MAX_PRECISION
+            || args.latitude_min > args.latitude_max
+            || args.longitude_min > args.longitude_max
+            || args.longitude_step <= 0
+            || args.latitude_step <= 0)
+    {
+        return 0;
+    }
 
     UInt64 items = 0;
-    for (auto lon = longitude_min; lon < longitude_max; lon += lon_step)
+    for (auto lon = args.longitude_min; lon < args.longitude_max; lon += args.longitude_step)
     {
-        for (auto lat = latitude_min; lat < latitude_max; lat += lat_step)
+        for (auto lat = args.latitude_min; lat < args.latitude_max; lat += args.latitude_step)
         {
-            size_t l = geohashEncodeImpl(lon, lat, precision, out);
+            assert(items <= args.items_count);
+
+            size_t l = geohashEncodeImpl(lon, lat, args.precision, out);
             out += l;
             *out = '\0';
             ++out;

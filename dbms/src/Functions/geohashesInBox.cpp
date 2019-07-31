@@ -21,11 +21,11 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-class FunctionGeohashCoverAreaWithBoxes : public IFunction
+class FunctionGeohashesInBox : public IFunction
 {
 public:
-    static constexpr auto name = "geohashCoverAreaWithBoxes";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashCoverAreaWithBoxes>(); }
+    static constexpr auto name = "geohashesInBox";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -39,9 +39,9 @@ public:
         validateArgumentType(*this, arguments, 3, isFloat, "float");
         validateArgumentType(*this, arguments, 4, isUInt8, "integer");
 
-        if (!(isSame(arguments[0], arguments[1]) &&
-              isSame(arguments[0], arguments[2]) &&
-              isSame(arguments[0], arguments[3])))
+        if (!(arguments[0]->equals(*arguments[1]) &&
+              arguments[0]->equals(*arguments[2]) &&
+              arguments[0]->equals(*arguments[3])))
         {
             throw Exception("Illegal type of argument of " + getName() +
                             " all coordinate arguments must have the same type, instead they are:" +
@@ -94,31 +94,29 @@ public:
             const Float64 lat_min_value = lat_min->getElement(row);
             const Float64 lon_max_value = lon_max->getElement(row);
             const Float64 lat_max_value = lat_max->getElement(row);
-            const PrecisionType precision_value = GeoUtils::geohashPrecision(precision->getElement(row % precision->size()));
 
-            const auto estimated_array_size = GeoUtils::geohashEstimateCoverAreaWithBoxesItems(
-                        lon_min_value, lat_min_value, lon_max_value, lat_max_value, precision_value);
-
-            if (estimated_array_size > max_array_size)
+            const auto prepared_args = GeoUtils::geohashesInBoxPrepare(
+                        lon_min_value, lat_min_value, lon_max_value, lat_max_value,
+                        precision->getElement(row % precision->size()));
+            if (prepared_args.items_count > max_array_size)
             {
-                throw Exception{getName() + " would produce " + std::to_string(estimated_array_size) +
+                throw Exception{getName() + " would produce " + std::to_string(prepared_args.items_count) +
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_array_size),
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND};
             }
 
-            res_strings_offsets.reserve(res_strings_offsets.size() + estimated_array_size);
-            res_strings_chars.resize(res_strings_chars.size() + estimated_array_size * (precision_value + 1));
+            res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
+            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * (prepared_args.precision + 1));
             const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
-            const auto actual_array_size = GeoUtils::geohashCoverAreaWithBoxes(
-                        lon_min_value, lat_min_value, lon_max_value, lat_max_value, precision_value, out);
+            // Actually write geohashes into preallocated buffer.
+            const auto actual_array_size = GeoUtils::geohashesInBox(prepared_args, out);
 
             for (UInt8 i = 1; i <= actual_array_size ; ++i)
             {
-                res_strings_offsets.push_back(starting_offset + (precision_value + 1) * i);
+                res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
             }
-
             res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + actual_array_size);
         }
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
@@ -164,9 +162,9 @@ public:
     }
 };
 
-void registerFunctionGeohashCoverAreaWithBoxes(FunctionFactory & factory)
+void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionGeohashCoverAreaWithBoxes>();
+    factory.registerFunction<FunctionGeohashesInBox>();
 }
 
 }
