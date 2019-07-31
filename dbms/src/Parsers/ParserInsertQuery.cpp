@@ -9,6 +9,7 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include "ParserSpecificFunction.h"
 
 
 namespace DB
@@ -35,7 +36,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p;
+    ParserSpecificFunction table_function_p;
 
     ASTPtr database;
     ASTPtr table;

@@ -92,6 +92,13 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     assert node1.query("SELECT count() FROM {} WHERE name LIKE concat('name_', toString(1))".format(table_name)).rstrip() == '1'
     conn.close()
 
+def test_show_create_table(started_cluster):
+    table_name = 'test_show_create_table'
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+    node1.query('''CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');'''.format(table_name, table_name))
+    assert node1.query("SHOW CREATE TABLE {}".format(table_name)).rstrip() == ''
+
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
     return conn

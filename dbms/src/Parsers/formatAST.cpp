@@ -13,7 +13,7 @@ void formatAST(const IAST & ast, std::ostream & s, bool hilite, bool one_line)
     ast.format(settings);
 }
 
-String serializeAST(const IAST & ast, bool one_line)
+String serializeAST(const IAST & ast, bool one_line, bool process_password)
 {
     std::stringstream ss;
     formatAST(ast, ss, false, one_line);

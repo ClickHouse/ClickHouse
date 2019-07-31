@@ -214,7 +214,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             visitor.visit(ast);
 
             /// Get new query after substitutions.
-            query = serializeAST(*ast);
+            query = serializeAST(*ast, true, true);
         }
 
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);

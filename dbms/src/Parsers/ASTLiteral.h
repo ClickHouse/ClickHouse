@@ -14,11 +14,15 @@ class ASTLiteral : public ASTWithAlias
 {
 public:
     Field value;
+    bool password{false};
 
-    ASTLiteral(const Field & value_) : value(value_) {}
+    ASTLiteral(const Field & value_, bool password_ = false) : value(value_), password(password_) {}
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
+    String getID(char delim) const override
+    {
+        return "Literal" + (delim + (password ? "******" : applyVisitor(FieldVisitorDump(), value)));
+    }
 
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
@@ -27,7 +31,7 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+        settings.ostr << (password ? "******" : applyVisitor(FieldVisitorToString(), value));
     }
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

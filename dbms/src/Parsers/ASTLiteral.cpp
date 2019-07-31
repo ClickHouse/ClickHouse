@@ -33,7 +33,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        String column_name = applyVisitor(FieldVisitorToString(), value);
+        String column_name = password ? "password" : applyVisitor(FieldVisitorToString(), value);
         writeString(column_name, ostr);
     }
 }

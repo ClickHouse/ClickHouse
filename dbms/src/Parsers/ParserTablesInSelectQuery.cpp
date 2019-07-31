@@ -6,6 +6,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include "ParserSpecificFunction.h"
 
 
 namespace DB
@@ -22,7 +23,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto res = std::make_shared<ASTTableExpression>();
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true).parse(pos, res->subquery, expected)
-        && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true).parse(pos, res->table_function, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserSpecificFunction>(), true).parse(pos, res->table_function, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true).parse(pos, res->database_and_table_name, expected))
         return false;
 

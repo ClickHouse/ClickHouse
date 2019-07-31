@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include "ParserSpecificFunction.h"
 
 
 namespace DB
@@ -50,7 +51,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserFunction function_or_array;
+    ParserSpecificFunction function_or_array;
     if (function_or_array.parse(pos, node, expected))
         return true;
 
@@ -319,7 +320,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier name_p;
     ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
-    ParserFunction table_function_p;
+    ParserSpecificFunction table_function_p;
 
     ASTPtr database;
     ASTPtr table;

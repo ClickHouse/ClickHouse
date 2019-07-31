@@ -17,7 +17,7 @@ String IndicesDescription::toString() const
     for (const auto & index : indices)
         list.children.push_back(index);
 
-    return serializeAST(list, true);
+    return serializeAST(list, true, true);
 }
 
 IndicesDescription IndicesDescription::parse(const String & str)
