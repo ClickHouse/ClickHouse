@@ -685,7 +685,7 @@ The function can take the window size as a parameter. If it not specified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -754,7 +754,7 @@ The function can take the window size as a parameter. If it not specified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
