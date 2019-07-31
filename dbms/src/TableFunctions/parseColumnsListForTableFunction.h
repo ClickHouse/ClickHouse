@@ -5,8 +5,8 @@
 
 namespace DB
 {
-
-void parseColumnsList(const std::string & structure, Block & sample_block, const Context & context);
+/*Parses a common argument for table functions such as table structure given in string*/
+void parseColumnsListFromString(const std::string & structure, Block & sample_block, const Context & context);
 
 }
 

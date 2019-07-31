@@ -75,7 +75,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
     Block sample_block;
-    parseColumnsList(structure, sample_block, context);
+    parseColumnsListFromString(structure, sample_block, context);
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 

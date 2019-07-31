@@ -46,7 +46,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     /// Create sample block
 
     Block sample_block;
-    parseColumnsList(structure, sample_block, context);
+    parseColumnsListFromString(structure, sample_block, context);
 
     /// Create table
     StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context), table_name);
