@@ -95,10 +95,13 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     {
         /// TODO: rewrite
         auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        return std::make_shared<MaterializingBlockOutputStream>(
-                std::make_shared<SquashingBlockOutputStream>(
-                  std::make_shared<OutputStreamToOutputFormat>(format),
-                  sample, context.getSettingsRef().output_format_pretty_max_rows, 0), sample);
+        auto res = std::make_shared<SquashingBlockOutputStream>(
+                std::make_shared<OutputStreamToOutputFormat>(format),
+                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+
+        res->disableFlush();
+
+        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
     }
 
     auto format = getOutputFormat(name, buf, sample, context);
