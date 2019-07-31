@@ -39,7 +39,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
         {
             {
                 WriteBufferFromString text_out(buffer);
-                header.getByPosition(row_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
+                header.getByPosition(column_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
             }
             writeODBCString(out, buffer);
         }
