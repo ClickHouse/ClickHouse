@@ -353,7 +353,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
                         ErrorCodes::TOO_SLOW);
 
                 /// If the predicted execution time is longer than `max_execution_time`.
-                if (limits.max_execution_time != 0 && total_rows)
+                if (limits.max_execution_time != 0 && total_rows && progress.read_rows)
                 {
                     double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows) / progress.read_rows);
 
