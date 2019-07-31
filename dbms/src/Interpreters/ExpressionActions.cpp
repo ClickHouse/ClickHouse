@@ -510,7 +510,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             if (can_replace && block.has(result_name))
             {
                 auto & result = block.getByName(result_name);
-                result.type = result_type;
                 result.column = block.getByName(source_name).column;
             }
             else
