@@ -342,7 +342,6 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
         # FIXME: glibc-compatibility may be non-static in some builds!
         set (DEFAULT_LIBS "${DEFAULT_LIBS} ${ClickHouse_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
-        set (M_OR_GLIBC_LIBRARY glibc-compatibility)
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
@@ -353,10 +352,9 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 endif ()
 
-if (NOT M_OR_GLIBC_LIBRARY)
-    set (M_OR_GLIBC_LIBRARY m)
+if (NOT GLIBC_COMPATIBILITY)
+    set (M_LIBRARY m)
 endif ()
-message(STATUS "Using m library=${M_OR_GLIBC_LIBRARY}")
 
 if (DEFAULT_LIBS)
     # Add default libs to all targets as the last dependency.

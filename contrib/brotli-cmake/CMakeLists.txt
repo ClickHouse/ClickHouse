@@ -31,4 +31,7 @@ set(SRCS
 add_library(brotli ${SRCS})
 
 target_include_directories(brotli PUBLIC ${BROTLI_SOURCE_DIR}/include)
-target_link_libraries(brotli PRIVATE ${M_OR_GLIBC_LIBRARY})
+
+if(M_LIBRARY)
+    target_link_libraries(brotli PRIVATE ${M_LIBRARY})
+endif()
