@@ -1,16 +1,15 @@
 #include "QueryProfiler.h"
 
 #include <random>
-#include <pcg_random.hpp>
 #include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
@@ -63,7 +62,6 @@ namespace
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
     thread_local size_t write_trace_iteration = 0;
-    thread_local pcg64 rng{randomSeed()};
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -161,7 +159,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         /// It will allow to sample short queries even if timer period is large.
         /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
         /// It also helps to avoid interference (moire).
-        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(rng);
+        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
 
         struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
         struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};

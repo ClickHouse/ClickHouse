@@ -71,16 +71,18 @@ void MySQLOutputFormat::consume(Chunk chunk)
 
 void MySQLOutputFormat::finalize()
 {
-    QueryStatus * process_list_elem = context.getProcessListElement();
-    CurrentThread::finalizePerformanceCounters();
-    QueryStatusInfo info = process_list_elem->getInfo();
-    size_t affected_rows = info.written_rows;
-
+    size_t affected_rows = 0;
     std::stringstream human_readable_info;
-    human_readable_info << std::fixed << std::setprecision(3)
-                        << "Read " << info.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(info.read_bytes) << " in " << info.elapsed_seconds << " sec., "
-                        << static_cast<size_t>(info.read_rows / info.elapsed_seconds) << " rows/sec., "
-                        << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
+    if (QueryStatus * process_list_elem = context.getProcessListElement())
+    {
+        CurrentThread::finalizePerformanceCounters();
+        QueryStatusInfo info = process_list_elem->getInfo();
+        affected_rows = info.written_rows;
+        human_readable_info << std::fixed << std::setprecision(3)
+                            << "Read " << info.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(info.read_bytes) << " in " << info.elapsed_seconds << " sec., "
+                            << static_cast<size_t>(info.read_rows / info.elapsed_seconds) << " rows/sec., "
+                            << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
+    }
 
     auto & header = getPort(PortKind::Main).getHeader();
 
