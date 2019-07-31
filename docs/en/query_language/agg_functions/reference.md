@@ -514,7 +514,7 @@ The result is always Float64.
 
 ## uniq {#agg_function-uniq}
 
-Calculates the approximate number of different argument values.
+Calculates the approximate number of different values of the argument.
 
 ```
 uniq(x[, ...])
