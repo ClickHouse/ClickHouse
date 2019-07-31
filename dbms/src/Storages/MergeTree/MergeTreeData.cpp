@@ -3,6 +3,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -106,7 +107,6 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
-    index_granularity_info(settings_),
     merging_params(merging_params_),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
@@ -151,7 +151,7 @@ MergeTreeData::MergeTreeData(
         catch (Exception & e)
         {
             /// Better error message.
-            e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
+            e.addMessage("(while initializing MergeTree partition key from date column " + backQuote(date_column_name) + ")");
             throw;
         }
     }
@@ -198,27 +198,6 @@ MergeTreeData::MergeTreeData(
                 "MergeTree data format version on disk doesn't support custom partitioning",
                 ErrorCodes::METADATA_MISMATCH);
     }
-
-}
-
-
-MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings)
-    : fixed_index_granularity(settings.index_granularity)
-    , index_granularity_bytes(settings.index_granularity_bytes)
-{
-    /// Granularity is fixed
-    if (index_granularity_bytes == 0)
-    {
-        is_adaptive = false;
-        mark_size_in_bytes = sizeof(UInt64) * 2;
-        marks_file_extension = ".mrk";
-    }
-    else
-    {
-        is_adaptive = true;
-        mark_size_in_bytes = sizeof(UInt64) * 3;
-        marks_file_extension = ".mrk2";
-    }
 }
 
 
@@ -242,7 +221,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ColumnWithTypeAndName & element : sample_block)
     {
         const ColumnPtr & column = element.column;
-        if (column && (column->isColumnConst() || column->isDummy()))
+        if (column && (isColumnConst(*column) || column->isDummy()))
             throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
 
         if (element.type->isNullable())
@@ -381,7 +360,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
-                        "Index with name `" + new_indices.back()->name + "` already exsists",
+                        "Index with name " + backQuote(new_indices.back()->name) + " already exsists",
                         ErrorCodes::LOGICAL_ERROR);
 
             ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
@@ -764,6 +743,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     auto lock = lockParts();
     data_parts_indexes.clear();
 
+    bool has_adaptive_parts = false, has_non_adaptive_parts = false;
     for (const String & file_name : part_file_names)
     {
         MergeTreePartInfo part_info;
@@ -848,6 +828,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
             continue;
         }
+        if (!part->index_granularity_info.is_adaptive)
+            has_non_adaptive_parts = true;
+        else
+            has_adaptive_parts = true;
 
         part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
         /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
@@ -856,6 +840,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
     }
+
+    if (has_non_adaptive_parts && has_adaptive_parts && !settings.enable_mixed_granularity_parts)
+        throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
+
+    has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
     if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
@@ -1112,6 +1101,10 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
+    /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
+    for (DataPartPtr part : data_parts_by_info) /// a copy intended
+        part->remove();
+
     Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -1284,6 +1277,11 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
+    String part_mrk_file_extension;
+    if (part)
+        part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
+    else
+        part_mrk_file_extension = settings.index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1304,7 +1302,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_indices_set.count(index.name))
         {
             out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
+            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = "";
         }
     }
 
@@ -1323,7 +1321,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name))
+            if (!part || part->hasColumnFiles(column.name, *column.type))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -1333,7 +1331,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + index_granularity_info.marks_file_extension] = "";
+                        out_rename_map[file_name + part_mrk_file_extension] = "";
                     }
                 }, {});
             }
@@ -1345,7 +1343,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             const String new_type_name = new_type->getName();
             const auto * old_type = column.type.get();
 
-            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name)))
+            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name, *column.type)))
             {
                 if (isMetadataOnlyConversion(old_type, new_type))
                 {
@@ -1408,7 +1406,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
+                    out_rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
                 }, {});
         }
 
@@ -1476,12 +1474,12 @@ void MergeTreeData::alterDataPart(
                 exception_message << ", ";
             if (forbidden_because_of_modify)
             {
-                exception_message << "from `" << from_to.first << "' to `" << from_to.second << "'";
+                exception_message << "from " << backQuote(from_to.first) << " to " << backQuote(from_to.second);
                 first = false;
             }
             else if (from_to.second.empty())
             {
-                exception_message << "`" << from_to.first << "'";
+                exception_message << backQuote(from_to.first);
                 first = false;
             }
         }
@@ -2380,8 +2378,8 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
 }
@@ -2392,8 +2390,8 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -2834,6 +2832,18 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+}
+
+bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
+{
+    if (!settings.enable_mixed_granularity_parts || settings.index_granularity_bytes == 0)
+    {
+        if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
+            return false;
+        if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.is_adaptive)
+            return false;
+    }
+    return true;
 }
 
 }

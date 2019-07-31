@@ -6,7 +6,7 @@ Counts the number of rows or not-NULL values.
 
 ClickHouse supports the following syntaxes for `count`:
 - `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is a ClickHouse-specific implementation.
+- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
 **Parameters**
 
@@ -19,15 +19,15 @@ The function can take:
 **Returned value**
 
 - If the function is called without parameters it counts the number of rows.
-- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a value of the [Nullable](../../data_types/nullable.md) data type, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../data_types/int_uint.md).
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. By default the [uniqExact](#agg_function-uniqexact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](#agg_function-uniqexact) function.
 
-A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses some small column from the table and count the number of values in it.
+The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
 
 
 **Examples**
@@ -62,7 +62,7 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-This example shows that `count(DISTINCT num)` is performed by the function `uniqExact` corresponding to the `count_distinct_implementation` setting value.
+This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 
 
 ## any(x) {#agg_function-any}
@@ -237,7 +237,7 @@ binary     decimal
 ```
 
 
-##groupBitmap
+## groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
 
@@ -258,7 +258,7 @@ Value of the `UInt64` type.
 Test data:
 
 ```
-userid
+UserID
 1
 1
 2
@@ -268,7 +268,7 @@ userid
 Query:
 
 ```
-SELECT groupBitmap(userid) as num FROM t
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:
@@ -360,7 +360,7 @@ GROUP BY timeslot
 
 ## skewPop
 
-Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
 ```
 skewPop(expr)
@@ -372,9 +372,9 @@ skewPop(expr)
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md)
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT skewPop(value) FROM series_with_value_column
@@ -382,9 +382,9 @@ SELECT skewPop(value) FROM series_with_value_column
 
 ## skewSamp
 
-Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
-It represents an unbiased estimate of the skewness of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
 
 ```
 skewSamp(expr)
@@ -396,9 +396,9 @@ skewSamp(expr)
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is the size of the sample), then the function returns `nan`.
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT skewSamp(value) FROM series_with_value_column
@@ -406,7 +406,7 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 ## kurtPop
 
-Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 
 ```
 kurtPop(expr)
@@ -418,9 +418,9 @@ kurtPop(expr)
 
 **Returned value**
 
-The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md)
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT kurtPop(value) FROM series_with_value_column
@@ -428,9 +428,9 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 ## kurtSamp
 
-Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 
-It represents an unbiased estimate of the kurtosis of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
 
 ```
 kurtSamp(expr)
@@ -442,9 +442,9 @@ kurtSamp(expr)
 
 **Returned value**
 
-The kurtosis of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT kurtSamp(value) FROM series_with_value_column
@@ -522,24 +522,24 @@ uniq(x[, ...])
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values with a size up to 65536.
+- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
 
-    This algorithm is very accurate and very efficient on CPU. When query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+    This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-- Provides the result deterministically (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the query processing order).
 
-We recommend to use this function in almost all scenarios.
+We recommend using this function in almost all scenarios.
 
 **See Also**
 
@@ -549,40 +549,40 @@ We recommend to use this function in almost all scenarios.
 
 ## uniqCombined {#agg_function-uniqcombined}
 
-Calculates the approximate number of different values of the argument.
+Calculates the approximate number of different argument values.
 
 ```
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
+The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
-`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each).
+`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, which is effectively 96 KiB of space (2^17 cells, 6 bits each).
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A number [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses combination of three algorithms: array, hash table and HyperLogLog with an error correction table.
+- Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
-    For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
+    For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
-- Provides the result deterministically (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the query processing order).
 
-In comparison with the [uniq](#agg_function-uniq) function the `uniqCombined`:
+Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
 - Consumes several times less memory.
 - Calculates with several times higher accuracy.
-- Performs slightly lower usually. In some scenarios `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+- Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
 
 **See Also**
 
@@ -593,7 +593,7 @@ In comparison with the [uniq](#agg_function-uniq) function the `uniqCombined`:
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
-Calculates the approximate number of different values of the argument, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algortithm.
+Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
 ```
 uniqHLL12(x[, ...])
@@ -601,22 +601,22 @@ uniqHLL12(x[, ...])
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses the HyperLogLog algorithm to approximate the number of different values of the argument.
+- Uses the HyperLogLog algorithm to approximate the number of different argument values.
 
     212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
-- Provides the determinate result (it doesn't depend on the order of query processing).
+- Provides the determinate result (it doesn't depend on the query processing order).
 
 We don't recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
 
@@ -629,19 +629,19 @@ We don't recommend using this function. In most cases, use the [uniq](#agg_funct
 
 ## uniqExact {#agg_function-uniqexact}
 
-Calculates the exact number of different values of the argument.
+Calculates the exact number of different argument values.
 
 ```
 uniqExact(x[, ...])
 ```
 
-Use the `uniqExact` function if you definitely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
+Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
 
-The `uniqExact` function uses more memory than the `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **See Also**
 
@@ -677,7 +677,7 @@ Optional parameters:
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
-For example, `groupUniqArray (1) (x)` is equivalent to `[any (x)]`.
+For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
 ## quantile(level)(x)
 
@@ -763,7 +763,7 @@ All the quantile functions also have corresponding quantiles functions: `quantil
 
 Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
-It represents an unbiased estimate of the variance of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
@@ -839,12 +839,12 @@ simpleLinearRegression(x, y)
 
 Parameters:
 
-- `x` — Column with values of dependent variable.
-- `y` — Column with explanatory variable.
+- `x` — Column with dependent variable values.
+- `y` — Column with explanatory variable values.
 
 Returned values:
 
-Parameters `(a, b)` of the resulting line `y = a*x + b`.
+Constants `(a, b)` of the resulting line `y = a*x + b`.
 
 **Examples**
 

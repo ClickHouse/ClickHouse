@@ -297,7 +297,7 @@ static void executeRenameQuery(Context & global_context, const String & database
 }
 
 
-void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name)
+void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
 {
     if (has_inner_table && tryGetTargetTable())
     {
@@ -313,6 +313,7 @@ void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const St
             DatabaseAndTableName(database_name, table_name));
 
     table_name = new_table_name;
+    database_name = new_database_name;
 
     global_context.addDependencyUnsafe(
             DatabaseAndTableName(select_database_name, select_table_name),
@@ -368,6 +369,11 @@ void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partitio
         return;
 
     target_table->checkPartitionCanBeDropped(partition);
+}
+
+ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
+{
+    return has_inner_table ? getTargetTable()->getActionLock(type) : ActionLock{};
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

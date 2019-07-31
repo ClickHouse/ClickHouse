@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 **Usage**
 
@@ -104,6 +104,19 @@ Default value: 3.
 ## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
+
+Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
 
@@ -186,27 +199,17 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
-
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
-
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
-
-Operations where you may need the extended data exchange enabled:
-
-- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
-
-For all other operations, ClickHouse doesn't apply the setting.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
+    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
 
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
@@ -228,6 +231,25 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables inserting of JSON data with nested objects.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -246,29 +268,82 @@ Possible values:
 
 Default value: 1.
 
+## date_time_input_format {#settings-date_time_input_format}
+
+Enables or disables extended parsing of date and time formatted strings.
+
+The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic format.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+
 ## join_default_strictness {#settings-join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
-**Possible values**
+Possible values:
 
-- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
-**Default value**: `ALL`
+Default value: `ALL`.
 
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes behavior of join operations with `ANY` strictness.
+
+!!! warning "Attention"
+    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+Default value: 0.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
-**Possible values**
+Possible values:
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-**Default value**: 0.
+Default value: 0.
+
+
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 ## max_block_size
@@ -674,12 +749,55 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## max_network_bytes {#settings-max_network_bytes}
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Data volume control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth {#settings-max_network_bandwidth}
+
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Bandwidth control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
+
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
+
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
 ## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
 
 Possible values:
 
@@ -688,9 +806,14 @@ Possible values:
 
 Default value: 1.
 
+**See Also**
+
+- [Multiple JOIN](../../query_language/select.md#select-join)
+
+
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used for performing the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
 
 Possible values:
 

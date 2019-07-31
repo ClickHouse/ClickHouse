@@ -1,5 +1,4 @@
 <test>
-    <name>array_join</name>
     <type>once</type>
 
     <stop_conditions>
@@ -8,10 +7,6 @@
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
-
-    <metrics>
-        <max_rows_per_second />
-    </metrics>
 
     <main_metric>
         <max_rows_per_second />

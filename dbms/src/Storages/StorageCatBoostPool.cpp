@@ -90,11 +90,16 @@ static void checkCreationIsAllowed(const String & base_path, const String & path
 }
 
 
-StorageCatBoostPool::StorageCatBoostPool(const Context & context,
-                                         String column_description_file_name_,
-                                         String data_description_file_name_)
-        : column_description_file_name(std::move(column_description_file_name_)),
-          data_description_file_name(std::move(data_description_file_name_))
+StorageCatBoostPool::StorageCatBoostPool(
+    const String & database_name_,
+    const String & table_name_,
+    const Context & context,
+    String column_description_file_name_,
+    String data_description_file_name_)
+    : table_name(table_name_)
+    , database_name(database_name_)
+    , column_description_file_name(std::move(column_description_file_name_))
+    , data_description_file_name(std::move(data_description_file_name_))
 {
     auto base_path = canonicalPath(context.getPath());
     column_description_file_name = resolvePath(base_path, std::move(column_description_file_name));
@@ -254,12 +259,12 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
 
     /// Order is important: first numeric columns, then categorial, then all others.
     for (const auto & column : num_columns)
-        columns.add(DB::ColumnDescription(column.name, column.type));
+        columns.add(DB::ColumnDescription(column.name, column.type, false));
     for (const auto & column : cat_columns)
-        columns.add(DB::ColumnDescription(column.name, column.type));
+        columns.add(DB::ColumnDescription(column.name, column.type, false));
     for (const auto & column : other_columns)
     {
-        DB::ColumnDescription column_desc(column.name, column.type);
+        DB::ColumnDescription column_desc(column.name, column.type, false);
         /// We assign Materialized kind to the column so that it doesn't show in SELECT *.
         /// Because the table is readonly, we do not need default expression.
         column_desc.default_desc.kind = ColumnDefaultKind::Materialized;
@@ -270,7 +275,7 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
     {
         if (!desc.alias.empty())
         {
-            DB::ColumnDescription column(desc.alias, get_type(desc.column_type));
+            DB::ColumnDescription column(desc.alias, get_type(desc.column_type), false);
             column.default_desc.kind = ColumnDefaultKind::Alias;
             column.default_desc.expression = std::make_shared<ASTIdentifier>(desc.column_name);
             columns.add(std::move(column));
