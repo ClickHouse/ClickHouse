@@ -35,6 +35,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// Read comment near usage
+static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -927,13 +929,43 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
+
+    /// 1) Sometimes we don't need any columns to perform actions and sometimes actions doesn't produce any columns as result.
+    /// But Block class doesn't store any information about structure itself, it uses information from column.
+    /// If we remove all columns from input or output block we will lose information about amount of rows in it.
+    /// To avoid this situation we always leaving one of the columns in required columns (input)
+    /// and output column. We choose that "redundant" column by size with help of getSmallestColumn.
+    ///
+    /// 2) Sometimes we have to read data from different Storages to execute query.
+    /// For example in 'remote' function which requires to read data from local table (for example MergeTree) and
+    /// remote table (doesn't know anything about it).
+    ///
+    /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
+    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// to DUMMY_COLUMN_NAME with help of PROJECTION action. It doesn't affect any logic, but all streams will have same "redundant" column
+    /// in header called "_dummy".
+    /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
+
+    bool dummy_projection_added = false;
+
+
     /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
     if (needed_columns.empty() && !input_columns.empty())
-        needed_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        needed_columns.insert(colname);
+        actions.insert(actions.begin(), ExpressionAction::project(NamesWithAliases{{colname, DUMMY_COLUMN_NAME}}));
+        dummy_projection_added = true;
+    }
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
     if (final_columns.empty() && !input_columns.empty())
-        final_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        final_columns.insert(DUMMY_COLUMN_NAME);
+        if (!dummy_projection_added) /// otherwise we already have this projection
+            actions.insert(actions.begin(), ExpressionAction::project(NamesWithAliases{{colname, DUMMY_COLUMN_NAME}}));
+    }
 
     for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
     {
@@ -947,9 +979,9 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
-/*    std::cerr << "\n";
+/*  std::cerr << "\n";
     for (const auto & action : actions)
-        std::cerr << action.toString() << "\n";
+          std::cerr << action.toString() << "\n";
     std::cerr << "\n";*/
 
     /// Deletes unnecessary temporary columns.
