@@ -3545,7 +3545,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
     assertNotReadonly();
 
-    PartsTemporaryRename renamed_parts(full_path + "detached/");
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.

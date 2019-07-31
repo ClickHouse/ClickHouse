@@ -92,7 +92,6 @@ struct MergeTreePartInfo
 /// addition to the above fields.
 struct DetachedPartInfo : public MergeTreePartInfo
 {
-    /// Suddenly, name of detached part may contain suffix (such as _tryN), which is ignored by MergeTreePartInfo::tryParsePartName(...)
     String dir_name;
     String prefix;
 
@@ -101,5 +100,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
 
     static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
 };
+
+using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
 }

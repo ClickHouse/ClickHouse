@@ -251,16 +251,20 @@ public:
 
     struct PartsTemporaryRename : private boost::noncopyable
     {
-        PartsTemporaryRename(const String & base_dir_) : base_dir(base_dir_) {}
+        PartsTemporaryRename(const MergeTreeData & storage_, const String & base_dir_) : storage(storage_), base_dir(base_dir_) {}
+
+        void addPart(const String & old_name, const String & new_name);
 
         /// Renames part from old_name to new_name
-        void addPart(const String & old_name, const String & new_name);
+        void tryRenameAll();
 
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
+        const MergeTreeData & storage;
         String base_dir;
         std::vector<std::pair<String, String>> old_and_new_names;
+        bool renamed = false;
     };
 
     /// Parameters for various modes.
@@ -401,7 +405,7 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Returns all detached parts
-    std::vector<DetachedPartInfo> getDetachedParts() const;
+    DetachedPartsInfo getDetachedParts() const;
 
     void validateDetachedPartName(const String & name) const;
 
