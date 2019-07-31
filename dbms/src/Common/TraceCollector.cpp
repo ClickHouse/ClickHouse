@@ -103,25 +103,28 @@ void TraceCollector::run()
             break;
 
         std::string query_id;
-        StackTrace stack_trace(NoCapture{});
-        TimerType timer_type;
-        UInt32 thread_number;
-
         readStringBinary(query_id, in);
-        readPODBinary(stack_trace, in);
-        readPODBinary(timer_type, in);
-        readPODBinary(thread_number, in);
 
-        const auto size = stack_trace.getSize();
-        const auto & frames = stack_trace.getFrames();
+        UInt8 size = 0;
+        readIntBinary(size, in);
 
         Array trace;
         trace.reserve(size);
+
         for (size_t i = 0; i < size; i++)
-            trace.emplace_back(UInt64(reinterpret_cast<uintptr_t>(frames[i])));
+        {
+            uintptr_t addr = 0;
+            readPODBinary(addr, in);
+            trace.emplace_back(UInt64(addr));
+        }
+
+        TimerType timer_type;
+        readPODBinary(timer_type, in);
+
+        UInt32 thread_number;
+        readPODBinary(thread_number, in);
 
         TraceLogElement element{std::time(nullptr), timer_type, thread_number, query_id, trace};
-
         trace_log->add(element);
     }
 }
