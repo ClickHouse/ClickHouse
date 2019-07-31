@@ -63,16 +63,16 @@ TTLBlockInputStream::TTLBlockInputStream(
 
 Block TTLBlockInputStream::readImpl()
 {
-    Block block = children.at(0)->read();
-    if (!block)
-        return block;
-
     /// Skip all data if table ttl is expired for part
     if (storage.hasTableTTL() && old_ttl_infos.table_ttl.max <= current_time)
     {
         rows_removed = data_part->rows_count;
         return {};
     }
+
+    Block block = children.at(0)->read();
+    if (!block)
+        return block;
 
     if (storage.hasTableTTL() && old_ttl_infos.table_ttl.min <= current_time)
         removeRowsWithExpiredTableTTL(block);
