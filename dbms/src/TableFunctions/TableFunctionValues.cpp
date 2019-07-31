@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionValues.h>
@@ -15,8 +16,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-
-#include <boost/algorithm/string.hpp>
+#include <Interpreters/InterpreterCreateQuery.h>
 
 
 namespace DB
@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SYNTAX_ERROR;
 }
 
 static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, const Context & context)
@@ -74,21 +75,30 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
     /// Parsing first argument as table structure
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    std::vector<std::string> structure_values;
-    boost::split(structure_values, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
+    Expected expected;
 
-    if (structure_values.size() % 2 != 0)
-        throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
+    Tokens tokens(structure.c_str(), structure.c_str() + structure.size());
+    TokenIterator token_iterator(tokens);
+
+    ParserColumnDeclarationList parser;
+    ASTPtr columns_list_raw;
+
+    if (!parser.parse(token_iterator, columns_list_raw, expected))
+        throw Exception("Cannot parse columns declaration list.", ErrorCodes::SYNTAX_ERROR);
+
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
+        throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
+
+    ColumnsDescription columns_desc = InterpreterCreateQuery::getColumnsDescription(*columns_list, context);
 
     Block sample_block;
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-    for (size_t i = 0, size = structure_values.size(); i < size; i += 2)
+    for (const auto & [name, type]: columns_desc.getAllPhysical())
     {
         ColumnWithTypeAndName column;
-        column.name = structure_values[i];
-        column.type = data_type_factory.get(structure_values[i + 1]);
-        column.column = column.type->createColumn();
+        column.name = name;
+        column.type = type;
+        column.column = type->createColumn();
         sample_block.insert(std::move(column));
     }
 
@@ -101,7 +111,6 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
     auto res = StorageValues::create(getDatabaseName(), table_name, res_block);
     res->startup();
     return res;
-
 }
 
 void registerTableFunctionValues(TableFunctionFactory & factory)

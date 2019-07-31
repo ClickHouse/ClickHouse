@@ -6,7 +6,9 @@
 
 namespace DB
 {
-
+/* values(structure, values...) - creates a temporary storage filling columns with values
+ * values is case-insensitive table function
+ */
 class StorageValues : public ext::shared_ptr_helper<StorageValues>, public IStorage
 {
 public:
