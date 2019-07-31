@@ -62,6 +62,7 @@ class Clusters;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TraceLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -74,6 +75,8 @@ class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -289,6 +292,8 @@ public:
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
+    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
+
     InterserverIOHandler & getInterserverIOHandler();
 
     /// How other servers can access this for downloading replicated data.
@@ -416,9 +421,14 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    void initializeTraceCollector();
+    bool hasTraceCollector();
+
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
+
+    std::shared_ptr<TraceLog> getTraceLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
@@ -489,10 +499,14 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    /// MySQL wire protocol state.
-    size_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
-    size_t max_packet_size = 0;
+    struct MySQLWireContext
+    {
+        uint8_t sequence_id = 0;
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+    };
+
+    MySQLWireContext mysql;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.

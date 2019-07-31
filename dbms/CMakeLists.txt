@@ -102,6 +102,7 @@ add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
 add_headers_and_sources(dbms src/Core)
+add_headers_and_sources(dbms src/Compression/)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
@@ -113,6 +114,13 @@ add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
+add_headers_and_sources(dbms src/Processors)
+add_headers_and_sources(dbms src/Processors/Executors)
+add_headers_and_sources(dbms src/Processors/Formats)
+add_headers_and_sources(dbms src/Processors/Formats/Impl)
+add_headers_and_sources(dbms src/Processors/Transforms)
+add_headers_and_sources(dbms src/Processors/Sources)
+add_headers_only(dbms src/Server)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -149,6 +157,15 @@ add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_co
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
+endif ()
+
+if (USE_UNWIND)
+    target_compile_definitions (clickhouse_common_io PRIVATE USE_UNWIND=1)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+
+    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
+    endif ()
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
@@ -223,9 +240,15 @@ target_link_libraries(clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
         PUBLIC
     roaring
 )
+
+if(ZSTD_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${ZSTD_LIBRARY})
+endif()
 
 if (USE_RDKAFKA)
     target_link_libraries(dbms PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
@@ -253,8 +276,6 @@ if(CPUINFO_LIBRARY)
 endif()
 
 target_link_libraries (dbms
-        PUBLIC
-    clickhouse_compression
         PRIVATE
     clickhouse_parsers
     clickhouse_common_config
@@ -264,6 +285,7 @@ target_link_libraries (dbms
     clickhouse_common_io
         PRIVATE
     clickhouse_dictionaries_embedded
+    ${LZ4_LIBRARY}
         PUBLIC
     ${MYSQLXX_LIBRARY}
         PRIVATE
@@ -278,6 +300,15 @@ target_link_libraries (dbms
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+target_include_directories(dbms SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
+    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -365,6 +396,7 @@ endif()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)

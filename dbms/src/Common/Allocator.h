@@ -11,7 +11,7 @@
 #endif
 
 #include <pcg_random.hpp>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
@@ -86,10 +86,8 @@ struct RandomHint
 {
     void * mmap_hint()
     {
-        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
+        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
     }
-private:
-    pcg64 rng{randomSeed()};
 };
 }
 
@@ -108,13 +106,92 @@ class AllocatorWithHint : Hint
 {
 protected:
     static constexpr bool clear_memory = clear_memory_;
+    static constexpr size_t small_memory_threshold = mmap_threshold;
 
 public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
     {
         CurrentMemoryTracker::alloc(size);
+        return allocNoTrack(size, alignment);
+    }
 
+    /// Free memory range.
+    void free(void * buf, size_t size)
+    {
+        freeNoTrack(buf, size);
+        CurrentMemoryTracker::free(size);
+    }
+
+    /** Enlarge memory range.
+      * Data from old range is moved to the beginning of new range.
+      * Address of memory range could change.
+      */
+    void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
+    {
+        if (old_size == new_size)
+        {
+            /// nothing to do.
+            /// BTW, it's not possible to change alignment while doing realloc.
+        }
+        else if (old_size < mmap_threshold && new_size < mmap_threshold && alignment <= MALLOC_MIN_ALIGNMENT)
+        {
+            /// Resize malloc'd memory region with no special alignment requirement.
+            CurrentMemoryTracker::realloc(old_size, new_size);
+
+            void * new_buf = ::realloc(buf, new_size);
+            if (nullptr == new_buf)
+                DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+            buf = new_buf;
+            if constexpr (clear_memory)
+                if (new_size > old_size)
+                    memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+        }
+        else if (old_size >= mmap_threshold && new_size >= mmap_threshold)
+        {
+            /// Resize mmap'd memory region.
+            CurrentMemoryTracker::realloc(old_size, new_size);
+
+            // On apple and freebsd self-implemented mremap used (common/mremap.h)
+            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (MAP_FAILED == buf)
+                DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
+
+            /// No need for zero-fill, because mmap guarantees it.
+        }
+        else if (new_size < small_memory_threshold)
+        {
+            /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
+            CurrentMemoryTracker::realloc(old_size, new_size);
+
+            void * new_buf = allocNoTrack(new_size, alignment);
+            memcpy(new_buf, buf, std::min(old_size, new_size));
+            freeNoTrack(buf, old_size);
+            buf = new_buf;
+        }
+        else
+        {
+            /// Big allocs that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
+
+            void * new_buf = alloc(new_size, alignment);
+            memcpy(new_buf, buf, std::min(old_size, new_size));
+            free(buf, old_size);
+            buf = new_buf;
+        }
+
+        return buf;
+    }
+
+protected:
+    static constexpr size_t getStackThreshold()
+    {
+        return 0;
+    }
+
+private:
+    void * allocNoTrack(size_t size, size_t alignment)
+    {
         void * buf;
 
         if (size >= mmap_threshold)
@@ -149,15 +226,14 @@ public:
                 if (0 != res)
                     DB::throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
-                if (clear_memory)
+                if constexpr (clear_memory)
                     memset(buf, 0, size);
             }
         }
         return buf;
     }
 
-    /// Free memory range.
-    void free(void * buf, size_t size)
+    void freeNoTrack(void * buf, size_t size)
     {
         if (size >= mmap_threshold)
         {
@@ -168,63 +244,6 @@ public:
         {
             ::free(buf);
         }
-
-        CurrentMemoryTracker::free(size);
-    }
-
-    /** Enlarge memory range.
-      * Data from old range is moved to the beginning of new range.
-      * Address of memory range could change.
-      */
-    void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
-    {
-        if (old_size == new_size)
-        {
-            /// nothing to do.
-            /// BTW, it's not possible to change alignment while doing realloc.
-        }
-        else if (old_size < mmap_threshold && new_size < mmap_threshold && alignment <= MALLOC_MIN_ALIGNMENT)
-        {
-            /// Resize malloc'd memory region with no special alignment requirement.
-            CurrentMemoryTracker::realloc(old_size, new_size);
-
-            void * new_buf = ::realloc(buf, new_size);
-            if (nullptr == new_buf)
-                DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-            buf = new_buf;
-            if (clear_memory && new_size > old_size)
-                memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
-        }
-        else if (old_size >= mmap_threshold && new_size >= mmap_threshold)
-        {
-            /// Resize mmap'd memory region.
-            CurrentMemoryTracker::realloc(old_size, new_size);
-
-            // On apple and freebsd self-implemented mremap used (common/mremap.h)
-            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (MAP_FAILED == buf)
-                DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
-
-            /// No need for zero-fill, because mmap guarantees it.
-        }
-        else
-        {
-            /// All other cases that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
-
-            void * new_buf = alloc(new_size, alignment);
-            memcpy(new_buf, buf, std::min(old_size, new_size));
-            free(buf, old_size);
-            buf = new_buf;
-        }
-
-        return buf;
-    }
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return 0;
     }
 };
 
@@ -267,7 +286,7 @@ public:
     {
         if (size <= N)
         {
-            if (Base::clear_memory)
+            if constexpr (Base::clear_memory)
                 memset(stack_memory, 0, N);
             return stack_memory;
         }

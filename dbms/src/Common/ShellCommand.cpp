@@ -8,52 +8,10 @@
 #include <IO/WriteHelpers.h>
 #include <port/unistd.h>
 #include <csignal>
-
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_PIPE;
-        extern const int CANNOT_DLSYM;
-        extern const int CANNOT_FORK;
-        extern const int CANNOT_WAITPID;
-        extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
-        extern const int CANNOT_CREATE_CHILD_PROCESS;
-    }
-}
-
+#include <common/Pipe.h>
 
 namespace
 {
-    struct Pipe
-    {
-        int fds_rw[2];
-
-        Pipe()
-        {
-            #ifndef __APPLE__
-            if (0 != pipe2(fds_rw, O_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #else
-            if (0 != pipe(fds_rw))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds_rw[0], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds_rw[1], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #endif
-        }
-
-        ~Pipe()
-        {
-            if (fds_rw[0] >= 0)
-                close(fds_rw[0]);
-            if (fds_rw[1] >= 0)
-                close(fds_rw[1]);
-        }
-    };
-
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
     enum class ReturnCodes : int
     {
@@ -64,9 +22,17 @@ namespace
     };
 }
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLSYM;
+    extern const int CANNOT_FORK;
+    extern const int CANNOT_WAITPID;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+    extern const int CANNOT_CREATE_CHILD_PROCESS;
+}
 
 ShellCommand::ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_)
     : pid(pid)

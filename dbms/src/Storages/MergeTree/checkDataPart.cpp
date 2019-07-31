@@ -145,7 +145,7 @@ public:
 
         if (index_granularity.hasFinalMark())
         {
-            auto [final_mark, final_mark_rows] = readMarkFromFile();
+            auto final_mark_rows = readMarkFromFile().second;
             if (final_mark_rows != 0)
                 throw Exception("Incorrect final mark at the end of " + mrk_file_path + " expected 0 rows, got " + toString(final_mark_rows), ErrorCodes::CORRUPTED_DATA);
         }

@@ -1,0 +1,33 @@
+<test>
+    <type>loop</type>
+
+    <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>500</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <metrics>
+        <max_rows_per_second />
+	<max_bytes_per_second />
+	<avg_rows_per_second />
+	<avg_bytes_per_second />
+	<min_time />
+    </metrics>
+
+    <main_metric>
+        <min_time />
+    </main_metric>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+<query>SELECT CounterID FROM test.hits ORDER BY CounterID, EventDate DESC LIMIT 50</query>
+
+</test>

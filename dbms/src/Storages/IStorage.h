@@ -38,6 +38,19 @@ class AlterCommands;
 class MutationCommands;
 class PartitionCommands;
 
+struct ColumnSize
+{
+    size_t marks = 0;
+    size_t data_compressed = 0;
+    size_t data_uncompressed = 0;
+
+    void add(const ColumnSize & other)
+    {
+        marks += other.marks;
+        data_compressed += other.data_compressed;
+        data_uncompressed += other.data_uncompressed;
+    }
+};
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -62,7 +75,7 @@ public:
 
     /// The name of the table.
     virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const { return {}; }  // FIXME: should be an abstract method!
+    virtual std::string getDatabaseName() const = 0;
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -82,6 +95,10 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
+    /// Optional size information of each physical column.
+    /// Currently it's only used by the MergeTree family for query optimizations.
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
@@ -330,6 +347,10 @@ public:
 
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
+
+    /// Returns names of primary key + secondary sorting columns
+    virtual Names getSortingKeyColumns() const { return {}; }
+
 
 private:
     /// You always need to take the next three locks in this order.

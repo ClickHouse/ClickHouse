@@ -177,7 +177,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -185,6 +185,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     path = new_path_to_db;
     table_name = new_table_name;
+    database_name = new_database_name;
     full_path = new_full_path;
 
     /// NOTE: Logger names are not updated.
@@ -529,7 +530,11 @@ bool StorageMergeTree::merge(
         }
 
         if (!selected)
+        {
+            if (out_disable_reason)
+                *out_disable_reason = "Cannot select parts for optimization";
             return false;
+        }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
@@ -885,8 +890,16 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
+                std::stringstream message;
+                message << "Cannot OPTIMIZE table";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                else
+                    message << " by some reason.";
+                LOG_INFO(log, message.rdbuf());
+
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
                 return false;
             }
         }
@@ -899,8 +912,16 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
+            std::stringstream message;
+            message << "Cannot OPTIMIZE table";
+            if (!disable_reason.empty())
+                message << ": " << disable_reason;
+            else
+                message << " by some reason.";
+            LOG_INFO(log, message.rdbuf());
+
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
             return false;
         }
     }

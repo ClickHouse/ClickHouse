@@ -328,6 +328,7 @@ public:
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
+    Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -547,8 +548,7 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
-    ColumnSizeByName getColumnSizes() const
+    ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
         return column_sizes;

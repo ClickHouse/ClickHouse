@@ -120,8 +120,9 @@ private:
 template <typename Base>
 struct AggregationDataWithNullKeyTwoLevel : public Base
 {
-    using Base::Base;
     using Base::impls;
+
+    AggregationDataWithNullKeyTwoLevel() {}
 
     template <typename Other>
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
@@ -856,6 +857,10 @@ public:
       * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
       */
     void mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads);
+
+    using BucketToBlocks = std::map<Int32, BlocksList>;
+    /// Merge partially aggregated blocks separated to buckets into one data structure.
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
