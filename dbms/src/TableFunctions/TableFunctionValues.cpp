@@ -3,20 +3,19 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
-#include <DataTypes/DataTypeFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ParserCreateQuery.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InterpreterCreateQuery.h>
+
 
 
 namespace DB
@@ -72,38 +71,15 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// Parsing first argument as table structure
+    /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    Expected expected;
-
-    Tokens tokens(structure.c_str(), structure.c_str() + structure.size());
-    TokenIterator token_iterator(tokens);
-
-    ParserColumnDeclarationList parser;
-    ASTPtr columns_list_raw;
-
-    if (!parser.parse(token_iterator, columns_list_raw, expected))
-        throw Exception("Cannot parse columns declaration list.", ErrorCodes::SYNTAX_ERROR);
-
-    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
-    if (!columns_list)
-        throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
-
-    ColumnsDescription columns_desc = InterpreterCreateQuery::getColumnsDescription(*columns_list, context);
-
     Block sample_block;
-    for (const auto & [name, type]: columns_desc.getAllPhysical())
-    {
-        ColumnWithTypeAndName column;
-        column.name = name;
-        column.type = type;
-        column.column = type->createColumn();
-        sample_block.insert(std::move(column));
-    }
+    parseColumnsList(structure, sample_block, context);
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
+    /// Parsing other arguments as values and inserting them into columns
     parseAndInsertValues(res_columns, args, sample_block, context);
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
