@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
-    extern const int LOGICAL_ERROR;
 }
 
 #pragma GCC diagnostic push
@@ -57,17 +56,12 @@ struct DivideIntegralImpl
     {
         throwIfDivisionLeadsToFPE(a, b);
 
-        if constexpr (!std::is_same_v<ResultType, NumberTraits::Error>)
-        {
-            /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
-            /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-            if constexpr (std::is_integral_v<A> && std::is_integral_v<B> && (std::is_signed_v<A> || std::is_signed_v<B>))
-                return std::make_signed_t<A>(a) / std::make_signed_t<B>(b);
-            else
-                return a / b;
-        }
+        /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
+        /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
+        if constexpr (std::is_integral_v<A> && std::is_integral_v<B> && (std::is_signed_v<A> || std::is_signed_v<B>))
+            return std::make_signed_t<A>(a) / std::make_signed_t<B>(b);
         else
-            throw Exception("Logical error: the types are not divisable", ErrorCodes::LOGICAL_ERROR);
+            return a / b;
     }
 
 #if USE_EMBEDDED_COMPILER
