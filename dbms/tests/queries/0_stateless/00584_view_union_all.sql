@@ -23,7 +23,7 @@ CREATE VIEW TestView AS
     FROM Test_00584
     GROUP BY str;
 
-SELECT * FROM TestView;
+SELECT * FROM TestView ORDER BY key;
 
 DROP TABLE TestView;
 DROP TABLE Test_00584;

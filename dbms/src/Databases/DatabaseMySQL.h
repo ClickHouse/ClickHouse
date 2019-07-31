@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-
+#include "config_core.h"
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
@@ -47,7 +46,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, ThreadPool *, bool) override
+    void loadTables(Context &, bool) override
     {
         /// do nothing
     }

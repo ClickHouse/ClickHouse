@@ -143,3 +143,9 @@ message StrPerson {
   MeasureUnits measureUnits = 21;
   NestinessA nestiness_a = 22;
 };
+
+message NumberAndSquare
+{
+  uint32 number = 1;
+  uint64 square = 2;
+};

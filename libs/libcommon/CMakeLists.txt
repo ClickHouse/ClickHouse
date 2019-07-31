@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library(common
+add_library (common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -21,8 +21,12 @@ add_library(common
     src/demangle.cpp
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
+    src/sleep.cpp
     src/argsToConfig.cpp
+    src/Pipe.cpp
+    src/phdr_cache.cpp
 
+    include/common/SimpleCache.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h
@@ -42,7 +46,11 @@ add_library(common
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/Pipe.h
     include/common/getThreadNumber.h
+    include/common/sleep.h
+    include/common/SimpleCache.h
+    include/common/phdr_cache.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -56,8 +64,7 @@ add_library(common
     include/ext/unlock_guard.h
     include/ext/singleton.h
 
-    ${CONFIG_COMMON}
-)
+    ${CONFIG_COMMON})
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 

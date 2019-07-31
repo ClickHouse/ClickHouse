@@ -206,11 +206,21 @@ self right
 8	l8	\N	8	l8	\N
 9	l9	\N	9	l9	\N
 self right nullable
+0		\N	4	l5	\N
+0		\N	4	l6	\N
+0		\N	5	l7	\N
+0		\N	8	l8	\N
+0		\N	9	l9	\N
 1	l1	1	1	l1	1
 2	l2	2	2	l2	2
 2	l3	3	2	l3	3
 3	l4	4	3	l4	4
 self right nullable vs not nullable
+0		\N	4	l5	\N
+0		\N	4	l6	\N
+0		\N	5	l7	\N
+0		\N	8	l8	\N
+0		\N	9	l9	\N
 1	l1	1	1	l1	1
 2	l2	2	2	l2	2
 2	l3	3	2	l2	2
@@ -232,6 +242,11 @@ self full
 8	l8	\N	8	l8	\N
 9	l9	\N	9	l9	\N
 self full nullable
+0		\N	4	l5	\N
+0		\N	4	l6	\N
+0		\N	5	l7	\N
+0		\N	8	l8	\N
+0		\N	9	l9	\N
 1	l1	1	1	l1	1
 2	l2	2	2	l2	2
 2	l3	3	2	l3	3
@@ -242,6 +257,11 @@ self full nullable
 8	l8	\N	0		\N
 9	l9	\N	0		\N
 self full nullable vs not nullable
+0		\N	4	l5	\N
+0		\N	4	l6	\N
+0		\N	5	l7	\N
+0		\N	8	l8	\N
+0		\N	9	l9	\N
 1	l1	1	1	l1	1
 2	l2	2	2	l2	2
 2	l3	3	2	l2	2

@@ -51,6 +51,7 @@ def test_deduplication_window_in_seconds(started_cluster):
 
 
 # Currently this test just reproduce incorrect behavior that sould be fixed
+@pytest.mark.skip(reason="Flapping test")
 def test_deduplication_works_in_case_of_intensive_inserts(started_cluster):
     inserters = []
     fetchers = []

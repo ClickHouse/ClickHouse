@@ -21,6 +21,10 @@ public:
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
     virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
+    /** Text deserialization without quoting or escaping.
+      */
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     /** Text serialization with escaping but without quoting.
       */
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
 #include <Core/Block.h>
+
+#include "config_core.h"
 #if USE_MYSQL
 
 #    include <common/LocalDateTime.h>
@@ -36,6 +37,7 @@ public:
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
+    MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

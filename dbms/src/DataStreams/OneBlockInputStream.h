@@ -12,7 +12,7 @@ namespace DB
 class OneBlockInputStream : public IBlockInputStream
 {
 public:
-    OneBlockInputStream(const Block & block_) : block(block_) {}
+    explicit OneBlockInputStream(const Block & block_) : block(block_) {}
 
     String getName() const override { return "One"; }
 

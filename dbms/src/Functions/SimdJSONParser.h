@@ -7,17 +7,7 @@
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wold-style-cast"
-    #pragma clang diagnostic ignored "-Wnewline-eof"
-#endif
-
 #include <simdjson/jsonparser.h>
-
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
 
 
 namespace DB
@@ -42,7 +32,7 @@ struct SimdJSONParser
 
     bool parse(const StringRef & json) { return !json_parse(json.data, json.size, pj); }
 
-    using Iterator = ParsedJson::iterator;
+    using Iterator = simdjson::ParsedJson::iterator;
     Iterator getRoot() { return Iterator{pj}; }
 
     static bool isInt64(const Iterator & it) { return it.is_integer(); }
@@ -143,7 +133,7 @@ struct SimdJSONParser
     }
 
 private:
-    ParsedJson pj;
+    simdjson::ParsedJson pj;
 };
 
 }

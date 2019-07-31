@@ -42,9 +42,15 @@ protected:
     /// We will call progressImpl manually.
     void progress(const Progress &) override {}
 
-    Block readFromPart();
+    virtual Block readFromPart();
+
+    Block readFromPartImpl();
 
     void injectVirtualColumns(Block & block) const;
+
+    void initializeRangeReaders(MergeTreeReadTask & task);
+
+    size_t estimateNumRows(MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader);
 
 protected:
     const MergeTreeData & storage;
