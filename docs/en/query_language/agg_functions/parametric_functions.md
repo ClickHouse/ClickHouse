@@ -10,6 +10,8 @@ Calculates a histogram.
 histogram(number_of_bins)(values)
 ```
 
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). It calculates the borders of histogram bins automatically, and in common case the widths of bins are not equal.
+
 **Parameters**
 
 `number_of_bins` — Number of bins for the histogram.
