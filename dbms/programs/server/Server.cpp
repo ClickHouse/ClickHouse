@@ -407,9 +407,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
-    /// Create text_log instance
-    text_log = createSystemLog<TextLog>(*global_context, "system", "text_log", global_context->getConfigRef(), "text_log");
-
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
@@ -506,11 +503,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata from " + path);
 
+    /// Create text_log instance
+    text_log = createSystemLog<TextLog>(*global_context, "system", "text_log", global_context->getConfigRef(), "text_log");
+
     try
     {
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs();
+        global_context->initializeSystemLogs(text_log);
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
         /// Then, load remaining databases

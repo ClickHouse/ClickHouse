@@ -1636,10 +1636,11 @@ Compiler & Context::getCompiler()
 }
 
 
-void Context::initializeSystemLogs()
+void Context::initializeSystemLogs(std::shared_ptr<TextLog> text_log)
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
+    shared->system_logs->text_log = text_log;
 }
 
 bool Context::hasTraceCollector()
@@ -1700,6 +1701,18 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
         return {};
 
     return shared->system_logs->trace_log;
+}
+
+std::shared_ptr<TextLog> Context::getTextLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs) {
+        if (auto log = shared->system_logs->text_log.lock()) {
+            return log;
+        }
+    }
+    return {};
 }
 
 

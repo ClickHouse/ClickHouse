@@ -420,7 +420,7 @@ public:
     Compiler & getCompiler();
 
     /// Call after initialization before using system logs. Call for global context.
-    void initializeSystemLogs();
+    void initializeSystemLogs(std::shared_ptr<TextLog> text_log);
 
     void initializeTraceCollector();
     bool hasTraceCollector();
@@ -429,6 +429,7 @@ public:
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
     std::shared_ptr<TraceLog> getTraceLog();
+    std::shared_ptr<TextLog> getTextLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

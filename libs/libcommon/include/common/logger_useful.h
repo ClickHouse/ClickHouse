@@ -9,6 +9,8 @@
 #include <Core/SettingsCommon.h>
 #include <Common/CurrentThread.h>
 
+#include <iostream>
+
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
 #endif
@@ -20,18 +22,22 @@ using DB::CurrentThread;
 
 /// Logs a message to a specified logger with that level.
 
-#define LOG_SIMPLE(logger, message, priority, PRIORITY) do                                      \
-{                                                                                               \
-    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) &&                       \
-            (CurrentThread::getGroup()->client_logs_level >= (priority));                       \
-    if ((logger)->is((PRIORITY)) || is_clients_log) {                                           \
-        std::stringstream oss_internal_rare;                                                    \
-        oss_internal_rare << message;                                                           \
-        if (auto channel = (logger)->getChannel()) {                                            \
-            channel->log(Message((logger)->name(), oss_internal_rare.str(),                     \
-                                 (PRIORITY), __FILE__, __LINE__));                              \
-        }                                                                                       \
-    }                                                                                           \
+#define LOG_SIMPLE(logger, message, priority, PRIORITY) do                                                             \
+{                                                                                                                      \
+    const bool is_clients_log = (CurrentThread::getGroup() != nullptr) &&                                              \
+            (CurrentThread::getGroup()->client_logs_level >= (priority));                                              \
+    if ((logger)->is((PRIORITY)) || is_clients_log) {                                                                  \
+        std::stringstream oss_internal_rare;                                                                           \
+        oss_internal_rare << message;                                                                                  \
+        if (auto channel = (logger)->getChannel()) {                                                                   \
+            std::string file_function;                                                                                 \
+            file_function += __FILE__;                                                                                 \
+            file_function += __PRETTY_FUNCTION__;                                                                      \
+            Message poco_message((logger)->name(), oss_internal_rare.str(),                                            \
+                                 (PRIORITY), file_function.c_str(), __LINE__);                                         \
+            channel->log(poco_message);                                                                                \
+        }                                                                                                              \
+    }                                                                                                                  \
 } while (false)
 
 
