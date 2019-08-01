@@ -11,7 +11,7 @@
 #endif
 
 #include <pcg_random.hpp>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
@@ -86,10 +86,8 @@ struct RandomHint
 {
     void * mmap_hint()
     {
-        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
+        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
     }
-private:
-    pcg64 rng{randomSeed()};
 };
 }
 

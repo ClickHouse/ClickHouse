@@ -438,10 +438,13 @@ namespace ErrorCodes
     extern const int CANNOT_SET_TIMER_PERIOD = 461;
     extern const int CANNOT_DELETE_TIMER = 462;
     extern const int CANNOT_FCNTL = 463;
-    extern const int UNKNOWN_POLICY = 464;
-    extern const int UNKNOWN_DISK = 465;
-    extern const int UNKNOWN_PROTOCOL = 466;
-    extern const int PATH_ACCESS_DENIED = 467;
+    extern const int CANNOT_PARSE_ELF = 464;
+    extern const int CANNOT_PARSE_DWARF = 465;
+    extern const int INSECURE_PATH = 466;
+    extern const int UNKNOWN_POLICY = 467;
+    extern const int UNKNOWN_DISK = 468;
+    extern const int UNKNOWN_PROTOCOL = 469;
+    extern const int PATH_ACCESS_DENIED = 470;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
