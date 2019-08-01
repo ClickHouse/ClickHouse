@@ -155,7 +155,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
     return error.str();
 }
 
-void * getCallerAddress(const ucontext_t & context)
+static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -182,12 +182,25 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
 
-    if (size == 0)
+    void * caller_address = getCallerAddress(signal_context);
+
+    if (size == 0 && caller_address)
     {
-        /// No stack trace was captured. At least we can try parsing caller address
-        void * caller_address = getCallerAddress(signal_context);
-        if (caller_address)
-            frames[size++] = reinterpret_cast<void *>(caller_address);
+        frames[0] = caller_address;
+        size = 1;
+    }
+    else
+    {
+        /// Skip excessive stack frames that we have created while finding stack trace.
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (frames[i] == caller_address)
+            {
+                offset = i;
+                break;
+            }
+        }
     }
 }
 
@@ -214,21 +227,18 @@ size_t StackTrace::getSize() const
     return size;
 }
 
+size_t StackTrace::getOffset() const
+{
+    return offset;
+}
+
 const StackTrace::Frames & StackTrace::getFrames() const
 {
     return frames;
 }
 
-std::string StackTrace::toString() const
-{
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
-    static SimpleCache<decltype(StackTrace::toStringImpl), &StackTrace::toStringImpl> func_cached;
-    return func_cached(frames, size);
-}
-
-std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
+static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
 {
     if (size == 0)
         return "<Empty trace>";
@@ -238,7 +248,7 @@ std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
 
     std::stringstream out;
 
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = offset; i < size; ++i)
     {
         const void * addr = frames[i];
 
@@ -274,4 +284,13 @@ std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
     }
 
     return out.str();
+}
+
+std::string StackTrace::toString() const
+{
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frames, offset, size);
 }
