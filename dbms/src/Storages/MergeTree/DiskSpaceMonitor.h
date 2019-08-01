@@ -38,6 +38,9 @@ class Reservation;
 using ReservationPtr = std::unique_ptr<Reservation>;
 
 
+/** Space.
+ *  Provide interface for reservation
+ */
 class Space : public std::enable_shared_from_this<Space>
 {
 public:
@@ -109,7 +112,7 @@ public:
 
     bool try_reserve(UInt64 bytes) const
     {
-        auto avaliable_space = getAvailableSpace();
+        auto available_space = getAvailableSpace();
         std::lock_guard lock(mutex);
         if (bytes == 0)
         {
@@ -117,9 +120,9 @@ public:
             ++reservation_count;
             return true;
         }
-        avaliable_space -= std::min(avaliable_space, reserved_bytes);
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << avaliable_space << " , to reserve " << bytes << " on disk " << name);
-        if (avaliable_space >= bytes)
+        available_space -= std::min(available_space, reserved_bytes);
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << available_space << " , to reserve " << bytes << " on disk " << name);
+        if (available_space >= bytes)
         {
             ++reservation_count;
             reserved_bytes += bytes;
@@ -160,10 +163,10 @@ public:
 
     UInt64 getUnreservedSpace() const
     {
-        auto avaliable_space = getSpaceInformation().getAvailableSpace();
+        auto available_space = getSpaceInformation().getAvailableSpace();
         std::lock_guard lock(mutex);
-        avaliable_space -= std::min(avaliable_space, reserved_bytes);
-        return avaliable_space;
+        available_space -= std::min(available_space, reserved_bytes);
+        return available_space;
     }
 
 private:
@@ -181,6 +184,11 @@ private:
 using DiskPtr = std::shared_ptr<const Disk>;
 using Disks = std::vector<DiskPtr>;
 
+
+/** Reservationcontain
+ *  Contain information about disk and size of reservation
+ *  Unreserve on destroy
+ */
 class Reservation : private boost::noncopyable
 {
 public:
@@ -266,6 +274,9 @@ private:
 };
 
 
+/** Volume.
+ *  Contain set of "equivalent" disks
+ */
 class Volume : public Space
 {
     friend class StoragePolicy;
@@ -319,6 +330,9 @@ using VolumePtr = std::shared_ptr<const Volume>;
 using Volumes = std::vector<VolumePtr>;
 
 
+/** Policy.
+ *  Contain ordered set of Volumes
+ */
 class StoragePolicy : public Space
 {
 public:
@@ -326,7 +340,7 @@ public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
            const DiskSelector & disks);
 
-    StoragePolicy(String name_, Volumes volumes_) : volumes(std::move(volumes_)), name(std::move(name_))
+    StoragePolicy(String name_, Volumes volumes_, double move_factor_) : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
     {
         if (volumes.empty())
             throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::UNKNOWN_POLICY);
@@ -376,6 +390,8 @@ public:
 
     const auto & getVolumes() const { return volumes; }
 
+    auto getMoveFactor() const { return move_factor; }
+
     VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
 
     VolumePtr getVolumeByName(const String & volume_name) const
@@ -390,6 +406,7 @@ private:
     Volumes volumes;
     String name;
     std::map<String, size_t> volumes_names;
+    double move_factor;
 };
 
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;

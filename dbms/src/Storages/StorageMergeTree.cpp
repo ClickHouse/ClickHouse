@@ -307,7 +307,6 @@ public:
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
-        /// @TODO_IGR BUG Fix here. When mutation use old path!!!
         reserved_space = storage.reserveSpaceForPart(total_size);
         if (!reserved_space)
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
@@ -649,75 +648,27 @@ bool StorageMergeTree::merge(
 
 bool StorageMergeTree::move_parts()
 {
-    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-
-    MergeTreeMovingParts parts_to_move;
-
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
-
     {
-        std::lock_guard lock(currently_merging_mutex);
+        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-        auto can_move = [this] (const DataPartPtr & part, String *)
+        MergeTreeMovingParts parts_to_move;
+
         {
-            return !currently_merging.count(part);
-        };
+            std::lock_guard lock(currently_merging_mutex);
 
-        if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
-            return false;
+            auto can_move = [this](const DataPartPtr & part, String *)
+            {
+                return !currently_merging.count(part);
+            };
 
-        moving_tagger.emplace(std::move(parts_to_move), *this);
+            if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
+                return false;
+
+            moving_tagger.emplace(std::move(parts_to_move), *this);
+        }
     }
-
-//    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part);
-
-//    /// Logging
-//    Stopwatch stopwatch;
-//    MutableDataPartPtr new_part;
-
-//    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-//    {
-//        try
-//        {
-//            auto part_log = global_context.getPartLog(database_name);
-//            if (!part_log)
-//                return;
-//
-//            PartLogElement part_log_elem;
-//
-//            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
-//            part_log_elem.event_time = time(nullptr);
-//            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
-//
-//            part_log_elem.database_name = database_name;
-//            part_log_elem.table_name = table_name;
-//            part_log_elem.partition_id = future_part.part_info.partition_id;
-//            part_log_elem.part_name = future_part.name;
-//
-//            if (new_part)
-//                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
-//
-//            part_log_elem.source_part_names.reserve(future_part.parts.size());
-//            for (const auto & source_part : future_part.parts)
-//                part_log_elem.source_part_names.push_back(source_part->name);
-//
-//            part_log_elem.rows_read = (*merge_entry)->rows_read;
-//            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-//
-//            part_log_elem.rows = (*merge_entry)->rows_written;
-//            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-//
-//            part_log_elem.error = static_cast<UInt16>(execution_status.code);
-//            part_log_elem.exception = execution_status.message;
-//
-//            part_log->add(part_log_elem);
-//        }
-//        catch (...)
-//        {
-//            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-//        }
-//    };
 
     auto copied_parts = merger_mutator.cloneParts(moving_tagger->parts);
 
@@ -726,7 +677,7 @@ bool StorageMergeTree::move_parts()
         auto part = getActiveContainingPart(copied_part->name);
         if (!part || part->name != copied_part->name)
         {
-            ///@TODO_IGR LOG here that original part does not exists after move
+            /// Original part doies not exists after move. It is bug. It probably was merged
             continue;
         }
 

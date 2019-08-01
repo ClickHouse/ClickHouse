@@ -318,7 +318,7 @@ public:
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
 
-    /// Returns data path if storage supports it, empty vector otherwise.
+    /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
@@ -351,7 +351,7 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
-    /// Returns storage policy if table supports it
+    /// Returns storage policy if storage supports it
     virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
 
 private:

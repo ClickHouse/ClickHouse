@@ -165,7 +165,7 @@ MergeTreeData::MergeTreeData(
 
     setTTLExpressions(columns_.getColumnTTLs(), ttl_table_ast_);
 
-    // format_file always contained on default disk
+    // format_file always contained on any data path
     String version_file_path;
 
     /// Creating directories, if not exist.
@@ -1596,7 +1596,6 @@ void MergeTreeData::alterDataPart(
           */
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
 
-        ///@TODO_IGR ASK Why dont we use part->relative_path?
         MergedColumnOnlyOutputStream out(
             *this,
             in.getHeader(),
@@ -2773,7 +2772,7 @@ MergeTreeData::getDetachedParts() const
 
 DiskSpace::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
-    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; ///@TODO_IGR ASK Is it OK?
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
     constexpr UInt64 RESERVATION_MULTIPLY_ESTIMATION_FACTOR = 1;
 
     if (expected_size < RESERVATION_MIN_ESTIMATION_SIZE)

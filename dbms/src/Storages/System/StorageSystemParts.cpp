@@ -45,7 +45,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
-        {"disk_name",                                  std::make_shared<DataTypeString>()}, ///@TODO_IGR ASK is is OK?
+        {"disk_name",                                  std::make_shared<DataTypeString>()},
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"hash_of_all_files",                          std::make_shared<DataTypeString>()},

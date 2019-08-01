@@ -18,9 +18,6 @@ node2 = cluster.add_instance('node2',
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
 
-# node2 = cluster.add_instance('node2',
-#                              main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'],
-#                              with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def test_cluster():
@@ -43,9 +40,6 @@ def test_cluster():
     finally:
         cluster.shutdown()
 
-
-# def test_run_shell(test_cluster):
-#     test_cluster.open_bash_shell('node1')
 
 # Check that configuration is valid
 def test_config(test_cluster):
@@ -98,7 +92,6 @@ def test_move(test_cluster):
     assert node2.query("insert into node1_move_mt values (1)") == ""
     assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
 
-    test_cluster.open_bash_shell('node2')
     # move from default to external
     assert node2.query("alter table node1_move_mt move PART 'all_1_1_0' to disk 'external'") == ""
     assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "external\n"
@@ -125,119 +118,10 @@ def test_no_policy(test_cluster):
         assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
 
 
-#################################
-# root@node1:/# clickhouse client -m
-# ClickHouse client version 19.8.1.536.
-# Connecting to localhost:9000 as user default.
-# Connected to ClickHouse server version 19.8.1 revision 54420.
-
-# node1 :) select * from system.disks;
-
-
-
-# def test_same_credentials(same_credentials_cluster):
-#     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
-#     time.sleep(1)
-
-#     assert node1.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node2.query("SELECT id FROM test_table order by id") == '111\n'
-
-#     node2.query("insert into test_table values ('2017-06-17', 222, 1)")
-#     time.sleep(1)
-
-#     assert node1.query("SELECT id FROM test_table order by id") == '111\n222\n'
-#     assert node2.query("SELECT id FROM test_table order by id") == '111\n222\n'
-
-
-# node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/no_credentials.xml'], with_zookeeper=True)
-# node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/no_credentials.xml'], with_zookeeper=True)
-
-# @pytest.fixture(scope="module")
-# def no_credentials_cluster():
-#     try:
-#         cluster.start()
-
-#         _fill_nodes([node3, node4], 2)
-
-#         yield cluster
-
-#     finally:
-#         cluster.shutdown()
-
-
-# def test_no_credentials(no_credentials_cluster):
-#     node3.query("insert into test_table values ('2017-06-18', 111, 0)")
-#     time.sleep(1)
-
-#     assert node3.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node4.query("SELECT id FROM test_table order by id") == '111\n'
-
-#     node4.query("insert into test_table values ('2017-06-19', 222, 1)")
-#     time.sleep(1)
-
-#     assert node3.query("SELECT id FROM test_table order by id") == '111\n222\n'
-#     assert node4.query("SELECT id FROM test_table order by id") == '111\n222\n'
-
-# node5 = cluster.add_instance('node5', main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'], with_zookeeper=True)
-# node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml', 'configs/credentials2.xml'], with_zookeeper=True)
-
-# @pytest.fixture(scope="module")
-# def different_credentials_cluster():
-#     try:
-#         cluster.start()
-
-#         _fill_nodes([node5, node6], 3)
-
-#         yield cluster
-
-#     finally:
-#         cluster.shutdown()
-
-# def test_different_credentials(different_credentials_cluster):
-#     node5.query("insert into test_table values ('2017-06-20', 111, 0)")
-#     time.sleep(1)
-
-#     assert node5.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node6.query("SELECT id FROM test_table order by id") == ''
-
-#     node6.query("insert into test_table values ('2017-06-21', 222, 1)")
-#     time.sleep(1)
-
-#     assert node5.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node6.query("SELECT id FROM test_table order by id") == '222\n'
-
-# node7 = cluster.add_instance('node7', main_configs=['configs/remote_servers.xml', 'configs/credentials1.xml'], with_zookeeper=True)
-# node8 = cluster.add_instance('node8', main_configs=['configs/remote_servers.xml', 'configs/no_credentials.xml'], with_zookeeper=True)
-
-# @pytest.fixture(scope="module")
-# def credentials_and_no_credentials_cluster():
-#     try:
-#         cluster.start()
-
-#         _fill_nodes([node7, node8], 4)
-
-#         yield cluster
-
-#     finally:
-#         cluster.shutdown()
-
-# def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
-#     node7.query("insert into test_table values ('2017-06-21', 111, 0)")
-#     time.sleep(1)
-
-#     assert node7.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node8.query("SELECT id FROM test_table order by id") == ''
-
-#     node8.query("insert into test_table values ('2017-06-22', 222, 1)")
-#     time.sleep(1)
-
-#     assert node7.query("SELECT id FROM test_table order by id") == '111\n'
-#     assert node8.query("SELECT id FROM test_table order by id") == '222\n'
-
 '''
 ## Test stand for multiple disks feature
 
-Currently for manual tests, can be easily scripted to be the part of intergration tests.
+Currently for manual tests, can be easily scripted to be the part of integration tests.
 
 To run you need to have docker & docker-compose.
 

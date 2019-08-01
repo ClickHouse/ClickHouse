@@ -237,6 +237,8 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
             disk_names.insert(disk->getName());
         }
     }
+
+    move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
 }
 
 
@@ -348,7 +350,8 @@ StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfigura
         policies.emplace(default_storage_policy_name,
                         std::make_shared<StoragePolicy>(default_storage_policy_name,
                                                         Volumes{std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]},
-                                                                  std::numeric_limits<UInt64>::max())}));
+                                                                  std::numeric_limits<UInt64>::max())},
+                                                        0.0));
 }
 
 
