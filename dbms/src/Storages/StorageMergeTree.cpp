@@ -590,7 +590,10 @@ bool StorageMergeTree::merge(
 
     try
     {
+        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
         bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate, force_ttl);
