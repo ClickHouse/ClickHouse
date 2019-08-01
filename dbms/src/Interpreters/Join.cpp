@@ -281,6 +281,14 @@ void Join::setSampleBlock(const Block & block)
     for (size_t i = 0; i < keys_size; ++i)
     {
         const String & column_name = key_names_right[i];
+
+        /// there could be the same key names
+        if (sample_block_with_keys.has(column_name))
+        {
+            key_columns[i] = sample_block_with_keys.getByName(column_name).column.get();
+            continue;
+        }
+
         auto & col = sample_block_with_columns_to_add.getByName(column_name);
         col.column = recursiveRemoveLowCardinality(col.column);
         col.type = recursiveRemoveLowCardinality(col.type);
