@@ -34,28 +34,17 @@ public:
     /// Creates empty object for deferred initialization
     StackTrace(NoCapture);
 
-    /// Fills stack trace frames with provided sequence
-    template <typename Iterator>
-    StackTrace(Iterator it, Iterator end)
-    {
-        while (size < capacity && it != end)
-        {
-            frames[size++] = *(it++);
-        }
-    }
-
     size_t getSize() const;
+    size_t getOffset() const;
     const Frames & getFrames() const;
     std::string toString() const;
 
 protected:
     void tryCapture();
-    static std::string toStringImpl(const Frames & frames, size_t size);
 
     size_t size = 0;
+    size_t offset = 0;  /// How many frames to skip while displaying.
     Frames frames{};
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
-
-void * getCallerAddress(const ucontext_t & context);
