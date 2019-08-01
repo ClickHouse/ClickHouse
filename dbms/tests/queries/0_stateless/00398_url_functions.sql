@@ -35,10 +35,12 @@ SELECT decodeURLComponent(pathFull('//127.0.0.1/?query=hello%20world+foo%2Bbar')
 SELECT decodeURLComponent(pathFull('http://127.0.0.1/?query=hello%20world+foo%2Bbar')) AS Path;
 SELECT decodeURLComponent(materialize(pathFull('http://127.0.0.1/?query=hello%20world+foo%2Bbar'))) AS Path;
 SELECT decodeURLComponent(materialize(pathFull('//127.0.0.1/?query=hello%20world+foo%2Bbar'))) AS Path;
+SELECT decodeURLComponent(materialize(pathFull('www.example.com/?query=hello%20world+foo%2Bbar'))) AS Path;
 SELECT path('http://127.0.0.1') AS Path;
 SELECT path('http://127.0.0.1/a/b/c') AS Path;
 SELECT path('http://127.0.0.1:443/a/b/c') AS Path;
 SELECT path('http://paul@127.0.0.1:443/a/b/c') AS Path;
+SELECT path('www.example.com:443/a/b/c') AS Path;
 SELECT path('//paul@127.0.0.1:443/a/b/c') AS Path;
 
 SELECT '====QUERY STRING====';

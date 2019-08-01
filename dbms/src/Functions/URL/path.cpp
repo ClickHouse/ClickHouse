@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include "FunctionsURL.h"
+#include "domain.h"
 #include <common/find_symbols.h>
 
 namespace DB
@@ -18,7 +19,9 @@ struct ExtractPath
         Pos pos = data;
         Pos end = pos + size;
 
-        if (end != (pos = find_first_symbols<'/'>(pos, end)) && pos[1] == '/' && end != (pos = find_first_symbols<'/'>(pos + 2, end)))
+        StringRef host = getURLHost(data, size);
+
+        if (host.size && end != (pos = find_first_symbols<'/'>(host.data + host.size, end)))
         {
             Pos query_string_or_fragment = find_first_symbols<'?', '#'>(pos, end);
 
