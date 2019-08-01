@@ -211,6 +211,10 @@ Ok.
 
 Значение по умолчанию — 1.
 
+## input_format_null_as_default {#settings-input_format_null_as_default}
+
+Включает или отключает использование значений по-умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для фомата CSV).
+
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
 Включает или отключает пропускание вставки неизвестных данных.
@@ -656,6 +660,10 @@ load_balancing = first_or_random
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 Символ, интерпретируемый как разделитель в данных формата CSV. По умолчанию — `,`.
+
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+
+Для формата CSV включает или выключает парсинг неэкранированной строки `NULL` как литерала (синоним для `\N`)
 
 ## insert_quorum {#settings-insert_quorum}
 
