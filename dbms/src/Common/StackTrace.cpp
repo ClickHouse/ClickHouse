@@ -31,6 +31,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
                 error << " Access: write.";
             else
                 error << " Access: read.";
+#else
+            UNUSED(context);
 #endif
 
             switch (info.si_code)
