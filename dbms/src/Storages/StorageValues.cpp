@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
 #include <DataStreams/OneBlockInputStream.h>
 
@@ -6,10 +7,10 @@
 namespace DB
 {
 
-StorageValues::StorageValues(const std::string & database_name_, const std::string & table_name_, const Block & res_block_)
+StorageValues::StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns, const Block & res_block_)
     : database_name(database_name_), table_name(table_name_), res_block(res_block_)
 {
-    setColumns(ColumnsDescription(res_block.getNamesAndTypesList()));
+    setColumns(columns);
 }
 
 BlockInputStreams StorageValues::read(
