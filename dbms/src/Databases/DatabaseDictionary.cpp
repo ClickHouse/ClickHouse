@@ -27,7 +27,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
+void DatabaseDictionary::loadTables(Context &, bool)
 {
 }
 
@@ -52,7 +52,7 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
         auto dict_name = dict_ptr->getName();
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        tables[dict_name] = StorageDictionary::create(dict_name, ColumnsDescription{columns}, context, true, dict_name);
+        tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
     }
     return tables;
 }
@@ -73,7 +73,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(table_name, ColumnsDescription{columns}, context, true, table_name);
+        return StorageDictionary::create(getDatabaseName(), table_name, ColumnsDescription{columns}, context, true, table_name);
     }
 
     return {};

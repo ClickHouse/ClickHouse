@@ -186,10 +186,8 @@ protected:
 
 private:
     struct ObjectConfig;
-    using ObjectWithException = std::pair<LoadablePtr, std::exception_ptr>;
 
-    ObjectWithException
-    createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
     TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
 
     class ConfigFilesReader;

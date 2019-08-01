@@ -30,18 +30,8 @@ HashedDictionary::HashedDictionary(
     , saved_block{std::move(saved_block)}
 {
     createAttributes();
-
-    try
-    {
-        loadData();
-        calculateBytesAllocated();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
+    loadData();
+    calculateBytesAllocated();
 }
 
 

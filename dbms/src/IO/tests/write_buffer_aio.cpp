@@ -1,8 +1,7 @@
 #include <IO/WriteBufferAIO.h>
 #include <Core/Defines.h>
 
-#include <boost/filesystem.hpp>
-
+#include <filesystem>
 #include <iostream>
 #include <fstream>
 #include <streambuf>
@@ -11,10 +10,10 @@
 namespace
 {
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 void run();
-void die(const std::string & msg);
+[[noreturn]] void die(const std::string & msg);
 void runTest(unsigned int num, const std::function<bool()> & func);
 std::string createTmpFile();
 std::string generateString(size_t n);

@@ -160,7 +160,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     context = std::make_shared<Context>(Context::createGlobal());
-    context->setGlobalContext(*context);
+    context->makeGlobalContext();
 
     auto server = Poco::Net::HTTPServer(
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
