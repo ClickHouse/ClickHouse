@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
@@ -12,7 +13,6 @@ class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class InterpreterSelectWithUnionQuery;
-struct AnalyzedJoin;
 
 
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
@@ -32,7 +32,7 @@ struct SubqueryForSet
     StoragePtr table;
 
     void makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                    const std::unordered_map<String, String> & name_to_origin);
+                    const Names & original_names, const Names & required_names);
 
     Block renamedSampleBlock() const { return sample_block; }
     void renameColumns(Block & block);

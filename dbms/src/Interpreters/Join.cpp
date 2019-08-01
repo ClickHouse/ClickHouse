@@ -275,18 +275,21 @@ void Join::setSampleBlock(const Block & block)
 
     size_t keys_size = key_names_right.size();
     ColumnRawPtrs key_columns(keys_size);
-    Columns materialized_columns;
+
+    sample_block_with_columns_to_add = materializeBlock(block);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        auto & column = block.getByName(key_names_right[i]).column;
-        key_columns[i] = column.get();
-        auto column_no_lc = recursiveRemoveLowCardinality(column);
-        if (column.get() != column_no_lc.get())
-        {
-            materialized_columns.emplace_back(std::move(column_no_lc));
-            key_columns[i] = materialized_columns.back().get();
-        }
+        const String & column_name = key_names_right[i];
+        auto & col = sample_block_with_columns_to_add.getByName(column_name);
+        col.column = recursiveRemoveLowCardinality(col.column);
+        col.type = recursiveRemoveLowCardinality(col.type);
+
+        /// Extract right keys with correct keys order.
+        sample_block_with_keys.insert(col);
+        sample_block_with_columns_to_add.erase(column_name);
+
+        key_columns[i] = sample_block_with_keys.getColumns().back().get();
 
         /// We will join only keys, where all components are not NULL.
         if (auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
@@ -327,26 +330,8 @@ void Join::setSampleBlock(const Block & block)
         init(chooseMethod(key_columns, key_sizes));
     }
 
-
-    sample_block_with_columns_to_add = materializeBlock(block);
-
     blocklist_sample = Block(block.getColumnsWithTypeAndName());
     prepareBlockListStructure(blocklist_sample);
-
-    /// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
-    for (size_t pos = 0; pos < sample_block_with_columns_to_add.columns();)
-    {
-        auto & col = sample_block_with_columns_to_add.getByPosition(pos);
-        if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), col.name))
-        {
-            col.column = recursiveRemoveLowCardinality(col.column);
-            col.type = recursiveRemoveLowCardinality(col.type);
-            sample_block_with_keys.insert(col);
-            sample_block_with_columns_to_add.erase(pos);
-        }
-        else
-            ++pos;
-    }
 
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 

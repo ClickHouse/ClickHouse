@@ -516,15 +516,15 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
 }
 
 static void appendRequiredColumns(
-    NameSet & required_columns, const Block & sample, const Names & key_names_right, const NamesAndTypesList & columns_added_by_join)
+    Names & required_columns, const Block & sample, const Names & key_names_right, const NamesAndTypesList & columns_added_by_join)
 {
     for (auto & column : key_names_right)
         if (!sample.has(column))
-            required_columns.insert(column);
+            required_columns.push_back(column);
 
     for (auto & column : columns_added_by_join)
         if (!sample.has(column.name))
-            required_columns.insert(column.name);
+            required_columns.push_back(column.name);
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -606,20 +606,15 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
-            Names action_columns = joined_block_actions->getRequiredColumns();
-            NameSet required_columns(action_columns.begin(), action_columns.end());
+            Names required_columns = joined_block_actions->getRequiredColumns();
 
             appendRequiredColumns(
                 required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columns_added_by_join);
 
-            auto original_map = analyzed_join.getOriginalColumnsMap(required_columns);
-            Names original_columns;
-            for (auto & pr : original_map)
-                original_columns.push_back(pr.second);
-
+            Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
 
-            subquery_for_set.makeSource(interpreter, original_map);
+            subquery_for_set.makeSource(interpreter, original_columns, required_columns);
         }
 
         Block sample_block = subquery_for_set.renamedSampleBlock();
