@@ -25,14 +25,13 @@ template <> struct NearestFieldTypeImpl<QueryLogElement::Type> { using Type = UI
 
 Block QueryLogElement::createBlock()
 {
-
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"QUERY_START",                   static_cast<Int8>(QUERY_START)},
-            {"QUERY_FINISH",                  static_cast<Int8>(QUERY_FINISH)},
-            {"EXCEPTION_BEFORE_START",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
-            {"EXCEPTION_WHILE_PROCESSING",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+            {"Query start",                   static_cast<Int8>(QUERY_START)},
+            {"Query finish",                  static_cast<Int8>(QUERY_FINISH)},
+            {"Exception before start",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
+            {"Exception while processing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
     return
