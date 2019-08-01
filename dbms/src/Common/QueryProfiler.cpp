@@ -85,7 +85,8 @@ namespace
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
-                                    sizeof(StackTrace) + // collected stack trace
+                                    sizeof(UInt8) + // number of stack frames
+                                    sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
                                     sizeof(TimerType) + // timer type
                                     sizeof(UInt32); // thread_number
         char buffer[buf_size];
@@ -101,7 +102,13 @@ namespace
 
         writeChar(false, out);
         writeStringBinary(query_id, out);
-        writePODBinary(stack_trace, out);
+
+        size_t stack_trace_size = stack_trace.getSize();
+        size_t stack_trace_offset = stack_trace.getOffset();
+        writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
+        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+            writePODBinary(stack_trace.getFrames()[i], out);
+
         writePODBinary(timer_type, out);
         writePODBinary(thread_number, out);
         out.next();
