@@ -72,8 +72,11 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
     /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+    ColumnsDescription columns = parseColumnsListFromString(structure, context);
+
     Block sample_block;
-    parseColumnsListFromString(structure, sample_block, context);
+    for (const auto & name_type : columns.getOrdinary())
+        sample_block.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -82,7 +85,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = StorageValues::create(getDatabaseName(), table_name, res_block);
+    auto res = StorageValues::create(getDatabaseName(), table_name, columns, res_block);
     res->startup();
     return res;
 }

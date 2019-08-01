@@ -43,13 +43,10 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     std::string structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
-    /// Create sample block
-
-    Block sample_block;
-    parseColumnsListFromString(structure, sample_block, context);
+    ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     /// Create table
-    StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context), table_name);
+    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name);
 
     storage->startup();
 
