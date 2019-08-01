@@ -19,7 +19,7 @@ namespace
         template <typename T>
         static void execute(const T * src, size_t size, T * dst)
         {
-            NFastOps::Log<>(src, size, dst);
+            NFastOps::Log<true>(src, size, dst);
         }
     };
 }
