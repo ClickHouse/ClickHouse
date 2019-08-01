@@ -1755,18 +1755,13 @@ const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String &name
 {
     auto lock = getLock();
 
-    if (!shared->merge_tree_storage_policy_selector)
-    {
-        constexpr auto config_name = "storage_configuration.policies";
-        auto & config = getConfigRef();
+    auto & policy_selector = getStoragePolicySelector();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
-    }
-    return (*shared->merge_tree_storage_policy_selector)[name];
+    return policy_selector[name];
 }
 
 
-    DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 

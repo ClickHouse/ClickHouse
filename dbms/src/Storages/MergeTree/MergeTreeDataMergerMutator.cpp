@@ -321,13 +321,25 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
 
     std::unordered_map<DiskSpace::DiskPtr, MinSumMinElems<MergeTreeData::DataPartPtr>> need_to_move;
     const auto & policy = data.getStoragePolicy();
-    for (const auto & disk : policy->getDisks())
+    const auto & volumes = policy->getVolumes();
+
+    /// Do not check if policy has one volume
+    if (volumes.size() == 1)
     {
-        auto space_information = disk->getSpaceInformation();
-        ///@TODO_IGR move constant to configuration
-        if (space_information.getTotalSpace() * 0.1 > space_information.getAvailableSpace())
+        return false;
+    }
+
+    /// Do not check last volume
+    for (size_t i = 0; i != volumes.size() - 1; ++i) {
+        for (const auto & disk : volumes[i]->disks)
         {
-            need_to_move.emplace(disk, space_information.getTotalSpace() * 0.1 - space_information.getAvailableSpace());
+            auto space_information = disk->getSpaceInformation();
+
+            /// Do not take into account reserved space
+            if (space_information.getTotalSpace() * policy->getMoveFactor() > space_information.getAvailableSpace())
+            {
+                need_to_move.emplace(disk, space_information.getTotalSpace() * policy->getMoveFactor() - space_information.getAvailableSpace());
+            }
         }
     }
 
@@ -342,14 +354,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
 
     for (auto && move : need_to_move)
     {
-        auto volume_priority = policy->getVolumePriorityByDisk(move.first);
+        auto min_volume_priority = policy->getVolumePriorityByDisk(move.first) + 1;
         for (auto && part : move.second.getElems())
         {
-            auto reservation = policy->reserve(part->bytes_on_disk, volume_priority);
+            auto reservation = policy->reserve(part->bytes_on_disk, min_volume_priority);
             if (!reservation)
             {
                 /// Next parts to move from this disk has greater size and same min volume priority
-                /// There are no space for thems
+                /// There are no space for them
                 /// But it can be possible to move data from other disks
                 break;
             }

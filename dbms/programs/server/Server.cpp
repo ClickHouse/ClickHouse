@@ -262,9 +262,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
-    /// Check that we have write access to all data paths
+    /// Check that we have read and write access to all data paths
     auto disk_selector = global_context->getDiskSelector();
-    for (auto [name, disk] : disk_selector.getDisksMap()) {
+    for (auto [name, disk] : disk_selector.getDisksMap())
+    {
         Poco::File disk_path(disk->getPath());
         if (!disk_path.canRead() or !disk_path.canWrite())
             throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
