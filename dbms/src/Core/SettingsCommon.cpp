@@ -74,8 +74,6 @@ void SettingNumber<bool>::set(const String & x)
             set(false);
         else if (x[0] == '1')
             set(true);
-        else
-            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
     }
     else
     {
@@ -84,9 +82,9 @@ void SettingNumber<bool>::set(const String & x)
             set(true);
         else if (checkStringCaseInsensitive("false", buf))
             set(false);
-        else
-            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
     }
+    if (!changed)
+        throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
 }
 
 template <typename Type>
