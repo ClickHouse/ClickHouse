@@ -28,10 +28,10 @@ Block QueryLogElement::createBlock()
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Query start",                   static_cast<Int8>(QUERY_START)},
-            {"Query finish",                  static_cast<Int8>(QUERY_FINISH)},
-            {"Exception before start",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
-            {"Exception while processing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+            {"QueryStart",                  static_cast<Int8>(QUERY_START)},
+            {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
+            {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
+            {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
     return
