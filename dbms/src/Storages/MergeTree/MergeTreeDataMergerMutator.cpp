@@ -522,7 +522,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry,
-    time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
+    time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -560,14 +560,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
 
-    bool need_remove_expired_values = false;
+    bool need_remove_expired_values = force_ttl;
     for (const MergeTreeData::DataPartPtr & part : parts)
         new_data_part->ttl_infos.update(part->ttl_infos);
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
         need_remove_expired_values = true;
-
 
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
@@ -707,7 +706,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     if (need_remove_expired_values)
-        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge);
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
 
     MergedBlockOutputStream to{
         data,

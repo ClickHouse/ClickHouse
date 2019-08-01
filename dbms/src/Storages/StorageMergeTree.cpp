@@ -590,9 +590,10 @@ bool StorageMergeTree::merge(
 
     try
     {
+        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate);
+            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 

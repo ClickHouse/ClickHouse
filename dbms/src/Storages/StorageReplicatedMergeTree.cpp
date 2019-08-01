@@ -1083,7 +1083,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate);
+            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -2157,6 +2157,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         return;
 
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
+    const bool force_ttl = false;
 
     bool success = false;
 
@@ -2190,7 +2191,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
-                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
+                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, force_ttl);
             }
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
             {
@@ -2254,6 +2255,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     const DataPartsVector & parts,
     const String & merged_name,
     bool deduplicate,
+    bool force_ttl,
     ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
@@ -2289,6 +2291,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
     entry.deduplicate = deduplicate;
+    entry.force_ttl = force_ttl;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -2999,6 +3002,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         };
 
+        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+
         if (!partition && final)
         {
             DataPartsVector data_parts = getDataPartsVector();
@@ -3016,7 +3021,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 ReplicatedMergeTreeLogEntryData merge_entry;
                 if (selected &&
-                    !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+                    !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, force_ttl, &merge_entry))
                     return handle_noop("Can't create merge queue node in ZooKeeper");
                 if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
                     merge_entries.push_back(std::move(merge_entry));
