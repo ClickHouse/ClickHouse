@@ -118,6 +118,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsFetch;
     extern const StorageActionBlockType PartsSend;
     extern const StorageActionBlockType ReplicationQueue;
+    extern const StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -2860,7 +2861,7 @@ void StorageReplicatedMergeTree::shutdown()
 {
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
-    merger_mutator.actions_blocker.cancelForever();
+    merger_mutator.merges_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -5029,7 +5030,10 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
 ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return merger_mutator.actions_blocker.cancel();
+        return merger_mutator.merges_blocker.cancel();
+
+    if (action_type == ActionLocks::PartsTTLMerge)
+        return merger_mutator.ttl_merges_blocker.cancel();
 
     if (action_type == ActionLocks::PartsFetch)
         return fetcher.blocker.cancel();
