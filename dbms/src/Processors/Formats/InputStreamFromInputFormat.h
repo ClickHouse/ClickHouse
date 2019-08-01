@@ -22,6 +22,12 @@ public:
     String getName() const override { return input_format->getName(); }
     Block getHeader() const override { return input_format->getPort().getHeader(); }
 
+    void cancel(bool kill) override
+    {
+        input_format->cancel();
+        IBlockInputStream::cancel(kill);
+    }
+
     const BlockMissingValues & getMissingValues() const override { return input_format->getMissingValues(); }
 
 protected:
