@@ -235,7 +235,7 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         return;
 
     /// Debug info and symbol table sections may be splitted to separate binary.
-    std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path;
+    std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
     object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
 
