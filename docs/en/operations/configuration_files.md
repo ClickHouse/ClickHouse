@@ -1,10 +1,11 @@
 # Configuration Files {#configuration_files}
 
-The main server config file is `config.xml`. It resides in the `/etc/clickhouse-server/` directory.
+ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml`. Other files must be in the `/etc/clickhouse-server/config.d` directory.
 
-Individual settings can be overridden in the `*.xml` and `*.conf` files in the `config.d` directory next to the config file.
+!!! note "Note"
+    All the configuration files should be in XML format. Also, they should have the same root element, usually `<yandex>`.
 
-The `replace` or `remove` attributes can be specified for the elements of these config files.
+Some settings specified in the main configuration file can be overridden in other configuration files. The `replace` or `remove` attributes can be specified for the elements of these configuration files.
 
 If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
 
