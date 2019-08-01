@@ -171,15 +171,12 @@ void Server::defineOptions(Poco::Util::OptionSet & _options)
     BaseDaemon::defineOptions(_options);
 }
 
-
-
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
-
 
     registerFunctions();
     registerAggregateFunctions();

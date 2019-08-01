@@ -309,8 +309,6 @@ void SystemLog<LogElement>::threadFunction()
 }
 
 
-
-
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(EntryType reason)
 {
@@ -444,5 +442,3 @@ void SystemLog<LogElement>::prepareTable()
 }
 
 }
-
-
