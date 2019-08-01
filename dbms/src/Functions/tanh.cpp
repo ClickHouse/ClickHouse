@@ -33,7 +33,7 @@ static double tanh(double x)
     return 2 / (1.0 + exp(-2 * x)) - 1;
 }
 
-using FunctionTanh = FunctionMathUnary<UnaryFunctionVectorized<TanhName, sigmoid>>;
+using FunctionTanh = FunctionMathUnary<UnaryFunctionVectorized<TanhName, tanh>>;
 #endif
 
 void registerFunctionTanh(FunctionFactory & factory)
