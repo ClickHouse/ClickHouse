@@ -75,7 +75,7 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings &)
     {
-        return std::make_shared<ProtobufRowInputFormat>(buf, sample, params, FormatSchemaInfo(context, "proto"));
+        return std::make_shared<ProtobufRowInputFormat>(buf, sample, params, FormatSchemaInfo(context, "Protobuf"));
     });
 }
 

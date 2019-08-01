@@ -179,7 +179,7 @@ void CapnProtoRowInputFormat::createActions(const NestedFieldList & sorted_field
 }
 
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSchemaInfo & info)
-    : IRowInputFormat(std::move(header), in_, params), parser(std::make_shared<SchemaParser>())
+    : IRowInputFormat(std::move(header), in_, std::move(params)), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
 
@@ -304,7 +304,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
         {
-            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(context, "capnp"));
+            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(context, "CapnProto"));
         });
 }
 
