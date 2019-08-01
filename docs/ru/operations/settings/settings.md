@@ -715,6 +715,19 @@ load_balancing = first_or_random
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## count_distinct_implementation {#settings-count_distinct_implementation}
+
+Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count).
+
+Возможные значения:
+
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+
+Значение по умолчанию — `uniqExact`.
+
 ## max_network_bytes {#settings-max_network_bytes}
 
 Ограничивает объем данных (в байтах), который принимается или передается по сети при выполнении запроса. Параметр применяется к каждому отдельному запросу.

@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_PROTOCOL;
+    extern const int INSECURE_PATH;
 }
 
 namespace DataPartsExchange
@@ -284,10 +285,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-
-    String part_path = data.getFullPathOnDisk(reservation->getDisk());
-
-    String absolute_part_path = part_path + relative_part_path + "/";
+    String absolute_part_path = Poco::Path(data.getFullPathOnDisk(reservation->getDisk()) + relative_part_path + "/").absolute().toString();
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
@@ -311,7 +309,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        WriteBufferFromFile file_out(absolute_part_path + file_name);
+        /// File must be inside "absolute_part_path" directory.
+        /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
+        String absolute_file_path = Poco::Path(absolute_part_path + file_name).absolute().toString();
+        if (!startsWith(absolute_file_path, absolute_part_path))
+            throw Exception("File path (" + absolute_file_path + ") doesn't appear to be inside part path (" + absolute_part_path + ")."
+                " This may happen if we are trying to download part from malicious replica or logical error.",
+                ErrorCodes::INSECURE_PATH);
+
+        WriteBufferFromFile file_out(absolute_file_path);
         HashingWriteBuffer hashing_out(file_out);
         copyData(in, hashing_out, file_size, blocker.getCounter());
 
