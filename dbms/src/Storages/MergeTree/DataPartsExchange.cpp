@@ -201,7 +201,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String absolute_part_path = data.getFullPath() + relative_part_path + "/";
+    String absolute_part_path = Poco::Path(data.getFullPath() + relative_part_path + "/").absolute().toString();
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
@@ -228,13 +228,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         /// File must be inside "absolute_part_path" directory.
         /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
-        String file_absolute_path = Poco::Path(absolute_part_path + file_name).absolute().toString();
-        if (!startsWith(file_absolute_path, absolute_part_path))
-            throw Exception("File path doesn't appear to be inside part path."
+        String absolute_file_path = Poco::Path(absolute_part_path + file_name).absolute().toString();
+        if (!startsWith(absolute_file_path, absolute_part_path))
+            throw Exception("File path (" + absolute_file_path + ") doesn't appear to be inside part path (" + absolute_part_path + ")."
                 " This may happen if we are trying to download part from malicious replica or logical error.",
                 ErrorCodes::INSECURE_PATH);
 
-        WriteBufferFromFile file_out(file_absolute_path);
+        WriteBufferFromFile file_out(absolute_file_path);
         HashingWriteBuffer hashing_out(file_out);
         copyData(in, hashing_out, file_size, blocker.getCounter());
 
