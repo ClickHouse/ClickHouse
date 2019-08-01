@@ -14,8 +14,6 @@ namespace DB
 class OwnSplitChannel : public Poco::Channel
 {
 public:
-    OwnSplitChannel() = default;
-
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 

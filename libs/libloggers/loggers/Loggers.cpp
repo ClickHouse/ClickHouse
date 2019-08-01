@@ -22,7 +22,8 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log) {
+void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log)
+{
     text_log = log;
 }
 

@@ -5,8 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query="SELECT 6103"
 
->00974_text_log_table_not_empty.tmp
-
 for (( i=1; i <= 50; i++ )) 
 do
 

@@ -9,8 +9,6 @@
 #include <Core/SettingsCommon.h>
 #include <Common/CurrentThread.h>
 
-#include <iostream>
-
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
 #endif
