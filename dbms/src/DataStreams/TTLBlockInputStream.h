@@ -20,7 +20,7 @@ public:
         bool force_
     );
 
-    String getName() const override { return "TTLBlockInputStream"; }
+    String getName() const override { return "TTL"; }
 
     Block getHeader() const override { return header; }
 

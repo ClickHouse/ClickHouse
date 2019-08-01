@@ -226,7 +226,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         (current_time - last_merge_with_ttl > data.settings.merge_with_ttl_timeout);
 
     /// NOTE Could allow selection of different merge strategy.
-    if (can_merge_with_ttl && has_part_with_expired_ttl)
+    if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
         merge_selector = std::make_unique<TTLMergeSelector>(current_time);
         last_merge_with_ttl = current_time;
@@ -526,7 +526,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
-    if (actions_blocker.isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
@@ -567,6 +567,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)
         need_remove_expired_values = true;
+
+    if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
+    {
+        LOG_INFO(log, "Part " << new_data_part->name << " has values with expired TTL, but merges with TTL are cancelled.");
+        need_remove_expired_values = false;
+    }
 
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
@@ -723,8 +729,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
+    auto is_cancelled = [&]() { return merges_blocker.isCancelled()
+        || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
+
     Block block;
-    while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
+    while (!is_cancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
 
@@ -748,8 +757,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     merged_stream->readSuffix();
     merged_stream.reset();
 
-    if (actions_blocker.isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
+    if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
+        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
 
@@ -814,13 +826,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
-            while (!actions_blocker.isCancelled() && (block = column_gathered_stream.read()))
+            while (!merges_blocker.isCancelled() && (block = column_gathered_stream.read()))
             {
                 column_elems_written += block.rows();
                 column_to.write(block);
             }
 
-            if (actions_blocker.isCancelled())
+            if (merges_blocker.isCancelled())
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
             column_gathered_stream.readSuffix();
@@ -874,7 +886,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 {
     auto check_not_cancelled = [&]()
     {
-        if (actions_blocker.isCancelled() || merge_entry->is_cancelled)
+        if (merges_blocker.isCancelled() || merge_entry->is_cancelled)
             throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
 
         return true;
