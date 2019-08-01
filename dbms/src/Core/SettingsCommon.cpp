@@ -63,6 +63,17 @@ void SettingNumber<Type>::set(const String & x)
     set(parse<Type>(x));
 }
 
+template <>
+void SettingNumber<bool>::set(const String & x)
+{
+    if (x == "false")
+        set(false);
+    else if (x == "true")
+        set(true);
+    else
+        set(parse<bool>(x));
+}
+
 template <typename Type>
 void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 {
