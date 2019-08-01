@@ -41,12 +41,10 @@ def test_read_write_table(started_cluster):
     hdfs_api = HDFSApi("root")
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/simple_table_function", data)
-    hdfs_api.write_data("/dir/file", data)
 
-    assert hdfs_api.read_data("/dir/file") == data
+    assert hdfs_api.read_data("/simple_table_function") == data
 
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_functio?', 'TSV', 'id UInt64, text String, number Float64')") == data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/fil?', 'TSV', 'id UInt64, text String, number Float64')") == data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')") == data
 
 
 def test_write_table(started_cluster):
@@ -76,3 +74,29 @@ def test_bad_hdfs_uri(started_cluster):
     except Exception as ex:
         print ex
         assert 'Unable to open HDFS file' in str(ex)
+
+def test_globs_in_read_table(started_cluster):
+    hdfs_api = HDFSApi("root")
+    some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
+    hdfs_api.write_data("/simple_table_function", some_data)
+    hdfs_api.write_data("/dir/file", some_data)
+    hdfs_api.write_data("/some_dir/dir1/file", some_data)
+    hdfs_api.write_data("/some_dir/dir2/file", some_data)
+    hdfs_api.write_data("/some_dir/file", some_data)
+    hdfs_api.write_data("/table1_function", some_data)
+    hdfs_api.write_data("/table2_function", some_data)
+    hdfs_api.write_data("/table3_function", some_data)
+
+    assert hdfs_api.read_data("/dir/file") == some_data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/*_table_functio?', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/fil?', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/table{3..8}_function', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/table{2..8}_function', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*?*?*?*?*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*?*?*?*?*?*', 'TSV', 'id UInt64, text String, number Float64')") == ""
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*{a..z}*{a..z}*{a..z}*{a..z}*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/some_dir/*/file', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/some_dir/dir?/*', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/*/*/*', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data

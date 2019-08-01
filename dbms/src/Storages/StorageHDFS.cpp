@@ -132,12 +132,41 @@ private:
     BlockOutputStreamPtr writer;
 };
 
-//static Strings recursiveLSWithRegexpMatching(const String & cur_path, hdfsFS fs, const re2::RE2 & matcher)
-//{
-//    HDFSFileInfo ls;
-//    ls.file_info = hdfsListDirectory(fs.get(), path_without_globs, ls.length);
-//
-//}
+static Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+{
+    HDFSFileInfo ls;
+    ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
+    Strings result;
+    size_t next_slash = for_match.find('/', 1);
+    String cur_item_for_match = for_match.substr(0, next_slash);
+    String part_pattern = makeRegexpPatternFromGlobs(cur_item_for_match);
+    re2::RE2 matcher(part_pattern);
+
+    for (int i = 0; i < ls.length; ++i)
+    {
+        String cur_path = String(ls.file_info[i].mName);
+        size_t last_slash = cur_path.rfind('/');
+        String cur_path_item = cur_path.substr(last_slash);
+
+        if ((ls.file_info[i].mKind == 'F') && (next_slash == std::string::npos))
+        {
+            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            {
+                result.push_back(String(ls.file_info[i].mName));
+            }
+        }
+        else if ((ls.file_info[i].mKind == 'D') && (next_slash != std::string::npos))
+        {
+            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            {
+                Strings result_part = LSWithRegexpMatching(cur_path, fs, for_match.substr(next_slash));
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+    }
+
+    return result;
+}
 
 }
 
@@ -163,40 +192,22 @@ BlockInputStreams StorageHDFS::read(
 
     String uri_without_globs = uri.substr(0, first_glob);
     size_t end_of_path_without_globs = uri_without_globs.rfind('/');
+    String part_with_glob = uri.substr(end_of_path_without_globs);
     uri_without_globs = uri_without_globs.substr(0, end_of_path_without_globs + 1);
 
     size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     String path_from_uri = uri.substr(begin_of_path);
     String uri_without_path = uri.substr(0, begin_of_path);
 
-    String path_pattern = makeRegexpPatternFromGlobs(path_from_uri);
-    re2::RE2 matcher(path_pattern);
-
+    String path_without_globs = uri_without_globs.substr(begin_of_path);
     HDFSBuilderPtr builder = createHDFSBuilder(Poco::URI(uri_without_globs));
     HDFSFSPtr fs = createHDFSFS(builder.get());
-//    Strings res_paths = recursiveLSWithRegexpMatching(path_without_globs, fs.get(), matcher);
-
-    HDFSFileInfo ls;
-    String path_without_globs = uri_without_globs.substr(begin_of_path);
-    ls.file_info = hdfsListDirectory(fs.get(), path_without_globs.data(), &ls.length);
+    Strings res_paths = LSWithRegexpMatching(path_without_globs, fs, part_with_glob);
     BlockInputStreams result;
-    for (int i = 0; i < ls.length; ++i)
+    for (const auto & res_path : res_paths)
     {
-        if (ls.file_info[i].mKind == 'F')
-        {
-            String cur_path = String(ls.file_info[i].mName);
-            if (cur_path[1] == '/')
-            {
-                cur_path = cur_path.substr(1);
-            }
-
-            if (re2::RE2::FullMatch(cur_path, matcher))
-            {
-                result.push_back(
-                        std::make_shared<HDFSBlockInputStream>(uri_without_path + String(ls.file_info[i].mName), format_name, getSampleBlock(), context_,
+        result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
                                                                max_block_size));
-            }
-        }
     }
 
     return result;
