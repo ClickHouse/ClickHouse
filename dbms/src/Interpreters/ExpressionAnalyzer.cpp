@@ -73,6 +73,18 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
+namespace
+{
+
+Names deduplicateNames(const Names & names)
+{
+    NameSet dedup(names.begin(), names.end());
+    return Names(dedup.begin(), dedup.end());
+}
+
+}
+
+
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
@@ -606,7 +618,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
-            Names required_columns = joined_block_actions->getRequiredColumns();
+            Names required_columns = deduplicateNames(joined_block_actions->getRequiredColumns());
 
             appendRequiredColumns(
                 required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columns_added_by_join);
