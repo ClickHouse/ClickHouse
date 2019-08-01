@@ -61,7 +61,7 @@ public:
 
     NameSet getQualifiedColumnsSet() const;
     NameSet getOriginalColumnsSet() const;
-    Names getOriginalColumnNames(const Names & required_columns) const;
+    std::unordered_map<String, String> getOriginalColumnsMap(const NameSet & required_columns) const;
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     void calculateAvailableJoinedColumns(bool make_nullable);
