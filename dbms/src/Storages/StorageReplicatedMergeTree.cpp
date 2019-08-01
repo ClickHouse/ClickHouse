@@ -2192,7 +2192,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
-                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, force_ttl);
+                success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
+                    future_merged_part.name, deduplicate, force_ttl);
             }
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
             {
@@ -3021,8 +3022,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                 bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 ReplicatedMergeTreeLogEntryData merge_entry;
-                if (selected &&
-                    !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, force_ttl, &merge_entry))
+                if (selected && !createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
+                        future_merged_part.name, deduplicate, force_ttl, &merge_entry))
                     return handle_noop("Can't create merge queue node in ZooKeeper");
                 if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
                     merge_entries.push_back(std::move(merge_entry));
@@ -3057,7 +3058,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
-            if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+            if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
+                future_merged_part.name, deduplicate, force_ttl, &merge_entry))
                 return handle_noop("Can't create merge queue node in ZooKeeper");
             if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
                 merge_entries.push_back(std::move(merge_entry));
