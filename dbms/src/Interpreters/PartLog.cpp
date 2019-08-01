@@ -22,11 +22,11 @@ Block PartLogElement::createBlock()
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"NEW_PART",       static_cast<Int8>(NEW_PART)},
-            {"MERGE_PARTS",    static_cast<Int8>(MERGE_PARTS)},
-            {"DOWNLOAD_PART",  static_cast<Int8>(DOWNLOAD_PART)},
-            {"REMOVE_PART",    static_cast<Int8>(REMOVE_PART)},
-            {"MUTATE_PART",    static_cast<Int8>(MUTATE_PART)},
+            {"New part",       static_cast<Int8>(NEW_PART)},
+            {"Merge parts",    static_cast<Int8>(MERGE_PARTS)},
+            {"Download part",  static_cast<Int8>(DOWNLOAD_PART)},
+            {"Remove part",    static_cast<Int8>(REMOVE_PART)},
+            {"Mutate part",    static_cast<Int8>(MUTATE_PART)},
         });
 
     return
