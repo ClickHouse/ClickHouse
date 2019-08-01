@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <string>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
+
+class Context;
+
 /// Parses a common argument for table functions such as table structure given in string
-void parseColumnsListFromString(const std::string & structure, Block & sample_block, const Context & context);
+ColumnsDescription parseColumnsListFromString(const std::string & structure, const Context & context);
 
 }
