@@ -206,28 +206,42 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
     createActions(list, root);
 }
 
+kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
+{
+    uint32_t segment_count;
+    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+
+    // one for segmentCount and one because segmentCount starts from 0
+    const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
+    const auto words_prefix_size = (segment_count + 1) / 2 + 1;
+    auto prefix = kj::heapArray<capnp::word>(words_prefix_size);
+    auto prefix_chars = prefix.asChars();
+    ::memcpy(prefix_chars.begin(), &segment_count, sizeof(uint32_t));
+
+    // read size of each segment
+    for (size_t i = 0; i <= segment_count; ++i)
+        in.readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
+
+    // calculate size of message
+    const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
+    const auto expected_bytes = expected_words * sizeof(capnp::word);
+    const auto data_size = expected_bytes - prefix_size;
+    auto msg = kj::heapArray<capnp::word>(expected_words);
+    auto msg_chars = msg.asChars();
+
+    // read full message
+    ::memcpy(msg_chars.begin(), prefix_chars.begin(), prefix_size);
+    in.readStrict(msg_chars.begin() + prefix_size, data_size);
+
+    return msg;
+}
 
 bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
     if (in.eof())
         return false;
 
-    // Read from underlying buffer directly
-    auto buf = in.buffer();
-    auto base = reinterpret_cast<const capnp::word *>(in.position());
-
-    // Check if there's enough bytes in the buffer to read the full message
-    kj::Array<capnp::word> heap_array;
-    auto array = kj::arrayPtr(base, buf.size() - in.offset());
-    auto expected_words = capnp::expectedSizeInWordsFromPrefix(array);
-    if (expected_words * sizeof(capnp::word) > array.size())
-    {
-        // We'll need to reassemble the message in a contiguous buffer
-        heap_array = kj::heapArray<capnp::word>(expected_words);
-        in.readStrict(heap_array.asChars().begin(), heap_array.asChars().size());
-        array = heap_array.asPtr();
-    }
-
+    auto array = readMessage();
 
 #if CAPNP_VERSION >= 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
@@ -281,13 +295,6 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
         }
     }
 
-    // Advance buffer position if used directly
-    if (heap_array.size() == 0)
-    {
-        auto parsed = (msg.getEnd() - base) * sizeof(capnp::word);
-        in.position() += parsed;
-    }
-
     return true;
 }
 
@@ -297,7 +304,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
         {
-            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, params, FormatSchemaInfo(context, "capnp"));
+            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(context, "capnp"));
         });
 }
 
