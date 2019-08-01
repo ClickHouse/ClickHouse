@@ -77,6 +77,8 @@ struct ReplicatedMergeTreeLogEntryData
     bool deduplicate = false; /// Do deduplicate on merge
     String column_name;
 
+    bool force_ttl = false;
+
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
