@@ -223,6 +223,9 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
+
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
       */
@@ -254,9 +257,13 @@ public:
     };
 
 private:
+    /// These columns have to be in input blocks (arguments of execute* methods)
     NamesAndTypesList input_columns;
+    /// These actions will be executed on input blocks
     Actions actions;
+    /// The example of result (output) block.
     Block sample_block;
+
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;

@@ -74,6 +74,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
+    /// Processors are not supported here yet.
+    context.getSettingsRef().experimental_use_processors = false;
 }
 
 
@@ -113,8 +115,7 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        std::string str_time("0000-00-00 00:00:00"); ///for initial load
-        return query_builder.composeUpdateQuery(update_field, str_time);
+        return query_builder.composeLoadAllQuery();
     }
 }
 

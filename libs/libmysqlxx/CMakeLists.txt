@@ -12,7 +12,6 @@ add_library (mysqlxx
 
     include/mysqlxx/Connection.h
     include/mysqlxx/Exception.h
-    include/mysqlxx/Manip.h
     include/mysqlxx/mysqlxx.h
     include/mysqlxx/Null.h
     include/mysqlxx/Pool.h

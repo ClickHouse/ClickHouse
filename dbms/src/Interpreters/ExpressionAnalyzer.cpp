@@ -6,7 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -144,7 +143,11 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             getRootActions(array_join_expression_list, true, temp_actions);
             addMultipleArrayJoinAction(temp_actions, is_array_join_left);
-            array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+
+            array_join_columns.clear();
+            for (auto & column : temp_actions->getSampleBlock().getNamesAndTypesList())
+                if (syntax->array_join_result_to_source.count(column.name))
+                    array_join_columns.emplace_back(column);
         }
 
         const ASTTablesInSelectQueryElement * join = select_query->join();
@@ -275,12 +278,14 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
     set->setHeader(res.in->getHeader());
 
+    res.in->readPrefix();
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
             return;
     }
+    res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -1034,7 +1039,28 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
-        required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    {
+        /// We will find a column with minimum compressed size. Because it is the column that is cheapest to read.
+        size_t min_data_compressed = 0;
+        String min_column_name;
+        if (storage)
+        {
+            auto column_sizes = storage->getColumnSizes();
+            for (auto & [column_name, column_size] : column_sizes)
+            {
+                if (min_data_compressed == 0 || min_data_compressed > column_size.data_compressed)
+                {
+                    min_data_compressed = column_size.data_compressed;
+                    min_column_name = column_name;
+                }
+            }
+        }
+        if (min_data_compressed > 0)
+            required.insert(min_column_name);
+        else
+            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
+            required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    }
 
     NameSet unknown_required_source_columns = required;
 

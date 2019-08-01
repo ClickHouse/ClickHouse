@@ -600,8 +600,47 @@ SELECT replicate(1, ['a', 'b', 'c'])
 └───────────────────────────────┘
 ```
 
+## filesystemAvailable {#function-filesystemavailable}
+
+Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+
+```
+filesystemAvailable()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места.
+
+Тип — [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
+
+## filesystemCapacity
+
+Возвращает данные о ёмкости диска.
+
+## finalizeAggregation {#function-finalizeaggregation}
+
+Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+
 ## runningAccumulate {#function-runningaccumulate}
 
 Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
+
+## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+
+Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
+
+Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->

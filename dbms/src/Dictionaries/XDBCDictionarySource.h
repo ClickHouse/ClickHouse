@@ -36,6 +36,7 @@ public:
 
     /// copy-constructor is provided in order to support cloneability
     XDBCDictionarySource(const XDBCDictionarySource & other);
+    XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 
