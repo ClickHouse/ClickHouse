@@ -305,7 +305,9 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
         return;
     }
 
-    if (!atomFromAST(node))
+    if (atomFromAST(node))
+        node = makeASTFunction("__bitNotFunc", node);
+    else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 

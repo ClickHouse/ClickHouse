@@ -33,6 +33,7 @@ void registerFunctionRoundToExp2(FunctionFactory & factory);
 void registerFunctionRoundDuration(FunctionFactory & factory);
 void registerFunctionRoundAge(FunctionFactory & factory);
 
+void registerFunctionBitNotFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
@@ -68,6 +69,7 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionRoundAge(factory);
 
     /// Not for external use.
+    registerFunctionBitNotFunc(factory);
     registerFunctionBitSwapLastTwo(factory);
 }
 
