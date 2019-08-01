@@ -3,6 +3,9 @@
 #include <string>
 #include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <DataStreams/SizeLimits.h>
+#include <Poco/Timespan.h>
+#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -28,6 +31,9 @@ struct RowInputFormatParams
 
     using ReadCallback = std::function<void()>;
     ReadCallback callback;
+
+    Poco::Timespan max_execution_time = 0;
+    OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
 
 ///Row oriented input format: reads data row by row.
@@ -70,6 +76,7 @@ protected:
 
 private:
     Params params;
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     size_t total_rows = 0;
     size_t num_errors = 0;

@@ -139,6 +139,8 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     params.rows_portion_size = rows_portion_size;
     params.callback = std::move(callback);
+    params.max_execution_time = settings.max_execution_time;
+    params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
     return input_getter(buf, sample, context, params, format_settings);
 }
