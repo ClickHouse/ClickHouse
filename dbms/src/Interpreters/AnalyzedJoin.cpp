@@ -126,14 +126,14 @@ NameSet AnalyzedJoin::getOriginalColumnsSet() const
     return out;
 }
 
-Names AnalyzedJoin::getOriginalColumnNames(const Names & required_columns) const
+std::unordered_map<String, String> AnalyzedJoin::getOriginalColumnsMap(const NameSet & required_columns) const
 {
-    Names out;
+    std::unordered_map<String, String> out;
     for (const auto & column : required_columns)
     {
         auto it = original_names.find(column);
         if (it != original_names.end())
-            out.push_back(it->second);
+            out.insert(*it);
     }
     return out;
 }

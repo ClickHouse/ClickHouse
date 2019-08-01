@@ -73,18 +73,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
-namespace
-{
-
-Names deduplicateNames(const Names & names)
-{
-    NameSet dedup(names.begin(), names.end());
-    return Names(dedup.begin(), dedup.end());
-}
-
-}
-
-
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
@@ -528,15 +516,15 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
 }
 
 static void appendRequiredColumns(
-    Names & required_columns, const Block & sample, const Names & key_names_right, const NamesAndTypesList & columns_added_by_join)
+    NameSet & required_columns, const Block & sample, const Names & key_names_right, const NamesAndTypesList & columns_added_by_join)
 {
     for (auto & column : key_names_right)
         if (!sample.has(column))
-            required_columns.push_back(column);
+            required_columns.insert(column);
 
     for (auto & column : columns_added_by_join)
         if (!sample.has(column.name))
-            required_columns.push_back(column.name);
+            required_columns.insert(column.name);
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -618,15 +606,20 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
-            Names required_columns = deduplicateNames(joined_block_actions->getRequiredColumns());
+            Names action_columns = joined_block_actions->getRequiredColumns();
+            NameSet required_columns(action_columns.begin(), action_columns.end());
 
             appendRequiredColumns(
                 required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columns_added_by_join);
 
-            Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
+            auto original_map = analyzed_join.getOriginalColumnsMap(required_columns);
+            Names original_columns;
+            for (auto & pr : original_map)
+                original_columns.push_back(pr.second);
+
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
 
-            subquery_for_set.makeSource(interpreter, original_columns, required_columns);
+            subquery_for_set.makeSource(interpreter, original_map);
         }
 
         Block sample_block = subquery_for_set.renamedSampleBlock();
