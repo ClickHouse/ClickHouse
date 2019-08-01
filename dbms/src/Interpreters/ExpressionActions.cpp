@@ -35,6 +35,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// Read comment near usage
+static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -417,6 +419,7 @@ public:
 
     ColumnWithTypeAndName getByPosition(size_t position) const { return block.getByPosition(position); }
     void setType(const DataTypePtr & type, size_t position) { block.getByPosition(position).type = type; }
+    const DataTypePtr & getType(size_t position) const { return block.getByPosition(position).type; }
 
     ColumnPtr & getColumn(size_t position) { return block.getByPosition(position).column; }
 
@@ -514,6 +517,7 @@ public:
     }
 
     void setType(const DataTypePtr &, size_t) {}
+    const DataTypePtr & getType(size_t position) const { return header.getByPosition(position).type; }
 
     ColumnPtr & getColumn(size_t position) { return columns[position]; }
 
@@ -796,12 +800,12 @@ void ExpressionAction::execute(
             if (can_replace && dst_pos != INDEX_NOT_FOUND)
             {
                 container.getColumn(dst_pos) = container.getColumn(src_pos);
-                container.setType(result_type, dst_pos);
+                container.setType(container.getType(src_pos), dst_pos);
             }
             else
             {
                 index[result_name.position] = container.getNumColumns();
-                container.insertColumn(container.getColumn(src_pos), result_type, result_name);
+                container.insertColumn(container.getColumn(src_pos), container.getType(src_pos), result_name);
             }
 
             break;
@@ -1309,13 +1313,44 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
+
+    /// 1) Sometimes we don't need any columns to perform actions and sometimes actions doesn't produce any columns as result.
+    /// But Block class doesn't store any information about structure itself, it uses information from column.
+    /// If we remove all columns from input or output block we will lose information about amount of rows in it.
+    /// To avoid this situation we always leaving one of the columns in required columns (input)
+    /// and output column. We choose that "redundant" column by size with help of getSmallestColumn.
+    ///
+    /// 2) Sometimes we have to read data from different Storages to execute query.
+    /// For example in 'remote' function which requires to read data from local table (for example MergeTree) and
+    /// remote table (doesn't know anything about it).
+    ///
+    /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
+    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
+    /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
+
+    /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
+
+    bool dummy_column_copied = false;
+
+
     /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
     if (needed_columns.empty() && !input_columns.empty())
-        needed_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        needed_columns.insert(colname);
+        actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+        dummy_column_copied = true;
+    }
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
     if (final_columns.empty() && !input_columns.empty())
-        final_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        final_columns.insert(DUMMY_COLUMN_NAME);
+        if (!dummy_column_copied) /// otherwise we already have this column
+            actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+    }
 
     for (auto it = input_columns.begin(); it != input_columns.end();)
     {
@@ -1330,9 +1365,9 @@ void ExpressionActions::finalize(const Names & output_columns)
     }
 
 /*    std::cerr << "\n";
-    for (const auto & action : actions)
-        std::cerr << action.toString() << "\n";
-    std::cerr << "\n";*/
+      for (const auto & action : actions)
+          std::cerr << action.toString() << "\n";
+      std::cerr << "\n";*/
 
     /// Deletes unnecessary temporary columns.
 

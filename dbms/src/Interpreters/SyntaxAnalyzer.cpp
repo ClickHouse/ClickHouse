@@ -22,6 +22,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -509,11 +510,14 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
         for (const auto & col : analyzed_join.columns_from_joined_table)
             joined_columns.insert(col.original_name);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, joined_columns, aliases};
+        bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, joined_columns, aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        if (is_asof)
+            data.asofToJoinKeys();
     }
 
     bool make_nullable = join_use_nulls && isLeftOrFull(table_join.kind);
