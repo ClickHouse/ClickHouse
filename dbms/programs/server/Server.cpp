@@ -37,6 +37,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/SystemLog.cpp>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -52,9 +53,6 @@
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
 
-#include <Interpreters/TextLog.h>
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/SystemLog.cpp>
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
