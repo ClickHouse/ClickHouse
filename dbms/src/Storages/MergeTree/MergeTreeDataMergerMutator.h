@@ -95,7 +95,7 @@ public:
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         MergeListEntry & merge_entry, time_t time_of_merge,
-        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
+        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication, bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
@@ -120,7 +120,8 @@ public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    ActionBlocker actions_blocker;
+    ActionBlocker merges_blocker;
+    ActionBlocker ttl_merges_blocker;
 
     enum class MergeAlgorithm
     {
