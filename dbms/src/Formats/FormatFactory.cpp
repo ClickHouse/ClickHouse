@@ -22,22 +22,14 @@ namespace ErrorCodes
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
 }
 
-//
-//const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
-//{
-//    auto it = dict.find(name);
-//    if (dict.end() != it)
-//        return it->second;
-//    throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
-//}
-
-const FormatFactory::ProcessorCreators & FormatFactory::getProcessorCreators(const String & name) const
+const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
 {
-    auto it = processors_dict.find(name);
-    if (processors_dict.end() != it)
+    auto it = dict.find(name);
+    if (dict.end() != it)
         return it->second;
     throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
+
 
 static FormatSettings getInputFormatSetting(const Settings & settings)
 {
@@ -90,6 +82,9 @@ BlockInputStreamPtr FormatFactory::getInput(
     if (name == "Native")
         return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
 
+    if (!getCreators(name).input_processor_creator)
+        return getInput(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
+
     auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
@@ -97,18 +92,21 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
 {
-    if (name == "PrettyCompactMonoBlock")
-    {
-        /// TODO: rewrite
-        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(
-                std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+//    if (name == "PrettyCompactMonoBlock")
+//    {
+//        /// TODO: rewrite
+//        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
+//        auto res = std::make_shared<SquashingBlockOutputStream>(
+//                std::make_shared<OutputStreamToOutputFormat>(format),
+//                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+//
+//        res->disableFlush();
+//
+//        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
+//    }
 
-        res->disableFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-    }
+    if (!getCreators(name).output_processor_creator)
+        return getOutput(name, buf, sample, context);
 
     auto format = getOutputFormat(name, buf, sample, context);
 
@@ -128,7 +126,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     UInt64 rows_portion_size,
     ReadCallback callback) const
 {
-    const auto & input_getter = getProcessorCreators(name).first;
+    const auto & input_getter = getCreators(name).input_processor_creator;
     if (!input_getter)
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
@@ -150,7 +148,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
 {
-    const auto & output_getter = getProcessorCreators(name).second;
+    const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
@@ -164,25 +162,25 @@ OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer 
 }
 
 
-void FormatFactory::registerInputFormat(const String & /*name*/, InputCreator /*input_creator*/)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
-//    auto & target = dict[name].first;
-//    if (target)
-//        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-//    target = std::move(input_creator);
+    auto & target = dict[name].inout_creator;
+    if (target)
+        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(input_creator);
 }
 
-void FormatFactory::registerOutputFormat(const String & /*name*/, OutputCreator /*output_creator*/)
+void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
-//    auto & target = dict[name].second;
-//    if (target)
-//        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-//    target = std::move(output_creator);
+    auto & target = dict[name].output_creator;
+    if (target)
+        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(output_creator);
 }
 
 void FormatFactory::registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator)
 {
-    auto & target = processors_dict[name].first;
+    auto & target = dict[name].input_processor_creator;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
@@ -190,7 +188,7 @@ void FormatFactory::registerInputFormatProcessor(const String & name, InputProce
 
 void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)
 {
-    auto & target = processors_dict[name].second;
+    auto & target = dict[name].output_processor_creator;
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
