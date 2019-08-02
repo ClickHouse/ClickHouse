@@ -1101,7 +1101,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
 std::optional<RangeSet> KeyCondition::applyMonotonicFunctionsChainToRangeSet(
     RangeSet key_range_set,
-    const FunctionsChain &functions,
+    const FunctionsChain & functions,
     DataTypePtr current_type)
 {
     for (const auto& func : functions)
@@ -1122,7 +1122,7 @@ std::optional<RangeSet> KeyCondition::applyMonotonicFunctionsChainToRangeSet(
 std::optional<RangeSet> KeyCondition::applyInvertibleFunctionsChainToRange(
     RangeSet key_range_set,
     const FunctionsChain & functions,
-    const FunctionArgumentStack& argument_stack)
+    const FunctionArgumentStack & argument_stack)
 {
     for (size_t i = 0; i < functions.size(); ++i)
     {

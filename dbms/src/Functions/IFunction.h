@@ -230,7 +230,7 @@ public:
     virtual bool isInvertible() const { return false; }
 
     /// Computes the inverse image of given range of values in the form of a vector of parallelograms.
-    virtual bool invertRange(const Range& /*value range*/, size_t /*argument index*/, const DataTypes& /*argument types*/, RangeSet& /*result*/) const
+    virtual bool invertRange(const Range & /*value range*/, size_t /*argument index*/, const DataTypes & /*argument types*/, RangeSet & /*result*/) const
     {
         throw Exception("Function " + getName() + " cannot be inverted.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -482,7 +482,7 @@ public:
 
     bool isInvertible() const override { return function->isInvertible(); }
 
-    bool invertRange(const Range& value_range, size_t arg_index, const DataTypes& arg_types, RangeSet & result) const override
+    bool invertRange(const Range & value_range, size_t arg_index, const DataTypes & arg_types, RangeSet & result) const override
     {
         return function->invertRange(value_range, arg_index, arg_types, result);
     }

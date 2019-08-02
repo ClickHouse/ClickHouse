@@ -51,11 +51,11 @@ namespace DB
     bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
     bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
-    RangeSet::RangeSet(const std::vector<DB::Range> &data): data(data)
+    RangeSet::RangeSet(const std::vector<DB::Range> & data): data(data)
     {
         normalize();
     }
-    RangeSet::RangeSet(const DB::Range &range)
+    RangeSet::RangeSet(const DB::Range & range)
     {
         data = {range};
     }
@@ -68,7 +68,7 @@ namespace DB
         {
             return;
         }
-        std::sort(data.begin(), data.end(), [](const Range& lhs, const Range& rhs)
+        std::sort(data.begin(), data.end(), [](const Range & lhs, const Range & rhs)
         {
             return !lhs.left_bounded ||
             (rhs.left_bounded && (Range::less(lhs.left, rhs.left)
@@ -79,7 +79,7 @@ namespace DB
         Field right_border;
         bool right_bounded = false;
         bool right_included = false;
-        for (const auto& range : data)
+        for (const auto & range : data)
         {
             // Adding a new range, when it doesn't intersect the current rightmost range
             if (
@@ -132,7 +132,7 @@ namespace DB
             }
             else
             {
-                for (const auto &range : rhs.data)
+                for (const auto & range : rhs.data)
                 {
                     data.push_back(range);
                 }
@@ -150,15 +150,15 @@ namespace DB
     }
 
     /// Intersect a set of ranges with a single range
-    RangeSet & RangeSet::operator |= (const Range &rhs)
+    RangeSet & RangeSet::operator |= (const Range & rhs)
     {
         return ((*this) |= RangeSet(rhs));
     }
 
     /// Check whether a range intersects a set of ranges
-    bool RangeSet::intersectsRange(const Range &rhs) const
+    bool RangeSet::intersectsRange(const Range & rhs) const
     {
-        auto cmp_left = [](const Range& element, const Range& value)
+        auto cmp_left = [](const Range & element, const Range & value)
         {
             if (!value.left_bounded)
             {
@@ -189,7 +189,7 @@ namespace DB
             }
         }
         auto left_it = rp;
-        auto cmp_right = [](const Range& element, const Range& value)
+        auto cmp_right = [](const Range & element, const Range & value)
         {
             if (!value.right_bounded)
             {
@@ -278,11 +278,11 @@ namespace DB
 
     /// Apply an invertible function to a set of ranges
     std::optional<RangeSet> RangeSet::applyInvertibleFunction(
-            const FunctionBasePtr &func,
+            const FunctionBasePtr & func,
             size_t arg_index)
     {
         RangeSet result;
-        for (const auto& range : data)
+        for (const auto & range : data)
         {
             RangeSet tmp;
             bool inverted = func->invertRange(range, arg_index, func->getArgumentTypes(), tmp);

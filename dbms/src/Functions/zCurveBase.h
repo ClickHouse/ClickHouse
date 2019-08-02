@@ -20,16 +20,16 @@ namespace DB
         {
             return std::make_shared<FunctionZCurveBase>(context);
         }
-        FunctionZCurveBase(const Context& /*context*/) {}
+        FunctionZCurveBase(const Context & /*context*/) {}
 
 
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
 
         using ResultType = typename Op::ResultType;
-        DataTypePtr getReturnTypeImpl(const DataTypes& arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            for (const auto& type : arguments)
+            for (const auto & type : arguments)
             {
                 if (!type->isValueRepresentedByInteger() &&
                     type->getTypeId() != TypeIndex::Float32 &&
@@ -73,7 +73,7 @@ namespace DB
             return true;
         }
 
-        bool invertRange(const Range& value_range, size_t arg_index, const DataTypes& arg_types, RangeSet & result) const override
+        bool invertRange(const Range& value_range, size_t arg_index, const DataTypes & arg_types, RangeSet & result) const override
         {
             Range copy = value_range;
             copy.shrinkToIncludedIfPossible(); // always possible if not unbounded, since the result type is UInt64
@@ -125,7 +125,7 @@ namespace DB
 
     private:
         /// Write binary data of certain type to field.
-        void writeField(const DataTypePtr & type, ResultType src, Field& field) const
+        void writeField(const DataTypePtr & type, ResultType src, Field & field) const
         {
             auto type_id = type->getTypeId();
             if (type->isValueRepresentedByUnsignedInteger())
@@ -173,7 +173,7 @@ namespace DB
         /// which is just taking every arity-th bit starting from some position
         ResultType extractArgument(ResultType z_value, size_t argument_index, size_t arity) const
         {
-            const size_t number_of_bits = (sizeof(ResultType) << 3);
+            static constexpr size_t number_of_bits = (sizeof(ResultType) << 3);
             ResultType result = 0;
             ResultType res_bit = 1ull << (number_of_bits - 1);
             for (ResultType bit = 1ull << (number_of_bits - (arity - argument_index)); bit; bit >>= arity)
@@ -188,7 +188,7 @@ namespace DB
         }
         /// Get maximal and minimal possible bit representation of a given argument
         /// when the values fall in a given range of z values.
-        /* For the i-th argument of a fucntion with arity k in the range [L, R] we do roughly the following:
+        /* For the i-th argument of a function with arity k in the range [L, R] we do roughly the following:
          * Consider L and R as blocks of k bits, such that the bit corresponding to out argument
          * is the last bit of every block. The first block (highest-order bits) can be smaller than k.
          * We try to find the maximum value for the last bit of each block, going from the highest bits.
@@ -209,7 +209,7 @@ namespace DB
         {
             auto left_min = left, left_max = left;
             auto right_min = right, right_max = right;
-            size_t number_of_bits = sizeof(ResultType) << 3;
+            static constexpr size_t number_of_bits = sizeof(ResultType) << 3;
 
             ResultType max_first_block_value = (1ull << (arity - argument_index)) - 1;
             ResultType get_first_block = max_first_block_value << (number_of_bits - arity + argument_index);
@@ -323,7 +323,7 @@ namespace DB
                 size_t arity,
                 const DataTypePtr & type) const
         {
-            int byte_length = sizeof(ResultType), bit_length = byte_length << 3;
+            static constexpr int byte_length = sizeof(ResultType), bit_length = byte_length << 3;
             ResultType tmp = 0;
             memcpy(&tmp, argument, argument_size);
             Op::encode(tmp, type);

@@ -18,7 +18,7 @@ namespace DB
     struct ZCurveNormalizedOpImpl
     {
         using ResultType = UInt64;
-        static void encode(ResultType& num, const DataTypePtr & type)
+        static void encode(ResultType & num, const DataTypePtr & type)
         {
             ZCurveOpImpl::encode(num, type);
             if (num == 0)
@@ -126,7 +126,7 @@ namespace DB
                 }
             }
             std::reverse(ranges.begin(), ranges.end());
-            for (auto& range : ranges)
+            for (auto & range : ranges)
             {
                 range.first <<= diff_bits;
                 range.second <<= diff_bits;

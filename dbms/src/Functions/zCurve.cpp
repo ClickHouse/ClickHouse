@@ -8,7 +8,7 @@ namespace DB
 
     ZCurveOpImpl::ResultType ZCurveOpImpl::decode(
             ZCurveOpImpl::ResultType num,
-            const DB::DataTypePtr &type,
+            const DB::DataTypePtr & type,
             bool is_left,
             size_t significant_digits)
     {
@@ -83,7 +83,7 @@ namespace DB
         return num;
     }
 
-    void ZCurveOpImpl::encode(ZCurveOpImpl::ResultType &num, const DataTypePtr &type)
+    void ZCurveOpImpl::encode(ZCurveOpImpl::ResultType & num, const DataTypePtr & type)
     {
         auto type_id = type->getTypeId();
         // Flip the sign bit of signed integers
@@ -120,7 +120,7 @@ namespace DB
     std::vector<std::pair<ZCurveOpImpl::ResultType, ZCurveOpImpl::ResultType>> ZCurveOpImpl::decodeRange(
             ResultType left,
             ResultType right,
-            const DataTypePtr &type,
+            const DataTypePtr & type,
             size_t significant_digits)
     {
         return {{decode(left, type, true, significant_digits), decode(right, type, false, significant_digits)}};
