@@ -867,25 +867,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     if (sum_marks == 0)
         return streams;
 
-    /// In case of reverse order let's split ranges to avoid reading much data.
+    /// Let's split ranges to avoid reading much data.
     auto split_ranges = [rows_granularity = data.settings.index_granularity, max_block_size](const auto & ranges, int direction)
     {
-        if (direction == 1)
-            return ranges;
-
         MarkRanges new_ranges;
-
-        /// Probably it useful to make it larger.
         const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
-        size_t marks_in_range = 1;
 
         for (auto range : ranges)
         {
+            size_t marks_in_range = 1;
             while (range.begin + marks_in_range < range.end)
             {
                 if (direction == 1)
                 {
-                    /// Comment
+                    /// Split first few ranges to avoid reading much data.
                     new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
                     range.begin += marks_in_range;
                     marks_in_range *= 2;
@@ -895,7 +890,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
                 }
                 else
                 {
-                    /// Comment
+                    /// Split all ranges to avoid reading much data, because we have to
+                    ///  store whole range in memory to reverse it.
                     new_ranges.emplace_back(range.end - marks_in_range, range.end);
                     range.end -= marks_in_range;
                     marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
