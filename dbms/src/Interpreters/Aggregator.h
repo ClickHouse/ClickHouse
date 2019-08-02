@@ -120,8 +120,9 @@ private:
 template <typename Base>
 struct AggregationDataWithNullKeyTwoLevel : public Base
 {
-    using Base::Base;
     using Base::impls;
+
+    AggregationDataWithNullKeyTwoLevel() {}
 
     template <typename Other>
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
@@ -179,7 +180,7 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
-        static_cast<ColumnVectorHelper *>(key_columns[0].get())->insertRawData<sizeof(FieldType)>(reinterpret_cast<const char *>(&value.getFirst()));
+        static_cast<ColumnVectorHelper *>(key_columns[0].get())->insertRawData<sizeof(FieldType)>(reinterpret_cast<const char *>(&value.first));
     }
 };
 
@@ -207,7 +208,7 @@ struct AggregationMethodString
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(value.getFirst().data, value.getFirst().size);
+        key_columns[0]->insertData(value.first.data, value.first.size);
     }
 };
 
@@ -235,7 +236,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(value.getFirst().data, value.getFirst().size);
+        key_columns[0]->insertData(value.first.data, value.first.size);
     }
 };
 
@@ -331,7 +332,7 @@ struct AggregationMethodKeysFixed
                 /// corresponding key is nullable. Update the null map accordingly.
                 size_t bucket = i / 8;
                 size_t offset = i % 8;
-                UInt8 val = (reinterpret_cast<const UInt8 *>(&value.getFirst())[bucket] >> offset) & 1;
+                UInt8 val = (reinterpret_cast<const UInt8 *>(&value.first)[bucket] >> offset) & 1;
                 null_map->insertValue(val);
                 is_null = val == 1;
             }
@@ -341,7 +342,7 @@ struct AggregationMethodKeysFixed
             else
             {
                 size_t size = key_sizes[i];
-                observed_column->insertData(reinterpret_cast<const char *>(&value.getFirst()) + pos, size);
+                observed_column->insertData(reinterpret_cast<const char *>(&value.first) + pos, size);
                 pos += size;
             }
         }
@@ -376,7 +377,7 @@ struct AggregationMethodSerialized
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
-        auto pos = value.getFirst().data;
+        auto pos = value.first.data;
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
     }

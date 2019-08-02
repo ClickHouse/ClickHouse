@@ -8,10 +8,39 @@
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Содержат метрики, используемые для профилирования и мониторинга.
-Обычно отражают количество событий, происходящих в данный момент в системе, или ресурсов, суммарно потребляемых системой.
-Пример: количество запросов типа SELECT, исполняемых в текущий момент; количество потребляемой памяти.
-`system.asynchronous_metrics` и `system.metrics` отличаются набором и способом вычисления метрик.
+Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объем используемой оперативной памяти.
+
+Столбцы:
+
+- `metric` ([String](../data_types/string.md)) — название метрики.
+- `value` ([Float64](../data_types/float.md)) — значение метрики.
+
+**Пример**
+
+```sql
+SELECT * FROM system.asynchronous_metrics LIMIT 10
+```
+
+```text
+┌─metric──────────────────────────────────┬──────value─┐
+│ jemalloc.background_thread.run_interval │          0 │
+│ jemalloc.background_thread.num_runs     │          0 │
+│ jemalloc.background_thread.num_threads  │          0 │
+│ jemalloc.retained                       │  422551552 │
+│ jemalloc.mapped                         │ 1682989056 │
+│ jemalloc.resident                       │ 1656446976 │
+│ jemalloc.metadata_thp                   │          0 │
+│ jemalloc.metadata                       │   10226856 │
+│ UncompressedCacheCells                  │          0 │
+│ MarkCacheFiles                          │          0 │
+└─────────────────────────────────────────┴────────────┘
+```
+
+**Смотрите также**
+
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 
 ## system.clusters
 
@@ -19,15 +48,16 @@
 Столбцы:
 
 ```
-cluster String      - имя кластера
-shard_num UInt32    - номер шарда в кластере, начиная с 1
-shard_weight UInt32 - относительный вес шарда при записи данных
-replica_num UInt32  - номер реплики в шарде, начиная с 1
-host_name String    - имя хоста, как прописано в конфиге
-host_address String - IP-адрес хоста, полученный из DNS
-port UInt16         - порт, на который обращаться для соединения с сервером
-user String         - имя пользователя, которого использовать для соединения с сервером
+cluster String — имя кластера.
+shard_num UInt32 — номер шарда в кластере, начиная с 1.
+shard_weight UInt32 — относительный вес шарда при записи данных
+replica_num UInt32  — номер реплики в шарде, начиная с 1.
+host_name String — хост, указанный в конфигурации.
+host_address String — IP-адрес хоста, полученный из DNS.
+port UInt16 — порт, на который обращаться для соединения с сервером.
+user String — имя пользователя, которого использовать для соединения с сервером.
 ```
+
 ## system.columns
 
 Содержит информацию о столбцах всех таблиц.
@@ -72,9 +102,35 @@ default_expression String - выражение для значения по ум
 
 ## system.events {#system_tables-events}
 
-Содержит информацию о количестве произошедших в системе событий, для профилирования и мониторинга.
-Пример: количество обработанных запросов типа SELECT.
-Столбцы: event String - имя события, value UInt64 - количество.
+Содержит информацию о количестве событий, произошедших в системе. Например, в таблице можно найти, сколько запросов `SELECT` обработано с момента запуска сервера ClickHouse.
+
+Столбцы:
+
+- `event` ([String](../data_types/string.md)) — имя события.
+- `value` ([UInt64](../data_types/int_uint.md)) — количество произошедших событий.
+- `description` ([String](../data_types/string.md)) — описание события.
+
+**Пример**
+
+```sql
+SELECT * FROM system.events LIMIT 5
+```
+
+```text
+┌─event─────────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                                 │    12 │ Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.                  │
+│ SelectQuery                           │     8 │ Same as Query, but only for SELECT queries.                                                                                                                                                                                                                │
+│ FileOpen                              │    73 │ Number of files opened.                                                                                                                                                                                                                                    │
+│ ReadBufferFromFileDescriptorRead      │   155 │ Number of reads (read/pread) from a file descriptor. Does not include sockets.                                                                                                                                                                             │
+│ ReadBufferFromFileDescriptorReadBytes │  9931 │ Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.                                                                                                                                              │
+└───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+- [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
 
 ## system.functions
 
@@ -123,11 +179,47 @@ default_expression String - выражение для значения по ум
 
 ## system.metrics {#system_tables-metrics}
 
+Содержит метрики, которые могут быть рассчитаны мгновенно или имеют текущее значение. Например, число одновременно обрабатываемых запросов или текущее значение задержки реплики. Эта таблица всегда актуальна.
+
+Столбцы:
+
+- `metric` ([String](../data_types/string.md)) — название метрики.
+- `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
+- `description` ([String](../data_types/string.md)) — описание метрики.
+
+**Пример**
+
+```sql
+SELECT * FROM system.metrics LIMIT 10
+```
+
+```text
+┌─metric─────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Query                      │     1 │ Number of executing queries                                                                                                                                                                      │
+│ Merge                      │     0 │ Number of executing background merges                                                                                                                                                            │
+│ PartMutation               │     0 │ Number of mutations (ALTER DELETE/UPDATE)                                                                                                                                                        │
+│ ReplicatedFetch            │     0 │ Number of data parts being fetched from replicas                                                                                                                                                │
+│ ReplicatedSend             │     0 │ Number of data parts being sent to replicas                                                                                                                                                      │
+│ ReplicatedChecks           │     0 │ Number of data parts checking for consistency                                                                                                                                                    │
+│ BackgroundPoolTask         │     0 │ Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches, or replication queue bookkeeping)                                                                                │
+│ BackgroundSchedulePoolTask │     0 │ Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.   │
+│ DiskSpaceReservedForMerge  │     0 │ Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.                                                                     │
+│ DistributedSend            │     0 │ Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.                                                          │
+└────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+- [system.events](#system_tables-events) — таблица с количеством произошедших событий.
+- [Мониторинг](monitoring.md) — основы мониторинга в ClickHouse.
+
 ## system.numbers
 
 Таблица содержит один столбец с именем number типа UInt64, содержащим почти все натуральные числа, начиная с нуля.
 Эту таблицу можно использовать для тестов, а также если вам нужно сделать перебор.
 Чтения из этой таблицы не распараллеливаются.
+
 ## system.numbers_mt
 
 То же самое, что и system.numbers, но чтение распараллеливается. Числа могут возвращаться в произвольном порядке.

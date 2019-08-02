@@ -4,11 +4,11 @@
 #include <regex>
 #include <thread>
 #include <memory>
+#include <filesystem>
 
 #include <port/unistd.h>
 #include <sys/stat.h>
 
-#include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
 #include <Poco/AutoPtr.h>
@@ -36,7 +36,7 @@
 #include "ReportBuilder.h"
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 namespace DB

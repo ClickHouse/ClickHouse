@@ -22,6 +22,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -89,7 +90,7 @@ void collectSourceColumns(const ASTSelectQuery * select_query, StoragePtr storag
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const Context & context,
                              const Names & source_columns_list, const NameSet & source_columns_set,
-                             const JoinedColumnsList & columns_from_joined_table)
+                             const NameSet & columns_from_joined_table)
 {
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
 
@@ -101,7 +102,7 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         if (!context.getSettingsRef().asterisk_left_columns_only)
         {
             for (auto & column : columns_from_joined_table)
-                all_columns_name.emplace_back(column.name_and_type.name);
+                all_columns_name.emplace_back(column);
         }
 
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
@@ -483,57 +484,36 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
-                          const Aliases & aliases, const String & current_database, bool join_use_nulls)
+                          const Aliases & aliases, bool join_use_nulls)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
         return;
 
     const auto & table_join = node->table_join->as<ASTTableJoin &>();
-    const auto & table_expression = node->table_expression->as<ASTTableExpression &>();
-    DatabaseAndTableWithAlias joined_table_name(table_expression, current_database);
 
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
-
-        for (auto & name : analyzed_join.key_names_right)
-            if (source_columns.count(name))
-                name = joined_table_name.getQualifiedNamePrefix() + name;
     }
     else if (table_join.on_expression)
     {
-        NameSet joined_columns;
-        for (const auto & col : analyzed_join.columns_from_joined_table)
-            joined_columns.insert(col.original_name);
+        bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, joined_columns, aliases};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, analyzed_join.getOriginalColumnsSet(), aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        if (is_asof)
+            data.asofToJoinKeys();
     }
 
     bool make_nullable = join_use_nulls && isLeftOrFull(table_join.kind);
 
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
-}
-
-Names qualifyOccupiedNames(NamesAndTypesList & columns, const NameSet & source_columns, const DatabaseAndTableWithAlias& table)
-{
-    Names originals;
-    originals.reserve(columns.size());
-
-    for (auto & column : columns)
-    {
-        originals.push_back(column.name);
-        if (source_columns.count(column.name))
-            column.name = table.getQualifiedNamePrefix() + column.name;
-    }
-
-    return originals;
 }
 
 void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
@@ -604,14 +584,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             const auto & joined_expression = node->table_expression->as<ASTTableExpression &>();
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
-            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
-            result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
+            result.analyzed_join.columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
+            result.analyzed_join.deduplicateAndQualifyColumnNames(source_columns_set, table.getQualifiedNamePrefix());
         }
 
         translateQualifiedNames(query, *select_query, context,
                                 (storage ? storage->getColumns().getOrdinary().getNames() : source_columns_list), source_columns_set,
-                                result.analyzed_join.columns_from_joined_table);
+                                result.analyzed_join.getQualifiedColumnsSet());
 
         /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
         InJoinSubqueriesPreprocessor(context).visit(query);
@@ -666,8 +645,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases,
-                             context.getCurrentDatabase(), settings.join_use_nulls);
+        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
     return std::make_shared<const SyntaxAnalyzerResult>(result);

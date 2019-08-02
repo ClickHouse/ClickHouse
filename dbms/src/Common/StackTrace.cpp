@@ -1,16 +1,16 @@
-#include <common/StackTrace.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 
-#include <sstream>
-#include <cstring>
-#include <cxxabi.h>
-#include <execinfo.h>
+#include <Common/StackTrace.h>
+#include <Common/SymbolIndex.h>
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
 
-#if USE_UNWIND
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-#endif
+#include <sstream>
+#include <filesystem>
+#include <unordered_map>
+#include <cstring>
+
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
@@ -155,7 +155,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
     return error.str();
 }
 
-void * getCallerAddress(const ucontext_t & context)
+static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -168,9 +168,9 @@ void * getCallerAddress(const ucontext_t & context)
 #endif
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#endif
-
+#else
     return nullptr;
+#endif
 }
 
 StackTrace::StackTrace()
@@ -182,18 +182,37 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
 
-    if (size == 0)
+    void * caller_address = getCallerAddress(signal_context);
+
+    if (size == 0 && caller_address)
     {
-        /// No stack trace was captured. At least we can try parsing caller address
-        void * caller_address = getCallerAddress(signal_context);
-        if (caller_address)
-            frames[size++] = reinterpret_cast<void *>(caller_address);
+        frames[0] = caller_address;
+        size = 1;
+    }
+    else
+    {
+        /// Skip excessive stack frames that we have created while finding stack trace.
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (frames[i] == caller_address)
+            {
+                offset = i;
+                break;
+            }
+        }
     }
 }
 
 StackTrace::StackTrace(NoCapture)
 {
 }
+
+
+#if USE_UNWIND
+extern "C" int unw_backtrace(void **, int);
+#endif
+
 
 void StackTrace::tryCapture()
 {
@@ -208,9 +227,63 @@ size_t StackTrace::getSize() const
     return size;
 }
 
+size_t StackTrace::getOffset() const
+{
+    return offset;
+}
+
 const StackTrace::Frames & StackTrace::getFrames() const
 {
     return frames;
+}
+
+
+static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+{
+    if (size == 0)
+        return "<Empty trace>";
+
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+
+        out << "#" << i << " " << addr << " ";
+        auto symbol = symbol_index.findSymbol(addr);
+        if (symbol)
+        {
+            int status = 0;
+            out << demangle(symbol->name, status);
+        }
+        else
+            out << "?";
+
+        out << " ";
+
+        if (auto object = symbol_index.findObject(addr))
+        {
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line;
+                else
+                    out << object->name;
+            }
+        }
+        else
+            out << "?";
+
+        out << "\n";
+    }
+
+    return out.str();
 }
 
 std::string StackTrace::toString() const
@@ -218,59 +291,6 @@ std::string StackTrace::toString() const
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
-    static SimpleCache<decltype(StackTrace::toStringImpl), &StackTrace::toStringImpl> func_cached;
-    return func_cached(frames, size);
-}
-
-std::string StackTrace::toStringImpl(const Frames & frames, size_t size)
-{
-    if (size == 0)
-        return "<Empty trace>";
-
-    char ** symbols = backtrace_symbols(frames.data(), size);
-    if (!symbols)
-        return "<Invalid trace>";
-
-    std::stringstream backtrace;
-    try
-    {
-        for (size_t i = 0; i < size; i++)
-        {
-            /// We do "demangling" of names. The name is in parenthesis, before the '+' character.
-
-            char * name_start = nullptr;
-            char * name_end = nullptr;
-            std::string demangled_name;
-            int status = 0;
-
-            if (nullptr != (name_start = strchr(symbols[i], '('))
-                && nullptr != (name_end = strchr(name_start, '+')))
-            {
-                ++name_start;
-                *name_end = '\0';
-                demangled_name = demangle(name_start, status);
-                *name_end = '+';
-            }
-
-            backtrace << i << ". ";
-
-            if (0 == status && name_start && name_end)
-            {
-                backtrace.write(symbols[i], name_start - symbols[i]);
-                backtrace << demangled_name << name_end;
-            }
-            else
-                backtrace << symbols[i];
-
-            backtrace << std::endl;
-        }
-    }
-    catch (...)
-    {
-        free(symbols);
-        throw;
-    }
-
-    free(symbols);
-    return backtrace.str();
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frames, offset, size);
 }
