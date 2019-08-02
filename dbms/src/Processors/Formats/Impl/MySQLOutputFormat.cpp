@@ -17,9 +17,10 @@ using namespace MySQLProtocol;
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings)
     : IOutputFormat(header, out_)
     , context(context)
-    , packet_sender(std::make_shared<PacketSender>(out, const_cast<uint8_t &>(context.mysql.sequence_id))) /// TODO: fix it
+    , packet_sender(out, const_cast<uint8_t &>(context.mysql.sequence_id)) /// TODO: fix it
     , format_settings(settings)
 {
+    packet_sender.max_packet_size = context.mysql.max_packet_size;
 }
 
 void MySQLOutputFormat::consume(Chunk chunk)
@@ -30,22 +31,21 @@ void MySQLOutputFormat::consume(Chunk chunk)
     {
         initialized = true;
 
-
         if (header.columns())
         {
 
-            packet_sender->sendPacket(LengthEncodedNumber(header.columns()));
+            packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
 
             for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
             {
                 ColumnDefinition column_definition(column.name, CharacterSet::binary, 0, ColumnType::MYSQL_TYPE_STRING,
                                                    0, 0);
-                packet_sender->sendPacket(column_definition);
+                packet_sender.sendPacket(column_definition);
             }
 
             if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
             {
-                packet_sender->sendPacket(EOF_Packet(0, 0));
+                packet_sender.sendPacket(EOF_Packet(0, 0));
             }
         }
     }
@@ -58,14 +58,11 @@ void MySQLOutputFormat::consume(Chunk chunk)
         ResultsetRow row_packet;
         for (size_t col = 0; col < columns.size(); ++col)
         {
-            String column_value;
-            WriteBufferFromString ostr(column_value);
+            WriteBufferFromOwnString ostr;
             header.getByPosition(col).type->serializeAsText(*columns[col], i, ostr, format_settings);
-            ostr.finish();
-
-            row_packet.appendColumn(std::move(column_value));
+            row_packet.appendColumn(std::move(ostr.str()));
         }
-        packet_sender->sendPacket(row_packet);
+        packet_sender.sendPacket(row_packet);
     }
 }
 
@@ -84,15 +81,19 @@ void MySQLOutputFormat::finalize()
                             << formatReadableSizeWithBinarySuffix(info.read_bytes / info.elapsed_seconds) << "/sec.";
     }
 
-    auto & header = getPort(PortKind::Main).getHeader();
-
+    const auto & header = getPort(PortKind::Main).getHeader();
     if (header.columns() == 0)
-        packet_sender->sendPacket(OK_Packet(0x0, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender.sendPacket(OK_Packet(0x0, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
     else
     if (context.mysql.client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_sender->sendPacket(OK_Packet(0xfe, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
+        packet_sender.sendPacket(OK_Packet(0xfe, context.mysql.client_capabilities, affected_rows, 0, 0, "", human_readable_info.str()), true);
     else
-        packet_sender->sendPacket(EOF_Packet(0, 0), true);
+        packet_sender.sendPacket(EOF_Packet(0, 0), true);
+}
+
+void MySQLOutputFormat::flush()
+{
+    packet_sender.out->next();
 }
 
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
