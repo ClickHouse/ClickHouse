@@ -46,6 +46,7 @@ namespace ActionLocks
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
     extern StorageActionBlockType DistributedSend;
+    extern StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -179,6 +180,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_MERGES:
             startStopAction(context, query, ActionLocks::PartsMerge, true);
+            break;
+        case Type::STOP_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, false);
+            break;
+        case Type::START_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
             break;
         case Type::STOP_FETCHES:
             startStopAction(context, query, ActionLocks::PartsFetch, false);
