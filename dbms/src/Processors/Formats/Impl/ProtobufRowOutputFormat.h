@@ -1,8 +1,13 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <Formats/IRowOutputStream.h>
+#include <Common/config.h>
+#if USE_PROTOBUF
+
+#include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/ProtobufWriter.h>
+#include <Formats/FormatSchemaInfo.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 
 
 namespace google
@@ -16,9 +21,6 @@ namespace protobuf
 
 namespace DB
 {
-class Block;
-class FormatSchemaInfo;
-
 /** Stream designed to serialize data in the google protobuf format.
   * Each row is written as a separated message.
   * These messages are delimited according to documentation
@@ -27,12 +29,17 @@ class FormatSchemaInfo;
   * SELECT * from table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowOutputStream : public IRowOutputStream
+class ProtobufRowOutputFormat : public IRowOutputFormat
 {
 public:
-    ProtobufRowOutputStream(WriteBuffer & out, const Block & header, const FormatSchemaInfo & format_schema);
+    ProtobufRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header,
+        const FormatSchemaInfo & format_schema);
 
-    void write(const Block & block, size_t row_num) override;
+    String getName() const override { return "ProtobufRowOutputFormat"; }
+
+    void write(const Columns & columns, size_t row_num) override;
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
@@ -42,3 +49,4 @@ private:
 };
 
 }
+#endif
