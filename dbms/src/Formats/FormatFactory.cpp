@@ -199,7 +199,6 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory);
 void registerOutputFormatTabSeparated(FormatFactory & factory);
@@ -271,7 +270,6 @@ FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-    registerInputFormatRowBinary(*this);
     registerOutputFormatRowBinary(*this);
     registerInputFormatTabSeparated(*this);
     registerOutputFormatTabSeparated(*this);
