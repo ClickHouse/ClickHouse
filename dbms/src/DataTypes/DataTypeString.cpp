@@ -182,6 +182,7 @@ static NO_INLINE void deserializeExpectEmpty(ColumnString::Chars & data, ColumnS
             istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
 
         data[offset - 1] = 0;
+        ++count;
     }
 }
 
@@ -279,7 +280,7 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
         deserializeBinarySSE2<3>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
         deserializeBinarySSE2<2>(data, offsets, istr, limit);
-    else if (avg_chars_size >= 1)
+    else if (avg_chars_size >= 2)
         deserializeBinarySSE2<1>(data, offsets, istr, limit);
     else
         deserializeExpectEmpty(data, offsets, istr, limit);
