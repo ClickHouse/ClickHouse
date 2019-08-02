@@ -156,9 +156,8 @@ private:
                 "The second argument of function " + getName() + " (number of buckets) must be positive number", ErrorCodes::BAD_ARGUMENTS);
 
         if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
-            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) is not fit to "
-                    + DataTypeNumber<BucketsType>().getName(),
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) must not be greater than "
+                    + std::to_string(Impl::max_buckets), ErrorCodes::BAD_ARGUMENTS);
 
         return static_cast<BucketsType>(buckets);
     }
