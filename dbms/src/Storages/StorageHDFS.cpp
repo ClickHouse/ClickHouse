@@ -132,10 +132,11 @@ private:
     BlockOutputStreamPtr writer;
 };
 
-static Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
 {
     HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
+
     Strings result;
     size_t next_slash = for_match.find('/', 1);
     String cur_item_for_match = for_match.substr(0, next_slash);

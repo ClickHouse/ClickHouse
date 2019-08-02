@@ -28,6 +28,7 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/operations.hpp>
 
 namespace fs = boost::filesystem;
 
@@ -46,6 +47,43 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
+namespace
+{
+
+Strings LSWithRegexpMatching(const String & path_for_ls, const String & for_match)
+{
+    Strings result;
+    size_t next_slash = for_match.find('/', 1);
+    String cur_item_for_match = for_match.substr(0, next_slash);
+    String part_pattern = makeRegexpPatternFromGlobs(cur_item_for_match);
+    re2::RE2 matcher(part_pattern);
+
+    fs::directory_iterator end;
+    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    {
+        std::string cur_path = it->path().string();
+        size_t last_slash = cur_path.rfind('/');
+        String cur_path_item = cur_path.substr(last_slash);
+
+        if ((!is_directory(it->path())) && (next_slash == std::string::npos))
+        {
+            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            {
+                result.push_back(it->path().string());
+            }
+        }
+        else if ((is_directory(it->path())) && (next_slash != std::string::npos))
+        {
+            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            {
+                Strings result_part = LSWithRegexpMatching(cur_path, for_match);
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+    }
+    return result;
+}
+}
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
@@ -97,18 +135,9 @@ StorageFile::StorageFile(
             if (path.find_first_of("*?{") != std::string::npos)
             {
                 path_with_globs = true;
-                re2::RE2 matcher(makeRegexpPatternFromGlobs(path));
-                fs::path cur_dir(db_dir_path);
-                fs::directory_iterator end;
-                for (fs::directory_iterator it(cur_dir); it != end; ++it)
-                {
-                    std::string file = it->path().string();
-                    if (re2::RE2::FullMatch(file, matcher))
-                    {
-                        matched_paths.push_back(file);
-                        checkCreationIsAllowed(context_global, db_dir_path, matched_paths.back(), table_fd);
-                    }
-                }
+                matched_paths = LSWithRegexpMatching(db_dir_path, path);
+                for (const auto & cur_path : matched_paths)
+                    checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
             } else
                 checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
             is_db_table = false;
