@@ -128,14 +128,12 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 };
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
@@ -173,23 +171,19 @@ public:
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
