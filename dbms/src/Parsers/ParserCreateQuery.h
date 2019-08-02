@@ -263,7 +263,7 @@ protected:
 
 class ParserColumnsOrIndicesDeclarationList : public IParserBase
 {
-    protected:
+protected:
     const char * getName() const override { return "columns or indices declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

@@ -15,7 +15,7 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/Pipe.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
@@ -37,6 +37,7 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -501,6 +502,35 @@ void BaseDaemon::closeFDs()
     }
 }
 
+namespace
+{
+/// In debug version on Linux, increase oom score so that clickhouse is killed
+/// first, instead of some service. Use a carefully chosen random score of 555:
+/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+/// whatever errors that occur, because it's just a debugging aid and we don't
+/// care if it breaks.
+#if defined(__linux__) && !defined(NDEBUG)
+void debugIncreaseOOMScore()
+{
+    const std::string new_score = "555";
+    try
+    {
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(new_score.c_str(), new_score.size());
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
+                    e.displayText() + "'.");
+        return;
+    }
+    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
+}
+#else
+void debugIncreaseOOMScore() {}
+#endif
+}
+
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
@@ -630,6 +660,7 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
+    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {

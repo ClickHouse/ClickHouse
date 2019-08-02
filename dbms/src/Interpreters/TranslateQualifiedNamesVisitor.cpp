@@ -267,4 +267,14 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
     }
 }
 
+void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
+{
+    if (IdentifierSemantic::getColumnName(identifier) &&
+        IdentifierSemantic::getMembership(identifier))
+    {
+        ast = identifier.clone();
+        ast->as<ASTIdentifier>()->restoreCompoundName();
+    }
+}
+
 }
