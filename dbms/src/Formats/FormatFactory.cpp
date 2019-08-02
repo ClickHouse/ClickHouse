@@ -260,10 +260,7 @@ void registerOutputFormatProcessorNull(FormatFactory & factory);
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
 
 /// Input only formats.
-
-void registerInputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
-
 
 FormatFactory::FormatFactory()
 {
@@ -281,7 +278,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatJSONEachRow(*this);
     registerInputFormatProtobuf(*this);
     registerOutputFormatProtobuf(*this);
-    registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
 
