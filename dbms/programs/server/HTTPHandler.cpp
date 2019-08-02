@@ -95,54 +95,51 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 {
     using namespace Poco::Net;
 
-    switch (exception_code)
-    {
-        case ErrorCodes::REQUIRED_PASSWORD:
-            return HTTPResponse::HTTP_UNAUTHORIZED;
-        case ErrorCodes::CANNOT_PARSE_TEXT:
-        case ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE:
-        case ErrorCodes::CANNOT_PARSE_QUOTED_STRING:
-        case ErrorCodes::CANNOT_PARSE_DATE:
-        case ErrorCodes::CANNOT_PARSE_DATETIME:
-        case ErrorCodes::CANNOT_PARSE_NUMBER:
+    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+        return HTTPResponse::HTTP_UNAUTHORIZED;
+    else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
+             exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
+             exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
+             exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
+             exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
+             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
+             exception_code == ErrorCodes::TOO_DEEP_AST ||
+             exception_code == ErrorCodes::TOO_BIG_AST ||
+             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::INCORRECT_DATA ||
+             exception_code == ErrorCodes::TYPE_MISMATCH)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
+             exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
+             exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
+             exception_code == ErrorCodes::UNKNOWN_TYPE ||
+             exception_code == ErrorCodes::UNKNOWN_STORAGE ||
+             exception_code == ErrorCodes::UNKNOWN_DATABASE ||
+             exception_code == ErrorCodes::UNKNOWN_SETTING ||
+             exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
+             exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
+             exception_code == ErrorCodes::UNKNOWN_FORMAT ||
+             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE)
+        return HTTPResponse::HTTP_NOT_FOUND;
+    else if (exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+        return HTTPResponse::HTTP_NOT_FOUND;
+    else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
+        return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
+    else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
+        return HTTPResponse::HTTP_NOT_IMPLEMENTED;
+    else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
+             exception_code == ErrorCodes::CANNOT_OPEN_FILE)
+        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+    else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+        return HTTPResponse::HTTP_LENGTH_REQUIRED;
 
-        case ErrorCodes::CANNOT_PARSE_NUMBER:
-        case ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE:
-        case ErrorCodes::TOO_DEEP_AST:
-        case ErrorCodes::TOO_BIG_AST:
-        case ErrorCodes::UNEXPECTED_AST_STRUCTURE:
-
-        case ErrorCodes::SYNTAX_ERROR:
-
-        case ErrorCodes::INCORRECT_DATA:
-        case ErrorCodes::TYPE_MISMATCH:
-            return HTTPResponse::HTTP_BAD_REQUEST;
-        case ErrorCodes::UNKNOWN_TABLE:
-        case ErrorCodes::UNKNOWN_FUNCTION:
-        case ErrorCodes::UNKNOWN_IDENTIFIER:
-        case ErrorCodes::UNKNOWN_TYPE:
-        case ErrorCodes::UNKNOWN_STORAGE:
-        case ErrorCodes::UNKNOWN_DATABASE:
-        case ErrorCodes::UNKNOWN_SETTING:
-        case ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING:
-        case ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION:
-        case ErrorCodes::UNKNOWN_FORMAT:
-        case ErrorCodes::UNKNOWN_DATABASE_ENGINE:
-
-        case ErrorCodes::UNKNOWN_TYPE_OF_QUERY:
-            return HTTPResponse::HTTP_NOT_FOUND;
-        case ErrorCodes::QUERY_IS_TOO_LARGE:
-            return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
-        case ErrorCodes::NOT_IMPLEMENTED:
-            return HTTPResponse::HTTP_NOT_IMPLEMENTED;
-        case ErrorCodes::SOCKET_TIMEOUT:
-        case ErrorCodes::CANNOT_OPEN_FILE:
-            return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
-        case ErrorCodes::HTTP_LENGTH_REQUIRED:
-            return HTTPResponse::HTTP_LENGTH_REQUIRED;
-        default:
-            return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
-    }
+    return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
 
 
