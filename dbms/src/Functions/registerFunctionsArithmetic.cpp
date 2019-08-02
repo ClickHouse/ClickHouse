@@ -33,7 +33,9 @@ void registerFunctionRoundToExp2(FunctionFactory & factory);
 void registerFunctionRoundDuration(FunctionFactory & factory);
 void registerFunctionRoundAge(FunctionFactory & factory);
 
-void registerFunctionBitNotFunc(FunctionFactory & factory);
+void registerFunctionBitBoolMaskOr(FunctionFactory & factory);
+void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
+void registerFunctionBitWrapperFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
@@ -69,7 +71,9 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionRoundAge(factory);
 
     /// Not for external use.
-    registerFunctionBitNotFunc(factory);
+    registerFunctionBitBoolMaskOr(factory);
+    registerFunctionBitBoolMaskAnd(factory);
+    registerFunctionBitWrapperFunc(factory);
     registerFunctionBitSwapLastTwo(factory);
 }
 

@@ -6,13 +6,13 @@ namespace DB
 {
 
     template <typename A>
-    struct BitNotFuncImpl
+    struct BitWrapperFuncImpl
     {
         using ResultType = UInt8;
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
-            return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
+            return a == static_cast<UInt8>(0) ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
         }
 
 #if USE_EMBEDDED_COMPILER
@@ -21,10 +21,10 @@ namespace DB
 #endif
     };
 
-    struct NameBitNotFunc { static constexpr auto name = "__bitNotFunc"; };
-    using FunctionBitNotFunc = FunctionUnaryArithmetic<BitNotFuncImpl, NameBitNotFunc, true>;
+    struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
+    using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>;
 
-    template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNotFunc>
+    template <> struct FunctionUnaryArithmeticMonotonicity<NameBitWrapperFunc>
     {
         static bool has() { return false; }
         static IFunction::Monotonicity get(const Field &, const Field &)
@@ -33,9 +33,9 @@ namespace DB
         }
     };
 
-    void registerFunctionBitNotFunc(FunctionFactory & factory)
+    void registerFunctionBitWrapperFunc(FunctionFactory & factory)
     {
-        factory.registerFunction<FunctionBitNotFunc>();
+        factory.registerFunction<FunctionBitWrapperFunc>();
     }
 
 }
