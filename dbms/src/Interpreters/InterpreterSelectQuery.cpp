@@ -1931,9 +1931,10 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
                 stream = std::make_shared<AsynchronousBlockInputStream>(stream);
             });
 
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
             pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
                 pipeline.streams, sorting_info->prefix_order_descr,
-                settings.max_block_size, limit);
+                settings.max_block_size, limit_for_merging);
             pipeline.streams.resize(1);
         }
 

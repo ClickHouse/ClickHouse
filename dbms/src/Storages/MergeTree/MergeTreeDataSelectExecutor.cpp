@@ -872,32 +872,42 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     {
         MarkRanges new_ranges;
         const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+        size_t marks_in_range = 1;
 
-        for (auto range : ranges)
+        if (direction == 1)
         {
-            size_t marks_in_range = 1;
-            while (range.begin + marks_in_range < range.end)
+            /// Split first few ranges to avoid reading much data.
+            bool splitted = false;
+            for (auto range : ranges)
             {
-                if (direction == 1)
+                while (!splitted && range.begin + marks_in_range < range.end)
                 {
-                    /// Split first few ranges to avoid reading much data.
                     new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
                     range.begin += marks_in_range;
                     marks_in_range *= 2;
 
-                    if (marks_in_range * rows_granularity > max_block_size)
-                        break;
+                    if (marks_in_range > max_marks_in_range)
+                        splitted = true;
                 }
-                else
+                new_ranges.emplace_back(range.begin, range.end);
+            }
+        }
+        else
+        {
+            /// Split all ranges to avoid reading much data, because we have to
+            ///  store whole range in memory to reverse it.
+            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+            {
+                auto range = *it;
+                while (range.begin + marks_in_range < range.end)
                 {
-                    /// Split all ranges to avoid reading much data, because we have to
-                    ///  store whole range in memory to reverse it.
                     new_ranges.emplace_back(range.end - marks_in_range, range.end);
                     range.end -= marks_in_range;
                     marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
                 }
+                new_ranges.emplace_back(range.begin, range.end);
             }
-            new_ranges.emplace_back(range.begin, range.end);
+            std::reverse(new_ranges.begin(), new_ranges.end());
         }
 
         return new_ranges;
