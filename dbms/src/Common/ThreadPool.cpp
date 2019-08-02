@@ -13,6 +13,14 @@ namespace DB
     }
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric GlobalThread;
+    extern const Metric GlobalThreadActive;
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
+
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
@@ -148,6 +156,9 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    CurrentMetrics::Increment metric_all_threads(
+        std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
+
     while (true)
     {
         Job job;
@@ -174,6 +185,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             try
             {
+                CurrentMetrics::Increment metric_active_threads(
+                    std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
+
                 job();
             }
             catch (...)
