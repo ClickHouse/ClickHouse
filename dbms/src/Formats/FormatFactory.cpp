@@ -203,7 +203,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory);
 void registerOutputFormatValues(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory);
-void registerInputFormatTSKV(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -253,7 +252,6 @@ FormatFactory::FormatFactory()
     registerInputFormatValues(*this);
     registerOutputFormatValues(*this);
     registerInputFormatCSV(*this);
-    registerInputFormatTSKV(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
