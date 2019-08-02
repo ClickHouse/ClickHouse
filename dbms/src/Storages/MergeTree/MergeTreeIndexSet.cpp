@@ -306,7 +306,10 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     }
 
     if (atomFromAST(node))
-        node = makeASTFunction("__bitNotFunc", node);
+    {
+        if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
+            node = makeASTFunction("__bitWrapperFunc", node);
+    }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
@@ -366,12 +369,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "bitAnd",
+                    "__bitBoolMaskAnd",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "bitAnd",
+                    "__bitBoolMaskAnd",
                     args.back(),
                     last_arg);
 
@@ -385,12 +388,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "bitOr",
+                    "__bitBoolMaskOr",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "bitOr",
+                    "__bitBoolMaskOr",
                     args.back(),
                     last_arg);
 
