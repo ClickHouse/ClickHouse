@@ -30,7 +30,7 @@ using FunctionSigmoid = FunctionMathUnary<Impl>;
 
 static double sigmoid(double x)
 {
-    return 1.0 / (1.0 + exp(x));
+    return 1.0 / (1.0 + exp(-x));
 }
 
 using FunctionSigmoid = FunctionMathUnary<UnaryFunctionVectorized<SigmoidName, sigmoid>>;
