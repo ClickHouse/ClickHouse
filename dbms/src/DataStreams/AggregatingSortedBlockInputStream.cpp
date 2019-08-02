@@ -22,7 +22,7 @@ public:
     RemovingLowCardinalityBlockInputStream(BlockInputStreamPtr input_, ColumnNumbers positions_)
         : input(std::move(input_)), positions(std::move(positions_))
     {
-        header = transform(input_->getHeader());
+        header = transform(input->getHeader());
     }
 
     Block transform(Block block)
