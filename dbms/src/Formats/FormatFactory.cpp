@@ -241,7 +241,6 @@ void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
-void registerOutputFormatMySQLWire(FormatFactory & factory);
 
 void registerOutputFormatProcessorPretty(FormatFactory & factory);
 void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
@@ -274,8 +273,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProtobuf(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
-
-    registerOutputFormatMySQLWire(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
