@@ -1340,6 +1340,7 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto colname = getSmallestColumn(input_columns);
         needed_columns.insert(colname);
         actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+        actions.back().enumerateColumns(enumerated_columns);
         dummy_column_copied = true;
     }
 
@@ -1349,7 +1350,10 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto colname = getSmallestColumn(input_columns);
         final_columns.insert(DUMMY_COLUMN_NAME);
         if (!dummy_column_copied) /// otherwise we already have this column
+        {
             actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+            actions.back().enumerateColumns(enumerated_columns);
+        }
     }
 
     for (auto it = input_columns.begin(); it != input_columns.end();)
