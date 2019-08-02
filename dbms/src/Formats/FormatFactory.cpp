@@ -200,7 +200,6 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatValues(FormatFactory & factory);
 void registerOutputFormatValues(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory);
 
@@ -249,7 +248,6 @@ FormatFactory::FormatFactory()
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
     registerInputFormatTabSeparated(*this);
-    registerInputFormatValues(*this);
     registerOutputFormatValues(*this);
     registerInputFormatCSV(*this);
 
