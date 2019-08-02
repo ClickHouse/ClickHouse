@@ -223,7 +223,6 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
-void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
 
@@ -270,7 +269,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorParquet(*this);
 
 
-    registerOutputFormatVertical(*this);
     registerOutputFormatXML(*this);
     registerOutputFormatNull(*this);
 
