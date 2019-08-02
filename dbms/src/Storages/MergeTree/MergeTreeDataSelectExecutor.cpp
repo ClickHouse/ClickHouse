@@ -885,7 +885,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
                     range.begin += marks_in_range;
                     marks_in_range *= 2;
 
-                    if (marks_in_range > max_block_size)
+                    if (marks_in_range * rows_granularity > max_block_size)
                         break;
                 }
                 else
