@@ -1915,13 +1915,12 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
          * At this stage we merge per-thread streams into one.
          */
 
-        if (sorting_info->prefix_order_descr.size() < order_descr.size())
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        if (need_finish_sorting)
         {
             pipeline.transform([&](auto & stream)
             {
-                stream = std::make_shared<FinishSortingBlockInputStream>(
-                    stream, sorting_info->prefix_order_descr,
-                    order_descr, settings.max_block_size, limit);
+                stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
             });
         }
 
@@ -1933,9 +1932,16 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
             });
 
             pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
-                pipeline.streams, order_descr,
+                pipeline.streams, sorting_info->prefix_order_descr,
                 settings.max_block_size, limit);
             pipeline.streams.resize(1);
+        }
+
+        if (need_finish_sorting)
+        {
+            pipeline.firstStream() = std::make_shared<FinishSortingBlockInputStream>(
+                pipeline.firstStream(), sorting_info->prefix_order_descr,
+                order_descr, settings.max_block_size, limit);
         }
     }
     else
