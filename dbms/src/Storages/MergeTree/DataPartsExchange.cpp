@@ -55,6 +55,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     String part_name = params.get("part");
 
+    /// Validation of the input that may come from malicious replica.
+    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
     static std::atomic_uint total_sends {0};
 
     if ((data.settings.replicated_max_parallel_sends && total_sends >= data.settings.replicated_max_parallel_sends)
@@ -169,6 +172,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_)
 {
+    /// Validation of the input that may come from malicious replica.
+    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
