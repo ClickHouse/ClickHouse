@@ -12,7 +12,7 @@ Hello "world", 789 ,2016-01-03
 "Hello
  world", 100, 2016-01-04,
  default,,
- default-eof,,' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields --query="INSERT INTO csv FORMAT CSV";
+ default-eof,,' | $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 --query="INSERT INTO csv FORMAT CSV";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
