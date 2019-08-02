@@ -18,6 +18,8 @@
 #include <Formats/BlockOutputStreamFromRowOutputStream.h>
 
 #include <DataStreams/copyData.h>
+#include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+#include <Processors/Formats/OutputStreamToOutputFormat.h>
 
 
 int main(int, char **)
@@ -46,10 +48,9 @@ try
 
     RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, false, false, format_settings);
     BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, []{}, format_settings);
-    RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, format_settings);
-    BlockOutputStreamFromRowOutputStream block_output(row_output, sample);
+    BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, format_settings), sample);
 
-    copyData(block_input, block_output);
+    copyData(block_input, *block_output);
 }
 catch (const DB::Exception & e)
 {
