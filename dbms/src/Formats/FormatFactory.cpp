@@ -207,7 +207,6 @@ void registerInputFormatCSV(FormatFactory & factory);
 void registerOutputFormatCSV(FormatFactory & factory);
 void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
-void registerOutputFormatJSONEachRow(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
@@ -272,7 +271,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatCSV(*this);
     registerInputFormatTSKV(*this);
     registerOutputFormatTSKV(*this);
-    registerOutputFormatJSONEachRow(*this);
     registerInputFormatProtobuf(*this);
     registerOutputFormatProtobuf(*this);
     registerInputFormatParquet(*this);
