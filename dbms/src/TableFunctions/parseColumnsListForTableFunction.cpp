@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-void parseColumnsListFromString(const std::string & structure, Block & sample_block, const Context & context)
+ColumnsDescription parseColumnsListFromString(const std::string & structure, const Context & context)
 {
     Expected expected;
 
@@ -29,16 +29,7 @@ void parseColumnsListFromString(const std::string & structure, Block & sample_bl
     if (!columns_list)
         throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsDescription columns_desc = InterpreterCreateQuery::getColumnsDescription(*columns_list, context);
-
-    for (const auto & [name, type]: columns_desc.getAllPhysical())
-    {
-        ColumnWithTypeAndName column;
-        column.name = name;
-        column.type = type;
-        column.column = type->createColumn();
-        sample_block.insert(std::move(column));
-    }
+    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context);
 }
 
 }

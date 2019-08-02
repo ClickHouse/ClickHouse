@@ -672,6 +672,146 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
+## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+
+Calculates the moving sum of input values.
+
+```
+groupArrayMovingSum(numbers_for_summing)
+groupArrayMovingSum(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+**Example**
+
+The sample table:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingSum(int) AS I,
+    groupArrayMovingSum(float) AS F,
+    groupArrayMovingSum(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingSum(2)(int) AS I,
+    groupArrayMovingSum(2)(float) AS F,
+    groupArrayMovingSum(2)(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+
+Calculates the moving average of input values.
+
+```
+groupArrayMovingAvg(numbers_for_summing)
+groupArrayMovingAvg(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
+
+**Example**
+
+The sample table `b`:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingAvg(int) AS I,
+    groupArrayMovingAvg(float) AS F,
+    groupArrayMovingAvg(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
+│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
+└───────────┴─────────────────────────────────────┴───────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingAvg(2)(int) AS I,
+    groupArrayMovingAvg(2)(float) AS F,
+    groupArrayMovingAvg(2)(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
+│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
+└───────────┴──────────────────────────────────┴───────────────────────┘
+```
+
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
