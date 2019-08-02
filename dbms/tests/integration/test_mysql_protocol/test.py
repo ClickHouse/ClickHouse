@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', config_dir=config_dir)
+node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 9001
 
@@ -150,5 +150,9 @@ def test_golang_client(server_address, golang_container):
 def test_php_client(server_address, php_container):
     # type: (str, Container) -> None
     code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == 'tables\n'
+
+    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == 'tables\n'
