@@ -1634,6 +1634,17 @@ private:
         TypeIndex type_index = from_type->getTypeId();
         UInt32 scale = to_type->getScale();
 
+        WhichDataType which(type_index);
+        bool ok = which.isNativeInt() ||
+            which.isNativeUInt() ||
+            which.isDecimal() ||
+            which.isFloat() ||
+            which.isDateOrDateTime() ||
+            which.isStringOrFixedString();
+        if (!ok)
+            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
         return [type_index, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool

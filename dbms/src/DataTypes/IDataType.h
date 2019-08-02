@@ -463,9 +463,8 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    /// For late initialization.
-    WhichDataType()
-        : idx(TypeIndex::Nothing)
+    WhichDataType(TypeIndex idx_ = TypeIndex::Nothing)
+        : idx(idx_)
     {}
 
     WhichDataType(const IDataType & data_type)
