@@ -238,7 +238,6 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory);
 void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
-void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
 
 void registerOutputFormatProcessorPretty(FormatFactory & factory);
@@ -298,7 +297,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatPrettySpace(*this);
     registerOutputFormatVertical(*this);
     registerOutputFormatXML(*this);
-    registerOutputFormatODBCDriver(*this);
     registerOutputFormatNull(*this);
 
     registerOutputFormatProcessorPretty(*this);
