@@ -111,6 +111,81 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 }
 
 
+/// More efficient deserialization method in case when it's expected that most of the strings are empty
+static NO_INLINE void deserializeExpectEmpty(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+{
+    size_t count = 0;
+    size_t offset = data.size();
+
+#ifdef __SSE2__
+    const __m128i zero16 = _mm_setzero_si128();
+#endif
+
+    while (count < limit)
+    {
+#ifdef __SSE2__
+        if (count + 16 <= limit && istr.position() + 16 <= istr.buffer().end())
+        {
+            int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(istr.position())), zero16));
+
+            /// 16 consecutive empty strings
+            if (0 == mask)
+            {
+                size_t prev_data_size = data.size();
+                data.resize(prev_data_size + 16);
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(data.data() + prev_data_size), zero16);
+
+                for (size_t i = 0; i < 16; ++i)
+                {
+                    ++offset;
+                    offsets.push_back(offset);
+                }
+
+                istr.position() += 16;
+            }
+            else
+            {
+                for (size_t i = 0; i < 16; ++i)
+                {
+                    UInt64 size;
+                    readVarUInt(size, istr);
+
+                    offset += size + 1;
+                    offsets.push_back(offset);
+
+                    data.resize(offset);
+
+                    if (size)
+                        istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+
+                    data[offset - 1] = 0;
+                }
+            }
+
+            count += 16;
+            continue;
+        }
+#endif
+
+        if (istr.eof())
+            break;
+
+        UInt64 size;
+        readVarUInt(size, istr);
+
+        offset += size + 1;
+        offsets.push_back(offset);
+
+        data.resize(offset);
+
+        if (size)
+            istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+
+        data[offset - 1] = 0;
+    }
+}
+
+
 template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
@@ -204,8 +279,10 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
         deserializeBinarySSE2<3>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
         deserializeBinarySSE2<2>(data, offsets, istr, limit);
-    else
+    else if (avg_chars_size >= 1)
         deserializeBinarySSE2<1>(data, offsets, istr, limit);
+    else
+        deserializeExpectEmpty(data, offsets, istr, limit);
 }
 
 
