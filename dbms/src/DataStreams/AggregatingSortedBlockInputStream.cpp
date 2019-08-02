@@ -68,7 +68,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         /// We leave only states of aggregate functions.
-        if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get()) && !dynamic_cast<const DataTypeCusgit pulltomSimpleAggregateFunction *>(column.type->getCustomName()))
+        if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get()) && !dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             column_numbers_not_to_aggregate.push_back(i);
             continue;
