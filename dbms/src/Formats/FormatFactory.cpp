@@ -200,12 +200,10 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerOutputFormatTabSeparated(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory);
 void registerOutputFormatValues(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory);
 void registerInputFormatTSKV(FormatFactory & factory);
-void registerOutputFormatTSKV(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -252,12 +250,10 @@ FormatFactory::FormatFactory()
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
     registerInputFormatTabSeparated(*this);
-    registerOutputFormatTabSeparated(*this);
     registerInputFormatValues(*this);
     registerOutputFormatValues(*this);
     registerInputFormatCSV(*this);
     registerInputFormatTSKV(*this);
-    registerOutputFormatTSKV(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
