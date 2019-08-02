@@ -240,7 +240,6 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory);
 void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSON(FormatFactory & factory);
-void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
@@ -308,7 +307,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatPrettySpace(*this);
     registerOutputFormatVertical(*this);
     registerOutputFormatJSON(*this);
-    registerOutputFormatJSONCompact(*this);
     registerOutputFormatXML(*this);
     registerOutputFormatODBCDriver(*this);
     registerOutputFormatODBCDriver2(*this);
