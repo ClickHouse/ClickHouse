@@ -207,8 +207,6 @@ void registerInputFormatCSV(FormatFactory & factory);
 void registerOutputFormatCSV(FormatFactory & factory);
 void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
-void registerOutputFormatTSKV(FormatFactory & factory);
-void registerOutputFormatProtobuf(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -262,7 +260,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatCSV(*this);
     registerInputFormatTSKV(*this);
     registerOutputFormatTSKV(*this);
-    registerOutputFormatProtobuf(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
