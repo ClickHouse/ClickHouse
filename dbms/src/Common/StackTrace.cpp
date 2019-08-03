@@ -1,11 +1,10 @@
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
-
+#include <Common/config.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>

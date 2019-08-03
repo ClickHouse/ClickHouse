@@ -114,7 +114,7 @@ namespace
         out.next();
     }
 
-    const UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
