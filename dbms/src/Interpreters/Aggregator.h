@@ -155,7 +155,9 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
 
 
 /// For the case where there is one numeric key.
-template <typename FieldType, typename TData>    /// UInt8/16/32/64 for any type with corresponding bit width.
+/// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
+template <typename FieldType, typename TData,
+        bool consecutive_keys_optimization = true>
 struct AggregationMethodOneNumber
 {
     using Data = TData;
@@ -172,7 +174,8 @@ struct AggregationMethodOneNumber
     AggregationMethodOneNumber(const Other & other) : data(other.data) {}
 
     /// To use one `Method` in different threads, use different `State`.
-    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type, Mapped, FieldType>;
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+        Mapped, FieldType, consecutive_keys_optimization>;
 
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
@@ -421,8 +424,10 @@ struct AggregatedDataVariants : private boost::noncopyable
       */
     AggregatedDataWithoutKey without_key = nullptr;
 
-    std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key>>           key8;
-    std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key>>         key16;
+    // Disable consecutive key optimization for Uint8/16, because they use a FixedHashMap
+    // and the lookup there is almost free, so we don't need to cache the last lookup result
+    std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>>           key8;
+    std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>>         key16;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>         key32;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>         key64;

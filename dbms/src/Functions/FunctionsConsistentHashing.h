@@ -29,11 +29,12 @@ struct YandexConsistentHashImpl
     static constexpr auto name = "yandexConsistentHash";
 
     using HashType = UInt64;
-    /// Actually it supports UInt64, but it is effective only if n < 65536
-    using ResultType = UInt32;
-    using BucketsCountType = ResultType;
+    /// Actually it supports UInt64, but it is efficient only if n <= 32768
+    using ResultType = UInt16;
+    using BucketsType = ResultType;
+    static constexpr auto max_buckets = 32768;
 
-    static inline ResultType apply(UInt64 hash, BucketsCountType n)
+    static inline ResultType apply(UInt64 hash, BucketsType n)
     {
         return ConsistentHashing(hash, n);
     }
@@ -59,9 +60,10 @@ struct JumpConsistentHashImpl
 
     using HashType = UInt64;
     using ResultType = Int32;
-    using BucketsCountType = ResultType;
+    using BucketsType = ResultType;
+    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
 
-    static inline ResultType apply(UInt64 hash, BucketsCountType n)
+    static inline ResultType apply(UInt64 hash, BucketsType n)
     {
         return JumpConsistentHash(hash, n);
     }
@@ -74,9 +76,10 @@ struct SumburConsistentHashImpl
 
     using HashType = UInt32;
     using ResultType = UInt16;
-    using BucketsCountType = ResultType;
+    using BucketsType = ResultType;
+    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
 
-    static inline ResultType apply(HashType hash, BucketsCountType n)
+    static inline ResultType apply(HashType hash, BucketsType n)
     {
         return static_cast<ResultType>(sumburConsistentHash(hash, n));
     }
@@ -143,8 +146,7 @@ public:
 private:
     using HashType = typename Impl::HashType;
     using ResultType = typename Impl::ResultType;
-    using BucketsType = typename Impl::BucketsCountType;
-    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
+    using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
     inline BucketsType checkBucketsRange(T buckets)
@@ -153,10 +155,9 @@ private:
             throw Exception(
                 "The second argument of function " + getName() + " (number of buckets) must be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if (unlikely(static_cast<UInt64>(buckets) > max_buckets))
-            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) is not fit to "
-                    + DataTypeNumber<BucketsType>().getName(),
-                ErrorCodes::BAD_ARGUMENTS);
+        if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
+            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) must not be greater than "
+                    + std::to_string(Impl::max_buckets), ErrorCodes::BAD_ARGUMENTS);
 
         return static_cast<BucketsType>(buckets);
     }
