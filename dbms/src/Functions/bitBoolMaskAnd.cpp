@@ -21,11 +21,6 @@ namespace DB
 #if USE_EMBEDDED_COMPILER
         static constexpr bool compilable = false;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
-    {
-        if (!left->getType()->isIntegerTy() && !right->getType()->isIntegerTy())
-            throw Exception("__bitBoolMaskAnd expected an integral type", ErrorCodes::LOGICAL_ERROR);
-    }
 #endif
     };
 
