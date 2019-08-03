@@ -511,7 +511,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
-#if USE_INTERNAL_UNWIND_LIBRARY
+    /// Disable it if we collect test coverage information, because it will work extremely slow.
+#if USE_INTERNAL_UNWIND_LIBRARY && !WITH_COVERAGE
     /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
