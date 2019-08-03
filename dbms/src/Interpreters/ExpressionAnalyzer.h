@@ -59,7 +59,7 @@ struct ExpressionAnalyzerData
     bool rewrite_subqueries = false;
 
     /// Columns will be added to block by join.
-    JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
+    NamesAndTypesList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
