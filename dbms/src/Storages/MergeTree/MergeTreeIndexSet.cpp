@@ -21,16 +21,16 @@ namespace ErrorCodes
 const Field UNKNOWN_FIELD(3u);
 
 
-MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index)
+MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
     : IMergeTreeIndexGranule()
-    , index(index)
+    , index(index_)
     , block(index.header.cloneEmpty()) {}
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
-    const MergeTreeIndexSet & index, MutableColumns && mutable_columns)
+    const MergeTreeIndexSet & index_, MutableColumns && mutable_columns_)
     : IMergeTreeIndexGranule()
-    , index(index)
-    , block(index.header.cloneWithColumns(std::move(mutable_columns))) {}
+    , index(index_)
+    , block(index.header.cloneWithColumns(std::move(mutable_columns_))) {}
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
@@ -94,8 +94,8 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index)
-    : index(index), columns(index.header.cloneEmptyColumns())
+MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index_)
+    : index(index_), columns(index.header.cloneEmptyColumns())
 {
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(index.columns.size());
@@ -215,8 +215,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
-        const MergeTreeIndexSet &index)
-        : IMergeTreeIndexCondition(), index(index)
+        const MergeTreeIndexSet &index_)
+        : IMergeTreeIndexCondition(), index(index_)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
