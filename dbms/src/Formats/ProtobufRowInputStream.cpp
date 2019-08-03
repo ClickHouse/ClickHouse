@@ -1,8 +1,6 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
-
 #include "ProtobufRowInputStream.h"
 
+#if USE_PROTOBUF
 #include <Core/Block.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatFactory.h>

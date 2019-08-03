@@ -9,7 +9,7 @@
 #if USE_PROTOBUF
 
 #include <boost/noncopyable.hpp>
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/ReadBuffer.h>
 #include <memory>
 
