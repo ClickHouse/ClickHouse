@@ -109,6 +109,7 @@ def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, 
             number = item['number']
             if number not in pull_requests:
                 pull_requests[number] = {
+                    'title': item['title'],
                     'description': item['body'],
                     'user': item['user']['login'],
                 }
@@ -202,7 +203,7 @@ def process_pull_requests(pull_requests, users, repo):
 
         if lines:
             for i in range(len(lines) - 1):
-                if re.match('^\**Category\s*(\(leave one\))*:*\**\s*$', lines[i]):
+                if re.match('^\**Category', lines[i]):
                     cat_pos = i
                 if re.match('^\**\s*Short description', lines[i]):
                     short_descr_pos = i
@@ -222,6 +223,10 @@ def process_pull_requests(pull_requests, users, repo):
             if short_descr_pos + 2 != short_descr_end:
                 short_descr += ' ...'
 
+        # If we have nothing meaningful
+        if not re.match('\w', short_descr):
+            short_descr = u"{}: {}".format(item['title'], item['description'])
+
         # TODO: Add detailed description somewhere
 
         pattern = u"{} [#{}]({}) ({})"
@@ -237,7 +242,7 @@ def process_pull_requests(pull_requests, users, repo):
         groups[cat].append(pattern.format(short_descr, id, link, author))
 
     texts = []
-    for group, text in groups.items():
+    for group, text in sorted(groups.items(), key = lambda (k, v): k.lower()):
         items = [u'* {}'.format(pr) for pr in text]
         texts.append(u'### {}\n{}'.format(group if group else u'[No category]', '\n'.join(items)))
 
@@ -252,7 +257,7 @@ def load_state(state_file, base_sha, new_tag, prev_tag):
     if state_file:
         try:
             if os.path.exists(state_file):
-                logging.info('Reading state from %', state_file)
+                logging.info('Reading state from %s', state_file)
                 with codecs.open(state_file, encoding='utf-8') as f:
                     state = json.loads(f.read())
             else:
