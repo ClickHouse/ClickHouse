@@ -424,7 +424,7 @@ public:
     Compiler & getCompiler();
 
     /// Call after initialization before using system logs. Call for global context.
-    void initializeSystemLogs(std::shared_ptr<TextLog> text_log);
+    void initializeSystemLogs();
 
     void initializeTraceCollector();
     bool hasTraceCollector();
