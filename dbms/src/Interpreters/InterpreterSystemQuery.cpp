@@ -15,6 +15,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/TextLog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -230,7 +231,8 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
                     [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
-                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); }
+                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
+                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
