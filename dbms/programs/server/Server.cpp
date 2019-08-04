@@ -273,17 +273,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
-        if (text_log)
-            text_log->shutdown();
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
-        text_log.reset();
         global_context.reset();
-
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -413,7 +409,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(text_log);
+            setTextLog(global_context->getTextLog());
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
@@ -500,14 +496,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata from " + path);
 
-    /// Create text_log instance
-    text_log = createSystemLog<TextLog>(*global_context, "system", "text_log", global_context->getConfigRef(), "text_log");
-
     try
     {
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs(text_log);
+        global_context->initializeSystemLogs();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
         /// Then, load remaining databases
