@@ -1,9 +1,9 @@
 #include "config_formats.h"
+#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
 #if USE_CAPNP
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <capnp/serialize.h> // Y_IGNORE
