@@ -255,22 +255,20 @@ public:
     PacketPayloadWriteBuffer(WriteBuffer & out, size_t payload_length, uint8_t & sequence_id)
         : WriteBuffer(out.position(), 0), out(out), sequence_id(sequence_id), total_left(payload_length)
     {
-        startPacket();
+        startNewPacket();
+        setWorkingBuffer();
+        pos = out.position();
     }
 
-    void checkPayloadSize()
+    bool remainingPayloadSize()
     {
-        if (bytes_written + offset() < payload_length)
-        {
-            std::stringstream ss;
-            ss << "Incomplete payload. Written " << bytes << " bytes, expected " << payload_length << " bytes.";
-            throw Exception(ss.str(), 0);
-
-        }
+        return total_left;
     }
 
     ~PacketPayloadWriteBuffer() override
-    { next(); }
+    {
+        next();
+    }
 
 private:
     WriteBuffer & out;
@@ -279,8 +277,9 @@ private:
     size_t total_left = 0;
     size_t payload_length = 0;
     size_t bytes_written = 0;
+    bool eof = false;
 
-    void startPacket()
+    void startNewPacket()
     {
         payload_length = std::min(total_left, MAX_PACKET_LENGTH);
         bytes_written = 0;
@@ -288,34 +287,38 @@ private:
 
         out.write(reinterpret_cast<char *>(&payload_length), 3);
         out.write(sequence_id++);
+        bytes += 4;
+    }
 
+    /// Sets working buffer to the rest of current packet payload.
+    void setWorkingBuffer()
+    {
+        out.nextIfAtEnd();
         working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        pos = working_buffer.begin();
+
+        if (payload_length - bytes_written == 0)
+        {
+            /// Finished writing packet. Due to an implementation of WriteBuffer, working_buffer cannot be empty. Further write attempts will throw Exception.
+            eof = true;
+            working_buffer.resize(1);
+        }
     }
 
 protected:
     void nextImpl() override
     {
-        int written = pos - working_buffer.begin();
+        const int written = pos - working_buffer.begin();
+        if (eof)
+            throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+
         out.position() += written;
         bytes_written += written;
 
-        if (bytes_written < payload_length)
-        {
-            out.nextIfAtEnd();
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        }
-        else if (total_left > 0 || payload_length == MAX_PACKET_LENGTH)
-        {
-            // Starting new packet, since packets of size greater than MAX_PACKET_LENGTH should be split.
-            startPacket();
-        }
-        else
-        {
-            // Finished writing packet. Buffer is set to empty to prevent rewriting (pos will be set to the beginning of a working buffer in next()).
-            // Further attempts to write will stall in the infinite loop.
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position());
-        }
+        /// Packets of size greater than MAX_PACKET_LENGTH are split into few packets of size MAX_PACKET_LENGTH and las packet of size < MAX_PACKET_LENGTH.
+        if (bytes_written == payload_length && (total_left > 0 || payload_length == MAX_PACKET_LENGTH))
+            startNewPacket();
+
+        setWorkingBuffer();
     }
 };
 
@@ -327,7 +330,13 @@ public:
     {
         PacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
         writePayloadImpl(buf);
-        buf.checkPayloadSize();
+        buf.next();
+        if (buf.remainingPayloadSize())
+        {
+            std::stringstream ss;
+            ss << "Incomplete payload. Written " << getPayloadSize() - buf.remainingPayloadSize() << " bytes, expected " << getPayloadSize() << " bytes.";
+            throw Exception(ss.str(), 0);
+        }
     }
 
     virtual ~WritePacket() = default;

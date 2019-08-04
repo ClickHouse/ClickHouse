@@ -238,11 +238,11 @@ The key for partitioning by month allows reading only those data blocks which co
 
 ### Use of Index for Partially-Monotonic Primary Keys
 
-Consider, for example, the days of the month. They are the [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) inside one month, but they are not monotonic for a more extended period. This is the partially-monotonic sequence. If a user creates the table with such partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from such a table, ClickHouse analyzes query conditions. If the user wants to get data between two marks of the index and both this marks are within one month, ClickHouse can use the index in this particular case because it can calculate the distance between parameters of query and index marks.
+Consider, for example, the days of the month. They form a [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) for one month, but not monotonic for more extended periods. This is a partially-monotonic sequence. If a user creates the table with partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from this kind of table, ClickHouse analyzes the query conditions. If the user wants to get data between two marks of the index and both these marks fall within one month, ClickHouse can use the index in this particular case because it can calculate the distance between the parameters of a query and index marks.
 
-ClickHouse cannot use an index if the values of the primary key on the query parameters range don't represent the monotonic sequence. In this case, ClickHouse uses full scan method.
+ClickHouse cannot use an index if the values of the primary key in the query parameter range don't represent a monotonic sequence. In this case, ClickHouse uses the full scan method.
 
-ClickHouse uses this logic not only for days of month sequences but for any primary key which represents a partially-monotonic sequence.
+ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
 ### Data Skipping Indices (Experimental)
 

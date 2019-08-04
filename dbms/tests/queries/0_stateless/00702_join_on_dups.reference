@@ -178,15 +178,15 @@ self left nullable vs not nullable
 3	l4	4	2	l3	3
 4	l5	\N	3	l4	4
 4	l6	\N	3	l4	4
-5	l7	\N	0		0
-8	l8	\N	0		0
-9	l9	\N	0		0
+5	l7	\N	0		\N
+8	l8	\N	0		\N
+9	l9	\N	0		\N
 self left nullable vs not nullable 2
-1	r1	\N	0		
-1	r2	\N	0		
-2	r3	\N	0		
-3	r4	\N	0		
-3	r5	\N	0		
+1	r1	\N	0		\N
+1	r2	\N	0		\N
+2	r3	\N	0		\N
+3	r4	\N	0		\N
+3	r5	\N	0		\N
 4	r6	nr6	4	r6	nr6
 6	r7	nr7	6	r7	nr7
 7	r8	nr8	7	r8	nr8
@@ -268,6 +268,6 @@ self full nullable vs not nullable
 3	l4	4	2	l3	3
 4	l5	\N	3	l4	4
 4	l6	\N	3	l4	4
-5	l7	\N	0		0
-8	l8	\N	0		0
-9	l9	\N	0		0
+5	l7	\N	0		\N
+8	l8	\N	0		\N
+9	l9	\N	0		\N
