@@ -100,7 +100,7 @@ def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, tok
 
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
 def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, retry_timeout):
-    resp = github_api_get_json('search/issues?q={}+type:pr+repo:yandex/ClickHouse&sort=created&order=asc'.format(commit_sha), token, max_retries, retry_timeout)
+    resp = github_api_get_json('search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(commit_sha, repo), token, max_retries, retry_timeout)
 
     found = False
     for item in resp['items']:
@@ -166,24 +166,34 @@ def process_unknown_commits(commits, commits_info, users):
         html_url = info['html_url']
         msg = info['commit']['message']
 
-        # GitHub login
-        login = info['author']['login']
         name = None
+        login = None
+        author = None
 
-        # Firstly, try get name from github user
-        try:
-            name = users[login]['name']
-        except:
-            pass
+        if not info['author']:
+            author = 'Unknown'
+        else:
+            # GitHub login
+            if 'login' in info['author']:
+                login = info['author']['login']
 
-        # Then, try get name from commit
-        if not name:
-            try:
-                name = info['commit']['author']['name']
-            except:
-                pass
+                # First, try get name from github user
+                try:
+                    name = users[login]['name']
+                except:
+                    pass
+            else:
+                login = 'Unknown'
 
-        author = '[{}]({})'.format(name or login, info['author']['html_url'])
+            # Then, try get name from commit
+            if not name:
+                try:
+                    name = info['commit']['author']['name']
+                except:
+                    pass
+
+            author = '[{}]({})'.format(name or login, info['author']['html_url'])
+
         texts.append(pattern.format(commit, html_url, author, msg))
 
     text = 'Commits which are not from any pull request:\n\n'
@@ -369,9 +379,12 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     logging.info('Found %d users.', len(users))
     save_state(state_file, state)
 
-    print(process_pull_requests(pull_requests, users, repo))
-    print('\n\n')
-    print(process_unknown_commits(unknown_commits, commits_info, users))
+    changelog = u'{}\n\n{}'.format(process_pull_requests(pull_requests, users, repo), process_unknown_commits(unknown_commits, commits_info, users))
+
+    # Substitute links to issues
+    changelog = re.sub('(?<!\[)#(\d{4,})(?!\])', '[#\1](https://github.com/{}/issues/\1)'.format(repo), changelog)
+
+    print(changelog)
 
 
 if __name__ == '__main__':
@@ -379,7 +392,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Make changelog.')
     parser.add_argument('prev_release_tag', help='Git tag from previous release.')
     parser.add_argument('new_release_tag', help='Git tag for new release.')
-    parser.add_argument('--token', help='Github token. Use it to increase github api query limit. ')
+    parser.add_argument('--token', help='Github token. Use it to increase github api query limit.')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
     parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='yandex/ClickHouse')
