@@ -31,6 +31,14 @@
 #endif
 
 
+/** FastOps is a fast vector math library from Michael Parakhin (former Yandex CTO),
+  * Enabled by default.
+  */
+#if USE_FASTOPS
+#include <fastops/fastops.h>
+#endif
+
+
 namespace DB
 {
 
@@ -41,16 +49,14 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnaryFloat64 : public IFunction
+class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnaryFloat64>(); }
-    static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnary>(); }
 
 private:
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -60,38 +66,63 @@ private:
             throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        return std::make_shared<DataTypeFloat64>();
+        /// Integers are converted to Float64.
+        if (Impl::always_returns_float64 || !isFloat(arg))
+            return std::make_shared<DataTypeFloat64>();
+        else
+            return arg;
     }
 
-    template <typename T>
-    static void executeInIterations(const T * src_data, Float64 * dst_data, size_t size)
+    template <typename T, typename ReturnType>
+    static void executeInIterations(const T * src_data, ReturnType * dst_data, size_t size)
     {
-        const size_t rows_remaining = size % Impl::rows_per_iteration;
-        const size_t rows_size = size - rows_remaining;
-
-        for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
-            Impl::execute(&src_data[i], &dst_data[i]);
-
-        if (rows_remaining != 0)
+        if constexpr (Impl::rows_per_iteration == 0)
         {
-            T src_remaining[Impl::rows_per_iteration];
-            memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
-            memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
-            Float64 dst_remaining[Impl::rows_per_iteration];
+            /// Process all data as a whole and use FastOps implementation
 
-            Impl::execute(src_remaining, dst_remaining);
+            /// If the argument is integer, convert to Float64 beforehand
+            if constexpr (!std::is_floating_point_v<T>)
+            {
+                PODArray<Float64> tmp_vec(size);
+                for (size_t i = 0; i < size; ++i)
+                    tmp_vec[i] = src_data[i];
 
-            memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
+                Impl::execute(tmp_vec.data(), size, dst_data);
+            }
+            else
+            {
+                Impl::execute(src_data, size, dst_data);
+            }
+        }
+        else
+        {
+            const size_t rows_remaining = size % Impl::rows_per_iteration;
+            const size_t rows_size = size - rows_remaining;
+
+            for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
+                Impl::execute(&src_data[i], &dst_data[i]);
+
+            if (rows_remaining != 0)
+            {
+                T src_remaining[Impl::rows_per_iteration];
+                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                ReturnType dst_remaining[Impl::rows_per_iteration];
+
+                Impl::execute(src_remaining, dst_remaining);
+
+                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));
+            }
         }
     }
 
-    template <typename T>
+    template <typename T, typename ReturnType>
     static bool execute(Block & block, const ColumnVector<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
 
-        auto dst = ColumnVector<Float64>::create();
+        auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(size);
 
@@ -101,19 +132,19 @@ private:
         return true;
     }
 
-    template <typename T>
+    template <typename T, typename ReturnType>
     static bool execute(Block & block, const ColumnDecimal<T> * col, const size_t result)
     {
         const auto & src_data = col->getData();
         const size_t size = src_data.size();
         UInt32 scale = src_data.getScale();
 
-        auto dst = ColumnVector<Float64>::create();
+        auto dst = ColumnVector<ReturnType>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(src_data[i], scale);
+            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<ReturnType>>(src_data[i], scale);
 
         executeInIterations(dst_data.data(), dst_data.data(), size);
 
@@ -131,10 +162,11 @@ private:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
             using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
-            return execute<Type>(block, col_vec, result);
+            return execute<Type, ReturnType>(block, col_vec, result);
         };
 
         if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
@@ -149,6 +181,7 @@ struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
+    static constexpr bool always_returns_float64 = true;
 
     template <typename T>
     static void execute(const T * src, Float64 * dst)
@@ -164,6 +197,7 @@ struct UnaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 2;
+    static constexpr bool always_returns_float64 = true;
 
     template <typename T>
     static void execute(const T * src, Float64 * dst)

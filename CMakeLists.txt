@@ -194,10 +194,13 @@ endif ()
 option(WITH_COVERAGE "Build with coverage." 0)
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+   # If we want to disable coverage for specific translation units
+   set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
 if(WITH_COVERAGE AND COMPILER_GCC)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
    set(COVERAGE_OPTION "-lgcov")
+   set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -259,10 +262,10 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-if (NOT SANITIZE)
+if (NOT SANITIZE AND NOT SPLIT_SHARED_LIBRARIES)
     set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-endif()
+endif ()
 
 include (cmake/find_unwind.cmake)
 
@@ -308,8 +311,11 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
 
     if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        # TODO: Allow to use non-static library as well.
-        set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
+        if (USE_STATIC_LIBRARIES)
+            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
+        else ()
+            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_shared${${CMAKE_POSTFIX_VARIABLE}}.so")
+        endif ()
     else ()
         set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
     endif ()
@@ -347,6 +353,10 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+if (NOT GLIBC_COMPATIBILITY)
+    set (M_LIBRARY m)
 endif ()
 
 if (DEFAULT_LIBS)
@@ -466,6 +476,7 @@ include (cmake/find_hyperscan.cmake)
 include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
+include (cmake/find_fastops.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -558,4 +569,5 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
     add_default_dependencies(base64)
     add_default_dependencies(readpassphrase)
     add_default_dependencies(unwind_static)
+    add_default_dependencies(fastops)
 endif ()
