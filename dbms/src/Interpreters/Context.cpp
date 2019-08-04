@@ -5,12 +5,12 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -50,7 +50,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
@@ -204,8 +204,6 @@ struct ContextShared
     Stopwatch uptime_watch;
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
-
-    pcg64 rng{randomSeed()};
 
     /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
@@ -989,6 +987,21 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
+void Context::addViewSource(const StoragePtr & storage)
+{
+    if (view_source)
+        throw Exception(
+            "Temporary view source storage " + backQuoteIfNeed(view_source->getName()) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    view_source = storage;
+}
+
+
+StoragePtr Context::getViewSource()
+{
+    return view_source;
+}
+
+
 DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
     : map(map_), guards_lock(std::move(guards_lock_))
 {
@@ -1172,12 +1185,8 @@ void Context::setCurrentQueryId(const String & query_id)
             } words;
         } random;
 
-        {
-            auto lock = getLock();
-
-            random.words.a = shared->rng();
-            random.words.b = shared->rng();
-        }
+        random.words.a = thread_local_rng();
+        random.words.b = thread_local_rng();
 
         /// Use protected constructor.
         struct UUID : Poco::UUID
@@ -1636,10 +1645,11 @@ Compiler & Context::getCompiler()
 }
 
 
-void Context::initializeSystemLogs()
+void Context::initializeSystemLogs(std::shared_ptr<TextLog> text_log)
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
+    shared->system_logs->text_log = text_log;
 }
 
 bool Context::hasTraceCollector()
@@ -1697,9 +1707,20 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->trace_log)
-        return nullptr;
+        return {};
 
     return shared->system_logs->trace_log;
+}
+
+std::shared_ptr<TextLog> Context::getTextLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        if (auto log = shared->system_logs->text_log.lock())
+            return log;
+
+    return {};
 }
 
 

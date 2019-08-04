@@ -1,12 +1,16 @@
+#include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/StorageValues.h>
 
 namespace DB
 {
@@ -44,13 +48,15 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto dependent_table = context.getTable(database_table.first, database_table.second);
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
-            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
-                addTableLock(inner_table->lockStructureForShare(true, context.getCurrentQueryId()));
-
+            StoragePtr inner_table = materialized_view.getTargetTable();
             auto query = materialized_view.getInnerQuery();
-            BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
-                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
-            views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
+            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+            insert->database = inner_table->getDatabaseName();
+            insert->table = inner_table->getTableName();
+            ASTPtr insert_query_ptr(insert.release());
+            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
+            BlockIO io = interpreter.execute();
+            views.emplace_back(ViewInfo{query, database_table.first, database_table.second, io.out});
         }
     }
 
@@ -173,8 +179,13 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
 
     try
     {
-        BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-        InterpreterSelectQuery select(view.query, *views_context, from);
+        /// We create a table with the same name as original table and the same alias columns,
+        ///  but it will contain single block (that is INSERT-ed into main table).
+        /// InterpreterSelectQuery will do processing of alias columns.
+        Context local_context = *views_context;
+        local_context.addViewSource(StorageValues::create(storage->getDatabaseName(), storage->getTableName(), storage->getColumns(), block));
+        InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+
         BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

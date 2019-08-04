@@ -101,6 +101,7 @@ struct PerformanceStatistics
 
     Element data[NUM_ELEMENTS];
 
+    /// It's Ok that generator is not seeded.
     pcg64 rng;
 
     /// To select from different algorithms we use a kind of "bandits" algorithm.
