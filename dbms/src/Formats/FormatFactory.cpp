@@ -92,18 +92,18 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
 {
-//    if (name == "PrettyCompactMonoBlock")
-//    {
-//        /// TODO: rewrite
-//        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
-//        auto res = std::make_shared<SquashingBlockOutputStream>(
-//                std::make_shared<OutputStreamToOutputFormat>(format),
-//                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-//
-//        res->disableFlush();
-//
-//        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
-//    }
+    if (name == "PrettyCompactMonoBlock")
+    {
+        /// TODO: rewrite
+        auto format = getOutputFormat("PrettyCompact", buf, sample, context);
+        auto res = std::make_shared<SquashingBlockOutputStream>(
+                std::make_shared<OutputStreamToOutputFormat>(format),
+                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
+
+        res->disableFlush();
+
+        return std::make_shared<MaterializingBlockOutputStream>(res, sample);
+    }
 
     if (!getCreators(name).output_processor_creator)
         return getOutput(name, buf, sample, context);
