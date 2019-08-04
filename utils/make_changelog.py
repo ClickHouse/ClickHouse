@@ -382,7 +382,7 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     changelog = u'{}\n\n{}'.format(process_pull_requests(pull_requests, users, repo), process_unknown_commits(unknown_commits, commits_info, users))
 
     # Substitute links to issues
-    changelog = re.sub('(?<!\[)#(\d{4,})(?!\])', '[#\1](https://github.com/{}/issues/\1)'.format(repo), changelog)
+    changelog = re.sub(r'(?<!\[)#(\d{4,})(?!\])', r'[#\1](https://github.com/{}/issues/\1)'.format(repo), changelog)
 
     print(changelog)
 
