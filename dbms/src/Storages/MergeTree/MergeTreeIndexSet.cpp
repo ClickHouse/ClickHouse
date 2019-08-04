@@ -227,8 +227,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     const auto & select = query.query->as<ASTSelectQuery &>();
 
-    /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit = can be true, previous = can be false.
     if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
                 "and",
@@ -246,6 +244,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (useless)
         return;
 
+    /// Replace logical functions with bit functions.
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
