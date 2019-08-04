@@ -216,6 +216,10 @@ def process_pull_requests(pull_requests, users, repo):
             cat = lines[cat_pos + 1]
         cat = cat.strip().lstrip('-').strip()
 
+        # We are not interested in documentation PRs in changelog.
+        if re.match('^\**\s*(?:Documentation|Doc\s)', cat):
+            continue;
+
         short_descr = ''
         if short_descr_pos:
             short_descr_end = long_descr_pos or len(lines)
@@ -241,8 +245,16 @@ def process_pull_requests(pull_requests, users, repo):
             groups[cat] = []
         groups[cat].append(pattern.format(short_descr, id, link, author))
 
+    categories_preferred_order = ['New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Other']
+
+    def categories_sort_key(name):
+        if name in categories_preferred_order:
+            return categories_preferred_order.index(name)
+        else:
+            return name.lower()
+
     texts = []
-    for group, text in sorted(groups.items(), key = lambda (k, v): k.lower()):
+    for group, text in sorted(groups.items(), key = lambda (k, v):  categories_sort_key(k)):
         items = [u'* {}'.format(pr) for pr in text]
         texts.append(u'### {}\n{}'.format(group if group else u'[No category]', '\n'.join(items)))
 
