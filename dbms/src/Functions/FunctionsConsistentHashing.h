@@ -8,9 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <common/likely.h>
 
-#include <sumbur.h>
-#include <consistent_hashing.h>
-
 
 namespace DB
 {
@@ -21,69 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
-
-
-/// An O(1) time and space consistent hash algorithm by Konstantin Oblakov
-struct YandexConsistentHashImpl
-{
-    static constexpr auto name = "yandexConsistentHash";
-
-    using HashType = UInt64;
-    /// Actually it supports UInt64, but it is efficient only if n <= 32768
-    using ResultType = UInt16;
-    using BucketsType = ResultType;
-    static constexpr auto max_buckets = 32768;
-
-    static inline ResultType apply(UInt64 hash, BucketsType n)
-    {
-        return ConsistentHashing(hash, n);
-    }
-};
-
-
-/// Code from https://arxiv.org/pdf/1406.2294.pdf
-static inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
-{
-    int64_t b = -1, j = 0;
-    while (j < num_buckets)
-    {
-        b = j;
-        key = key * 2862933555777941757ULL + 1;
-        j = static_cast<int64_t>((b + 1) * (double(1LL << 31) / double((key >> 33) + 1)));
-    }
-    return static_cast<int32_t>(b);
-}
-
-struct JumpConsistentHashImpl
-{
-    static constexpr auto name = "jumpConsistentHash";
-
-    using HashType = UInt64;
-    using ResultType = Int32;
-    using BucketsType = ResultType;
-    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
-
-    static inline ResultType apply(UInt64 hash, BucketsType n)
-    {
-        return JumpConsistentHash(hash, n);
-    }
-};
-
-
-struct SumburConsistentHashImpl
-{
-    static constexpr auto name = "sumburConsistentHash";
-
-    using HashType = UInt32;
-    using ResultType = UInt16;
-    using BucketsType = ResultType;
-    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
-
-    static inline ResultType apply(HashType hash, BucketsType n)
-    {
-        return static_cast<ResultType>(sumburConsistentHash(hash, n));
-    }
-};
 
 
 template <typename Impl>
@@ -220,11 +154,5 @@ private:
             vec_result[i] = Impl::apply(static_cast<HashType>(vec_hash[i]), num_buckets);
     }
 };
-
-
-using FunctionYandexConsistentHash = FunctionConsistentHashImpl<YandexConsistentHashImpl>;
-using FunctionJumpConsistentHash = FunctionConsistentHashImpl<JumpConsistentHashImpl>;
-using FunctionSumburConsistentHash = FunctionConsistentHashImpl<SumburConsistentHashImpl>;
-
 
 }
