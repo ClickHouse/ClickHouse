@@ -68,7 +68,7 @@ struct EntropyData
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.getFirst()] = pair.getSecond();
+            map[pair.first] = pair.second;
         }
     }
 

@@ -27,7 +27,7 @@ public:
 private:
     Block header;
     Context & context;
-    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
+    MySQLProtocol::PacketSender packet_sender;
     FormatSettings format_settings;
 };
 
