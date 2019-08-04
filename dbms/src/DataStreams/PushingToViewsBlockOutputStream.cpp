@@ -10,7 +10,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <Storages/StorageBlock.h>
+#include <Storages/StorageBlockInserted.h>
 
 namespace DB
 {
@@ -183,7 +183,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         ///  but it will contain single block (that is INSERT-ed into main table).
         /// InterpreterSelectQuery will do processing of alias columns.
         Context local_context = *views_context;
-        local_context.addViewSource(StorageBlock::create(block, storage));
+        local_context.addViewSource(StorageBlockInserted::create(block, storage));
         InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
 
         BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);

@@ -48,7 +48,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageBlock.h>
+#include <Storages/StorageBlockInserted.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -274,7 +274,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             if (auto view_source = context.getViewSource())
             {
-                auto & storage_block = static_cast<const StorageBlock &>(*view_source);
+                auto & storage_block = static_cast<const StorageBlockInserted &>(*view_source);
                 if (storage_block.getDatabaseName() == database_name && storage_block.getTableName() == table_name)
                 {
                     /// Read from view source.
