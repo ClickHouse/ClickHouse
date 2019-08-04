@@ -5,16 +5,18 @@
 namespace DB
 {
 
-template <typename A>
-struct BitSwapLastTwoImpl
-{
-    using ResultType = UInt8;
-
-    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
+    /// This function provides "NOT" operation for BoolMasks by swapping last two bits ("can be true" <-> "can be false").
+    template <typename A>
+    struct BitSwapLastTwoImpl
     {
-        return static_cast<ResultType>(
-                ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
-    }
+        using ResultType = UInt8;
+
+        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+        {
+            return static_cast<ResultType>(
+                    ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
+        }
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
@@ -29,23 +31,23 @@ struct BitSwapLastTwoImpl
                 );
     }
 #endif
-};
+    };
 
-struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
-using FunctionBitSwapLastTwo = FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>;
+    struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
+    using FunctionBitSwapLastTwo = FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>;
 
-template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
-{
-    static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
     {
-        return {};
-    }
-};
+        static bool has() { return false; }
+        static IFunction::Monotonicity get(const Field &, const Field &)
+        {
+            return {};
+        }
+    };
 
-void registerFunctionBitSwapLastTwo(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionBitSwapLastTwo>();
-}
+    void registerFunctionBitSwapLastTwo(FunctionFactory & factory)
+    {
+        factory.registerFunction<FunctionBitSwapLastTwo>();
+    }
 
 }
