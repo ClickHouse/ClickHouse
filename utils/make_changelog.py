@@ -225,7 +225,7 @@ def process_pull_requests(pull_requests, users, repo):
 
         # If we have nothing meaningful
         if not re.match('\w', short_descr):
-            short_descr = u"{}: {}".format(item['title'], item['description'])
+            short_descr = item['title']
 
         # TODO: Add detailed description somewhere
 
@@ -358,6 +358,7 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     save_state(state_file, state)
 
     print(process_pull_requests(pull_requests, users, repo))
+    print('\n\n')
     print(process_unknown_commits(unknown_commits, commits_info, users))
 
 
