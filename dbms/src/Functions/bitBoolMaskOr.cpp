@@ -18,7 +18,7 @@ namespace DB
         static inline Result apply(A left, B right)
         {
             return static_cast<ResultType>(
-                    ((static_cast<ResultType>(left) & 1) | (static_cast<ResultType>(right) & 1))
+                    ((static_cast<ResultType>(left) | static_cast<ResultType>(right)) & 1)
                     | ((((static_cast<ResultType>(left) >> 1) & (static_cast<ResultType>(right) >> 1)) & 1) << 1));
         }
 
