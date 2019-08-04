@@ -461,7 +461,7 @@ public:
     UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
     {
         UInt64 count = 0;
-        if(range_start >= range_end)
+        if (range_start >= range_end)
             return count;
         if (isSmall())
         {
@@ -469,7 +469,8 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if((UInt32)val >= range_start && (UInt32)val < range_end) {
+                if ((UInt32)val >= range_start && (UInt32)val < range_end)
+                {
                     r1.add(val);
                     count++;
                 }
@@ -482,7 +483,7 @@ public:
             roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
             while (iterator.has_value)
             {
-                if((UInt32)iterator.current_value >= range_end)
+                if ((UInt32)iterator.current_value >= range_end)
                     break;
                 r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
