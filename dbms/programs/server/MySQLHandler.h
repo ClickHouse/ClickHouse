@@ -20,15 +20,15 @@ public:
 
 private:
     /// Enables SSL, if client requested.
-    MySQLProtocol::HandshakeResponse finishHandshake();
+    void finishHandshake(MySQLProtocol::HandshakeResponse &);
 
-    void comQuery(const String & payload);
+    void comQuery(ReadBuffer & payload);
 
-    void comFieldList(const String & payload);
+    void comFieldList(ReadBuffer & payload);
 
     void comPing();
 
-    void comInitDB(const String & payload);
+    void comInitDB(ReadBuffer & payload);
 
     static String generateScramble();
 
@@ -48,11 +48,11 @@ private:
     RSA & public_key;
     RSA & private_key;
 
+    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
     bool secure_connection = false;
-    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 
 }

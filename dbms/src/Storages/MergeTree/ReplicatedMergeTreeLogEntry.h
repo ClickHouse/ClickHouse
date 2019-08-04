@@ -80,6 +80,10 @@ struct ReplicatedMergeTreeLogEntryData
     String column_name;
     String index_name;
 
+    /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+    ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+    bool force_ttl = false;
+
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 

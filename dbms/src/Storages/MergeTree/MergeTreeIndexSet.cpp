@@ -227,8 +227,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     const auto & select = query.query->as<ASTSelectQuery &>();
 
-    /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit = can be true, previous = can be false.
     if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
                 "and",
@@ -246,6 +244,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (useless)
         return;
 
+    /// Replace logical functions with bit functions.
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
@@ -305,7 +305,12 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
         return;
     }
 
-    if (!atomFromAST(node))
+    if (atomFromAST(node))
+    {
+        if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
+            node = makeASTFunction("__bitWrapperFunc", node);
+    }
+    else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 
@@ -364,12 +369,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "bitAnd",
+                    "__bitBoolMaskAnd",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "bitAnd",
+                    "__bitBoolMaskAnd",
                     args.back(),
                     last_arg);
 
@@ -383,12 +388,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "bitOr",
+                    "__bitBoolMaskOr",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "bitOr",
+                    "__bitBoolMaskOr",
                     args.back(),
                     last_arg);
 

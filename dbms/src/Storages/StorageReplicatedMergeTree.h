@@ -424,6 +424,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         bool deduplicate,
+        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
