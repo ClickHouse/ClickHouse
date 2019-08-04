@@ -20,7 +20,6 @@ void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
-void registerFunctionsConsistentHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
 void registerFunctionsMiscellaneous(FunctionFactory &);
@@ -41,7 +40,7 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
-void registerFunctionsConsistentHashing(FunctionFactory & factory)
+void registerFunctionsConsistentHashing(FunctionFactory & factory);
 
 void registerFunctions()
 {
