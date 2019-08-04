@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS test1;
 
 CREATE TABLE test1 (
@@ -15,7 +13,7 @@ AS SELECT
   date,
   zoneId,
   test
-FROM test.test1;
+FROM test1;
 
 INSERT INTO test1 VALUES ('2018-12-10', '2018-12-10 23:59:59', 1);
 
