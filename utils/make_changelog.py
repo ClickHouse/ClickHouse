@@ -384,6 +384,9 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     # Substitute links to issues
     changelog = re.sub(r'(?<!\[)#(\d{4,})(?!\])', r'[#\1](https://github.com/{}/issues/\1)'.format(repo), changelog)
 
+    # Remove double whitespaces and trailing whitespaces
+    changelog = re.sub(r' {2,}| +$', r''.format(repo), changelog)
+
     print(changelog)
 
 
