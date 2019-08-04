@@ -2,6 +2,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -55,7 +56,6 @@ SystemLogs::~SystemLogs()
 {
     shutdown();
 }
-
 
 void SystemLogs::shutdown()
 {
