@@ -60,7 +60,6 @@ void registerFunctions()
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
-    registerFunctionsConsistentHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);
     registerFunctionsMiscellaneous(factory);
