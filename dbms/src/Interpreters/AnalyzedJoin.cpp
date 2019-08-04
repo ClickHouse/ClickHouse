@@ -21,6 +21,10 @@ void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 
     key_asts_left.push_back(ast);
     key_asts_right.push_back(ast);
+
+    auto & right_key = key_names_right.back();
+    if (renames.count(right_key))
+        right_key = renames[right_key];
 }
 
 void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
@@ -47,7 +51,7 @@ size_t AnalyzedJoin::rightKeyInclusion(const String & name) const
 }
 
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
-    const JoinedColumnsList & columns_added_by_join,
+    const NamesAndTypesList & columns_added_by_join,
     const ASTSelectQuery * select_query_with_join,
     const Context & context) const
 {
@@ -71,61 +75,81 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
 
     NameSet required_columns_set(key_names_right.begin(), key_names_right.end());
     for (const auto & joined_column : columns_added_by_join)
-        required_columns_set.insert(joined_column.name_and_type.name);
+        required_columns_set.insert(joined_column.name);
     Names required_columns(required_columns_set.begin(), required_columns_set.end());
 
-    NamesAndTypesList source_column_names;
-    for (auto & column : columns_from_joined_table)
-        source_column_names.emplace_back(column.name_and_type);
-
     ASTPtr query = expression_list;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_column_names, required_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns_from_joined_table, required_columns);
     ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns_set);
     return analyzer.getActions(true, false);
 }
 
-Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from_joined_table) const
+void AnalyzedJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
 {
-    Names original_columns;
-    for (const auto & column : columns_from_joined_table)
-        if (required_columns_from_joined_table.count(column.name_and_type.name))
-            original_columns.emplace_back(column.original_name);
-    return original_columns;
+    NameSet joined_columns;
+    NamesAndTypesList dedup_columns;
+
+    for (auto & column : columns_from_joined_table)
+    {
+        if (joined_columns.count(column.name))
+            continue;
+
+        joined_columns.insert(column.name);
+
+        dedup_columns.push_back(column);
+        auto & inserted = dedup_columns.back();
+
+        if (left_table_columns.count(column.name))
+            inserted.name = right_table_prefix + column.name;
+
+        original_names[inserted.name] = column.name;
+        if (inserted.name != column.name)
+            renames[column.name] = inserted.name;
+    }
+
+    columns_from_joined_table.swap(dedup_columns);
 }
 
-void AnalyzedJoin::calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names)
+NameSet AnalyzedJoin::getQualifiedColumnsSet() const
 {
-    columns_from_joined_table.clear();
+    NameSet out;
+    for (const auto & names : original_names)
+        out.insert(names.first);
+    return out;
+}
 
-    size_t i = 0;
-    for (auto & column : columns)
+NameSet AnalyzedJoin::getOriginalColumnsSet() const
+{
+    NameSet out;
+    for (const auto & names : original_names)
+        out.insert(names.second);
+    return out;
+}
+
+std::unordered_map<String, String> AnalyzedJoin::getOriginalColumnsMap(const NameSet & required_columns) const
+{
+    std::unordered_map<String, String> out;
+    for (const auto & column : required_columns)
     {
-        JoinedColumn joined_column(column, original_names[i++]);
-
-        /// We don't want to select duplicate columns from the joined subquery if they appear
-        if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
-            columns_from_joined_table.push_back(joined_column);
+        auto it = original_names.find(column);
+        if (it != original_names.end())
+            out.insert(*it);
     }
+    return out;
 }
 
 void AnalyzedJoin::calculateAvailableJoinedColumns(bool make_nullable)
 {
-    NameSet joined_columns;
+    if (!make_nullable)
+    {
+        available_joined_columns = columns_from_joined_table;
+        return;
+    }
 
     for (auto & column : columns_from_joined_table)
     {
-        auto & column_name = column.name_and_type.name;
-        auto & column_type = column.name_and_type.type;
-        auto & original_name = column.original_name;
-        {
-            if (joined_columns.count(column_name)) /// Duplicate columns in the subquery for JOIN do not make sense.
-                continue;
-
-            joined_columns.insert(column_name);
-
-            auto type = make_nullable && column_type->canBeInsideNullable() ? makeNullable(column_type) : column_type;
-            available_joined_columns.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
-        }
+        auto type = column.type->canBeInsideNullable() ? makeNullable(column.type) : column.type;
+        available_joined_columns.emplace_back(NameAndTypePair(column.name, std::move(type)));
     }
 }
 
