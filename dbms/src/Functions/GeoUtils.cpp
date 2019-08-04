@@ -66,11 +66,10 @@ inline UInt8 singleCoordBitsPrecision(UInt8 precision, CoordType type)
 inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 bits)
 {
     Encoded result;
-    result.fill(0);
 
     for (int i = 0; i < bits; ++i)
     {
-        Float64 mid = (max + min) / 2;
+        const Float64 mid = (max + min) / 2;
         if (coord >= mid)
         {
             result[i] = 1;
@@ -110,7 +109,6 @@ inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max,
 inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UInt8 precision)
 {
     Encoded result;
-    result.fill(0);
 
     const auto bits = (precision * BITS_PER_SYMBOL) / 2;
     UInt8 i = 0;
@@ -131,8 +129,6 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UIn
 inline std::tuple<Encoded, Encoded> split(const Encoded & combined, UInt8 precision)
 {
     Encoded lat, lon;
-    lat.fill(0);
-    lon.fill(0);
 
     UInt8 i = 0;
     for (; i < precision * BITS_PER_SYMBOL - 1; i += 2)
@@ -283,7 +279,6 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
     const auto lat_step = getSpan(precision, LATITUDE);
 
     // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
-    // align max to the right(or up) border of geohash grid cell to ensure that cell is in result.
     Float64 lon_min = floor(longitude_min / lon_step) * lon_step;
     Float64 lat_min = floor(latitude_min / lat_step) * lat_step;
     Float64 lon_max = ceil(longitude_max / lon_step) * lon_step;
@@ -291,12 +286,14 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
 
     const auto lon_span = lon_max - lon_min;
     const auto lat_span = lat_max - lat_min;
+    // in case of a very small (or zero) span, produce at least 1 item.
+    const auto items_count = std::max(size_t{1}, static_cast<size_t>(ceil(lon_span/lon_step * lat_span/lat_step)));
 
     return GeohashesInBoxPreparedArgs{
-            static_cast<size_t>(ceil(lon_span/lon_step * lat_span/lat_step)),
+            items_count,
             precision,
-            longitude_min,
-            latitude_min,
+            lon_min,
+            lat_min,
             lon_max,
             lat_max,
             lon_step,

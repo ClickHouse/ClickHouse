@@ -22,6 +22,7 @@ arbitrary values in all 4 quarters
 ['thym0','thym1','thym2','thym3','thym4','thym6','thym8','thym9','thymd']
 ['6gkzx5','6gkzx7','6gkzxh','6gkzxj','6gkzxk','6gkzxm']
 ['h927mu','h927mv','h927my','h927qh','h927qj','h927qn']
+small range always produces array of length 1
 zooming
 ['s7']
 ['s7w']

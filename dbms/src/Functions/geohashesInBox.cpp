@@ -16,9 +16,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 class FunctionGeohashesInBox : public IFunction
@@ -58,7 +58,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
-    bool tryExecute(const IColumn * lon_min_column,
+    void execute(const IColumn * lon_min_column,
                     const IColumn * lat_min_column,
                     const IColumn * lon_max_column,
                     const IColumn * lat_max_column,
@@ -78,7 +78,14 @@ public:
         }
 
         if (!lon_min || !lat_min || !lon_max || !lat_max || !precision)
-            return false;
+        {
+            throw Exception("Unsupported argument types for function " + getName() + " : " +
+                            lon_min_column->getName() + ", " +
+                            lat_min_column->getName() + ", " +
+                            lon_max_column->getName() + ", " +
+                            lat_max_column->getName() + ".",
+                            ErrorCodes::LOGICAL_ERROR);
+        }
 
         const size_t total_rows = lat_min->size();
 
@@ -100,9 +107,9 @@ public:
                         precision->getElement(row % precision->size()));
             if (prepared_args.items_count > max_array_size)
             {
-                throw Exception{getName() + " would produce " + std::to_string(prepared_args.items_count) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_array_size),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(getName() + " would produce " + std::to_string(prepared_args.items_count) +
+                                " array elements, which is bigger than the allowed maximum of " + std::to_string(max_array_size),
+                                ErrorCodes::TOO_LARGE_ARRAY_SIZE);
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -111,13 +118,13 @@ public:
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
             // Actually write geohashes into preallocated buffer.
-            const auto actual_array_size = GeoUtils::geohashesInBox(prepared_args, out);
+            GeoUtils::geohashesInBox(prepared_args, out);
 
-            for (UInt8 i = 1; i <= actual_array_size ; ++i)
+            for (UInt8 i = 1; i <= prepared_args.items_count ; ++i)
             {
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
             }
-            res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + actual_array_size);
+            res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + prepared_args.items_count);
         }
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
         {
@@ -126,13 +133,12 @@ public:
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception("Arrary column size mismatch (internal logical error)"
-                            + std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size())
-                            , ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Arrary column size mismatch (internal logical error)" +
+                            std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
+                            ErrorCodes::LOGICAL_ERROR);
         }
 
         result = std::move(col_res);
-        return true;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -144,21 +150,14 @@ public:
         const IColumn * prec =    block.getByPosition(arguments[4]).column.get();
         ColumnPtr & res = block.getByPosition(result).column;
 
-        if (tryExecute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res) ||
-            tryExecute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res))
-            return;
-
-        std::string arguments_description;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        if (checkColumn<ColumnVector<Float32>>(lon_min))
         {
-            if (i != 0)
-                arguments_description += ", ";
-            arguments_description += block.getByPosition(arguments[i]).column->getName();
+            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res);
         }
-
-        throw Exception("Unsupported argument types for function " + getName() + " : " +
-                        arguments_description,
-                        ErrorCodes::ILLEGAL_COLUMN);
+        else
+        {
+            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res);
+        }
     }
 };
 
