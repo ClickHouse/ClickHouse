@@ -190,6 +190,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
+
     throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
