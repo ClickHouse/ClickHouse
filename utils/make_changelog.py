@@ -100,7 +100,7 @@ def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, tok
 
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
 def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, retry_timeout):
-    resp = github_api_get_json('search/issues?q={}'.format(commit_sha), token, max_retries, retry_timeout)
+    resp = github_api_get_json('search/issues?q={}+type:pr+repo:yandex/ClickHouse&sort=created&order=asc'.format(commit_sha), token, max_retries, retry_timeout)
 
     found = False
     for item in resp['items']:
