@@ -41,6 +41,7 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -104,7 +105,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger_mutator.actions_blocker.cancelForever();
+    merger_mutator.merges_blocker.cancelForever();
     if (background_task_handle)
         background_pool.removeTask(background_task_handle);
 }
@@ -164,7 +165,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
         /// NOTE: It's assumed that this method is called under lockForAlter.
 
@@ -252,7 +253,7 @@ void StorageMergeTree::alter(
     }
 
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -590,9 +591,13 @@ bool StorageMergeTree::merge(
 
     try
     {
+        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate);
+            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 
@@ -730,7 +735,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
     if (shutdown_called)
         return BackgroundProcessingPoolTaskResult::ERROR;
 
-    if (merger_mutator.actions_blocker.isCancelled())
+    if (merger_mutator.merges_blocker.isCancelled())
         return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
@@ -825,7 +830,7 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
@@ -995,7 +1000,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
         auto lock = lockExclusively(context.getCurrentQueryId());
 
@@ -1153,7 +1158,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return merger_mutator.actions_blocker.cancel();
+        return merger_mutator.merges_blocker.cancel();
+    else if (action_type == ActionLocks::PartsTTLMerge)
+        return  merger_mutator.ttl_merges_blocker.cancel();
 
     return {};
 }

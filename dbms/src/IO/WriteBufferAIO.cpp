@@ -274,7 +274,7 @@ void WriteBufferAIO::prepare()
     /// Region of the disk in which we want to write data.
     const off_t region_begin = pos_in_file;
 
-    if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
+    if ((flush_buffer.offset() > static_cast<size_t>(std::numeric_limits<off_t>::max())) ||
         (pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(flush_buffer.offset()))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 

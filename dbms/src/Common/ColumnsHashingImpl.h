@@ -39,7 +39,7 @@ struct LastElementCache
     bool check(const Value & value_) { return !empty && value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.getFirst() == key; }
+    bool check(const Key & key) { return !empty && value.first == key; }
 };
 
 template <typename Data>
@@ -147,8 +147,8 @@ protected:
             if constexpr (has_mapped)
             {
                 /// Init PairNoInit elements.
-                cache.value.getSecond() = Mapped();
-                cache.value.getFirstMutable() = {};
+                cache.value.second = Mapped();
+                cache.value.first = {};
             }
             else
                 cache.value = Value();
@@ -170,7 +170,7 @@ protected:
                 static_cast<Derived &>(*this).onExistingKey(key, pool);
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.getSecond(), cache.value.getSecond(), false);
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
                 else
                     return EmplaceResult(false);
             }
@@ -204,7 +204,7 @@ protected:
             cache.empty = false;
 
             if constexpr (has_mapped)
-                cached = &cache.value.getSecond();
+                cached = &cache.value.second;
         }
 
         if constexpr (has_mapped)
@@ -221,7 +221,7 @@ protected:
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(&cache.value.getSecond(), cache.found);
+                    return FindResult(&cache.value.second, cache.found);
                 else
                     return FindResult(cache.found);
             }
@@ -240,7 +240,7 @@ protected:
             else
             {
                 if constexpr (has_mapped)
-                    cache.value.getFirstMutable() = key;
+                    cache.value.first = key;
                 else
                     cache.value = key;
             }

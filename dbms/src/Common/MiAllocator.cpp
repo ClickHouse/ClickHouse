@@ -1,8 +1,6 @@
-#include <Common/config.h>
+#include "MiAllocator.h"
 
 #if USE_MIMALLOC
-
-#include "MiAllocator.h"
 #include <mimalloc.h>
 
 #include <Common/Exception.h>
