@@ -46,6 +46,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
     if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETFL, flags | O_NONBLOCK))
         throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 
+#if !defined(__FreeBSD__)
     /** Increase pipe size to avoid slowdown during fine-grained trace collection.
       */
     constexpr int max_pipe_capacity_to_set = 1048576;
@@ -57,6 +58,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
             throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
 
     LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, max_pipe_capacity_to_set)));
+#endif
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
 }
