@@ -201,6 +201,13 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
+# Otherwise it will slow down stack traces printing too much.
+set_source_files_properties(
+        src/Common/Elf.cpp
+        src/Common/Dwarf.cpp
+        src/Common/SymbolIndex.cpp
+        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+
 target_link_libraries (clickhouse_common_io
         PUBLIC
     common
