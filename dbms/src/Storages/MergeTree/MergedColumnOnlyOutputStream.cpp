@@ -27,13 +27,13 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     {
         column_streams.clear();
         serialization_states.clear();
-        serialization_states.reserve(block.columns());
+        serialization_states.reserve(header.columns());
         WrittenOffsetColumns tmp_offset_columns;
         IDataType::SerializeBinaryBulkSettings settings;
 
-        for (size_t i = 0; i < block.columns(); ++i)
+        for (const auto & column_name : header.getNames())
         {
-            const auto & col = block.safeGetByPosition(i);
+            const auto & col = block.getByName(column_name);
 
             const auto columns = storage.getColumns();
             addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
@@ -71,9 +71,9 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     size_t new_index_offset = 0;
     size_t new_current_mark = 0;
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
-    for (size_t i = 0; i < block.columns(); ++i)
+    for (size_t i = 0; i < header.columns(); ++i)
     {
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
         std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
     }
 
