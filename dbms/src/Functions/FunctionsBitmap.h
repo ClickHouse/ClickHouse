@@ -318,9 +318,12 @@ private:
             columns[i] = block.getByPosition(arguments[i]).column.get();
             is_column_const[i] = isColumnConst(*columns[i]);
         }
-        if (is_column_const[0]) {
+        if (is_column_const[0])
+        {
             colAggFunc = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
-        } else{
+        }
+        else
+        {
             colAggFunc = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
         }
         container0 = &colAggFunc->getData();
