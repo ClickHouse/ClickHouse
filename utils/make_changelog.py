@@ -255,7 +255,7 @@ def process_pull_requests(pull_requests, users, repo):
             groups[cat] = []
         groups[cat].append(pattern.format(short_descr, id, link, author))
 
-    categories_preferred_order = ['New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Other']
+    categories_preferred_order = ['New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Backward Incompatible Change', 'Other']
 
     def categories_sort_key(name):
         if name in categories_preferred_order:
