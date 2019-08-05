@@ -23,32 +23,40 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header, c
     packet_sender.max_packet_size = context.mysql.max_packet_size;
 }
 
-void MySQLOutputFormat::consume(Chunk chunk)
+void MySQLOutputFormat::initialize()
 {
+    if (initialized)
+        return;
+
+    initialized = true;
     auto & header = getPort(PortKind::Main).getHeader();
 
-    if (!initialized)
+
+    if (header.columns())
     {
-        initialized = true;
 
-        if (header.columns())
+        packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
+
+        for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
         {
+            ColumnDefinition column_definition(column.name, CharacterSet::binary, 0, ColumnType::MYSQL_TYPE_STRING,
+                                               0, 0);
+            packet_sender.sendPacket(column_definition);
+        }
 
-            packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
-
-            for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
-            {
-                ColumnDefinition column_definition(column.name, CharacterSet::binary, 0, ColumnType::MYSQL_TYPE_STRING,
-                                                   0, 0);
-                packet_sender.sendPacket(column_definition);
-            }
-
-            if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
-            {
-                packet_sender.sendPacket(EOF_Packet(0, 0));
-            }
+        if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+        {
+            packet_sender.sendPacket(EOF_Packet(0, 0));
         }
     }
+}
+
+
+void MySQLOutputFormat::consume(Chunk chunk)
+{
+    initialize();
+
+    auto & header = getPort(PortKind::Main).getHeader();
 
     size_t rows = chunk.getNumRows();
     auto & columns = chunk.getColumns();
