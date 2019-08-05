@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -285,7 +285,8 @@ private:
 #undef M
 
             default:
-                throw Exception("Unknown JOIN keys variant for limited use", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         if (!rows_added)
