@@ -1,7 +1,7 @@
 ## ClickHouse release 19.11.3.11, 2019-07-18
 
 ### New Feature
-* Fixes for prepared statements. [#5630](https://github.com/yandex/ClickHouse/pull/5630) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Added support for prepared statements. [#5331](https://github.com/yandex/ClickHouse/pull/5331/) ([Alexander](https://github.com/sanych73)) [#5630](https://github.com/yandex/ClickHouse/pull/5630) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `DoubleDelta` and `Gorilla` column codecs [#5600](https://github.com/yandex/ClickHouse/pull/5600) ([Vasily Nemkov](https://github.com/Enmk))
 * Added `os_thread_priority` setting that allows to control the "nice" value of query processing threads that is used by OS to adjust dynamic scheduling priority. It requires `CAP_SYS_NICE` capabilities to work. This implements [#5858](https://github.com/yandex/ClickHouse/issues/5858) [#5909](https://github.com/yandex/ClickHouse/pull/5909) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Implement `_topic`, `_offset`, `_key` columns for Kafka engine [#5382](https://github.com/yandex/ClickHouse/pull/5382) ([Ivan](https://github.com/abyss7))
