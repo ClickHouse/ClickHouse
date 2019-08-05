@@ -143,7 +143,6 @@ def test_kafka_settings_old_syntax(kafka_cluster):
         time.sleep(0.5)
     kafka_check_result(result, True)
 
-@pytest.mark.skip(reason="fails for some reason")
 def test_kafka_settings_new_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -317,7 +316,6 @@ def test_kafka_materialized_view(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-@pytest.mark.skip(reason="Hungs")
 def test_kafka_flush_on_big_message(kafka_cluster):
     # Create batchs of messages of size ~100Kb
     kafka_messages = 1000
