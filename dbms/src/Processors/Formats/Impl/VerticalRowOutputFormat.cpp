@@ -110,12 +110,15 @@ void VerticalRowOutputFormat::writeSuffix()
 void VerticalRowOutputFormat::writeBeforeTotals()
 {
     writeCString("\n", out);
+    writeCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeBeforeExtremes()
 {
     if (!was_totals_written)
         writeCString("\n", out);
+
+    writeCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -136,8 +139,6 @@ void VerticalRowOutputFormat::writeTotals(const Columns & columns, size_t row_nu
 
 void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t row_num, PortKind port_kind, const char * title)
 {
-    writeCString("\n", out);
-
     row_number = 0;
     field_number = 0;
 
