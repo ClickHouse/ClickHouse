@@ -681,7 +681,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// HTTPS
-            create_server("https_port", [&]([[maybe_unused]]UInt16 port)
+            create_server("https_port", [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -718,7 +718,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP with SSL
-            create_server ("tcp_port_secure", [&]([[maybe_unused]]UInt16 port)
+            create_server ("tcp_port_secure", [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -753,7 +753,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
             });
 
-            create_server("interserver_https_port", [&]([[maybe_unused]]UInt16 port)
+            create_server("interserver_https_port", [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -773,7 +773,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
             });
 
-            create_server("mysql_port", [&]([[maybe_unused]]UInt16 port)
+            create_server("mysql_port", [&]([[maybe_unused]] UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::ServerSocket socket;
