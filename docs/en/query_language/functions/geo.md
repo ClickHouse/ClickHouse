@@ -183,9 +183,9 @@ SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 └────────────────────┘
 ```
 
-## geohashCoverAreaWithBoxes
+## geohashesInBox
 
-Covers specified area with the geohash-encoded "boxes" of specified precision, including bounds.
+Returns an array of geohash-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
 
 **Input values**
 
@@ -195,7 +195,7 @@ Covers specified area with the geohash-encoded "boxes" of specified precision, i
 - latitude_max - max latitude, floating value in range `[-90°, 90°]`
 - precision - geohash precision, `UInt8` in range `[1, 12]`
 
-Please note that all coorinate parametes should be of the same type: either `Float32` or `Float64`.
+Please note that all coordinate parameters should be of the same type: either `Float32` or `Float64`.
 
 **Returned values**
 
@@ -207,7 +207,7 @@ Please note that function will throw an exception if resulting array is over 10'
 **Example**
 
 ```
-SELECT geohashCoverAreaWithBoxes(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 ```
 ```
 ┌─thasos──────────────────────────────────────┐
