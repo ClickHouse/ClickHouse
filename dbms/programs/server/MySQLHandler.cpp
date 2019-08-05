@@ -299,7 +299,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         }
 
         password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; i++)
+        for (int i = 0; i < plaintext_size; ++i)
         {
             password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
         }
