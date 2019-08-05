@@ -253,7 +253,7 @@ static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset
     {
         const void * addr = frames[i];
 
-        out << "#" << i << " " << addr << " ";
+        out << i << ". " << addr << " ";
         auto symbol = symbol_index.findSymbol(addr);
         if (symbol)
         {
