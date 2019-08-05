@@ -51,7 +51,7 @@ class Benchmark : public Poco::Util::Application
 {
 public:
     Benchmark(unsigned concurrency_, double delay_,
-            const std::vector<std::string> & hosts_, const std::vector<UInt64> & ports_,
+            const std::vector<std::string> & hosts_, const std::vector<UInt16> & ports_,
             bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
@@ -62,14 +62,18 @@ public:
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+        size_t connections_cnt = std::max(ports_.size(), hosts_.size());
 
-        connections.reserve(ports_.size());
-        comparison_info_total.reserve(ports_.size());
-        comparison_info_per_interval.reserve(ports_.size());
+        connections.reserve(connections_cnt);
+        comparison_info_total.reserve(connections_cnt);
+        comparison_info_per_interval.reserve(connections_cnt);
 
-        for (size_t i = 0; i < ports_.size(); ++i)
+        for (size_t i = 0; i < connections_cnt; ++i)
         {
-            connections.emplace_back(std::make_shared<ConnectionPool>(concurrency, hosts_[i], ports_[i], default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
+            std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
+
+            connections.emplace_back(std::make_shared<ConnectionPool>(concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
             comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
@@ -452,7 +456,6 @@ private:
             print_key_value("num_queries", info->queries.load(), false);
 
             json_out << "},\n";
-
             json_out << double_quote << "query_time_percentiles" << ": {\n";
 
             for (int percent = 0; percent <= 90; percent += 10)
@@ -470,7 +473,6 @@ private:
             else
                 json_out << "},\n";
         }
-
         json_out << "}\n";
     }
 
@@ -508,12 +510,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
-            ("host,h",        value<std::string>()->default_value("localhost"), "")
-            ("host1,h1",      value<std::string>()->default_value("localhost"), "Is used for comparison mode")
-            ("host2,h2",      value<std::string>()->default_value("localhost"), "Is used for comparison mode")
-            ("port",          value<UInt16>()->default_value(9000),             "")
-            ("port1",         value<UInt16>()->default_value(9000),             "Is used for comparison mode")
-            ("port2",         value<UInt16>()->default_value(9000),             "Is used for comparison mode")
+            ("host,h",        value<std::vector<std::string>>()->default_value(std::vector<std::string>{"localhost"}, "localhost")   ,"note that more than one host can be described")
+            ("port,p",        value<std::vector<UInt16>>()->default_value(std::vector<UInt16>{9000}, "9000")                         ,"note that more than one port can be described")
             ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
@@ -535,28 +533,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             return 1;
         }
 
-        std::vector<UInt64> ports;
-        std::vector<std::string> hosts;
-
-        if (options["port1"].as<UInt16>() != options["port2"].as<UInt16>()
-        || options["host1"].as<std::string>() != options["host2"].as<std::string>())
-        {
-            ports.reserve(2);
-            hosts.reserve(2);
-            hosts.emplace_back(options["host1"].as<std::string>());
-            hosts.emplace_back(options["host2"].as<std::string>());
-            ports.emplace_back(options["port1"].as<UInt16>());
-            ports.emplace_back(options["port2"].as<UInt16>());
-        }
-        else
-        {
-            ports.reserve(1);
-            hosts.reserve(1);
-            hosts.emplace_back(options["host"].as<std::string>());
-            ports.emplace_back(options["port"].as<UInt16>());
-        }
-
-
         print_stacktrace = options.count("stacktrace");
 
         UseSSL use_ssl;
@@ -564,8 +540,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
-            hosts,
-            ports,
+            options["host"].as<std::vector<std::string>>(),
+            options["port"].as<std::vector<UInt16>>(),
             options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
