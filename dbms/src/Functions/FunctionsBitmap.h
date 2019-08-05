@@ -30,8 +30,8 @@ namespace ErrorCodes
   * Convert bitmap to integer array:
   * bitmapToArray:	bitmap -> integer[]
   *
-  * Return new set with specified range (not include the range_end):
-  * bitmapRange:    bitmap,integer,integer -> bitmap
+  * Return subset in specified range (not include the range_end):
+  * bitmapSubsetInRange:    bitmap,integer,integer -> bitmap
   *
   * Two bitmap and calculation:
   * bitmapAnd:	bitmap,bitmap -> bitmap
@@ -243,12 +243,12 @@ private:
     }
 };
 
-class FunctionBitmapRange : public IFunction
+class FunctionBitmapSubsetInRange : public IFunction
 {
 public:
-    static constexpr auto name = "bitmapRange";
+    static constexpr auto name = "bitmapSubsetInRange";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapRange>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSubsetInRange>(); }
 
     String getName() const override { return name; }
 
