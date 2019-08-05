@@ -53,18 +53,22 @@ namespace
 Strings LSWithRegexpMatching(const String & path_for_ls, const String & for_match)
 {
     Strings result;
-    size_t next_slash = for_match.find('/', 1);
-    String cur_item_for_match = for_match.substr(0, next_slash);
+    size_t first_glob = for_match.find_first_of("*?{");
+
+    size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    String path_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+    String path_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+
+    size_t next_slash = path_with_globs.find('/', 1);
+    String cur_item_for_match = path_with_globs.substr(0, next_slash);  /// without '/' at the end
     String part_pattern = makeRegexpPatternFromGlobs(cur_item_for_match);
     re2::RE2 matcher(part_pattern);
-
     fs::directory_iterator end;
     for (fs::directory_iterator it(path_for_ls); it != end; ++it)
     {
         std::string cur_path = it->path().string();
         size_t last_slash = cur_path.rfind('/');
         String cur_path_item = cur_path.substr(last_slash);
-
         if ((!is_directory(it->path())) && (next_slash == std::string::npos))
         {
             if (re2::RE2::FullMatch(cur_path_item, matcher))
@@ -76,7 +80,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const String & for_matc
         {
             if (re2::RE2::FullMatch(cur_path_item, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(cur_path, for_match);
+                Strings result_part = LSWithRegexpMatching(cur_path + "/", path_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -132,13 +136,15 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             path = poco_path.absolute().toString();
-            if (path.find_first_of("*?{") != std::string::npos)
+            size_t first_glob = path.find_first_of("*?{");
+            if (first_glob != std::string::npos)
             {
                 path_with_globs = true;
                 matched_paths = LSWithRegexpMatching(db_dir_path, path);
                 for (const auto & cur_path : matched_paths)
                     checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
-            } else
+            }
+            else
                 checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
             is_db_table = false;
         }
@@ -257,10 +263,7 @@ BlockInputStreams StorageFile::read(
     for (size_t i = 0; i < matched_paths.size(); ++i)
     {
         BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, i);
-        if (column_defaults.empty())
-            blocks_input.push_back(cur_block);
-        else
-            blocks_input.push_back(std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
+        blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
 }
