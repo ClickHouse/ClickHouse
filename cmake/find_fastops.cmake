@@ -14,4 +14,4 @@ else ()
     set(USE_FASTOPS 0)
 endif ()
 
-[1~message (STATUS "Using fastops=${USE_FASTOPS}: ${FASTOPS_INCLUDE_DIR} : ${FASTOPS_LIBRARY}")
+message (STATUS "Using fastops=${USE_FASTOPS}: ${FASTOPS_INCLUDE_DIR} : ${FASTOPS_LIBRARY}")
