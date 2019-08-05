@@ -38,39 +38,12 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
             return true;
     }
 
-    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
-    /// changes how many rows satisfy the predicates of the subsequent commands).
-    /// But we can be sure that if count = 0, then no rows will be touched.
-
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select()->children.push_back(count_func);
-
-    if (commands.size() == 1)
-        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
-    else
-    {
-        auto coalesced_predicates = std::make_shared<ASTFunction>();
-        coalesced_predicates->name = "or";
-        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-
-        for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
-
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
-    }
-
     auto context_copy = context;
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
+    const ASTPtr & select_query = prepareQueryAffectedAST();
+    BlockInputStreamPtr in = InterpreterSelectQuery(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -487,10 +460,42 @@ const Block & MutationsInterpreter::getUpdatedHeader() const
     return *updated_header;
 }
 
-size_t MutationsInterpreter::evaluateCommandSize()
+ASTPtr MutationsInterpreter::prepareQueryAffectedAST() const
 {
-    const auto & select_query = prepare(/* dry_run = */ true);
-    return select_query->size();
+    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
+    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
+    /// changes how many rows satisfy the predicates of the subsequent commands).
+    /// But we can be sure that if count = 0, then no rows will be touched.
+
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    auto count_func = std::make_shared<ASTFunction>();
+    count_func->name = "count";
+    count_func->arguments = std::make_shared<ASTExpressionList>();
+    select->select()->children.push_back(count_func);
+
+    if (commands.size() == 1)
+        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
+    else
+    {
+        auto coalesced_predicates = std::make_shared<ASTFunction>();
+        coalesced_predicates->name = "or";
+        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+
+        for (const MutationCommand & command : commands)
+            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
+
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
+    }
+
+    return select;
+}
+
+size_t MutationsInterpreter::evaluateCommandsSize()
+{
+    return std::max(prepareQueryAffectedAST()->size(), prepare(/* dry_run = */ true)->size());
 }
 
 }

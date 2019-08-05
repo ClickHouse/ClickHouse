@@ -675,21 +675,17 @@ bool StorageMergeTree::tryMutatePart()
             if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
+            size_t current_ast_elements = 0;
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
             {
-                size_t current_ast_elements = 0;
-                auto commands_end = it->second.commands.end();
+                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context);
 
-                for (auto commands_it = it->second.commands.begin(); commands_it != commands_end; ++commands_it)
-                {
-                    MutationsInterpreter interpreter(shared_from_this(), {*commands_it}, global_context);
-                    current_ast_elements += interpreter.evaluateCommandSize();
+                size_t commands_size = interpreter.evaluateCommandsSize();
+                if (current_ast_elements + commands_size >= max_ast_elements)
+                    break;
 
-                    if (current_ast_elements >= max_ast_elements)
-                        break;
-
-                    commands.push_back(*commands_it);
-                }
+                current_ast_elements += commands_size;
+                commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
             }
 
             auto new_part_info = part->info;
