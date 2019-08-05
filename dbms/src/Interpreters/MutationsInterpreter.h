@@ -27,6 +27,8 @@ public:
 
     void validate(TableStructureReadLockHolder & table_lock_holder);
 
+    size_t evaluateCommandSize();
+
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
@@ -37,11 +39,11 @@ public:
     const Block & getUpdatedHeader() const;
 
 private:
-    void prepare(bool dry_run);
+    ASTPtr prepare(bool dry_run);
 
     struct Stage;
 
-    std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run);
+    ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     StoragePtr storage;
