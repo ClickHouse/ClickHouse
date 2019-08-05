@@ -145,9 +145,9 @@ namespace
     }
 }
 
-void IStorage::check(const Names & column_names) const
+void IStorage::check(const Names & column_names, bool need_virtual) const
 {
-    const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
+    const NamesAndTypesList & available_columns = need_virtual ? getColumns().getAll() : getColumns().getAllPhysical();
     const String list_of_columns = listOfColumns(available_columns);
 
     if (column_names.empty())

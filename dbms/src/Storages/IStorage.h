@@ -116,7 +116,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names) const;
+    /// If |need_virtual| is set, also include virtual columns for checking.
+    void check(const Names & column_names, bool need_virtual = false) const;
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

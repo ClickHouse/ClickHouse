@@ -396,6 +396,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
+        DROP TABLE IF EXISTS test.kafka;
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
