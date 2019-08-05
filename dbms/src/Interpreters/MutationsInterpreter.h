@@ -41,8 +41,8 @@ private:
 
     struct Stage;
 
-    std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(bool dry_run);
-    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
+    std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run);
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
 private:
     StoragePtr storage;
