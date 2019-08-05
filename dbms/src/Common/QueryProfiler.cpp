@@ -114,7 +114,7 @@ namespace
         out.next();
     }
 
-    const UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -158,7 +158,12 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         struct sigevent sev;
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
+
+#if defined(__FreeBSD__)
+        sev._sigev_un._threadid = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
+#endif
         if (timer_create(clock_type, &sev, &timer_id))
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
 
@@ -181,7 +186,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         throw;
     }
 #else
-    UNUSED(thread_id, clock_type, period, pause_signal);
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
     throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }

@@ -1,11 +1,10 @@
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
-
+#include <Common/config.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>
@@ -31,6 +30,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
                 error << " Access: write.";
             else
                 error << " Access: read.";
+#else
+            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -252,7 +253,7 @@ static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset
     {
         const void * addr = frames[i];
 
-        out << "#" << i << " " << addr << " ";
+        out << i << ". " << addr << " ";
         auto symbol = symbol_index.findSymbol(addr);
         if (symbol)
         {

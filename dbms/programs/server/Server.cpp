@@ -15,6 +15,7 @@
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
+#include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
@@ -38,6 +39,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/SystemLog.cpp>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -52,6 +54,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -277,7 +280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
           * At this moment, no one could own shared part of Context.
           */
         global_context.reset();
-
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -407,6 +409,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            setTextLog(global_context->getTextLog());
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
@@ -492,6 +495,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata from " + path);
+
     try
     {
         loadMetadataSystem(*global_context);
@@ -510,8 +514,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
+    /// Disable it if we collect test coverage information, because it will work extremely slow.
+#if USE_INTERNAL_UNWIND_LIBRARY && !WITH_COVERAGE
+    /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
+#endif
 
     global_context->setCurrentDatabase(default_database);
 
