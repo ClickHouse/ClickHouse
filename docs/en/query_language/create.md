@@ -120,12 +120,10 @@ CREATE TABLE codec_example
     double_value Float64 CODEC(LZ4HC(9))
     value Float32 CODEC(Delta, ZSTD)
 )
-ENGINE = MergeTree
-PARTITION BY tuple()
-ORDER BY dt
+ENGINE = MergeTree()
 ```
 
-If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`.
+If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codecs combination for you project, pass benchmarks, similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
 
 !!!warning
     You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility, [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
