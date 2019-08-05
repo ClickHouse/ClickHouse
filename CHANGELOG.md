@@ -1,8 +1,8 @@
 ## ClickHouse release 19.11.4.24, 2019-08-01
 
 ### Bug Fix
-* Fix bug with writing secondary indices marks with adaptive granularity. ... [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alesapin](https://github.com/alesapin))
-* Fix `WITH ROLLUP` and `WITH CUBE` modifiers of `GROUP BY` with two-level aggregation. ... [#6225](https://github.com/yandex/ClickHouse/pull/6225) ([Anton Popov](https://github.com/CurtizJ))
+* Fix bug with writing secondary indices marks with adaptive granularity. [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alesapin](https://github.com/alesapin))
+* Fix `WITH ROLLUP` and `WITH CUBE` modifiers of `GROUP BY` with two-level aggregation. [#6225](https://github.com/yandex/ClickHouse/pull/6225) ([Anton Popov](https://github.com/CurtizJ))
 * Fixed hang in `JSONExtractRaw` function. Fixed [#6195](https://github.com/yandex/ClickHouse/issues/6195) [#6198](https://github.com/yandex/ClickHouse/pull/6198) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix segfault in ExternalLoader::reloadOutdated(). [#6082](https://github.com/yandex/ClickHouse/pull/6082) ([Vitaly Baranov](https://github.com/vitlibar))
 * Fixed the case when server may close listening sockets but not shutdown and continue serving remaining queries. You may end up with two running clickhouse-server processes. Sometimes, the server may return an error `bad_function_call` for remaining queries. [#6231](https://github.com/yandex/ClickHouse/pull/6231) ([alexey-milovidov](https://github.com/alexey-milovidov))
