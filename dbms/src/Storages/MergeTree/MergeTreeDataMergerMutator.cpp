@@ -949,6 +949,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     Poco::File(new_part_tmp_path).createDirectories();
 
     auto in = mutations_interpreter.execute();
+    const auto & updated_header = mutations_interpreter.getUpdatedHeader();
+
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     Block in_header = in->getHeader();
@@ -957,7 +959,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
     in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
 
-    if (in_header.columns() == all_columns.size())
+    if (updated_header.columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
@@ -1025,7 +1027,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
         auto mrk_extension = data.settings.index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
-        for (const auto & entry : in_header)
+        for (const auto & entry : updated_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
@@ -1055,12 +1057,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             createHardLink(dir_it.path().toString(), destination.toString());
         }
 
-        merge_entry->columns_written = all_columns.size() - in_header.columns();
+        merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
             data,
-            in_header,
+            updated_header,
             new_part_tmp_path,
             /* sync = */ false,
             compression_codec,
@@ -1099,7 +1101,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
         for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
         {
-            if (source_columns_name_set.count(it->name) || in_header.has(it->name))
+            if (source_columns_name_set.count(it->name) || updated_header.has(it->name))
                 ++it;
             else
                 it = new_data_part->columns.erase(it);
