@@ -1,6 +1,7 @@
 #include <atomic>
 
 #include <Common/ThreadPool.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
