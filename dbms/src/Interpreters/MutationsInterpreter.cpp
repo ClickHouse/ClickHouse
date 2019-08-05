@@ -14,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
+#include "MutationsInterpreter.h"
 
 
 namespace DB
@@ -157,7 +158,7 @@ static void validateUpdateColumns(
 }
 
 
-void MutationsInterpreter::prepare(bool dry_run)
+ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
         throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -302,7 +303,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages_copy.back().output_columns = stage.output_columns;
                 stages_copy.back().filters = stage.filters;
             }
-            auto first_stage_header = prepareInterpreterSelect(stages_copy, /* dry_run = */ true)->getSampleBlock();
+            auto first_stage_header = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true)->getSampleBlock();
             auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
             updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
         }
@@ -313,12 +314,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                     column, std::make_shared<ASTIdentifier>(column));
     }
 
-    interpreter_select = prepareInterpreterSelect(stages, dry_run);
+//    interpreter_select = prepareInterpreterSelectQuery(stages, dry_run);
 
     is_prepared = true;
+
+    return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
@@ -424,7 +427,7 @@ std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreter
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    return std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
+    return select;
 }
 
 BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const
@@ -460,17 +463,19 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ true);
+    const auto & select_query = prepare(/* dry_run = */ true);
+    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ true).ignoreLimits()};
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = interpreter_select->execute().in->getHeader();
+    Block first_stage_header = interpreter.execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ false);
-    BlockInputStreamPtr in = interpreter_select->execute().in;
+    const auto & select_query = prepare(/* dry_run = */ false);
+    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+    BlockInputStreamPtr in = interpreter.execute().in;
     auto result_stream = addStreamsForLaterStages(stages, in);
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -480,6 +485,12 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
 const Block & MutationsInterpreter::getUpdatedHeader() const
 {
     return *updated_header;
+}
+
+size_t MutationsInterpreter::evaluateCommandSize()
+{
+    const auto & select_query = prepare(/* dry_run = */ true);
+    return select_query->size();
 }
 
 }

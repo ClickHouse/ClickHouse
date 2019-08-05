@@ -24,6 +24,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 #include <optional>
+#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -649,10 +650,7 @@ bool StorageMergeTree::merge(
 bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-
-    static constexpr size_t reserve_ast_elements = 256;
-    size_t column_size = getColumns().getAll().size();
-    size_t max_ast_elements = global_context.getSettingsRef().max_ast_elements;
+    size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
@@ -677,23 +675,20 @@ bool StorageMergeTree::tryMutatePart()
             if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
-            if (max_ast_elements <= reserve_ast_elements + column_size)
-                throw Exception("max_ast_elements must be greater than " + toString(reserve_ast_elements + column_size), ErrorCodes::TOO_BIG_AST);
-
-            size_t current_remain_ast_elements = max_ast_elements - column_size - reserve_ast_elements;
-
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
             {
+                size_t current_ast_elements = 0;
                 auto commands_end = it->second.commands.end();
+
                 for (auto commands_it = it->second.commands.begin(); commands_it != commands_end; ++commands_it)
                 {
-                    size_t ast_elements_size = commands_it->ast->size();
+                    MutationsInterpreter interpreter(shared_from_this(), {*commands_it}, global_context);
+                    current_ast_elements += interpreter.evaluateCommandSize();
 
-                    if (current_remain_ast_elements <= ast_elements_size)
+                    if (current_ast_elements >= max_ast_elements)
                         break;
 
                     commands.push_back(*commands_it);
-                    current_remain_ast_elements -= ast_elements_size;
                 }
             }
 
