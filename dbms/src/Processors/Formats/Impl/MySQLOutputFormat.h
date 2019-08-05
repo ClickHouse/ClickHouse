@@ -26,6 +26,10 @@ public:
     void consume(Chunk) override;
     void finalize() override;
     void flush() override;
+    void doWritePrefix() override { initialize(); }
+
+    void initialize();
+
 private:
 
     bool initialized = false;
