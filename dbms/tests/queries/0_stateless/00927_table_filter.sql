@@ -1,3 +1,5 @@
+SET any_join_get_any_from_right_table = 1;
+
 DROP TABLE IF EXISTS test.filtered_table1;
 DROP TABLE IF EXISTS test.filtered_table2;
 DROP TABLE IF EXISTS test.filtered_table3;

@@ -1,3 +1,5 @@
+SET any_join_get_any_from_right_table = 1;
+
 DROP TABLE IF EXISTS t1_00848;
 DROP TABLE IF EXISTS t2_00848;
 DROP TABLE IF EXISTS t3_00848;

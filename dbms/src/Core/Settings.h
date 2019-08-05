@@ -200,6 +200,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, join_use_nulls, 0, "Use NULLs for non-joined rows of outer JOINs for types that can be inside Nullable. If false, use default value of corresponding columns data type.") \
     \
     M(SettingJoinStrictness, join_default_strictness, JoinStrictness::ALL, "Set default strictness in JOIN query. Possible values: empty string, 'ANY', 'ALL'. If empty, query without strictness will throw exception.") \
+    M(SettingBool, any_join_get_any_from_right_table, false, "Enable ANY RIGHT|FULL JOIN that are not consistent with LEFT one. Right table in ANY JOIN has no key copies so it leads to confusing results for RIGHT and FULL JOINs. User expects 't1 ANY LEFT JOIN t2' is equal to 't2 ANY RIGHT JOIN t1'.") \
     \
     M(SettingUInt64, preferred_block_size_bytes, 1000000, "") \
     \
