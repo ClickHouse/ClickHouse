@@ -217,19 +217,20 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// First, break a sequence of commands into stages.
-    stages.emplace_back(context);
     for (const auto & command : commands)
     {
-        if (!stages.back().column_to_updated.empty())
-            stages.emplace_back(context);
-
         if (command.type == MutationCommand::DELETE)
         {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+
             auto negated_predicate = makeASTFunction("not", command.predicate->clone());
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
         {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
@@ -291,15 +292,39 @@ void MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    /// Special step to recalculate affected indices.
     if (!affected_indices_columns.empty())
     {
+        if (!stages.empty())
+        {
+            std::vector<Stage> stages_copy;
+            /// Copy all filled stages except index calculation stage.
+            for (const auto &stage : stages)
+            {
+                stages_copy.emplace_back(context);
+                stages_copy.back().column_to_updated = stage.column_to_updated;
+                stages_copy.back().output_columns = stage.output_columns;
+                stages_copy.back().filters = stage.filters;
+            }
+            auto first_stage_header = prepareInterpreterSelect(/* dry_run = */ true)->getSampleBlock();
+            auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
+            updated_header = std::make_unique<Block>(addStreamsForLaterStages(in)->getHeader());
+            std::swap(stages, stages_copy);
+        }
+        /// Special step to recalculate affected indices.
         stages.emplace_back(context);
         for (const auto & column : affected_indices_columns)
             stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
     }
 
+    interpreter_select = prepareInterpreterSelect(dry_run);
+
+    is_prepared = true;
+}
+
+std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreterSelect(bool dry_run)
+{
+    NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < stages.size(); ++i)
@@ -363,7 +388,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & kv : stage.column_to_updated)
             {
                 actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
-                    kv.second->getColumnName(), kv.first, /* can_replace = */ true));
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true));
             }
         }
 
@@ -403,9 +428,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
-
-    is_prepared = true;
+    return std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
 }
 
 BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStreamPtr in) const
@@ -451,7 +474,15 @@ BlockInputStreamPtr MutationsInterpreter::execute()
 {
     prepare(/* dry_run = */ false);
     BlockInputStreamPtr in = interpreter_select->execute().in;
-    return addStreamsForLaterStages(in);
+    auto result_stream = addStreamsForLaterStages(in);
+    if (!updated_header)
+        updated_header = std::make_unique<Block>(result_stream->getHeader());
+    return result_stream;
+}
+
+const Block & MutationsInterpreter::getUpdatedHeader() const
+{
+    return *updated_header;
 }
 
 }
