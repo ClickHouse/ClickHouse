@@ -21,6 +21,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** Use it to define specific functions that are different from ASTFunction(ASTExpressionList(ASTLiteral, ASTIdentifier))
+ *  for example, MySQL('host:port', 'database_name', 'table_name', 'user_name', 'password'), password is masked when parsing.
+ */
 class ParserSpecificFunction : public IParserBase
 {
 protected:
