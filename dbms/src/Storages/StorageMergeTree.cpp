@@ -394,7 +394,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     background_task_handle->wake();
 }
 
-std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
+std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus(bool mask_password) const
 {
     std::lock_guard lock(currently_merging_mutex);
 
@@ -419,7 +419,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         for (const MutationCommand & command : entry.commands)
         {
             std::stringstream ss;
-            formatAST(*command.ast, ss, false, true);
+            formatAST(*command.ast, ss, false, true, mask_password);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,

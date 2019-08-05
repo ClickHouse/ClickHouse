@@ -4,15 +4,15 @@
 
 namespace DB
 {
-    String queryToString(const ASTPtr & query)
+    String queryToString(const ASTPtr & query, bool mask_password)
     {
-        return queryToString(*query);
+        return queryToString(*query, mask_password);
     }
 
-    String queryToString(const IAST & query)
+    String queryToString(const IAST & query, bool mask_password)
     {
         std::ostringstream out;
-        formatAST(query, out, false, true);
+        formatAST(query, out, false, true, mask_password);
         return out.str();
     }
 }

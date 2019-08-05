@@ -59,7 +59,7 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 void MutationCommands::writeText(WriteBuffer & out) const
 {
     std::stringstream commands_ss;
-    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
+    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true, /* mask_password */ false);
     out << escape << commands_ss.str();
 }
 

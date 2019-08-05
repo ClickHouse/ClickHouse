@@ -4,6 +4,6 @@
 
 namespace DB
 {
-    String queryToString(const ASTPtr & query);
-    String queryToString(const IAST & query);
+    String queryToString(const ASTPtr & query, bool mask_password = false);
+    String queryToString(const IAST & query, bool mask_password = false);
 }

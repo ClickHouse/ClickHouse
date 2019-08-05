@@ -22,9 +22,9 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 {
     std::stringstream message;
     message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":" << std::endl;
-    formatAST(*ast, message, false, true);
+    formatAST(*ast, message, false, true, false);
     message << std::endl << "and" << std::endl;
-    formatAST(*prev_ast, message, false, true);
+    formatAST(*prev_ast, message, false, true, false);
     message << std::endl;
     return message.str();
 }

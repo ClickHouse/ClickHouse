@@ -150,6 +150,7 @@ public:
         std::ostream & ostr;
         bool hilite = false;
         bool one_line;
+        bool mask_password = false;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 

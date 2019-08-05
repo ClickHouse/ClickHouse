@@ -84,7 +84,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
-                statuses = merge_tree->getMutationsStatus();
+                statuses = merge_tree->getMutationsStatus(true);
         }
 
         for (const MergeTreeMutationStatus & status : statuses)

@@ -1390,7 +1390,7 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
-std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
+std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus(bool mask_password) const
 {
     std::lock_guard lock(state_mutex);
 
@@ -1403,7 +1403,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
         for (const MutationCommand & command : entry.commands)
         {
             std::stringstream ss;
-            formatAST(*command.ast, ss, false, true);
+            formatAST(*command.ast, ss, false, true, mask_password);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,

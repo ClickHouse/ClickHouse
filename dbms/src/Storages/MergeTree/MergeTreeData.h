@@ -573,7 +573,7 @@ public:
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
                                                            const MergeTreePartInfo & dst_part_info);
 
-    virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
+    virtual std::vector<MergeTreeMutationStatus> getMutationsStatus(bool mask_password) const = 0;
 
     bool canUseAdaptiveGranularity() const
     {

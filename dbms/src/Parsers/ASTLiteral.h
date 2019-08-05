@@ -31,7 +31,7 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (password ? "******" : applyVisitor(FieldVisitorToString(), value));
+        settings.ostr << (password && settings.mask_password ? "******" : applyVisitor(FieldVisitorToString(), value));
     }
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

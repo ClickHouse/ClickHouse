@@ -110,7 +110,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         if (column.default_desc.expression)
         {
             res_columns[2]->insert(toString(column.default_desc.kind));
-            res_columns[3]->insert(queryToString(column.default_desc.expression));
+            res_columns[3]->insert(queryToString(column.default_desc.expression, true));
         }
         else
         {
@@ -126,7 +126,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             res_columns[5]->insertDefault();
 
         if (column.ttl)
-            res_columns[6]->insert(queryToString(column.ttl));
+            res_columns[6]->insert(queryToString(column.ttl, true));
         else
             res_columns[6]->insertDefault();
     }

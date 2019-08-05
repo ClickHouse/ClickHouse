@@ -18,7 +18,7 @@ static String formattedAST(const ASTPtr & ast)
     if (!ast)
         return "";
     std::stringstream ss;
-    formatAST(*ast, ss, false, true);
+    formatAST(*ast, ss, false, true, /* mask_password */ false);
     return ss.str();
 }
 

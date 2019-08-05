@@ -244,7 +244,7 @@ protected:
                     ASTPtr ast = database->tryGetCreateTableQuery(context, table_name);
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
+                        res_columns[res_index++]->insert(ast ? queryToString(ast, true) : "");
 
                     if (columns_mask[src_index++])
                     {
@@ -273,7 +273,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if ((expression_ptr = table->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                        res_columns[res_index++]->insert(queryToString(expression_ptr, true));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -281,7 +281,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if ((expression_ptr = table->getSortingKeyAST()))
-                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                        res_columns[res_index++]->insert(queryToString(expression_ptr, true));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -289,7 +289,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if ((expression_ptr = table->getPrimaryKeyAST()))
-                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                        res_columns[res_index++]->insert(queryToString(expression_ptr, true));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -297,7 +297,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if ((expression_ptr = table->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                        res_columns[res_index++]->insert(queryToString(expression_ptr, true));
                     else
                         res_columns[res_index++]->insertDefault();
                 }

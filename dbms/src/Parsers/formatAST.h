@@ -10,9 +10,9 @@ namespace DB
 /** Takes a syntax tree and turns it back into text.
   * In case of INSERT query, the data will be missing.
   */
-void formatAST(const IAST & ast, std::ostream & s, bool hilite = true, bool one_line = false);
+void formatAST(const IAST & ast, std::ostream & s, bool hilite = true, bool one_line = false, bool mask_password = false);
 
-String serializeAST(const IAST & ast, bool one_line = true, bool process_password = false);
+String serializeAST(const IAST & ast, bool one_line = true, bool mask_password = false);
 
 inline std::ostream & operator<<(std::ostream & os, const IAST & ast)
 {

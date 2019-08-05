@@ -4007,7 +4007,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         user, password, "Follower replica");
 
     std::stringstream new_query_ss;
-    formatAST(*new_query, new_query_ss, false, true);
+    formatAST(*new_query, new_query_ss, false, true, /* mask_password */ false);
     RemoteBlockInputStream stream(connection, new_query_ss.str(), {}, global_context, &query_settings);
     NullBlockOutputStream output({});
 
@@ -4409,9 +4409,9 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     }
 }
 
-std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
+std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus(bool mask_password) const
 {
-    return queue.getMutationsStatus();
+    return queue.getMutationsStatus(mask_password);
 }
 
 CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)
