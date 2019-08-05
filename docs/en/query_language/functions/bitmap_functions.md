@@ -56,12 +56,12 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
-## bitmapRange {#bitmap_functions-bitmaprange}
+## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
 
-Return new set with specified range (not include the range_end).
+Return subset in specified range (not include the range_end).
 
 ```
-bitmapRange(bitmap, range_start, range_end)
+bitmapSubsetInRange(bitmap, range_start, range_end)
 ```
 
 **Parameters**
@@ -73,7 +73,7 @@ bitmapRange(bitmap, range_start, range_end)
 **Example**
 
 ``` sql
-SELECT bitmapToArray(bitmapRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
 ```

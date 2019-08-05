@@ -9,7 +9,7 @@ void registerFunctionsBitmap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitmapBuild>();
     factory.registerFunction<FunctionBitmapToArray>();
-    factory.registerFunction<FunctionBitmapRange>();
+    factory.registerFunction<FunctionBitmapSubsetInRange>();
 
     factory.registerFunction<FunctionBitmapSelfCardinality>();
     factory.registerFunction<FunctionBitmapAndCardinality>();
