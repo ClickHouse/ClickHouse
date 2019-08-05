@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -538,6 +539,24 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     }
 }
 
+void checkJoin(const ASTTablesInSelectQueryElement * join)
+{
+    if (!join->table_join)
+        return;
+
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Any ||
+        table_join.strictness == ASTTableJoin::Strictness::Asof)
+        if (table_join.kind == ASTTableJoin::Kind::Right ||
+            table_join.kind == ASTTableJoin::Kind::Full)
+            throw Exception("ANY RIGHT|FULL JOINs are disabled by default cause of confusing results: "
+                            "'t1 ANY LEFT JOIN t2' is inconsistent with 't2 ANY RIGHT JOIN t1'."
+                            "Default bahaviour is reserved for many-to-one ANY LEFT JOIN and one-to-many ANY RIGHT JOIN."
+                            "Set any_join_get_any_from_right_table=1 to enable many-to-one ANY RIGHT|FULL JOINs.",
+                            ErrorCodes::NOT_IMPLEMENTED);
+}
+
 }
 
 
@@ -578,6 +597,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
+            if (!settings.any_join_get_any_from_right_table)
+                checkJoin(node);
+
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
