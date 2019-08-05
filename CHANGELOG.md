@@ -4,7 +4,7 @@
 * Added support for prepared statements. [#5331](https://github.com/yandex/ClickHouse/pull/5331/) ([Alexander](https://github.com/sanych73)) [#5630](https://github.com/yandex/ClickHouse/pull/5630) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `DoubleDelta` and `Gorilla` column codecs [#5600](https://github.com/yandex/ClickHouse/pull/5600) ([Vasily Nemkov](https://github.com/Enmk))
 * Added `os_thread_priority` setting that allows to control the "nice" value of query processing threads that is used by OS to adjust dynamic scheduling priority. It requires `CAP_SYS_NICE` capabilities to work. This implements [#5858](https://github.com/yandex/ClickHouse/issues/5858) [#5909](https://github.com/yandex/ClickHouse/pull/5909) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Implement `_topic`, `_offset`, `_key` columns for Kafka engine [#5382](https://github.com/yandex/ClickHouse/pull/5382) ([Ivan](https://github.com/abyss7))
+* Implement `_topic`, `_offset`, `_key` columns for Kafka engine [#5382](https://github.com/yandex/ClickHouse/pull/5382) ([Ivan](https://github.com/abyss7)) Note that Kafka is broken in this version.
 * Add aggregate function combinator `-Resample` [#5590](https://github.com/yandex/ClickHouse/pull/5590) ([hcz](https://github.com/hczhcz))
 * Aggregate functions `groupArrayMovingSum(win_size)(x)` and `groupArrayMovingAvg(win_size)(x)`, which calculate moving sum/avg with or without window-size limitation. [#5595](https://github.com/yandex/ClickHouse/pull/5595) ([inv2004](https://github.com/inv2004))
 * Add synonim `arrayFlatten` <-> `flatten` [#5764](https://github.com/yandex/ClickHouse/pull/5764) ([hcz](https://github.com/hczhcz))
@@ -99,6 +99,7 @@
 * Run stateful tests in stress test [12693e568722f11e19859742f56428455501fd2a](https://github.com/yandex/ClickHouse/commit/12693e568722f11e19859742f56428455501fd2a) ([alesapin](https://github.com/alesapin))
 
 ### Backward Incompatible Change
+* `Kafka` is broken in this version.
 * Enable `adaptive_index_granularity` = 10MB by default for new `MergeTree` tables. If you created new MergeTree tables on version 19.11+, downgrade to versions prior to 19.6 will be impossible. [#5628](https://github.com/yandex/ClickHouse/pull/5628) ([alesapin](https://github.com/alesapin))
 * Removed obsolete undocumented embedded dictionaries that were used by Yandex.Metrica. The functions `OSIn`, `SEIn`, `OSToRoot`, `SEToRoot`, `OSHierarchy`, `SEHierarchy` are no longer available. If you are using these functions, write email to clickhouse-feedback@yandex-team.com. Note: at the last moment we decided to keep these functions for a while. [#5780](https://github.com/yandex/ClickHouse/pull/5780) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
