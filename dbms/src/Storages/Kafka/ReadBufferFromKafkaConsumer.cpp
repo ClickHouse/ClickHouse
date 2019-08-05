@@ -69,8 +69,6 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         LOG_TRACE(log, message);
     }
 
-    consumer->resume();
-
     // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     if (consumer->get_subscription().empty())
