@@ -9,6 +9,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <common/demangle.h>
 #include <Common/config_version.h>
+#include <Common/formatReadable.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -68,7 +71,66 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace)
+void getEnospcInfoMessage(std::filesystem::path path, std::string & msg)
+{
+    /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
+    /// So try to get info for existent parent directory.
+    while (!std::filesystem::exists(path) && path.has_relative_path())
+        path = path.parent_path();
+
+    /// Most likely path is invalid
+    if (!path.has_relative_path())
+        return;
+
+    auto fs = DiskSpaceMonitor::getStatvfs(path);
+    msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
+         + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
+         + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
+         + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
+
+    auto mount_point = DiskSpaceMonitor::getMountPoint(path).string();
+    msg += "\nMount point: " + mount_point;
+    msg += "\nFilesystem: " + DiskSpaceMonitor::getFilesystemName(mount_point);
+}
+
+std::string getAdditionalExceptionInfo(const std::exception & e)
+{
+    String msg;
+    try
+    {
+        if (auto file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        {
+            if (file_exception->code() == ENOSPC)
+                getEnospcInfoMessage(file_exception->message(), msg);
+        }
+        else if (auto errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
+        {
+            if (errno_exception->getErrno() == ENOSPC)
+            {
+                /// Try to extract path from text exception message. Most likely the exception was thrown by
+                /// DB::throwFromErrno("Some message" + filename, ...);
+                /// We suppose "Some message " does not contain '/' and filename is an absolute path starts with '/'.
+                /// throwFromErrno appends ", errno: ..." to the first argument.
+                /// It's ugly hack which may not work correctly. However, getEnospcInfoMessage(...) checks if path exists.
+                size_t likely_path_begin = errno_exception->message().find('/');
+                size_t likely_path_end   = errno_exception->message().find(", errno: ", likely_path_begin);
+                if (likely_path_end != std::string::npos)
+                {
+                    std::string supposed_to_be_path = errno_exception->message().substr(likely_path_begin,
+                                                                                        likely_path_end - likely_path_begin);
+                    getEnospcInfoMessage(supposed_to_be_path, msg);
+                }
+            }
+        }
+    }
+    catch (...) {
+        msg += "\nCannot print additional info: " + getCurrentExceptionMessage(false, false, false);
+    }
+
+    return msg;
+}
+
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_additional_info /*= true*/)
 {
     std::stringstream stream;
 
@@ -78,7 +140,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace) << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
+               << (with_additional_info ? getAdditionalExceptionInfo(e) : "")
+               << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
     }
     catch (const Poco::Exception & e)
     {
@@ -86,7 +150,8 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_additional_info ? getAdditionalExceptionInfo(e) : "")
+                << " (version " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }
@@ -100,7 +165,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what() << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
+                   << (with_additional_info ? getAdditionalExceptionInfo(e) : "")
+                   << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }

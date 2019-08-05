@@ -2,7 +2,13 @@
 
 #include <mutex>
 #include <sys/statvfs.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cstdio>
+#include <mntent.h>
 #include <memory>
+#include <filesystem>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
@@ -23,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_STATVFS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -96,12 +103,17 @@ public:
 
     using ReservationPtr = std::unique_ptr<Reservation>;
 
-    static UInt64 getUnreservedFreeSpace(const std::string & path)
+    inline static struct statvfs getStatvfs(const std::string & path)
     {
         struct statvfs fs;
-
         if (statvfs(path.c_str(), &fs) != 0)
             throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
+        return fs;
+    }
+
+    static UInt64 getUnreservedFreeSpace(const std::string & path)
+    {
+        struct statvfs fs = getStatvfs(path);
 
         UInt64 res = fs.f_bfree * fs.f_bsize;
 
@@ -138,6 +150,52 @@ public:
             throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(free_bytes) + " available, "
                 + formatReadableSizeWithBinarySuffix(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
         return std::make_unique<Reservation>(size);
+    }
+
+    /// Returns mount point of filesystem where absoulte_path (must exists) is located
+    static std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
+    {
+        if (absolute_path.is_relative())
+            throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+
+        absolute_path = std::filesystem::canonical(absolute_path);
+
+        const auto get_device_id = [](const std::filesystem::path & p)
+        {
+            struct stat st;
+            if (stat(p.c_str(), &st))
+                throwFromErrno("Cannot stat " + p.string(), errno);
+            return st.st_dev;
+        };
+
+        /// If /some/path/to/dir/ and /some/path/to/ have different device id,
+        /// then device which contains /some/path/to/dir/filename is mounted to /some/path/to/dir/
+        auto device_id = get_device_id(absolute_path);
+        while (absolute_path.has_relative_path())
+        {
+            auto parent = absolute_path.parent_path();
+            auto parent_device_id = get_device_id(parent);
+            if (device_id != parent_device_id)
+                return absolute_path;
+            absolute_path = parent;
+            device_id = parent_device_id;
+        }
+
+        return absolute_path;
+    }
+
+    /// Returns name of filesystem mounted to mount_point
+    static std::string getFilesystemName(const std::string & mount_point)
+    {
+        auto mounted_filesystems = setmntent("/etc/mtab", "r");
+        mntent fs_info;
+        constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
+        char buf[buf_size];
+        while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point);
+        endmntent(mounted_filesystems);
+        if (fs_info.mnt_dir != mount_point)
+            throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
+        return fs_info.mnt_fsname;
     }
 
 private:
