@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
-#include <zstd.h>
 
 namespace ProfileEvents
 {
