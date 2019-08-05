@@ -38,7 +38,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override
     {
-        return 1;
+        return 0;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -62,11 +62,13 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         std::optional<String> custom_message;
-        if (arguments.size() == 2) {
+        if (arguments.size() == 2)
+        {
             auto * msg_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
             if (!msg_column)
                 throw Exception{"Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN};
