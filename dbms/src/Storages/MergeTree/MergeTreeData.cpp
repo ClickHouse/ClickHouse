@@ -1595,8 +1595,16 @@ void MergeTreeData::alterSettings(
     {
         if (!new_changes.empty())
         {
-            auto & storage_ast = ast.as<ASTStorage &>();
-            storage_ast.settings->changes.insert(storage_ast.settings->changes.end(), new_changes.begin(), new_changes.end());
+            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
+            /// Make storage settings unique
+            for (const auto & change : new_changes)
+            {
+                auto finder = [&change] (const SettingChange & c) { return c.name == change.name;};
+                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+                    it->value = change.value;
+                else
+                    storage_changes.push_back(change);
+            }
         }
     };
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), storage_modifier);

@@ -599,7 +599,7 @@ public:
             loadFromChange(change);
     }
 
-    /// Applies changes to the settings, checks settings mutability
+    /// Applies changes to the settings, checks settings mutability.
     void updateFromChange(const SettingChange & change)
     {
         update(change.name, change.value);
