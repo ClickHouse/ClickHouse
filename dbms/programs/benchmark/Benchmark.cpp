@@ -341,7 +341,10 @@ private:
 
     void execute(EntryPtrs & connection_entries, Query & query)
     {
-        size_t connection_index = rand() % connection_entries.size();
+        /// Randomly choosing connection index
+        pcg64 generator(randomSeed());
+        std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
+        size_t connection_index = distribution(generator);
 
         Stopwatch watch;
         RemoteBlockInputStream stream(
