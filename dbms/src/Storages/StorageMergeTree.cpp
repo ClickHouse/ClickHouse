@@ -245,15 +245,16 @@ void StorageMergeTree::alter(
 {
     if (!params.isMutable())
     {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         SettingsChanges new_changes;
+        /// We don't need to lock table structure exclusively to ALTER settings.
         if (params.isSettingsAlter())
         {
             params.applyForSettingsOnly(new_changes);
-            alterSettings(new_changes, current_database_name, current_table_name, context);
+            alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
             return;
         }
 
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
         ASTPtr new_order_by_ast = order_by_ast;

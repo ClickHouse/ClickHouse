@@ -587,24 +587,28 @@ public:
         return found_changes;
     }
 
-    /// Applies changes to the settings. Doesn't check settings mutability.
+    /// Applies change to the settings. Doesn't check settings mutability.
     void loadFromChange(const SettingChange & change)
     {
         set(change.name, change.value);
     }
 
+    /// Applies changes to the settings. Should be used in initial settings loading.
+    /// (on table creation or loading from config)
     void loadFromChanges(const SettingsChanges & changes)
     {
         for (const SettingChange & change : changes)
             loadFromChange(change);
     }
 
-    /// Applies changes to the settings, checks settings mutability.
+    /// Applies change to the settings, checks settings mutability.
     void updateFromChange(const SettingChange & change)
     {
         update(change.name, change.value);
     }
 
+    /// Applies changes to the settings. Should be used for settigns update.
+    /// (ALTER MODIFY SETTINGS)
     void updateFromChanges(const SettingsChanges & changes)
     {
         for (const SettingChange & change : changes)

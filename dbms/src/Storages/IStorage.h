@@ -12,7 +12,6 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
-#include <Common/SettingsChanges.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -130,7 +129,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
-    /// Check storage has setting
+    /// Check storage has setting. Exception will be thrown if it doesn't support settings at all.
     virtual bool hasSetting(const String & setting_name) const;
 
 protected: /// still thread-unsafe part.
