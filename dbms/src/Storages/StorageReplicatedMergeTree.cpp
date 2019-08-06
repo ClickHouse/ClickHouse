@@ -3081,11 +3081,12 @@ void StorageReplicatedMergeTree::alter(
 
     if (params.isSettingsAlter())
     {
+        /// We don't replicate settings ALTER. It's local operation.
+        /// Also we don't upgrade alter lock to table structure lock.
         LOG_DEBUG(log, "ALTER settings only");
-        lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, current_database_name, current_table_name, query_context);
+        alterSettings(new_changes, current_database_name, current_table_name, query_context, table_lock_holder);
         return;
     }
 

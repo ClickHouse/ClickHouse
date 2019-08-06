@@ -1269,7 +1269,6 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     {
         if (!hasSetting(setting.name))
             throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
-
     }
 
     /// Check that type conversions are possible.
@@ -1588,7 +1587,8 @@ void MergeTreeData::alterSettings(
         const SettingsChanges & new_changes,
         const String & current_database_name,
         const String & current_table_name,
-        const Context & context)
+        const Context & context,
+        TableStructureWriteLockHolder & /* table_lock_holder */)
 {
     settings.updateFromChanges(new_changes);
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
