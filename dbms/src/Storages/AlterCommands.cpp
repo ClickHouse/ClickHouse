@@ -332,6 +332,11 @@ bool AlterCommand::isMutable() const
     return true;
 }
 
+bool AlterCommand::isSettingsAlter() const
+{
+    return type == MODIFY_SETTING;
+}
+
 void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
       ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const
 {
@@ -567,6 +572,31 @@ void AlterCommands::applyForColumnsOnly(ColumnsDescription & columns_description
     columns_description = std::move(out_columns_description);
 }
 
+
+void AlterCommands::applyForSettingsOnly(SettingsChanges & changes) const
+{
+    ColumnsDescription out_columns_description;
+    IndicesDescription indices_description;
+    ASTPtr out_order_by;
+    ASTPtr out_primary_key;
+    ASTPtr out_ttl_table;
+    SettingsChanges out_changes;
+    apply(out_columns_description, indices_description, out_order_by, out_primary_key, out_ttl_table, out_changes);
+
+    if (out_columns_description.begin() != out_columns_description.end())
+        throw Exception("Alter modifying columns, but only settings change applied.", ErrorCodes::LOGICAL_ERROR);
+    if (out_order_by)
+        throw Exception("Alter modifying ORDER BY expression, but only settings change applied.", ErrorCodes::LOGICAL_ERROR);
+    if (out_primary_key)
+        throw Exception("Alter modifying PRIMARY KEY expression, but only settings change applied.", ErrorCodes::LOGICAL_ERROR);
+    if (!indices_description.indices.empty())
+        throw Exception("Alter modifying indices, but only settings change applied.", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_ttl_table)
+        throw Exception("Alter modifying TTL, but only settings change applied.", ErrorCodes::NOT_IMPLEMENTED);
+
+    changes = std::move(out_changes);
+}
+
 bool AlterCommands::isMutable() const
 {
     for (const auto & param : *this)
@@ -578,4 +608,8 @@ bool AlterCommands::isMutable() const
     return false;
 }
 
+bool AlterCommands::isSettingsAlter() const
+{
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
+}
 }

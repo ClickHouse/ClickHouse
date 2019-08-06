@@ -321,7 +321,7 @@ private:
         size_t offset_of_changed;
         StringRef name;
         StringRef description;
-        bool immutable;
+        bool updateable;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
@@ -401,7 +401,7 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
-        bool isImmutable() const { return member->immutable; }
+        bool isUpdateable() const { return member->updateable; }
         bool isChanged() const { return member->isChanged(*collection); }
         Field getValue() const { return member->get_field(*collection); }
         String getValueAsString() const { return member->get_string(*collection); }
@@ -421,6 +421,18 @@ public:
         reference(const const_reference & src) : const_reference(src) {}
         void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
         void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
+        void updateValue(const Field & value)
+        {
+            if (!this->member->updateable)
+                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
+            setValue(value);
+        }
+        void updateValue(const String & value)
+        {
+            if (!this->member->updateable)
+                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
+            setValue(value);
+        }
     };
 
     /// Iterator to iterating through all the settings.
@@ -503,39 +515,14 @@ public:
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
     void set(const String & name, const String & value) { (*this)[name].setValue(value); }
 
-    /// Updates setting's value.
-    void update(size_t index, const Field & value)
-    {
-        auto ref = (*this)[index];
-        if (ref.isImmutable())
-            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
-        ref.setValue(value);
-    }
+    /// Updates setting's value. Checks it' mutability.
+    void update(size_t index, const Field & value) { (*this)[index].updateValue(value); }
 
-    void update(const String & name, const Field & value)
-    {
-        auto ref = (*this)[name];
-        if (ref.isImmutable())
-            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
-        ref.setValue(value);
-    }
+    void update(const String & name, const Field & value) { (*this)[name].updateValue(value); }
 
-    /// Updates setting's value. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void update(size_t index, const String & value)
-    {
-        auto ref = (*this)[index];
-        if (ref.isImmutable())
-            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
-        (*this)[index].setValue(value);
-    }
+    void update(size_t index, const String & value) { (*this)[index].updateValue(value); }
 
-    void update(const String & name, const String & value)
-    {
-        auto ref = (*this)[name];
-        if (ref.isImmutable())
-            throw Exception("Cannot modify immutable setting '" + ref.getName().toString() + "'", ErrorCodes::IMMUTABLE_SETTING);
-        (*this)[name].setValue(value);
-    }
+    void update(const String & name, const String & value) { (*this)[name].updateValue(value); }
 
     /// Returns value of a setting.
     Field get(size_t index) const { return (*this)[index].getValue(); }
@@ -600,7 +587,7 @@ public:
         return found_changes;
     }
 
-    /// Applies changes to the settings.
+    /// Applies changes to the settings. Doesn't check settings mutability.
     void loadFromChange(const SettingChange & change)
     {
         set(change.name, change.value);
@@ -612,7 +599,7 @@ public:
             loadFromChange(change);
     }
 
-    /// Applies changes to the settings.
+    /// Applies changes to the settings, checks settings mutability
     void updateFromChange(const SettingChange & change)
     {
         update(change.name, change.value);
@@ -701,7 +688,7 @@ public:
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
     static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
     add({offsetof(Derived, NAME.changed), \
-         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
+         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
@@ -710,10 +697,9 @@ public:
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
     static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
     add({offsetof(Derived, NAME.changed),                               \
-        StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
+        StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
         &Functions::NAME##_getString, &Functions::NAME##_getField, \
         &Functions::NAME##_setString, &Functions::NAME##_setField, \
         &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
         &Functions::NAME##_castValueWithoutApplying });
-
 }
