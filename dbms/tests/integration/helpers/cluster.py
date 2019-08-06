@@ -367,7 +367,7 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_mongo_cmd + common_opts)
             self.wait_mongo_to_start(30)
 
-        subprocess_check_call(self.base_cmd + common_opts + ['--renew-anon-volumes'])
+        subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
