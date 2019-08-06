@@ -39,6 +39,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/SystemLog.cpp>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -53,6 +54,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -278,7 +280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
           * At this moment, no one could own shared part of Context.
           */
         global_context.reset();
-
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -408,6 +409,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            setTextLog(global_context->getTextLog());
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
@@ -493,6 +495,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata from " + path);
+
     try
     {
         loadMetadataSystem(*global_context);
@@ -693,6 +696,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -729,6 +733,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -765,6 +770,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -785,6 +791,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif

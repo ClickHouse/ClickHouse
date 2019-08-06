@@ -26,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
@@ -770,7 +770,7 @@ IColumn::Filter switchJoinRightColumns(
     #undef M
 
         default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+            throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(type)), ErrorCodes::UNSUPPORTED_JOIN_KEYS);
     }
 }
 
@@ -1350,7 +1350,8 @@ private:
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
             default:
-                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+                throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(parent.type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         __builtin_unreachable();
