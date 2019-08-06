@@ -93,6 +93,9 @@ struct AlterCommand
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
+
+    /// checks that only settings changed by alter
+    bool isSettingsAlter() const;
 };
 
 class Context;
@@ -107,8 +110,12 @@ public:
     /// Used for primitive table engines, where only columns metadata can be changed
     void applyForColumnsOnly(ColumnsDescription & columns_description) const;
 
+    /// Apply alter commands only for settings. Exception will be thrown if any other part of table structure will be modified.
+    void applyForSettingsOnly(SettingsChanges & changes) const;
+
     void validate(const IStorage & table, const Context & context);
     bool isMutable() const;
+    bool isSettingsAlter() const;
 };
 
 }
