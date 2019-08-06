@@ -3,9 +3,8 @@ set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/fastops)
 set(SRCS "")
 
 if(HAVE_AVX)
-    set (SRCS ${SRCS} ${LIBRARY_DIR}/fastops/avx/ops_avx.cpp ${LIBRARY_DIR}/fastops/core/FastIntrinsics.cpp)
+    set (SRCS ${SRCS} ${LIBRARY_DIR}/fastops/avx/ops_avx.cpp)
     set_source_files_properties(${LIBRARY_DIR}/fastops/avx/ops_avx.cpp PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
-    set_source_files_properties(${LIBRARY_DIR}/fastops/core/FastIntrinsics.cpp PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
 endif()
 
 if(HAVE_AVX2)

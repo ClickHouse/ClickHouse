@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PARQUET
-#    include <Processors/Formats/IInputFormat.h>
-//#    include <parquet/file_reader.h>
-//#    include <parquet/arrow/reader.h>
-//#    include <arrow/buffer.h>
+
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace parquet { namespace arrow { class FileReader; } }
