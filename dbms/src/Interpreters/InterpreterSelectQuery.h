@@ -172,8 +172,16 @@ private:
         FilterInfoPtr filter_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info);
-
+    static AnalysisResult analyzeExpressions(
+        const ASTSelectQuery & query,
+        const NamesAndTypesList & source_columns,
+        ExpressionAnalyzer & query_analyzer,
+        QueryProcessingStage::Enum from_stage,
+        QueryProcessingStage::Enum to_stage,
+        const Context & context,
+        const StoragePtr & storage,
+        bool dry_run,
+        const FilterInfoPtr & filter_info);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
