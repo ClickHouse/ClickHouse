@@ -1,6 +1,8 @@
 #include <Core/Types.h>
 #include <Functions/GeoUtils.h>
 
+#include <tuple>
+
 namespace
 {
 

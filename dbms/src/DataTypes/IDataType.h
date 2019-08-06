@@ -602,7 +602,6 @@ inline bool isStringOrFixedString(const T & data_type)
     return WhichDataType(data_type).isStringOrFixedString();
 }
 
-
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
