@@ -307,6 +307,10 @@ private:
     {
         Query query;
 
+        /// Randomly choosing connection index
+        pcg64 generator(randomSeed());
+        std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
+
         try
         {
             /// In these threads we do not accept INT signal.
@@ -327,7 +331,7 @@ private:
                     if (shutdown || (max_iterations && queries_executed == max_iterations))
                         return;
                 }
-                execute(connection_entries, query);
+                execute(connection_entries, query, distribution(generator));
                 ++queries_executed;
             }
         }
@@ -339,13 +343,8 @@ private:
         }
     }
 
-    void execute(EntryPtrs & connection_entries, Query & query)
+    void execute(EntryPtrs & connection_entries, Query & query, size_t connection_index)
     {
-        /// Randomly choosing connection index
-        pcg64 generator(randomSeed());
-        std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
-        size_t connection_index = distribution(generator);
-
         Stopwatch watch;
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
