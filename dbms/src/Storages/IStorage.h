@@ -348,6 +348,10 @@ public:
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
+    /// Returns names of primary key + secondary sorting columns
+    virtual Names getSortingKeyColumns() const { return {}; }
+
+
 private:
     /// You always need to take the next three locks in this order.
 

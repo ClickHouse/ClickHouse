@@ -1,8 +1,6 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
-
 #include "ProtobufRowInputStream.h"
 
+#if USE_PROTOBUF
 #include <Core/Block.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/FormatFactory.h>
@@ -43,7 +41,7 @@ bool ProtobufRowInputStream::read(MutableColumns & columns, RowReadExtension & e
                 read_columns[column_index] = true;
                 allow_add_row = false;
             }
-        } while (reader.maybeCanReadValue());
+        } while (reader.canReadMoreValues());
     }
 
     // Fill non-visited columns with the default values.
@@ -62,7 +60,7 @@ bool ProtobufRowInputStream::allowSyncAfterError() const
 
 void ProtobufRowInputStream::syncAfterError()
 {
-    reader.endMessage();
+    reader.endMessage(true);
 }
 
 

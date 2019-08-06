@@ -28,7 +28,10 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         return;
 
     if (broken)
+    {
         buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
+        buffer->reset();
+    }
 
     storage.pushBuffer(buffer);
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<dictionaries>
+<yandex>
   <dictionary>
     <name>longload</name>
     <source>
@@ -16,4 +16,4 @@
       </attribute>
     </structure>
   </dictionary>
-</dictionaries>
+</yandex>

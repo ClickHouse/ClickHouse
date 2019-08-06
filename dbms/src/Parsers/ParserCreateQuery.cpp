@@ -319,6 +319,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier name_p;
     ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
+    ParserFunction table_function_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -328,6 +329,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
+    ASTPtr as_table_function;
     ASTPtr select;
     String cluster_str;
     bool attach = false;
@@ -407,22 +409,25 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_as.ignore(pos, expected))
                 return false;
 
-            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+            if (!table_function_p.parse(pos, as_table_function, expected))
             {
-                /// AS [db.]table
-                if (!name_p.parse(pos, as_table, expected))
-                    return false;
-
-                if (s_dot.ignore(pos, expected))
+                if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
                 {
-                    as_database = as_table;
+                    /// AS [db.]table
                     if (!name_p.parse(pos, as_table, expected))
                         return false;
-                }
 
-                /// Optional - ENGINE can be specified.
-                if (!storage)
-                    storage_p.parse(pos, storage, expected);
+                    if (s_dot.ignore(pos, expected))
+                    {
+                        as_database = as_table;
+                        if (!name_p.parse(pos, as_table, expected))
+                            return false;
+                    }
+
+                    /// Optional - ENGINE can be specified.
+                    if (!storage)
+                        storage_p.parse(pos, storage, expected);
+                }
             }
         }
     }
@@ -525,6 +530,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
+
+    if (as_table_function)
+        query->as_table_function = as_table_function;
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;

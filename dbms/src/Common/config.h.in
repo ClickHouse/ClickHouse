@@ -9,5 +9,5 @@
 #cmakedefine01 USE_CPUINFO
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_MIMALLOC
-
+#cmakedefine01 USE_UNWIND
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
