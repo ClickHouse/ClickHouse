@@ -66,6 +66,7 @@ inline UInt8 singleCoordBitsPrecision(UInt8 precision, CoordType type)
 inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 bits)
 {
     Encoded result;
+    result.fill(0);
 
     for (int i = 0; i < bits; ++i)
     {
@@ -109,6 +110,7 @@ inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max,
 inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UInt8 precision)
 {
     Encoded result;
+    result.fill(0);
 
     const auto bits = (precision * BITS_PER_SYMBOL) / 2;
     UInt8 i = 0;
@@ -129,6 +131,8 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, UIn
 inline std::tuple<Encoded, Encoded> split(const Encoded & combined, UInt8 precision)
 {
     Encoded lat, lon;
+    lat.fill(0);
+    lon.fill(0);
 
     UInt8 i = 0;
     for (; i < precision * BITS_PER_SYMBOL - 1; i += 2)
@@ -303,7 +307,8 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
 
 UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 {
-    if (args.precision == 0
+    if (args.items_count == 0
+            || args.precision == 0
             || args.precision > MAX_PRECISION
             || args.latitude_min > args.latitude_max
             || args.longitude_min > args.longitude_max
@@ -327,6 +332,16 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
 
             ++items;
         }
+    }
+
+    if (items == 0 && args.items_count != 0)
+    {
+        size_t l = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
+        out += l;
+        *out = '\0';
+        ++out;
+
+        ++items;
     }
 
     return items;
