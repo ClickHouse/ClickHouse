@@ -864,9 +864,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    SettingsChanges ignore_settings_changes;
+    SettingsChanges ignored_settings_changes;
 
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignore_settings_changes);
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
