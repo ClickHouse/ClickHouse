@@ -19,7 +19,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
 
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition"}).cloneEmptyColumns();
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -64,6 +64,10 @@ void KafkaBlockInputStream::readPrefixImpl()
         virtual_columns[1]->insert(sub_buffer->currentKey());       // "key"
         virtual_columns[2]->insert(sub_buffer->currentOffset());    // "offset"
         virtual_columns[3]->insert(sub_buffer->currentPartition()); // "partition"
+
+        auto timestamp = sub_buffer->currentTimestamp();
+        if (timestamp)
+            virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
 
     auto child = FormatFactory::instance().getInput(
@@ -80,8 +84,8 @@ Block KafkaBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition"}).cloneWithColumns(std::move(virtual_columns));
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition"}).cloneEmptyColumns();
+    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneWithColumns(std::move(virtual_columns));
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         block.insert(column);
