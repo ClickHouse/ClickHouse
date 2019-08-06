@@ -55,6 +55,11 @@ void throwFromErrno(const std::string & s, int code, int e)
     throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
 }
 
+void throwFromErrno(const std::string & s, const std::string & path, int code, int the_errno)
+{
+    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
+}
+
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
     tryLogCurrentException(&Logger::get(log_name), start_of_message);
@@ -73,14 +78,11 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
 
 void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 {
+    path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
     /// So try to get info for existent parent directory.
     while (!std::filesystem::exists(path) && path.has_relative_path())
         path = path.parent_path();
-
-    /// Most likely path is invalid
-    if (!path.has_relative_path())
-        return;
 
     auto fs = DiskSpaceMonitor::getStatVFS(path);
     msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
@@ -105,22 +107,8 @@ std::string getExtraExceptionInfo(const std::exception & e)
         }
         else if (auto errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
-            if (errno_exception->getErrno() == ENOSPC)
-            {
-                /// Try to extract path from text exception message. Most likely the exception was thrown by
-                /// DB::throwFromErrno("Some message" + filename, ...);
-                /// We suppose "Some message " does not contain '/' and filename is an absolute path starts with '/'.
-                /// throwFromErrno appends ", errno: ..." to the first argument.
-                /// It's ugly hack which may not work correctly. However, getEnospcInfoMessage(...) checks if path exists.
-                size_t likely_path_begin = errno_exception->message().find('/');
-                size_t likely_path_end   = errno_exception->message().find(", errno: ", likely_path_begin);
-                if (likely_path_end != std::string::npos)
-                {
-                    std::string supposed_to_be_path = errno_exception->message().substr(likely_path_begin,
-                                                                                        likely_path_end - likely_path_begin);
-                    getNoSpaceLeftInfoMessage(supposed_to_be_path, msg);
-                }
-            }
+            if (errno_exception->getErrno() == ENOSPC && errno_exception->getPath())
+                getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);
         }
     }
     catch (...) {
