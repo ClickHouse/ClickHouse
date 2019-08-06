@@ -1,16 +1,15 @@
 #include "QueryProfiler.h"
 
 #include <random>
-#include <pcg_random.hpp>
 #include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
@@ -63,7 +62,6 @@ namespace
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
     thread_local size_t write_trace_iteration = 0;
-    thread_local pcg64 rng{randomSeed()};
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -87,7 +85,8 @@ namespace
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
-                                    sizeof(StackTrace) + // collected stack trace
+                                    sizeof(UInt8) + // number of stack frames
+                                    sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
                                     sizeof(TimerType) + // timer type
                                     sizeof(UInt32); // thread_number
         char buffer[buf_size];
@@ -103,13 +102,19 @@ namespace
 
         writeChar(false, out);
         writeStringBinary(query_id, out);
-        writePODBinary(stack_trace, out);
+
+        size_t stack_trace_size = stack_trace.getSize();
+        size_t stack_trace_offset = stack_trace.getOffset();
+        writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
+        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
+            writePODBinary(stack_trace.getFrames()[i], out);
+
         writePODBinary(timer_type, out);
         writePODBinary(thread_number, out);
         out.next();
     }
 
-    const UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -153,7 +158,12 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         struct sigevent sev;
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
+
+#if defined(__FreeBSD__)
+        sev._sigev_un._threadid = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
+#endif
         if (timer_create(clock_type, &sev, &timer_id))
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
 
@@ -161,7 +171,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         /// It will allow to sample short queries even if timer period is large.
         /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
         /// It also helps to avoid interference (moire).
-        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(rng);
+        UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
 
         struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
         struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
@@ -176,7 +186,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         throw;
     }
 #else
-    UNUSED(thread_id, clock_type, period, pause_signal);
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
     throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }

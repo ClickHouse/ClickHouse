@@ -62,7 +62,7 @@ inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 b
     Encoded result;
     result.fill(0);
 
-    for (int i = 0; i < bits; ++i)
+    for (size_t i = 0; i < bits; ++i)
     {
         Float64 mid = (max + min) / 2;
         if (coord >= mid)
@@ -83,7 +83,7 @@ inline Encoded encodeCoordinate(Float64 coord, Float64 min, Float64 max, UInt8 b
 inline Float64 decodeCoordinate(const Encoded & coord, Float64 min, Float64 max, UInt8 bits)
 {
     Float64 mid = (max + min) / 2;
-    for (int i = 0; i < bits; ++i)
+    for (size_t i = 0; i < bits; ++i)
     {
         const auto c = coord[i];
         if (c == 1)

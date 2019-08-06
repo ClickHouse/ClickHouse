@@ -1632,11 +1632,23 @@ private:
         using ToDataType = DataTypeDecimal<FieldType>;
 
         TypeIndex type_index = from_type->getTypeId();
+        UInt32 precision = to_type->getPrecision();
         UInt32 scale = to_type->getScale();
 
-        return [type_index, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        WhichDataType which(type_index);
+        bool ok = which.isNativeInt() ||
+            which.isNativeUInt() ||
+            which.isDecimal() ||
+            which.isFloat() ||
+            which.isDateOrDateTime() ||
+            which.isStringOrFixedString();
+        if (!ok)
+            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
+        return [type_index, precision, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
+            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
             {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
@@ -1645,6 +1657,14 @@ private:
                 ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(block, arguments, result, input_rows_count, scale);
                 return true;
             });
+
+            /// Additionally check if callOnIndexAndDataType wasn't called at all.
+            if (!res)
+            {
+                auto to = DataTypeDecimal<FieldType>(precision, scale);
+                throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to.getName() +
+                                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+            }
         };
     }
 
@@ -2010,6 +2030,11 @@ private:
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
 
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
+
+                /// May happen in fuzzy tests. For debug purpose.
+                if (!tmp_res.column)
+                    throw Exception("Couldn't convert " + block.getByPosition(arguments[0]).type->getName() + " to "
+                                    + nested_type->getName() + " in " + " prepareRemoveNullable wrapper.", ErrorCodes::LOGICAL_ERROR);
 
                 res.column = wrapInNullable(tmp_res.column, Block({block.getByPosition(arguments[0]), tmp_res}), {0}, 1, input_rows_count);
             };

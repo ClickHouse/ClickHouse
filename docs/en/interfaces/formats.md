@@ -173,7 +173,7 @@ Empty unquoted input values are replaced with default values for the respective 
 [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 is enabled.
 
-`NULL` is formatted as `\N`.
+`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
