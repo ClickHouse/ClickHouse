@@ -509,6 +509,7 @@ public:
         bool skip_sanity_checks,
         AlterDataPartTransactionPtr& transaction);
 
+    /// Performs ALTER of table settings
     void alterSettings(
            const SettingsChanges & new_changes,
            const String & current_database_name,

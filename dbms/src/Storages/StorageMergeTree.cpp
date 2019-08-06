@@ -260,16 +260,8 @@ void StorageMergeTree::alter(
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
         params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-        IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
-        {
-            auto & storage_ast = ast.as<ASTStorage &>();
-            if (!new_changes.empty())
-                storage_ast.settings->changes.insert(storage_ast.settings->changes.end(), new_changes.begin(), new_changes.end());
-        };
-
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
         setColumns(std::move(new_columns));
-        settings.updateFromChanges(new_changes);
         return;
     }
 
