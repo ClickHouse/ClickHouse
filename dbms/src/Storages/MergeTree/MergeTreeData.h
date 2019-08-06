@@ -531,6 +531,7 @@ public:
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
+    bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);

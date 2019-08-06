@@ -47,7 +47,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <memory>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 
 namespace DB
@@ -120,13 +120,13 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
 {
     UInt64 res = 0;
 
-    boost::filesystem::recursive_directory_iterator begin(dir_path);
-    boost::filesystem::recursive_directory_iterator end;
+    std::filesystem::recursive_directory_iterator begin(dir_path);
+    std::filesystem::recursive_directory_iterator end;
     for (auto it = begin; it != end; ++it)
     {
         const auto & file_path = it->path();
 
-        if (it->status().type() != boost::filesystem::regular_file || !endsWith(file_path.filename().string(), ".bin"))
+        if (!std::filesystem::is_regular_file(*it) || !endsWith(file_path.filename().string(), ".bin"))
             continue;
 
         UInt64 num = 0;
@@ -431,10 +431,10 @@ void StorageDistributed::createDirectoryMonitors()
 
     Poco::File{path}.createDirectory();
 
-    boost::filesystem::directory_iterator begin(path);
-    boost::filesystem::directory_iterator end;
+    std::filesystem::directory_iterator begin(path);
+    std::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
-        if (it->status().type() == boost::filesystem::directory_file)
+        if (std::filesystem::is_directory(*it))
             requireDirectoryMonitor(it->path().filename().string());
 }
 
