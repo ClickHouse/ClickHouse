@@ -1,3 +1,5 @@
+SET any_join_get_any_from_right_table = 1;
+
 SELECT
     CounterID,
     hits,
