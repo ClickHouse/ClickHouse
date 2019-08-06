@@ -1,0 +1,9 @@
+1. clean old topic & consumer group
+2. create topic
+3. create src table
+4. copy table data to topic
+5. create dest tables pipeline
+6. give some time to consume the topic
+7. check counts
+240000	240000
+8. cleanup

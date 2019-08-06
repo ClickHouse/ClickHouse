@@ -1,0 +1,214 @@
+version: '2.3'
+
+services:
+  zookeeper:
+    image: zookeeper:3.4.12
+    expose:
+      - "2181"
+    environment:
+      ZOO_TICK_TIME: 500
+      ZOO_MY_ID: 1
+  #    ZOO_SERVERS: server.1=0.0.0.0:2888:3888 
+    healthcheck:
+      test: echo stat | nc localhost 2181
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    security_opt:
+        - label:disable
+
+  clickhouse1:
+    image: yandex/clickhouse-integration-test
+    hostname: clickhouse1
+    expose:
+      - "9000"
+      - "9009"
+      - "8123"
+    volumes:
+        - ./_instances/clickhouse1/database/:/var/lib/clickhouse/
+        - ./_instances/clickhouse1/logs/:/var/log/clickhouse-server/
+        - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
+        - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
+        - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
+        - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
+        - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
+        - ./configs/clickhouse1/macros.xml:/etc/clickhouse-server/config.d/macros.xml
+    entrypoint: clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
+    healthcheck:
+        test: clickhouse client --query='select 1'
+        interval: 3s
+        timeout: 2s
+        retries: 5
+        start_period: 2s
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    cap_add:
+        - SYS_PTRACE
+    security_opt:
+        - label:disable
+
+  # TODO: try to avoid copy & paste by using docker-compose extend or yaml references
+
+  clickhouse2:
+    image: yandex/clickhouse-integration-test
+    hostname: clickhouse2
+    expose:
+      - "9000"
+      - "9009"
+      - "8123"
+    volumes:
+        - ./_instances/clickhouse2/database/:/var/lib/clickhouse/
+        - ./_instances/clickhouse2/logs/:/var/log/clickhouse-server/
+        - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
+        - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
+        - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
+        - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
+        - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
+        - ./configs/clickhouse2/macros.xml:/etc/clickhouse-server/config.d/macros.xml
+    entrypoint: clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
+    healthcheck:
+        test: clickhouse client --query='select 1'
+        interval: 3s
+        timeout: 2s
+        retries: 5
+        start_period: 2s
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    cap_add:
+        - SYS_PTRACE
+    security_opt:
+        - label:disable
+
+
+  clickhouse3:
+    image: yandex/clickhouse-integration-test
+    hostname: clickhouse3
+    expose:
+      - "9000"
+      - "9009"
+      - "8123"
+    volumes:
+        - ./_instances/clickhouse3/database/:/var/lib/clickhouse/
+        - ./_instances/clickhouse3/logs/:/var/log/clickhouse-server/
+        - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
+        - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
+        - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
+        - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
+        - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
+        - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
+        - ./configs/clickhouse3/macros.xml:/etc/clickhouse-server/config.d/macros.xml
+    entrypoint: clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
+    healthcheck:
+        test: clickhouse client --query='select 1'
+        interval: 3s
+        timeout: 2s
+        retries: 5
+        start_period: 2s
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    cap_add:
+        - SYS_PTRACE
+    security_opt:
+        - label:disable
+
+  kafka1:
+    image: confluentinc/cp-kafka:5.2.0
+    hostname: kafka1
+    expose:
+      - "9092"    
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka1:9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ZOOKEEPER=zookeeper:2181
+      - KAFKA_LOG4J_LOGGERS=kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka2:9092
+    healthcheck:
+      test: echo dump | nc zookeeper 2181 | grep '/brokers/ids/1'
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    depends_on:
+        zookeeper:
+          condition: service_healthy
+    security_opt:
+        - label:disable
+
+
+  kafka2:
+    image: confluentinc/cp-kafka:5.2.0
+    hostname: kafka2
+    expose:
+      - "9092"    
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka2:9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_BROKER_ID=2
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ZOOKEEPER=zookeeper:2181
+      - KAFKA_LOG4J_LOGGERS=kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka2:9092
+    healthcheck:
+      test: echo dump | nc zookeeper 2181 | grep '/brokers/ids/2'
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    depends_on:
+        zookeeper:
+          condition: service_healthy
+    security_opt:
+        - label:disable
+
+  kafka3:
+    image: confluentinc/cp-kafka:5.2.0
+    hostname: kafka3
+    expose:
+      - "9092"    
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka3:9092
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_BROKER_ID=3
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ZOOKEEPER=zookeeper:2181
+      - KAFKA_LOG4J_LOGGERS=kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO
+      - BOOTSTRAP_SERVERS=kafka1:9092,kafka2:9092,kafka2:9092
+    healthcheck:
+      test: echo dump | nc zookeeper 2181 | grep '/brokers/ids/3'
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    depends_on:
+        zookeeper:
+          condition: service_healthy
+    security_opt:
+        - label:disable
+
+  # dummy service which do nothing, but allows to postpone 'docker-compose up -d' till all dependecies will go healthy  
+  all_services_ready:
+    image: hello-world
+    depends_on:
+      clickhouse1:
+        condition: service_healthy
+      clickhouse2:
+        condition: service_healthy        
+      zookeeper:
+        condition: service_healthy
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy

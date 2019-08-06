@@ -1,0 +1,25 @@
+1. clean old topic & consumer group
+2. create topic
+3. create src table
+4. copy table data to topic
+5. create dest tables pipeline
+6. give some time to consume the topic & replicate the data
+7. check counts
+240000	240000
+8. stopping one kafka node (broker rebalance)
+9. putting more data to kafka
+10. give some time to consume the topic & replicate the data
+11. check counts again
+480000	480000
+12. starting kafka node back (broker rebalance #2)
+13. wait and check counts once again
+480000	480000
+14. stopping one clickhouse node (consumer group rebalance)
+15. putting more data to kafka
+16. give some time to consume the topic & replicate the data
+17. check counts again
+720000	720000
+18. starting clickhouse node back (consumer group rebalance #2)
+19. wait and check counts once again
+720000	720000
+20. cleanup
