@@ -1,3 +1,16 @@
+## ClickHouse release 19.11.5.28, 2019-08-05
+
+### Bug fix
+* Fixed the possibility of hanging queries when server is overloaded. [#6301](https://github.com/yandex/ClickHouse/pull/6301) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix FPE in yandexConsistentHash function. This fixes [#6304](https://github.com/yandex/ClickHouse/issues/6304). [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed bug in conversion of `LowCardinality` types in `AggregateFunctionFactory`. This fixes [#6257](https://github.com/yandex/ClickHouse/issues/6257). [#6281](https://github.com/yandex/ClickHouse/pull/6281) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix parsing of `bool` settings from `true` and `false` strings. [#6278](https://github.com/yandex/ClickHouse/pull/6278) ([alesapin](https://github.com/alesapin))
+* Fix rare bug with incompatible stream headers in queries to `Distributed` table over `MergeTree` table when part of `WHERE` moves to `PREWHERE`. [#6236](https://github.com/yandex/ClickHouse/pull/6236) ([alesapin](https://github.com/alesapin))
+* Fixed overflow in integer division of signed type to unsigned type. This fixes [#6214](https://github.com/yandex/ClickHouse/issues/6214). [#6233](https://github.com/yandex/ClickHouse/pull/6233) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Backward Incompatible Change
+* `Kafka` still broken.
+
 ## ClickHouse release 19.11.4.24, 2019-08-01
 
 ### Bug Fix
