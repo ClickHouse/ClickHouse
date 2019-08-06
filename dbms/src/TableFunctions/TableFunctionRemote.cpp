@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -162,13 +162,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            getName(),
+            table_name,
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            getName(),
+            table_name,
             structure_remote_table,
             remote_database,
             remote_table,

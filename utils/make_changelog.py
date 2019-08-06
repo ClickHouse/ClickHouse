@@ -100,7 +100,7 @@ def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, tok
 
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
 def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, retry_timeout):
-    resp = github_api_get_json('search/issues?q={}'.format(commit_sha), token, max_retries, retry_timeout)
+    resp = github_api_get_json('search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(commit_sha, repo), token, max_retries, retry_timeout)
 
     found = False
     for item in resp['items']:
@@ -109,6 +109,7 @@ def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, 
             number = item['number']
             if number not in pull_requests:
                 pull_requests[number] = {
+                    'title': item['title'],
                     'description': item['body'],
                     'user': item['user']['login'],
                 }
@@ -165,24 +166,34 @@ def process_unknown_commits(commits, commits_info, users):
         html_url = info['html_url']
         msg = info['commit']['message']
 
-        # GitHub login
-        login = info['author']['login']
         name = None
+        login = None
+        author = None
 
-        # Firstly, try get name from github user
-        try:
-            name = users[login]['name']
-        except:
-            pass
+        if not info['author']:
+            author = 'Unknown'
+        else:
+            # GitHub login
+            if 'login' in info['author']:
+                login = info['author']['login']
 
-        # Then, try get name from commit
-        if not name:
-            try:
-                name = info['commit']['author']['name']
-            except:
-                pass
+                # First, try get name from github user
+                try:
+                    name = users[login]['name']
+                except:
+                    pass
+            else:
+                login = 'Unknown'
 
-        author = '[{}]({})'.format(name or login, info['author']['html_url'])
+            # Then, try get name from commit
+            if not name:
+                try:
+                    name = info['commit']['author']['name']
+                except:
+                    pass
+
+            author = '[{}]({})'.format(name or login, info['author']['html_url'])
+
         texts.append(pattern.format(commit, html_url, author, msg))
 
     text = 'Commits which are not from any pull request:\n\n'
@@ -202,7 +213,7 @@ def process_pull_requests(pull_requests, users, repo):
 
         if lines:
             for i in range(len(lines) - 1):
-                if re.match('^\**Category\s*(\(leave one\))*:*\**\s*$', lines[i]):
+                if re.match('^\**Category', lines[i]):
                     cat_pos = i
                 if re.match('^\**\s*Short description', lines[i]):
                     short_descr_pos = i
@@ -215,12 +226,20 @@ def process_pull_requests(pull_requests, users, repo):
             cat = lines[cat_pos + 1]
         cat = cat.strip().lstrip('-').strip()
 
+        # We are not interested in documentation PRs in changelog.
+        if re.match('^\**\s*(?:Documentation|Doc\s)', cat):
+            continue;
+
         short_descr = ''
         if short_descr_pos:
             short_descr_end = long_descr_pos or len(lines)
             short_descr = lines[short_descr_pos + 1]
             if short_descr_pos + 2 != short_descr_end:
                 short_descr += ' ...'
+
+        # If we have nothing meaningful
+        if not re.match('\w', short_descr):
+            short_descr = item['title']
 
         # TODO: Add detailed description somewhere
 
@@ -236,8 +255,16 @@ def process_pull_requests(pull_requests, users, repo):
             groups[cat] = []
         groups[cat].append(pattern.format(short_descr, id, link, author))
 
+    categories_preferred_order = ['New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Backward Incompatible Change', 'Other']
+
+    def categories_sort_key(name):
+        if name in categories_preferred_order:
+            return categories_preferred_order.index(name)
+        else:
+            return name.lower()
+
     texts = []
-    for group, text in groups.items():
+    for group, text in sorted(groups.items(), key = lambda (k, v):  categories_sort_key(k)):
         items = [u'* {}'.format(pr) for pr in text]
         texts.append(u'### {}\n{}'.format(group if group else u'[No category]', '\n'.join(items)))
 
@@ -252,7 +279,7 @@ def load_state(state_file, base_sha, new_tag, prev_tag):
     if state_file:
         try:
             if os.path.exists(state_file):
-                logging.info('Reading state from %', state_file)
+                logging.info('Reading state from %s', state_file)
                 with codecs.open(state_file, encoding='utf-8') as f:
                     state = json.loads(f.read())
             else:
@@ -352,8 +379,15 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     logging.info('Found %d users.', len(users))
     save_state(state_file, state)
 
-    print(process_pull_requests(pull_requests, users, repo))
-    print(process_unknown_commits(unknown_commits, commits_info, users))
+    changelog = u'{}\n\n{}'.format(process_pull_requests(pull_requests, users, repo), process_unknown_commits(unknown_commits, commits_info, users))
+
+    # Substitute links to issues
+    changelog = re.sub(r'(?<!\[)#(\d{4,})(?!\])', r'[#\1](https://github.com/{}/issues/\1)'.format(repo), changelog)
+
+    # Remove double whitespaces and trailing whitespaces
+    changelog = re.sub(r' {2,}| +$', r''.format(repo), changelog)
+
+    print(changelog)
 
 
 if __name__ == '__main__':
@@ -361,7 +395,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Make changelog.')
     parser.add_argument('prev_release_tag', help='Git tag from previous release.')
     parser.add_argument('new_release_tag', help='Git tag for new release.')
-    parser.add_argument('--token', help='Github token. Use it to increase github api query limit. ')
+    parser.add_argument('--token', help='Github token. Use it to increase github api query limit.')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
     parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='yandex/ClickHouse')

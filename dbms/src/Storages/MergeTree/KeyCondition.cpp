@@ -689,6 +689,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         MonotonicFunctionsChain chain;
         std::string func_name = func->name;
 
+        if (atom_map.find(func_name) == std::end(atom_map))
+            return false;
+
         if (args.size() == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain)))
@@ -775,8 +778,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             return false;
 
         const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
 
         out.key_column = key_column_num;
         out.monotonic_functions_chain = std::move(chain);

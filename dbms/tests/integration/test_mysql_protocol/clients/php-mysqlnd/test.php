@@ -12,9 +12,6 @@ $options = [
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES   => false,
     PDO::MYSQL_ATTR_DIRECT_QUERY => true,
-    PDO::MYSQL_ATTR_SSL_CERT     => "client.crt",
-    PDO::MYSQL_ATTR_SSL_KEY      => "client.key",
-    PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => 0,
 ];
 $pdo = new PDO($dsn, $user, $pass, $options);
 

@@ -352,6 +352,11 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     return counter;
 }
 
+bool ColumnLowCardinality::containsNull() const
+{
+    return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
+
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
@@ -603,6 +608,28 @@ void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) co
             ++counts[pos];
     };
     callForType(std::move(counter), size_of_type);
+}
+
+bool ColumnLowCardinality::Index::containsDefault() const
+{
+    bool contains = false;
+
+    auto check_contains_default = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        for (auto pos : data)
+        {
+            if (pos == 0)
+            {
+                contains = true;
+                break;
+            }
+        }
+    };
+
+    callForType(std::move(check_contains_default), size_of_type);
+    return contains;
 }
 
 
