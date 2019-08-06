@@ -124,7 +124,7 @@ std::string getExtraExceptionInfo(const std::exception & e)
         }
     }
     catch (...) {
-        msg += "\nCannot print additional info: " + getCurrentExceptionMessage(false, false, false);
+        msg += "\nCannot print extra info: " + getCurrentExceptionMessage(false, false, false);
     }
 
     return msg;

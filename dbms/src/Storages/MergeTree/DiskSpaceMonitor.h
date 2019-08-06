@@ -5,8 +5,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(__linux__)
 #include <cstdio>
 #include <mntent.h>
+#endif
 #include <memory>
 #include <filesystem>
 #include <boost/noncopyable.hpp>
@@ -185,9 +187,15 @@ public:
     }
 
     /// Returns name of filesystem mounted to mount_point
-    static std::string getFilesystemName(const std::string & mount_point)
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+    static std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
     {
+#if defined(__linux__)
         auto mounted_filesystems = setmntent("/etc/mtab", "r");
+        if (!mounted_filesystems)
+            throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
         mntent fs_info;
         constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
         char buf[buf_size];
@@ -197,6 +205,9 @@ public:
         if (fs_info.mnt_dir != mount_point)
             throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
         return fs_info.mnt_fsname;
+#else
+        throw DB::Exception("Supported on linux only", ErrorCodes::NOT_IMPLEMENTED);
+#endif
     }
 
 private:
