@@ -3072,12 +3072,22 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(
-    const AlterCommands & params, const String & /*database_name*/, const String & /*table_name*/,
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
     const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {
     assertNotReadonly();
 
     LOG_DEBUG(log, "Doing ALTER");
+
+    if (params.isSettingsAlter())
+    {
+        LOG_DEBUG(log, "ALTER settings only");
+        lockStructureExclusively(table_lock_holder, query_context.getCurrentQueryId());
+        SettingsChanges new_changes;
+        params.applyForSettingsOnly(new_changes);
+        alterSettings(new_changes, current_database_name, current_table_name, query_context);
+        return;
+    }
 
     /// Alter is done by modifying the metadata nodes in ZK that are shared between all replicas
     /// (/columns, /metadata). We set contents of the shared nodes to the new values and wait while

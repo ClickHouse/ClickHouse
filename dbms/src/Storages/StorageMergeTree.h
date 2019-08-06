@@ -128,8 +128,6 @@ private:
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
 
-    bool hasSetting(const String & setting_name) const override;
-
 protected:
 
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

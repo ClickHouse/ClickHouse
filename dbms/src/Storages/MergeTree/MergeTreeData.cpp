@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -1581,6 +1582,29 @@ void MergeTreeData::alterDataPart(
     }
 
     return;
+}
+
+void MergeTreeData::alterSettings(
+        const SettingsChanges & new_changes,
+        const String & current_database_name,
+        const String & current_table_name,
+        const Context & context)
+{
+    settings.updateFromChanges(new_changes);
+    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
+    {
+        if (!new_changes.empty())
+        {
+            auto & storage_ast = ast.as<ASTStorage &>();
+            storage_ast.settings->changes.insert(storage_ast.settings->changes.end(), new_changes.begin(), new_changes.end());
+        }
+    };
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), storage_modifier);
+}
+
+bool MergeTreeData::hasSetting(const String & setting_name) const
+{
+    return settings.findIndex(setting_name) != MergeTreeSettings::npos;
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
