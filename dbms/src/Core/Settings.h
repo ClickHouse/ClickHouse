@@ -345,6 +345,9 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, check_query_single_value_result, true, "Return check query result as single 1/0 value") \
     M(SettingBool, allow_drop_detached, false, "Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries") \
     \
+    M(SettingSeconds,  replica_error_decrease_period, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD, "Time period reduces replica error counter by 2 times.") \
+    M(SettingUInt64, replica_error_max_count, DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT, "Max number of errors per replica, prevents piling up increadible amount of errors if replica was offline for some time and allows it to be reconsidered in a shorter amount of time.") \
+    \
     M(SettingBool, allow_experimental_live_view, false, "Enable LIVE VIEW. Not mature enough.") \
     M(SettingSeconds, live_view_heartbeat_interval, DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC, "The heartbeat interval in seconds to indicate live query is alive.") \
     M(SettingSeconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC, "Timeout after which temporary live view is deleted.") \
