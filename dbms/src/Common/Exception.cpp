@@ -111,7 +111,8 @@ std::string getExtraExceptionInfo(const std::exception & e)
                 getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);
         }
     }
-    catch (...) {
+    catch (...)
+    {
         msg += "\nCannot print extra info: " + getCurrentExceptionMessage(false, false, false);
     }
 
