@@ -159,7 +159,7 @@ void registerInputFormatProcessorValues(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesRowInputFormat>(buf, sample, params, context, settings);
+        return std::make_shared<ValuesRowInputFormat>(buf, sample, std::move(params), context, settings);
     });
 }
 
