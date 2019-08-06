@@ -1040,23 +1040,35 @@ void ExpressionAnalyzer::collectUsedColumns()
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
     {
-        /// We will find a column with minimum compressed size. Because it is the column that is cheapest to read.
-        size_t min_data_compressed = 0;
-        String min_column_name;
+        /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
+        /// Because it is the column that is cheapest to read.
+        struct ColumnSizeTuple
+        {
+            size_t compressed_size;
+            size_t type_size;
+            size_t uncompressed_size;
+            String name;
+            bool operator<(const ColumnSizeTuple & that) const
+            {
+                return std::tie(compressed_size, type_size, uncompressed_size)
+                    < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
+            }
+        };
+        std::vector<ColumnSizeTuple> columns;
         if (storage)
         {
             auto column_sizes = storage->getColumnSizes();
-            for (auto & [column_name, column_size] : column_sizes)
+            for (auto & source_column : source_columns)
             {
-                if (min_data_compressed == 0 || min_data_compressed > column_size.data_compressed)
-                {
-                    min_data_compressed = column_size.data_compressed;
-                    min_column_name = column_name;
-                }
+                auto c = column_sizes.find(source_column.name);
+                if (c == column_sizes.end())
+                    continue;
+                size_t type_size = source_column.type->haveMaximumSizeOfValue() ? source_column.type->getMaximumSizeOfValueInMemory() : 100;
+                columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
-        if (min_data_compressed > 0)
-            required.insert(min_column_name);
+        if (columns.size())
+            required.insert(std::min_element(columns.begin(), columns.end())->name);
         else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
