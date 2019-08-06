@@ -611,7 +611,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, [[maybe_unused]] UInt16 port, [[maybe_unused]] bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
         {
                auto address = make_socket_address(host, port);
 #if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
@@ -681,7 +681,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// HTTPS
-            create_server("https_port", [&]([[maybe_unused]] UInt16 port)
+            create_server("https_port", [&](UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -696,6 +696,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -718,7 +719,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP with SSL
-            create_server ("tcp_port_secure", [&]([[maybe_unused]] UInt16 port)
+            create_server ("tcp_port_secure", [&](UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -732,6 +733,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -753,7 +755,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
             });
 
-            create_server("interserver_https_port", [&]([[maybe_unused]] UInt16 port)
+            create_server("interserver_https_port", [&](UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
@@ -768,12 +770,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
             });
 
-            create_server("mysql_port", [&]([[maybe_unused]] UInt16 port)
+            create_server("mysql_port", [&](UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::ServerSocket socket;
@@ -788,6 +791,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
