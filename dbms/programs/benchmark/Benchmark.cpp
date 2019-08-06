@@ -52,13 +52,13 @@ class Benchmark : public Poco::Util::Application
 public:
     Benchmark(unsigned concurrency_, double delay_,
             const std::vector<std::string> & hosts_, const std::vector<UInt16> & ports_,
-            bool secure_, const String & default_database_,
+            bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, const Settings & settings_)
         :
-        concurrency(concurrency_), delay(delay_), queue(concurrency),
-        randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
+        concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
+        cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
@@ -135,6 +135,7 @@ private:
     ConnectionPoolPtrs connections;
 
     bool randomize;
+    bool cumulative;
     size_t max_iterations;
     double max_time;
     String json_path;
@@ -149,12 +150,12 @@ private:
 
     struct Stats
     {
-        Stopwatch watch;
         std::atomic<size_t> queries{0};
         size_t read_rows = 0;
         size_t read_bytes = 0;
         size_t result_rows = 0;
         size_t result_bytes = 0;
+        double work_time = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler {1 << 16};
@@ -162,6 +163,7 @@ private:
         void add(double seconds, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
         {
             ++queries;
+            work_time += seconds;
             read_rows += read_rows_inc;
             read_bytes += read_bytes_inc;
             result_rows += result_rows_inc;
@@ -171,8 +173,8 @@ private:
 
         void clear()
         {
-            watch.restart();
             queries = 0;
+            work_time = 0;
             read_rows = 0;
             read_bytes = 0;
             result_rows = 0;
@@ -251,7 +253,7 @@ private:
             if (delay > 0 && delay_watch.elapsedSeconds() > delay)
             {
                 printNumberOfQueriesExecuted(queries_executed);
-                report(comparison_info_per_interval);
+                cumulative ? report(comparison_info_total) : report(comparison_info_per_interval);
                 delay_watch.restart();
             }
         }
@@ -276,10 +278,6 @@ private:
         }
 
         InterruptListener interrupt_listener;
-
-        for (auto & connection_stats : comparison_info_per_interval)
-            connection_stats->watch.restart();
-
         delay_watch.restart();
 
         /// Push queries into queue
@@ -296,9 +294,6 @@ private:
 
         pool.wait();
         total_watch.stop();
-
-        for (auto & connection_stats : comparison_info_total)
-            connection_stats->watch.stop();
 
         if (!json_path.empty())
             reportJSON(comparison_info_total, json_path);
@@ -383,15 +378,14 @@ private:
             if (0 == info->queries)
                 return;
 
-            double seconds = info->watch.elapsedSeconds();
-
             std::cerr
-                    << "connection: " << info_counter++ << ", "
-                    << "QPS: " << (info->queries / seconds) << ", "
-                    << "RPS: " << (info->read_rows / seconds) << ", "
-                    << "MiB/s: " << (info->read_bytes / seconds / 1048576) << ", "
-                    << "result RPS: " << (info->result_rows / seconds) << ", "
-                    << "result MiB/s: " << (info->result_bytes / seconds / 1048576) << "."
+                    << "connection " << info_counter++ << ", "
+                    << "queries " << info->queries << ", "
+                    << "QPS: " << (info->queries / info->work_time) << ", "
+                    << "RPS: " << (info->read_rows / info->work_time) << ", "
+                    << "MiB/s: " << (info->read_bytes / info->work_time / 1048576) << ", "
+                    << "result RPS: " << (info->result_rows / info->work_time) << ", "
+                    << "result MiB/s: " << (info->result_bytes / info->work_time / 1048576) << "."
                     << "\n";
         }
         std::cerr << "\n\t\t";
@@ -418,8 +412,9 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        for (auto & info : infos)
-            info->clear();
+        if (!cumulative)
+            for (auto & info : infos)
+                info->clear();
     }
 
     void reportJSON(MultiStats & infos, const std::string & filename)
@@ -442,17 +437,16 @@ private:
 
         for (size_t i = 1; i <= infos.size(); ++i)
         {
-            auto info = infos[i];
+            auto info = infos[i - 1];
 
             json_out << double_quote << "connection_" + toString(i) << ": {\n";
             json_out << double_quote << "statistics" << ": {\n";
 
-            double seconds = info->watch.elapsedSeconds();
-            print_key_value("QPS", info->queries / seconds);
-            print_key_value("RPS", info->read_rows / seconds);
-            print_key_value("MiBPS", info->read_bytes / seconds);
-            print_key_value("RPS_result", info->result_rows / seconds);
-            print_key_value("MiBPS_result", info->result_bytes / seconds);
+            print_key_value("QPS", info->queries / info->work_time);
+            print_key_value("RPS", info->read_rows / info->work_time);
+            print_key_value("MiBPS", info->read_bytes / info->work_time);
+            print_key_value("RPS_result", info->result_rows / info->work_time);
+            print_key_value("MiBPS_result", info->result_bytes / info->work_time);
             print_key_value("num_queries", info->queries.load(), false);
 
             json_out << "},\n";
@@ -467,12 +461,9 @@ private:
             print_percentile(*info, 99.99, false);
 
             json_out << "}\n";
-
-            if (i == infos.size())
-                json_out << "}\n";
-            else
-                json_out << "},\n";
+            json_out << (i == infos.size() ? "}\n" : "},\n");
         }
+
         json_out << "}\n";
     }
 
@@ -510,8 +501,9 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
-            ("host,h",        value<std::vector<std::string>>()->default_value(std::vector<std::string>{"localhost"}, "localhost")   ,"note that more than one host can be described")
-            ("port,p",        value<std::vector<UInt16>>()->default_value(std::vector<UInt16>{9000}, "9000")                         ,"note that more than one port can be described")
+            ("host,h",        value<std::vector<std::string>>()->default_value(std::vector<std::string>{"localhost"}, "localhost"), "note that more than one host can be described")
+            ("port,p",        value<std::vector<UInt16>>()->default_value(std::vector<UInt16>{9000}, "9000"),                       "note that more than one port can be described")
+            ("cumulative",                                                      "prints cumulative data instead of data per interval")
             ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
@@ -542,6 +534,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             options["host"].as<std::vector<std::string>>(),
             options["port"].as<std::vector<UInt16>>(),
+            options.count("cumulative"),
             options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
