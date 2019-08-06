@@ -982,18 +982,6 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
     aggregates = aggregate_descriptions;
 }
 
-struct ColumnExt
-{
-    size_t compressed_size;
-    size_t type_size;
-    size_t uncompressed_size;
-    String name;
-    bool operator<(const ColumnExt & that) const
-    {
-        return std::tie(compressed_size, type_size, uncompressed_size) < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
-    }
-};
-
 void ExpressionAnalyzer::collectUsedColumns()
 {
     /** Calculate which columns are required to execute the expression.
@@ -1054,7 +1042,19 @@ void ExpressionAnalyzer::collectUsedColumns()
     {
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
-        std::vector<ColumnExt> columns;
+        struct ColumnSizeTuple
+        {
+            size_t compressed_size;
+            size_t type_size;
+            size_t uncompressed_size;
+            String name;
+            bool operator<(const ColumnSizeTuple & that) const
+            {
+                return std::tie(compressed_size, type_size, uncompressed_size)
+                    < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
+            }
+        };
+        std::vector<ColumnSizeTuple> columns;
         if (storage)
         {
             auto column_sizes = storage->getColumnSizes();
@@ -1064,7 +1064,7 @@ void ExpressionAnalyzer::collectUsedColumns()
                 if (c == column_sizes.end())
                     continue;
                 size_t type_size = source_column.type->haveMaximumSizeOfValue() ? source_column.type->getMaximumSizeOfValueInMemory() : 100;
-                columns.emplace_back(ColumnExt{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
+                columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
         if (columns.size())
