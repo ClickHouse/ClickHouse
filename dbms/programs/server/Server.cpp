@@ -719,7 +719,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP with SSL
-            create_server ("tcp_port_secure", [&](UInt16 port)
+            create_server("tcp_port_secure", [&](UInt16 port)
             {
 #if USE_POCO_NETSSL
                 Poco::Net::SecureServerSocket socket;
