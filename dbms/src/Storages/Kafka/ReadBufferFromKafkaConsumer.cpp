@@ -73,12 +73,25 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     // But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state:
     // see https://github.com/edenhill/librdkafka/issues/2455
-    if (consumer->get_subscription().empty())
+    while (consumer->get_subscription().empty())
     {
-        consumer->subscribe(topics);
+        stalled = false;
 
-        // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-        //        see https://github.com/edenhill/librdkafka/issues/2077
+        try
+        {
+            consumer->subscribe(topics);
+            if (nextImpl())
+                break;
+
+            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+            //        see https://github.com/edenhill/librdkafka/issues/2077
+        }
+        catch (cppkafka::HandleException & e)
+        {
+            if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
+                continue;
+            throw;
+        }
     }
 
     stalled = false;
