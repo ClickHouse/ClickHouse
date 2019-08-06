@@ -103,7 +103,7 @@ public:
 
     using ReservationPtr = std::unique_ptr<Reservation>;
 
-    inline static struct statvfs getStatvfs(const std::string & path)
+    inline static struct statvfs getStatVFS(const std::string & path)
     {
         struct statvfs fs;
         if (statvfs(path.c_str(), &fs) != 0)
@@ -113,7 +113,7 @@ public:
 
     static UInt64 getUnreservedFreeSpace(const std::string & path)
     {
-        struct statvfs fs = getStatvfs(path);
+        struct statvfs fs = getStatVFS(path);
 
         UInt64 res = fs.f_bfree * fs.f_bsize;
 
@@ -152,7 +152,7 @@ public:
         return std::make_unique<Reservation>(size);
     }
 
-    /// Returns mount point of filesystem where absoulte_path (must exists) is located
+    /// Returns mount point of filesystem where absoulte_path (must exist) is located
     static std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     {
         if (absolute_path.is_relative())
@@ -191,7 +191,8 @@ public:
         mntent fs_info;
         constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
         char buf[buf_size];
-        while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point);
+        while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point)
+            ;
         endmntent(mounted_filesystems);
         if (fs_info.mnt_dir != mount_point)
             throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);

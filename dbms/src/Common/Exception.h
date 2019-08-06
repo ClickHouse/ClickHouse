@@ -88,7 +88,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
   *  only this stack trace will be printed.
   */
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
-                                       bool with_additional_info = true);
+                                       bool with_extra_info = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
