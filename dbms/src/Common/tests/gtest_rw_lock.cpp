@@ -9,6 +9,28 @@
 #include <thread>
 #include <atomic>
 #include <iomanip>
+#include <mutex>
+
+
+namespace
+{
+
+class Barrier
+{
+public:
+    explicit Barrier(const size_t num_threads) : num_threads{num_threads} {}
+    Barrier(const Barrier&) = delete;
+    Barrier& operator=(const Barrier&) = delete;
+
+    void arrive_and_wait();
+
+private:
+    const size_t num_threads;
+    std::mutex mutex;
+    std::condition_variable next_epoch_cv;
+};
+
+}
 
 
 using namespace DB;
@@ -120,6 +142,114 @@ TEST(Common, RWLock_Recursive)
 
     t1.join();
     t2.join();
+}
+
+
+void Barrier::arrive_and_wait()
+{
+    static bool epoch = false;
+    static size_t threads_countdown = num_threads;
+
+    std::unique_lock<std::mutex> lock(mutex);
+
+    if (--threads_countdown > 0)
+    {
+        const auto my_epoch = epoch;
+        while (my_epoch == epoch)
+        {
+            next_epoch_cv.wait(lock);
+        }
+    }
+    else
+    {
+        threads_countdown = num_threads;
+        epoch = !epoch;
+        next_epoch_cv.notify_all();
+    }
+}
+
+
+TEST(Common, RWLock_Recursive_WithQueryContext)
+{
+    constexpr auto burst_size = 400;
+    constexpr auto bursts_count = 1000;
+
+    static const String query_id_1 = "query-id-1";
+    static const String query_id_2 = "query-id-2";
+
+    auto fifo_lock = RWLockImpl::create();
+
+    std::atomic_int readers = 0;
+    std::atomic_int writers = 0;
+
+    Barrier barrier(3);  /// For syncronized start of probing sequences
+
+    std::thread t1([&] ()
+    {
+        for (int i = 0; i < bursts_count; ++i)
+        {
+            barrier.arrive_and_wait();
+
+            for (int j = 0; j < burst_size; ++j)
+            {
+                auto lock = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+
+                EXPECT_EQ(writers.load(), 0);
+                EXPECT_LE(readers.fetch_add(1), 1);
+
+                std::this_thread::yield();
+
+                EXPECT_LE(readers.fetch_sub(1), 2);
+            }
+        }
+    });
+
+    std::thread t2([&] ()
+    {
+        for (int i = 0; i < bursts_count; ++i)
+        {
+            barrier.arrive_and_wait();
+
+            for (int j = 0; j < burst_size; ++j)
+            {
+                auto lock1 = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+
+                EXPECT_EQ(writers.load(), 0);
+                EXPECT_LE(readers.fetch_add(1), 1);
+
+                std::this_thread::yield();
+
+                auto lock2 = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+
+                EXPECT_LE(readers.fetch_sub(1), 2);
+            }
+        }
+    });
+
+    std::thread t3([&] ()
+    {
+        for (int i = 0; i < bursts_count; ++i)
+        {
+            barrier.arrive_and_wait();
+
+            for (int j = 0; j < burst_size; ++j)
+            {
+                auto lock1 = fifo_lock->getLock(RWLockImpl::Write, query_id_2);
+
+                EXPECT_EQ(readers.load(), 0);
+                EXPECT_EQ(writers.fetch_add(1), 0);
+
+                std::this_thread::yield();
+
+                EXPECT_EQ(writers.fetch_sub(1), 1);
+                EXPECT_EQ(readers.load(), 0);
+            }
+        }
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
 }
 
 
