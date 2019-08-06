@@ -213,7 +213,7 @@ void TCPHandler::runImpl()
 
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
-                processInsertQuery(global_settings);
+                processInsertQuery(connection_settings);
             else
                 processOrdinaryQuery();
 
