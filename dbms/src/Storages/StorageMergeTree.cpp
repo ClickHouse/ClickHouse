@@ -246,12 +246,19 @@ void StorageMergeTree::alter(
     if (!params.isMutable())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+        SettingsChanges new_changes;
+        if (params.isSettingsAlter())
+        {
+            params.applyForSettingsOnly(new_changes);
+            alterSettings(new_changes, current_database_name, current_table_name, context);
+            return;
+        }
+
         auto new_columns = getColumns();
         auto new_indices = getIndices();
         ASTPtr new_order_by_ast = order_by_ast;
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
-        SettingsChanges new_changes;
         params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
         IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
         {
@@ -1030,12 +1037,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     clearOldPartsFromFilesystem();
 }
 
-
-
-bool StorageMergeTree::hasSetting(const String & setting_name) const
-{
-    return settings.findIndex(setting_name) != MergeTreeSettings::npos;
-}
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
