@@ -696,6 +696,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -732,6 +733,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -768,6 +770,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -788,6 +791,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
