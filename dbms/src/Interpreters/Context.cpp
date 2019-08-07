@@ -1126,6 +1126,17 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
+void Context::updateSettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+    {
+        if (change.name == "profile")
+            setProfile(change.value.safeGet<String>());
+        else
+            settings.updateFromChange(change);
+    }
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
