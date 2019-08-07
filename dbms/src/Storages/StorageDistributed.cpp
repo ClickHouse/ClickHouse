@@ -493,7 +493,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where())
+    if (!select.where() || !sharding_key_expr)
         return nullptr;
 
     const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
