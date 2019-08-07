@@ -131,7 +131,7 @@ If a codec is specified, the default codec doesn't apply. Codecs can be combined
 
 Compression is supported for the table engines:
 
-- [MergeTree*](../operations/table_engines/mergetree.md) family
+- [*MergeTree](../operations/table_engines/mergetree.md) family
 - [*Log](../operations/table_engines/log_family.md) family
 - [Set](../operations/table_engines/set.md)
 - [Join](../operations/table_engines/join.md)
