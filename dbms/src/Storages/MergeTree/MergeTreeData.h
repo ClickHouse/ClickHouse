@@ -342,6 +342,8 @@ public:
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
+    bool supportsSettings() const override { return true; }
+
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
 
     NameAndTypePair getColumn(const String & column_name) const override
@@ -516,7 +518,7 @@ public:
            const String & current_database_name,
            const String & current_table_name,
            const Context & context,
-           TableStructureWriteLockHolder & table_lock_holder);
+           TableStructureWriteLockHolder & table_lock_holder) override;
 
     /// All MergeTreeData children have settings.
     bool hasSetting(const String & setting_name) const override;
