@@ -12,6 +12,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Common/SettingsChanges.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -94,6 +95,9 @@ public:
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
+
+    /// Returns true if the storage supports settings.
+    virtual bool supportsSettings() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -251,6 +255,15 @@ public:
     {
         throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /** ALTER table settings if possible. Otherwise throws exception.
+     */
+    virtual void alterSettings(
+        const SettingsChanges & new_changes,
+        const String & current_database_name,
+        const String & current_table_name,
+        const Context & context,
+        TableStructureWriteLockHolder & table_lock_holder);
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.

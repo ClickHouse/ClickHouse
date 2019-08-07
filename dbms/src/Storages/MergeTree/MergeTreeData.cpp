@@ -1588,26 +1588,10 @@ void MergeTreeData::alterSettings(
         const String & current_database_name,
         const String & current_table_name,
         const Context & context,
-        TableStructureWriteLockHolder & /* table_lock_holder */)
+        TableStructureWriteLockHolder & table_lock_holder)
 {
     settings.updateFromChanges(new_changes);
-    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
-    {
-        if (!new_changes.empty())
-        {
-            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
-            /// Make storage settings unique
-            for (const auto & change : new_changes)
-            {
-                auto finder = [&change] (const SettingChange & c) { return c.name == change.name;};
-                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
-                    it->value = change.value;
-                else
-                    storage_changes.push_back(change);
-            }
-        }
-    };
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), storage_modifier);
+    IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
 }
 
 bool MergeTreeData::hasSetting(const String & setting_name) const
@@ -2245,7 +2229,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 {
     const size_t parts_count_in_total = getPartsCount();
     if (parts_count_in_total >= settings.max_parts_in_total)

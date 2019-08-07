@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -385,6 +386,22 @@ bool StorageKafka::streamToViews()
     limits_applied = info.hasAppliedLimit();
 
     return limits_applied;
+}
+
+
+bool StorageKafka::hasSetting(const String & setting_name) const
+{
+    return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
+}
+
+void StorageKafka::alterSettings(
+    const SettingsChanges & /* new_changes */,
+    const String & /* current_database_name */,
+    const String & /* current_table_name */,
+    const Context & /* context */,
+    TableStructureWriteLockHolder & /* table_lock_holder */)
+{
+    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 
