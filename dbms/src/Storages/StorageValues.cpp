@@ -21,7 +21,7 @@ BlockInputStreams StorageValues::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    check(column_names);
+    check(column_names, true);
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block));
 }
