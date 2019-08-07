@@ -35,7 +35,7 @@ INSERT INTO table_for_alter VALUES (2, '2'); -- { serverError 252 }
 
 ALTER TABLE table_for_alter MODIFY SETTING xxx_yyy=124; -- { serverError 115 }
 
-ALTER TABLE table_for_alter MODIFY SETTING  parts_to_throw_insert = 100, parts_to_delay_insert = 100;
+ALTER TABLE table_for_alter MODIFY SETTING parts_to_throw_insert = 100, parts_to_delay_insert = 100;
 
 INSERT INTO table_for_alter VALUES (2, '2');
 
