@@ -321,6 +321,9 @@ private:
         size_t offset_of_changed;
         StringRef name;
         StringRef description;
+        /// Can be updated after first load for config/definition.
+        /// Non updatable settings can be isChanged,
+        /// if they were overwritten in config/definition.
         bool updateable;
         GetStringFunction get_string;
         GetFieldFunction get_field;

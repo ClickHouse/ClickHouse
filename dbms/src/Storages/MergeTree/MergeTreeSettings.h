@@ -24,6 +24,7 @@ class ASTStorage;
 struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 {
 
+/// M (mutable) for normal settings, IM (immutable) for not updateable settings.
 #define LIST_OF_MERGE_TREE_SETTINGS(M, IM)                                 \
     IM(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.") \
     \
