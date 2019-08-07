@@ -26,7 +26,7 @@ namespace ErrorCodes
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
-    auto other = static_cast<const Self &>(rhs_);
+    auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
     const T & b = other.data[m];
 
