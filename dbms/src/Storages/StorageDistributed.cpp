@@ -301,8 +301,22 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
+    StoragePtr tmp_storage;
+
+    if (remote_table_function_ptr)
+        tmp_storage = context.getQueryContext().executeTableFunction(remote_table_function_ptr);
+    else
+        tmp_storage = context.getTable(remote_database, remote_table);
+
+    Block header =
+        //InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
+        InterpreterSelectQuery::getHeaderForExecutionStep(query_info.query, tmp_storage, processed_stage, 0, context, query_info.prewhere_info);
+
+    /// Create empty columns for header.
+    /// All columns must be empty, because otherwise (by some reason) remote query can return one excessive row.
+    /// So, all columns are recreated.
+    for (auto & col : header)
+        col.column = col.type->createColumn();
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(

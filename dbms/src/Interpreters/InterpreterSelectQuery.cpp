@@ -81,6 +81,8 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/LimitTransform.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataStreams/materializeBlock.h>
 
 
 namespace DB
@@ -400,10 +402,97 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
     return query_pipeline;
 }
 
+
+Block InterpreterSelectQuery::getHeaderForExecutionStep(
+    const ASTPtr & query_ptr,
+    const StoragePtr & storage,
+    QueryProcessingStage::Enum stage,
+    size_t subquery_depth,
+    const Context & context,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    SelectQueryOptions options(stage, subquery_depth);
+    options.only_analyze = true;
+
+    Names required_result_column_names;
+
+    /// TODO: remove it.
+    auto query = query_ptr->clone();
+
+    auto syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
+            query, {}, required_result_column_names, storage);
+
+    auto query_analyzer = ExpressionAnalyzer(
+            query, syntax_analyzer_result, context, NamesAndTypesList(),
+            NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+            options.subquery_depth, !options.only_analyze);
+
+    if (stage == QueryProcessingStage::Enum::FetchColumns)
+    {
+        auto required_columns = query_analyzer.getRequiredSourceColumns();
+        auto header = storage->getSampleBlockForColumns(required_columns);
+
+        if (prewhere_info)
+        {
+            prewhere_info->prewhere_actions->execute(header);
+            header = materializeBlock(header);
+            if (prewhere_info->remove_prewhere_column)
+                header.erase(prewhere_info->prewhere_column_name);
+        }
+        return header;
+    }
+
+    FilterInfoPtr filter_info;
+
+    auto & select_query = query->as<const ASTSelectQuery &>();
+
+    auto analysis_result = analyzeExpressions(
+            select_query,
+            query_analyzer,
+            QueryProcessingStage::Enum::FetchColumns,
+            stage,
+            context,
+            storage,
+            true,
+            filter_info);
+
+    if (stage == QueryProcessingStage::Enum::WithMergeableState)
+    {
+        if (!analysis_result.need_aggregate)
+            return analysis_result.before_order_and_select->getSampleBlock();
+
+        auto header = analysis_result.before_aggregation->getSampleBlock();
+
+        Names key_names;
+        AggregateDescriptions aggregates;
+        query_analyzer.getAggregateInfo(key_names, aggregates);
+
+        Block res;
+
+        for (auto & key : key_names)
+            res.insert(header.getByName(key).cloneEmpty());
+
+        for (auto & aggregate : aggregates)
+        {
+            size_t arguments_size = aggregate.argument_names.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
+
+            DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+
+            res.insert({nullptr, type, aggregate.column_name});
+        }
+
+        return res;
+    }
+
+    return analysis_result.final_projection->getSampleBlock();
+}
+
 InterpreterSelectQuery::AnalysisResult
 InterpreterSelectQuery::analyzeExpressions(
     const ASTSelectQuery & query,
-    const NamesAndTypesList & source_columns,
     ExpressionAnalyzer & query_analyzer,
     QueryProcessingStage::Enum from_stage,
     QueryProcessingStage::Enum to_stage,
@@ -490,14 +579,14 @@ InterpreterSelectQuery::analyzeExpressions(
                 columns_for_final.begin(), columns_for_final.end());
         }
 
-        if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        if (storage && filter_info)
         {
             has_filter = true;
 
             /// XXX: aggregated copy-paste from ExpressionAnalyzer::appendSmth()
             if (chain.steps.empty())
             {
-                chain.steps.emplace_back(std::make_shared<ExpressionActions>(source_columns, context));
+                chain.steps.emplace_back(std::make_shared<ExpressionActions>(NamesAndTypesList(), context));
             }
             ExpressionActionsChain::Step & step = chain.steps.back();
 
@@ -830,7 +919,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         expressions = analyzeExpressions(
                 getSelectQuery(),
-                source_columns,
                 *query_analyzer,
                 QueryProcessingStage::FetchColumns,
                 options.to_stage,
@@ -871,7 +959,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         expressions = analyzeExpressions(
                 getSelectQuery(),
-                source_columns,
                 *query_analyzer,
                 from_stage,
                 options.to_stage,

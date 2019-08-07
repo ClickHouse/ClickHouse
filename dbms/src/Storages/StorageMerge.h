@@ -79,7 +79,7 @@ protected:
         const String & table_name_regexp_,
         const Context & context_);
 
-    Block getQueryHeader(const Names & column_names, const SelectQueryInfo & query_info,
+    Block getQueryHeader(const SelectQueryInfo & query_info,
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,

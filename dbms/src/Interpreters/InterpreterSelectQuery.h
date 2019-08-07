@@ -79,6 +79,14 @@ public:
 
     ASTPtr getQuery() const { return query_ptr; }
 
+    static Block getHeaderForExecutionStep(
+            const ASTPtr & query,
+            const StoragePtr & storage,
+            QueryProcessingStage::Enum stage,
+            size_t subquery_depth,
+            const Context & context,
+            const PrewhereInfoPtr & prewhere_info);
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -174,7 +182,6 @@ private:
 
     static AnalysisResult analyzeExpressions(
         const ASTSelectQuery & query,
-        const NamesAndTypesList & source_columns,
         ExpressionAnalyzer & query_analyzer,
         QueryProcessingStage::Enum from_stage,
         QueryProcessingStage::Enum to_stage,
@@ -254,7 +261,6 @@ private:
     const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
-    NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;

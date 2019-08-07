@@ -967,7 +967,7 @@ StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 }
 
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression) const
 {
     /// Slightly suboptimal.
     auto hash = table_expression->getTreeHash();
