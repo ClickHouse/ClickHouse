@@ -138,7 +138,7 @@ def test_kafka_settings_old_syntax(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -174,7 +174,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -200,7 +200,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -226,7 +226,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -256,7 +256,7 @@ def test_kafka_json_without_delimiter(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -281,7 +281,7 @@ def test_kafka_protobuf(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.kafka')
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
 
@@ -325,7 +325,7 @@ def test_kafka_materialized_view(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(300)
 def test_kafka_flush_on_big_message(kafka_cluster):
     # Create batchs of messages of size ~100Kb
     kafka_messages = 1000
@@ -398,7 +398,7 @@ def test_kafka_virtual_columns(kafka_cluster):
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka')
+        result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
