@@ -8,7 +8,7 @@ from helpers.test_tools import TSV
 import json
 import subprocess
 import kafka.errors
-from kafka import KafkaAdminClient, KafkaProducer
+from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -67,6 +67,12 @@ def kafka_produce(topic, messages):
         producer.send(topic=topic, value=message)
         producer.flush()
     print ("Produced {} messages for topic {}".format(len(messages), topic))
+
+
+def kafka_consume(topic):
+    consumer = KafkaConsumer(bootstrap_servers="localhost:9092")
+    consumer.subscribe(topics=(topic))
+    print(consumer.poll())
 
 
 def kafka_produce_protobuf_messages(topic, start_index, num_messages):
@@ -426,6 +432,34 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
+
+
+def test_kafka_insert(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert',
+                     kafka_group_name = 'insert',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+    ''')
+
+    values = []
+    for i in range(50):
+        values.append("({i}, {i})".format(i=i))
+    values = ','.join(values)
+
+    instance.query("INSERT INTO test.kafka VALUES {}".format(values))
+
+    messages = []
+    while True:
+        messages.extend(kafka_consume('insert'))
+        if len(messages) == 50:
+            break
+
+    result = '\n'.join(messages)
+    kafka_check_result(result, True)
 
 
 if __name__ == '__main__':
