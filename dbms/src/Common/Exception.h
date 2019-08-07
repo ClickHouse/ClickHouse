@@ -75,7 +75,8 @@ using Exceptions = std::vector<std::exception_ptr>;
 
 std::string errnoToString(int code, int the_errno = errno);
 [[noreturn]] void throwFromErrno(const std::string & s, int code, int the_errno = errno);
-[[noreturn]] void throwFromErrno(const std::string & s, const std::string & path, int code, int the_errno = errno);
+[[noreturn]] void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code,
+                                         int the_errno = errno);
 
 
 /** Try to write an exception to the log (and forget about it).

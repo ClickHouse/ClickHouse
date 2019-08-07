@@ -55,7 +55,7 @@ void throwFromErrno(const std::string & s, int code, int e)
     throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
 }
 
-void throwFromErrno(const std::string & s, const std::string & path, int code, int the_errno)
+void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
 {
     throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
 }
@@ -92,7 +92,9 @@ void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 
     auto mount_point = DiskSpaceMonitor::getMountPoint(path).string();
     msg += "\nMount point: " + mount_point;
+#if defined(__linux__)
     msg += "\nFilesystem: " + DiskSpaceMonitor::getFilesystemName(mount_point);
+#endif
 }
 
 std::string getExtraExceptionInfo(const std::exception & e)

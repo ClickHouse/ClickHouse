@@ -109,7 +109,8 @@ public:
     {
         struct statvfs fs;
         if (statvfs(path.c_str(), &fs) != 0)
-            throwFromErrno("Could not calculate available disk space (statvfs)", path, ErrorCodes::CANNOT_STATVFS);
+            throwFromErrnoWithPath("Could not calculate available disk space (statvfs)", path,
+                                   ErrorCodes::CANNOT_STATVFS);
         return fs;
     }
 
@@ -166,7 +167,7 @@ public:
         {
             struct stat st;
             if (stat(p.c_str(), &st))
-                throwFromErrno("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
+                throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
             return st.st_dev;
         };
 
