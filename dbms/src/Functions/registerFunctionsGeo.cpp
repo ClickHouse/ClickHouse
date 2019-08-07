@@ -10,6 +10,7 @@ void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
 void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
+void registerFunctionGeohashesInBox(FunctionFactory & factory);
 
 #if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
@@ -22,6 +23,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionPointInPolygon(factory);
     registerFunctionGeohashEncode(factory);
     registerFunctionGeohashDecode(factory);
+    registerFunctionGeohashesInBox(factory);
 
 #if USE_H3
     registerFunctionGeoToH3(factory);
