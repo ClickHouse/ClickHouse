@@ -2,7 +2,7 @@
 
 The table engine (type of table) determines:
 
-- How and where data is stored, where to write it to, and where to read it from.
+- How and where data is stored, where to write it to, and from where to read it.
 - Which queries are supported, and how.
 - Concurrent data access.
 - Use of indexes, if present.
@@ -13,12 +13,12 @@ The table engine (type of table) determines:
 
 - `*MergeTree`
 
-    The most universal and functional table engines for high-load tasks. The common property of these engines is quick data insertion with subsequent data processing in background. Only `*MergeTree` engines support data replication, partitioning and other useful performance features.
+    The most universal and functional table engines for high-load tasks. The common property of these engines is quick data insertion with subsequent data processing in the background. The `*MergeTree` engines support data replication, partitioning and other features not supported in other engines.
 
     Engines of the family:
 
     - [MergTree](mergetree.md)
-    - [ReplacingMergeTree](replacingmergtree.md)
+    - [ReplacingMergeTree](replacingmergetree.md)
     - [SummingMergeTree](summingmergetree.md)
     - [AggregatingMergeTree](aggregatingmergetree.md)
     - [CollapsingMergeTree](collapsingmergetree.md)
@@ -37,7 +37,7 @@ The table engine (type of table) determines:
 
 - Intergation engines
 
-    Engine for communicating with other data systems.
+    Engines for communicating with other data systems.
 
     Engines of the family:
 
@@ -69,7 +69,7 @@ The table engine (type of table) determines:
 
 Virtual column is an integral attribute of a table engine that is defined in the source code of the engine.
 
-Virtual columns are not specified in the `CREATE TABLE` query and you cannot see them in the results of `SHOW CREATE TABLE` and `DESC TABLE` queries. Also, you cannot insert data to virtual columns.
+You should not specify virtual columns in the `CREATE TABLE` query, and you cannot see them in the results of `SHOW CREATE TABLE` and `DESCRIBE TABLE` queries. Also, you cannot insert data to virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. The `SELECT *` doesn't return values from virtual columns.
 
