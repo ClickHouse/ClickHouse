@@ -61,7 +61,7 @@ struct HashMethodOneNumber
     /// Get StringRef from value which can be inserted into column.
     static StringRef getValueRef(const Value & value)
     {
-        return StringRef(reinterpret_cast<const char *>(&value.getFirst()), sizeof(value.getFirst()));
+        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 
@@ -90,7 +90,7 @@ struct HashMethodString
         return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
     }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -127,7 +127,7 @@ struct HashMethodFixedString
 
     StringRef getKey(size_t row, Arena &) const { return StringRef(&(*chars)[row * n], n); }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;

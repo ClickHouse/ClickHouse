@@ -1,6 +1,8 @@
 FROM ubuntu:18.04
 
 RUN apt-get update -y \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository ppa:ubuntu-toolchain-r/test \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
             bash \
@@ -8,8 +10,8 @@ RUN apt-get update -y \
             cmake \
             curl \
             expect \
-            g++ \
-            gcc \
+            g++-9 \
+            gcc-9 \
             libclang-6.0-dev \
             libicu-dev \
             liblld-6.0-dev \

@@ -2,10 +2,7 @@
 
 #include <Common/config.h>
 
-#if !USE_MIMALLOC
-#error "do not include this file until USE_MIMALLOC is set to 1"
-#endif
-
+#if USE_MIMALLOC
 #include <cstddef>
 
 namespace DB
@@ -26,3 +23,5 @@ struct MiAllocator
 };
 
 }
+
+#endif

@@ -10,6 +10,7 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 
@@ -41,6 +42,7 @@ namespace ErrorCodes
     extern const int EMPTY_NESTED_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -88,7 +90,7 @@ void collectSourceColumns(const ASTSelectQuery * select_query, StoragePtr storag
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const Context & context,
                              const Names & source_columns_list, const NameSet & source_columns_set,
-                             const JoinedColumnsList & columns_from_joined_table)
+                             const NameSet & columns_from_joined_table)
 {
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
 
@@ -100,7 +102,7 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         if (!context.getSettingsRef().asterisk_left_columns_only)
         {
             for (auto & column : columns_from_joined_table)
-                all_columns_name.emplace_back(column.name_and_type.name);
+                all_columns_name.emplace_back(column);
         }
 
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
@@ -110,6 +112,10 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
+
+    /// This may happen after expansion of COLUMNS('regexp').
+    if (select_query.select()->children.empty())
+        throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -476,164 +482,38 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
-
-[[noreturn]] static void throwSyntaxException(const String & msg)
-{
-    throw Exception("Invalid expression for JOIN ON. " + msg + " Supported syntax: JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) "
-            "[AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-};
-
-
-/// Parse JOIN ON expression and collect ASTs for joined columns.
-void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTTableJoin & table_join)
-{
-    if (!table_join.on_expression)
-        return;
-
-    /// Stores examples of columns which are only from one table.
-    struct TableBelonging
-    {
-        const ASTIdentifier * example_only_from_left = nullptr;
-        const ASTIdentifier * example_only_from_right = nullptr;
-    };
-
-    /// Check all identifiers in ast and decide their possible table belonging.
-    /// Throws if there are two identifiers definitely from different tables.
-    std::function<TableBelonging(const ASTPtr &)> get_table_belonging;
-    get_table_belonging = [&](const ASTPtr & ast) -> TableBelonging
-    {
-        if (IdentifierSemantic::getColumnName(ast))
-        {
-            const auto * identifier = ast->as<ASTIdentifier>();
-
-            /// It's set in TranslateQualifiedNamesVisitor
-            size_t membership = IdentifierSemantic::getMembership(*identifier);
-            switch (membership)
-            {
-                case 1: return {identifier, nullptr};
-                case 2: return {nullptr, identifier};
-                default:
-                    break;
-            }
-
-            return {};
-        }
-
-        TableBelonging table_belonging;
-        for (const auto & child : ast->children)
-        {
-            auto children_belonging = get_table_belonging(child);
-            if (!table_belonging.example_only_from_left)
-                table_belonging.example_only_from_left = children_belonging.example_only_from_left;
-            if (!table_belonging.example_only_from_right)
-                table_belonging.example_only_from_right = children_belonging.example_only_from_right;
-        }
-
-        if (table_belonging.example_only_from_left && table_belonging.example_only_from_right)
-            throw Exception("Invalid columns in JOIN ON section. Columns "
-                            + table_belonging.example_only_from_left->getAliasOrColumnName() + " and "
-                            + table_belonging.example_only_from_right->getAliasOrColumnName()
-                            + " are from different tables.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-
-        return table_belonging;
-    };
-
-    /// For equal expression find out corresponding table for each part, translate qualified names and add asts to join keys.
-    auto add_columns_from_equals_expr = [&](const ASTPtr & expr)
-    {
-        const auto * func_equals = expr->as<ASTFunction>();
-        if (!func_equals || func_equals->name != "equals")
-            throwSyntaxException("Expected equals expression, got " + queryToString(expr) + ".");
-
-        ASTPtr left_ast = func_equals->arguments->children.at(0)->clone();
-        ASTPtr right_ast = func_equals->arguments->children.at(1)->clone();
-
-        auto left_table_belonging = get_table_belonging(left_ast);
-        auto right_table_belonging = get_table_belonging(right_ast);
-
-        bool can_be_left_part_from_left_table = left_table_belonging.example_only_from_right == nullptr;
-        bool can_be_left_part_from_right_table = left_table_belonging.example_only_from_left == nullptr;
-        bool can_be_right_part_from_left_table = right_table_belonging.example_only_from_right == nullptr;
-        bool can_be_right_part_from_right_table = right_table_belonging.example_only_from_left == nullptr;
-
-        /// Default variant when all identifiers may be from any table.
-        if (can_be_left_part_from_left_table && can_be_right_part_from_right_table)
-            analyzed_join.addOnKeys(left_ast, right_ast);
-        else if (can_be_left_part_from_right_table && can_be_right_part_from_left_table)
-            analyzed_join.addOnKeys(right_ast, left_ast);
-        else
-        {
-            auto * left_example = left_table_belonging.example_only_from_left ?
-                                  left_table_belonging.example_only_from_left :
-                                  left_table_belonging.example_only_from_right;
-
-            auto * right_example = right_table_belonging.example_only_from_left ?
-                                   right_table_belonging.example_only_from_left :
-                                   right_table_belonging.example_only_from_right;
-
-            auto left_name = queryToString(*left_example);
-            auto right_name = queryToString(*right_example);
-            auto expr_name = queryToString(expr);
-
-            throwSyntaxException("In expression " + expr_name + " columns " + left_name + " and " + right_name
-                                 + " are from the same table but from different arguments of equal function.");
-        }
-    };
-
-    const auto * func = table_join.on_expression->as<ASTFunction>();
-    if (func && func->name == "and")
-    {
-        for (const auto & expr : func->arguments->children)
-            add_columns_from_equals_expr(expr);
-    }
-    else
-        add_columns_from_equals_expr(table_join.on_expression);
-}
-
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const NameSet & source_columns, const String & current_database, bool join_use_nulls)
+void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
+                          const Aliases & aliases, bool join_use_nulls)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
-
     if (!node)
         return;
 
     const auto & table_join = node->table_join->as<ASTTableJoin &>();
-    const auto & table_expression = node->table_expression->as<ASTTableExpression &>();
-    DatabaseAndTableWithAlias joined_table_name(table_expression, current_database);
 
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
-
-        for (auto & name : analyzed_join.key_names_right)
-            if (source_columns.count(name))
-                name = joined_table_name.getQualifiedNamePrefix() + name;
     }
     else if (table_join.on_expression)
-        collectJoinedColumnsFromJoinOnExpr(analyzed_join, table_join);
+    {
+        bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
+
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, analyzed_join.getOriginalColumnsSet(), aliases, is_asof};
+        CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
+        if (!data.has_some)
+            throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
+                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        if (is_asof)
+            data.asofToJoinKeys();
+    }
 
     bool make_nullable = join_use_nulls && isLeftOrFull(table_join.kind);
 
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
-}
-
-Names qualifyOccupiedNames(NamesAndTypesList & columns, const NameSet & source_columns, const DatabaseAndTableWithAlias& table)
-{
-    Names originals;
-    originals.reserve(columns.size());
-
-    for (auto & column : columns)
-    {
-        originals.push_back(column.name);
-        if (source_columns.count(column.name))
-            column.name = table.getQualifiedNamePrefix() + column.name;
-    }
-
-    return originals;
 }
 
 void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
@@ -704,14 +584,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             const auto & joined_expression = node->table_expression->as<ASTTableExpression &>();
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
-            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
-            result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
+            result.analyzed_join.columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
+            result.analyzed_join.deduplicateAndQualifyColumnNames(source_columns_set, table.getQualifiedNamePrefix());
         }
 
         translateQualifiedNames(query, *select_query, context,
                                 (storage ? storage->getColumns().getOrdinary().getNames() : source_columns_list), source_columns_set,
-                                result.analyzed_join.columns_from_joined_table);
+                                result.analyzed_join.getQualifiedColumnsSet());
 
         /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
         InJoinSubqueriesPreprocessor(context).visit(query);
@@ -766,7 +645,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, context.getCurrentDatabase(), settings.join_use_nulls);
+        collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
     return std::make_shared<const SyntaxAnalyzerResult>(result);
