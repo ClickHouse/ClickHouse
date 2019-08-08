@@ -37,7 +37,6 @@ public:
     /// The value is atomic, because we want to avoid race conditions on value precisely.
     /// It doesn't gurantee atomicy on whole structure. It just helps to avoid the most common
     /// case: when we change setting from one thread and use in another (for example in MergeTreeSettings).
-    ///
     std::atomic<Type> value;
 
     bool changed = false;
