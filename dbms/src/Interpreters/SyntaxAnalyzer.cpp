@@ -546,14 +546,13 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
 
     const auto & table_join = join->table_join->as<ASTTableJoin &>();
 
-    if (table_join.strictness == ASTTableJoin::Strictness::Any ||
-        table_join.strictness == ASTTableJoin::Strictness::Asof)
-        if (table_join.kind == ASTTableJoin::Kind::Right ||
-            table_join.kind == ASTTableJoin::Kind::Full)
-            throw Exception("ANY RIGHT|FULL JOINs are disabled by default cause of confusing results: "
-                            "'t1 ANY LEFT JOIN t2' is inconsistent with 't2 ANY RIGHT JOIN t1'."
-                            "Default bahaviour is reserved for many-to-one ANY LEFT JOIN and one-to-many ANY RIGHT JOIN."
-                            "Set any_join_get_any_from_right_table=1 to enable many-to-one ANY RIGHT|FULL JOINs.",
+    if (table_join.strictness == ASTTableJoin::Strictness::Any)
+        if (table_join.kind != ASTTableJoin::Kind::Left)
+            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed."
+                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys."
+                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN."
+                            "It would be equal to apply distinct for keys to right, left and both tables respectively."
+                            "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
                             ErrorCodes::NOT_IMPLEMENTED);
 }
 
@@ -597,7 +596,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
-            if (!settings.any_join_get_any_from_right_table)
+            if (!settings.any_join_distinct_right_table_keys)
                 checkJoin(node);
 
             if (settings.enable_optimize_predicate_expression)

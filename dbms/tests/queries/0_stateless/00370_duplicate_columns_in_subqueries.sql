@@ -1,4 +1,4 @@
-SET any_join_get_any_from_right_table = 1;
+SET any_join_distinct_right_table_keys = 1;
 
 select x, y from (select 1 as x, 2 as y, x, y);
 select x, y from (select 1 as x, 1 as y, x, y);
