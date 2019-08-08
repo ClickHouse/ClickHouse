@@ -37,6 +37,19 @@ private:
     const FormatSettings format_settings;
     DataTypes data_types;
 
+    using IndexesMap = std::unordered_map<String, size_t>;
+    IndexesMap column_indexes_by_names;
+
+    using OptionalIndexes = std::vector<std::optional<size_t>>;
+    OptionalIndexes column_indexes_for_input_fields;
+
+    std::vector<UInt8> read_columns;
+    std::vector<size_t> columns_to_fill_with_default_values;
+
+    void addInputColumn(const String & column_name);
+    void setupAllColumnsByTableSchema();
+    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
+
     /// For convenient diagnostics in case of an error.
 
     size_t row_num = 0;

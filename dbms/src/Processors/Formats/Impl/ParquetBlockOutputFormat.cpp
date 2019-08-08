@@ -1,7 +1,7 @@
 #include "config_formats.h"
+#include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 
 #if USE_PARQUET
-#    include "ParquetBlockOutputFormat.h"
 
 // TODO: clean includes
 #    include <Columns/ColumnDecimal.h>

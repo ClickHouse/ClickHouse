@@ -60,7 +60,7 @@ protected:
             const auto parts = info.data->getDetachedParts();
             for (auto & p : parts)
             {
-                int i = 0;
+                size_t i = 0;
                 columns[i++]->insert(info.database);
                 columns[i++]->insert(info.table);
                 columns[i++]->insert(p.valid_name ? p.partition_id : Field());

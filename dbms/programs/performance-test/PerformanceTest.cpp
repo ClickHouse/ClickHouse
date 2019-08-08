@@ -9,9 +9,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include "executeQuery.h"
+
 
 namespace DB
 {
@@ -48,7 +49,7 @@ void waitQuery(Connection & connection)
 }
 }
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,

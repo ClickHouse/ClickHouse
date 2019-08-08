@@ -1,6 +1,9 @@
 #pragma once
 
-#include <sanitizer/asan_interface.h>
+#if __has_include(<sanitizer/asan_interface.h>)
+#   include <sanitizer/asan_interface.h>
+#endif
+#include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 
