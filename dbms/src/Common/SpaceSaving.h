@@ -187,14 +187,7 @@ public:
 
         // Erase the current minimum element
         alpha_map[min->hash & alpha_mask] = min->count;
-
-        counter_list.pop_back();
-        counter = findCounter(min->key, min->hash);
-        counter->slot = -1;
-
-        ++removed_keys;
-        if (removed_keys * 2 > counter_map.size())
-            rebuildCounterMap();
+        destroyLastElement();
 
         push(new Counter(arena.emplace(key), alpha + increment, alpha + error, hash));
     }
