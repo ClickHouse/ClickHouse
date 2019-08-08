@@ -708,7 +708,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
 
     auto set_default_value = [] (auto && setting, auto && default_value)
     {
-        setting = setting.changed ? setting.value : default_value;
+        setting = setting.changed ? setting.getValue() : default_value;
     };
 
     /// Override important settings

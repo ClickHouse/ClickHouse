@@ -34,19 +34,19 @@ namespace ErrorCodes
 template <typename Type>
 String SettingNumber<Type>::toString() const
 {
-    return DB::toString(value);
+    return DB::toString(value.load(std::memory_order_relaxed));
 }
 
 template <typename Type>
 Field SettingNumber<Type>::toField() const
 {
-    return value;
+    return value.load(std::memory_order_relaxed);
 }
 
 template <typename Type>
 void SettingNumber<Type>::set(Type x)
 {
-    value = x;
+    value.store(x, std::memory_order_relaxed);
     changed = true;
 }
 
@@ -136,17 +136,17 @@ template struct SettingNumber<bool>;
 String SettingMaxThreads::toString() const
 {
     /// Instead of the `auto` value, we output the actual value to make it easier to see.
-    return is_auto ? ("auto(" + DB::toString(value) + ")") : DB::toString(value);
+    return is_auto ? ("auto(" + DB::toString(getValue()) + ")") : DB::toString(getValue());
 }
 
 Field SettingMaxThreads::toField() const
 {
-    return is_auto ? 0 : value;
+    return is_auto ? 0 : getValue();
 }
 
 void SettingMaxThreads::set(UInt64 x)
 {
-    value = x ? x : getAutoValue();
+    value.store(x ? x : getAutoValue(), std::memory_order_relaxed);
     is_auto = x == 0;
     changed = true;
 }
@@ -169,7 +169,7 @@ void SettingMaxThreads::set(const String & x)
 
 void SettingMaxThreads::serialize(WriteBuffer & buf) const
 {
-    writeVarUInt(is_auto ? 0 : value, buf);
+    writeVarUInt(is_auto ? 0 : getValue(), buf);
 }
 
 void SettingMaxThreads::deserialize(ReadBuffer & buf)
@@ -195,18 +195,21 @@ UInt64 SettingMaxThreads::getAutoValue() const
 template <SettingTimespanIO io_unit>
 String SettingTimespan<io_unit>::toString() const
 {
+    std::lock_guard lock(m);
     return DB::toString(value.totalMicroseconds() / microseconds_per_io_unit);
 }
 
 template <SettingTimespanIO io_unit>
 Field SettingTimespan<io_unit>::toField() const
 {
+    std::lock_guard lock(m);
     return value.totalMicroseconds() / microseconds_per_io_unit;
 }
 
 template <SettingTimespanIO io_unit>
 void SettingTimespan<io_unit>::set(const Poco::Timespan & x)
 {
+    std::lock_guard lock(m);
     value = x;
     changed = true;
 }
@@ -235,6 +238,7 @@ void SettingTimespan<io_unit>::set(const String & x)
 template <SettingTimespanIO io_unit>
 void SettingTimespan<io_unit>::serialize(WriteBuffer & buf) const
 {
+    std::lock_guard lock(m);
     writeVarUInt(value.totalMicroseconds() / microseconds_per_io_unit, buf);
 }
 
@@ -252,16 +256,19 @@ template struct SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
 String SettingString::toString() const
 {
+    std::lock_guard lock(m);
     return value;
 }
 
 Field SettingString::toField() const
 {
+    std::lock_guard lock(m);
     return value;
 }
 
 void SettingString::set(const String & x)
 {
+    std::lock_guard lock(m);
     value = x;
     changed = true;
 }
@@ -273,6 +280,7 @@ void SettingString::set(const Field & x)
 
 void SettingString::serialize(WriteBuffer & buf) const
 {
+    std::lock_guard lock(m);
     writeBinary(value, buf);
 }
 
@@ -296,7 +304,7 @@ Field SettingChar::toField() const
 
 void SettingChar::set(char x)
 {
-    value = x;
+    value.store(x, std::memory_order_relaxed);
     changed = true;
 }
 
@@ -351,7 +359,7 @@ void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
     { \
         using EnumType = ENUM_NAME; \
         using UnderlyingType = std::underlying_type<EnumType>::type; \
-        switch (static_cast<UnderlyingType>(value)) \
+        switch (static_cast<UnderlyingType>(getValue()))             \
         { \
             LIST_OF_NAMES_MACRO(IMPLEMENT_SETTING_ENUM_TO_STRING_HELPER_) \
         } \
