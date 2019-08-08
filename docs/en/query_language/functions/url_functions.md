@@ -2,9 +2,9 @@
 
 All these functions don't follow the RFC. They are maximally simplified for improved performance.
 
-## Functions that extract part of a URL
+## Functions that extract parts of a URL
 
-If there isn't anything similar in a URL, an empty string is returned.
+If the relevant part isn't present in a URL, an empty string is returned.
 
 ### protocol
 
@@ -12,7 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Extracts the host part from URL.
+Returns the host.
 
 ```
 domain(url)
@@ -23,7 +23,7 @@ domain(url)
 - `url` — URL. Type: [String](../../data_types/string.md).
 
 
-URL can be specified with or without scheme. Examples:
+The URL can be specified with or without a scheme. Examples:
 
 ```
 svn+ssh://some.svn-hosting.com:80/repo/trunk
@@ -33,8 +33,8 @@ https://yandex.com/time/
 
 **Returned values**
 
-- Host name. If ClickHouse can parse input string as URL.
-- Empty string. If ClickHouse cannot parse input string as URL.
+- Host name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse can't parse the input string as a URL.
 
 Type: `String`.
 
@@ -55,7 +55,7 @@ Returns the domain and removes no more than one 'www.' from the beginning of it,
 
 ### topLevelDomain
 
-Extracts the the top-level domain from URL.
+Returns the the top-level domain.
 
 ```
 topLevelDomain(url)
@@ -65,7 +65,7 @@ topLevelDomain(url)
 
 - `url` — URL. Type: [String](../../data_types/string.md).
 
-URL can be specified with or without scheme. Examples:
+The URL can be specified with or without a scheme. Examples:
 
 ```
 svn+ssh://some.svn-hosting.com:80/repo/trunk
@@ -75,8 +75,8 @@ https://yandex.com/time/
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse input string as URL.
-- Empty string. If ClickHouse cannot parse input string as URL.
+- Domain name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse cannot parse the input string as a URL.
 
 Type: `String`.
 
