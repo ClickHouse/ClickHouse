@@ -266,7 +266,7 @@ using Allocator = AllocatorWithHint<clear_memory, AllocatorHints::DefaultHint, M
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t N = 64, size_t Alignment = 16>
+template <typename Base, size_t N = 64, size_t Alignment = 1>
 class AllocatorWithStackMemory : private Base
 {
 private:
