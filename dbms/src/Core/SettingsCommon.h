@@ -8,6 +8,7 @@
 #include <Core/Types.h>
 #include <ext/singleton.h>
 #include <unordered_map>
+#include <atomic>
 
 
 namespace DB
@@ -32,13 +33,23 @@ namespace ErrorCodes
 template <typename Type>
 struct SettingNumber
 {
-    Type value;
+public:
+    /// The value is atomic, because we want to avoid race conditions on value precisely.
+    /// It doesn't gurantee atomicy on whole structure. It just helps to avoid the most common
+    /// case: when we change setting from one thread and use in another (for example in MergeTreeSettings).
+    ///
+    std::atomic<Type> value;
+
     bool changed = false;
 
     SettingNumber(Type x = 0) : value(x) {}
+    SettingNumber(const SettingNumber & o) : value(o.getValue()), changed(o.changed) { }
 
-    operator Type() const { return value; }
+    operator Type() const { return getValue(); }
+    Type getValue() const { return value.load(std::memory_order_relaxed); }
+
     SettingNumber & operator= (Type x) { set(x); return *this; }
+    SettingNumber & operator= (SettingNumber o) { set(o.getValue()); return *this; }
 
     /// Serialize to a test string.
     String toString() const;
@@ -73,14 +84,23 @@ using SettingBool = SettingNumber<bool>;
   */
 struct SettingMaxThreads
 {
-    UInt64 value;
+    std::atomic<UInt64> value;
     bool is_auto;
     bool changed = false;
 
     SettingMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
+    SettingMaxThreads(const SettingMaxThreads & o)
+        : is_auto(o.is_auto)
+        , changed(o.changed)
+    {
+        value.store(o.value, std::memory_order_relaxed);
+    }
 
-    operator UInt64() const { return value; }
+    operator UInt64() const { return getValue(); }
+    UInt64 getValue() const { return value.load(std::memory_order_relaxed); }
+
     SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
+    SettingMaxThreads & operator= (const SettingMaxThreads & o) { set(o.getValue()); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -102,16 +122,20 @@ enum class SettingTimespanIO { MILLISECOND, SECOND };
 template <SettingTimespanIO io_unit>
 struct SettingTimespan
 {
+    mutable std::mutex m;
     Poco::Timespan value;
     bool changed = false;
 
     SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
+    SettingTimespan(const SettingTimespan & o) : value(o.value), changed(o.changed) {}
 
-    operator Poco::Timespan() const { return value; }
+    operator Poco::Timespan() const { return getValue(); }
+    Poco::Timespan getValue() const { std::lock_guard guard(m); return value; }
     SettingTimespan & operator= (const Poco::Timespan & x) { set(x); return *this; }
+    SettingTimespan & operator= (const SettingTimespan & o) { set(o.value); return *this; }
 
-    Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
-    Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
+    Poco::Timespan::TimeDiff totalSeconds() const { return getValue().totalSeconds(); }
+    Poco::Timespan::TimeDiff totalMilliseconds() const { return getValue().totalMilliseconds(); }
 
     String toString() const;
     Field toField() const;
@@ -134,13 +158,18 @@ using SettingMilliseconds = SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
 struct SettingString
 {
+    mutable std::mutex m;
     String value;
     bool changed = false;
 
     SettingString(const String & x = String{}) : value(x) {}
+    SettingString(const SettingString & o) : value(o.value), changed(o.changed) {}
 
-    operator String() const { return value; }
+    operator String() const {  return getValue(); }
+    String getValue() const { std::lock_guard guard(m); return value; }
+
     SettingString & operator= (const String & x) { set(x); return *this; }
+    SettingString & operator= (const SettingString & o) { set(o.value); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -156,13 +185,15 @@ struct SettingString
 struct SettingChar
 {
 public:
-    char value;
+    std::atomic<char> value;
     bool changed = false;
 
     SettingChar(char x = '\0') : value(x) {}
+    SettingChar(const SettingChar & o) : value(o.getValue()), changed(o.changed) { }
 
-    operator char() const { return value; }
+    operator char() const { return getValue(); }
     SettingChar & operator= (char x) { set(x); return *this; }
+    SettingChar & operator= (const SettingChar & o) { set(o.getValue()); return *this; }
 
     String toString() const;
     Field toField() const;
@@ -173,6 +204,8 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
+
+    char getValue() const { return value.load(std::memory_order_relaxed); }
 };
 
 
@@ -180,23 +213,27 @@ public:
 template <typename EnumType, typename Tag = void>
 struct SettingEnum
 {
-    EnumType value;
+    std::atomic<EnumType> value;
     bool changed = false;
 
     SettingEnum(EnumType x) : value(x) {}
+    SettingEnum(const SettingEnum & o) : value(o.getValue()), changed(o.changed) { }
 
-    operator EnumType() const { return value; }
+    operator EnumType() const { return getValue(); }
     SettingEnum & operator= (EnumType x) { set(x); return *this; }
+    SettingEnum & operator= (SettingEnum o) { set(o.getValue()); return *this; }
 
     String toString() const;
     Field toField() const { return toString(); }
 
-    void set(EnumType x) { value = x; changed = true; }
+    void set(EnumType x) { value.store(x, std::memory_order_relaxed); changed = true; }
     void set(const Field & x) { set(safeGet<const String &>(x)); }
     void set(const String & x);
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
+
+    EnumType getValue() const { return value.load(std::memory_order_relaxed); }
 };
 
 
