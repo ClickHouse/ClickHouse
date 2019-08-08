@@ -127,7 +127,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA = 117;
     extern const int ENGINE_REQUIRED = 119;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE = 120;
-    extern const int UNKNOWN_SET_DATA_VARIANT = 121;
+    extern const int UNSUPPORTED_JOIN_KEYS = 121;
     extern const int INCOMPATIBLE_COLUMNS = 122;
     extern const int UNKNOWN_TYPE_OF_AST_NODE = 123;
     extern const int INCORRECT_ELEMENT_OF_SET = 124;

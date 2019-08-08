@@ -24,6 +24,11 @@ public:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
 
+protected:
+    /// No totals and extremes.
+    void consumeTotals(Chunk) override {}
+    void consumeExtremes(Chunk) override {}
+
 private:
     size_t field_number = 0;
     Names fields;
