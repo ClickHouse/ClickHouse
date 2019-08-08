@@ -1,4 +1,4 @@
-SET any_join_get_any_from_right_table = 1;
+SET any_join_distinct_right_table_keys = 1;
 
 SELECT * FROM (SELECT 1 AS x) ALL LEFT JOIN (SELECT 1 AS x) USING x;
 SELECT * FROM (SELECT 1 AS x) ALL LEFT JOIN (SELECT 2 AS x) USING x;
