@@ -878,7 +878,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
-Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (по умолчанию), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### Параметры {#agg_functions-stochasticlinearregression-parameters}
 
@@ -891,7 +891,8 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 1. Скорость обучения — коэффициент длины шага, при выполнении градиентного спуска. Слишком большая скорость обучения может привести к бесконечным весам модели. По умолчанию `0.00001`.
 2. Коэффициент регуляризации l2. Помогает предотвратить подгонку. По умолчанию `0.1`.
 3. Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
-4. Метод обновления весов, можно выбрать один из следующих: `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и остальные методы стохастического градиента. По умолчанию `SGD`.
+4. Метод обновления весов, можно выбрать один из следующих: `Adam` (по умолчанию), `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и устойчивости методов стохастического градиента.
+
 
 ### Использование {#agg_functions-stochasticlinearregression-usage}
 
@@ -1005,4 +1006,3 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 - [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->
-

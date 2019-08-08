@@ -81,9 +81,9 @@ For descriptions of request parameters, see the [request description](../../quer
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
 
-**Example of setting the sections **
+**Example of setting the sections**
 
-```
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
@@ -125,7 +125,7 @@ The `MergeTree` engine is configured in the same way as in the example above for
 
 ## Data Storage
 
-A table consists of data *parts* sorted by primary key.
+A table consists of data parts sorted by primary key.
 
 When data is inserted in a table, separate data parts are created and each of them is lexicographically sorted by primary key. For example, if the primary key is `(CounterID, Date)`, the data in the part is sorted by `CounterID`, and within each `CounterID`, it is ordered by `Date`.
 
