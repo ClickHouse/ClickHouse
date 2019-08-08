@@ -101,5 +101,32 @@
                 </replica>
             </shard>
         </sharded_cluster_secure>
+        <sharded_cluster_secure_long_usernames>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+<!-- i'm simulateing the problem here with long username, but it happens also when there are a lot of servers in cluster -->
+                    <user>user_with_a_very_very_very_very_long_name_we_will_use_him_to_simulate_the_problem_with_inserting_to_distributed_when_folder_name_is_too_long_i_hope_that_length_is_enough_username_end</user>
+                    <password></password>
+                </replica>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                    <user>user_with_a_very_very_very_very_long_name_we_will_use_him_to_simulate_the_problem_with_inserting_to_distributed_when_folder_name_is_too_long_i_hope_that_length_is_enough_username_end</user>
+                    <password></password>
+                </replica>
+                <replica>
+                    <host>clickhouse3</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                    <user>user_with_a_very_very_very_very_long_name_we_will_use_him_to_simulate_the_problem_with_inserting_to_distributed_when_folder_name_is_too_long_i_hope_that_length_is_enough_username_end</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </sharded_cluster_secure_long_usernames>
     </remote_servers>
 </yandex>

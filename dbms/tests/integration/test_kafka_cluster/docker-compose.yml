@@ -32,6 +32,7 @@ services:
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
+        - ./configs/user_with_long_name.xml:/etc/clickhouse-server/users.d/user_with_long_name.xml
         - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
         - ./configs/server.crt:/etc/clickhouse-server/server.crt
@@ -73,6 +74,7 @@ services:
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
+        - ./configs/user_with_long_name.xml:/etc/clickhouse-server/users.d/user_with_long_name.xml
         - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
         - ./configs/server.crt:/etc/clickhouse-server/server.crt
@@ -112,6 +114,7 @@ services:
         - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - ./configs/user_with_long_name.xml:/etc/clickhouse-server/users.d/user_with_long_name.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
         - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
         - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
