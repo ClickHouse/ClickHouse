@@ -31,6 +31,12 @@ services:
         - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
+        - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
+        - ./configs/server.crt:/etc/clickhouse-server/server.crt
+        - ./configs/server.key:/etc/clickhouse-server/server.key
+        - ./configs/dhparam.pem:/etc/clickhouse-server/dhparam.pem
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
         - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
@@ -66,6 +72,12 @@ services:
         - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
+        - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
+        - ./configs/server.crt:/etc/clickhouse-server/server.crt
+        - ./configs/server.key:/etc/clickhouse-server/server.key
+        - ./configs/dhparam.pem:/etc/clickhouse-server/dhparam.pem
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
         - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
@@ -100,6 +112,12 @@ services:
         - ./configs/remote_servers.xml:/etc/clickhouse-server/config.d/remote_servers.xml
         - ./configs/zookeeper.xml:/etc/clickhouse-server/config.d/zookeeper.xml
         - ./configs/common_instance_config.xml:/etc/clickhouse-server/config.d/common_instance_config.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-server/config.d/ssl_conf.xml
+        - ./configs/listen_ports.xml:/etc/clickhouse-server/config.d/listen_ports.xml
+        - ./configs/ssl_conf.xml:/etc/clickhouse-client/config.xml
+        - ./configs/server.crt:/etc/clickhouse-server/server.crt
+        - ./configs/server.key:/etc/clickhouse-server/server.key
+        - ./configs/dhparam.pem:/etc/clickhouse-server/dhparam.pem
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/config.xml:/etc/clickhouse-server/config.xml"
         - "${CLICKHOUSE_TESTS_BASE_CONFIG_DIR}/users.xml:/etc/clickhouse-server/users.xml"
         - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"

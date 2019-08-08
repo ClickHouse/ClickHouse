@@ -1,0 +1,11 @@
+1. clean old topic & consumer group
+2. create topic
+3. create src table
+4. copy table data to topic
+5. create dest tables pipeline
+6. give some time to consume the topic & replicate the data
+7. check counts
+clickhouse1	80000	80000
+clickhouse2	80000	80000
+clickhouse3	80000	80000
+8. cleanup

@@ -34,7 +34,7 @@ def composer_running():
     finally:
         call_composer(['down'])
 
-def test_both_https(composer_running):
+def test_run_clickhouse_test(composer_running):
     os.environ["DOCKER_COMPOSE"] = ' '.join(COMPOSER_ARGUMENTS);
     subprocess.check_call( 'cd ' + SCRIPT_DIR + '; ../../clickhouse-test -c "$DOCKER_COMPOSE exec clickhouse1 clickhouse client"', shell=True )
 

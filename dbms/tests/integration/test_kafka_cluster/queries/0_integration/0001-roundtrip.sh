@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 DOCKER_COMPOSE=${DOCKER_COMPOSE:-docker-compose}
 
+# just in case if some service is offline
+$DOCKER_COMPOSE up -d --no-recreate >/dev/null 2>&1
+
 # docker-compose exec clickhouse1 clickhouse client
 # docker-compose exec kafka1 kafka-topics --bootstrap-server localhost:9092 --list
 # docker-compose exec kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --list
 # docker-compose exec kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group dummytopic_consumer_group1
 echo "1. clean old topic & consumer group"
 
-$DOCKER_COMPOSE exec kafka1 kafka-topics --bootstrap-server localhost:9092 --delete --topic dummytopic >/dev/null 2>&1
-$DOCKER_COMPOSE exec kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --delete --group dummytopic_consumer_group1 >/dev/null 2>&1
+$DOCKER_COMPOSE exec -T kafka1 kafka-topics --bootstrap-server localhost:9092 --delete --topic dummytopic >/dev/null 2>&1
+$DOCKER_COMPOSE exec -T kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --delete --group dummytopic_consumer_group1 >/dev/null 2>&1
 
 echo "2. create topic"
 
-$DOCKER_COMPOSE exec kafka1 kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 2 --partitions 12 --topic dummytopic
+$DOCKER_COMPOSE exec -T kafka1 kafka-topics --create --bootstrap-server localhost:9092 --replication-factor 2 --partitions 12 --topic dummytopic
 
 echo "3. create src table"
 
@@ -120,5 +123,5 @@ DROP TABLE IF EXISTS dummy ON CLUSTER replicated_cluster;
 DROP TABLE IF EXISTS dummy_mv ON CLUSTER replicated_cluster;
 HEREDOC
 
-$DOCKER_COMPOSE exec kafka1 kafka-topics --bootstrap-server localhost:9092 --delete --topic dummytopic >/dev/null
-$DOCKER_COMPOSE exec kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --delete --group dummytopic_consumer_group1 >/dev/null
+$DOCKER_COMPOSE exec -T kafka1 kafka-topics --bootstrap-server localhost:9092 --delete --topic dummytopic >/dev/null 2>&1
+$DOCKER_COMPOSE exec -T kafka1 kafka-consumer-groups --bootstrap-server localhost:9092 --delete --group dummytopic_consumer_group1 >/dev/null 2>&1
