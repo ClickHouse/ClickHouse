@@ -104,7 +104,7 @@ String getIdentifierName(const IAST * ast)
     String res;
     if (tryGetIdentifierNameInto(ast, res))
         return res;
-    throw Exception(ast ? queryToString(ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    throw Exception(ast ? queryToString(*ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
 std::optional<String> tryGetIdentifierName(const IAST * ast)
@@ -115,7 +115,7 @@ std::optional<String> tryGetIdentifierName(const IAST * ast)
     return {};
 }
 
-bool tryGetIdentifierNameInto(const ASTPtr & ast, String & name)
+bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 {
     if (ast)
     {
