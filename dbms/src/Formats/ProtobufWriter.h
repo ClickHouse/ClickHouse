@@ -7,7 +7,7 @@
 #include "config_formats.h"
 #if USE_PROTOBUF
 
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/WriteBufferFromString.h>
 #include <boost/noncopyable.hpp>
 #include <Common/PODArray.h>
