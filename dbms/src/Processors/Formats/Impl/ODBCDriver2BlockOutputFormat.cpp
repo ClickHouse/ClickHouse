@@ -6,6 +6,7 @@
 
 
 #include <Core/iostream_debug_helpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -38,7 +39,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
         {
             {
                 WriteBufferFromString text_out(buffer);
-                header.getByPosition(row_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
+                header.getByPosition(column_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
             }
             writeODBCString(out, buffer);
         }
@@ -95,8 +96,10 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {
-        const ColumnWithTypeAndName & col = header.getByPosition(i);
-        writeODBCString(out, col.type->getName());
+        auto type = header.getByPosition(i).type;
+        if (type->lowCardinality())
+            type = recursiveRemoveLowCardinality(type);
+        writeODBCString(out, type->getName());
     }
 }
 

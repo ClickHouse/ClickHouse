@@ -25,13 +25,17 @@ public:
 
     void consume(Chunk) override;
     void finalize() override;
+    void flush() override;
+    void doWritePrefix() override { initialize(); }
+
+    void initialize();
 
 private:
 
     bool initialized = false;
 
     const Context & context;
-    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
+    MySQLProtocol::PacketSender packet_sender;
     FormatSettings format_settings;
 };
 
