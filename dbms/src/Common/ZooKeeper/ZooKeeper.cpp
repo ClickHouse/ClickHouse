@@ -4,14 +4,13 @@
 #include "TestKeeper.h"
 
 #include <random>
-#include <pcg_random.hpp>
 #include <functional>
 #include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>
@@ -159,8 +158,7 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        pcg64 rng(randomSeed());
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), rng);
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), thread_local_rng);
 
         for (auto & host : hosts_strings)
         {

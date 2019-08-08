@@ -15,12 +15,9 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind-cmake)
 endif ()
 
-if (USE_LIBCXX AND USE_INTERNAL_LIBCXXABI_LIBRARY)
-    add_subdirectory(libcxxabi-cmake)
-endif()
-
 if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
     add_subdirectory(libcxx-cmake)
+    add_subdirectory(libcxxabi-cmake)
 endif()
 
 
@@ -332,4 +329,8 @@ endif()
 
 if (USE_MIMALLOC)
     add_subdirectory (mimalloc)
+endif()
+
+if (USE_FASTOPS)
+    add_subdirectory (fastops-cmake)
 endif()

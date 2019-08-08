@@ -56,7 +56,7 @@
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 
-#define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54421
+#define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -139,3 +139,12 @@
 /// This number is only used for distributed version compatible.
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+
+#if !__has_include(<sanitizer/asan_interface.h>)
+#   define ASAN_UNPOISON_MEMORY_REGION(a, b)
+#   define ASAN_POISON_MEMORY_REGION(a, b)
+#endif
+
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(...) (void)(__VA_ARGS__)

@@ -159,6 +159,12 @@ if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
+if (USE_UNWIND)
+    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
+    endif ()
+endif ()
+
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
@@ -194,6 +200,13 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         src/Dictionaries/ClickHouseDictionarySource.cpp
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
+
+# Otherwise it will slow down stack traces printing too much.
+set_source_files_properties(
+        src/Common/Elf.cpp
+        src/Common/Dwarf.cpp
+        src/Common/SymbolIndex.cpp
+        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PUBLIC
@@ -231,13 +244,11 @@ target_link_libraries(clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
         PUBLIC
     roaring
 )
-
-if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
-endif()
 
 if (USE_RDKAFKA)
     target_link_libraries(dbms PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
@@ -286,10 +297,6 @@ target_link_libraries (dbms
     Threads::Threads
 )
 
-if(ZSTD_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${ZSTD_LIBRARY})
-endif()
-
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
@@ -298,10 +305,13 @@ target_include_directories(dbms SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
+
+if (ZSTD_LIBRARY)
+    target_link_libraries(dbms PRIVATE ${ZSTD_LIBRARY})
+endif()
 if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
     target_include_directories(dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
 endif ()
-
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -389,6 +399,7 @@ endif()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)

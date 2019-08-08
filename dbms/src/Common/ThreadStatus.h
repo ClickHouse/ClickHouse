@@ -4,6 +4,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 
+#include <Core/SettingsCommon.h>
+
 #include <IO/Progress.h>
 
 #include <memory>
@@ -26,6 +28,8 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
+class QueryProfilerReal;
+class QueryProfilerCpu;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -62,6 +66,8 @@ public:
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
 
+    LogsLevel client_logs_level = LogsLevel::none;
+
     String query;
 };
 
@@ -92,6 +98,8 @@ public:
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+    /// Small amount of untracked memory (per thread atomic-less counter)
+    Int64 untracked_memory = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -117,7 +125,10 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    StringRef getQueryId() const;
+    StringRef getQueryId() const
+    {
+        return query_id;
+    }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -130,7 +141,8 @@ public:
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue);
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                     LogsLevel client_logs_level);
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
@@ -147,6 +159,10 @@ public:
 
 protected:
     void initPerformanceCounters();
+
+    void initQueryProfiler();
+
+    void finalizeQueryProfiler();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
@@ -170,6 +186,10 @@ protected:
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
+
+    // CPU and Real time query profilers
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 

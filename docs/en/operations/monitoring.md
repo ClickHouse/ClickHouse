@@ -21,7 +21,7 @@ It is highly recommended to set up monitoring for:
 
 ClickHouse server has embedded instruments for self-state monitoring.
 
-To track server events use server logs. See the [logger](#server_settings-logger) section of the configuration file.
+To track server events use server logs. See the [logger](server_settings/settings.md#server_settings-logger) section of the configuration file.
 
 ClickHouse collects:
 
@@ -30,7 +30,7 @@ ClickHouse collects:
 
 You can find metrics in the [system.metrics](#system_tables-metrics), [system.events](#system_tables-events), and [system.asynchronous_metrics](#system_tables-asynchronous_metrics) tables.
 
-You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_settings/settings.md#server_settings-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official guide https://graphite.readthedocs.io/en/latest/install.html.
+You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_settings/settings.md#server_settings-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
 
 Additionally, you can monitor server availability through the HTTP API. Send the `HTTP GET` request to `/`. If the server is available, it responds with `200 OK`.
 
