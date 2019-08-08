@@ -190,7 +190,7 @@ BlockInputStreams StorageMerge::read(
     modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
     /// What will be result structure depending on query processed stage in source tables?
-    Block header = getQueryHeader(query_info, context, processed_stage);
+    Block header = getQueryHeader(column_names, query_info, context, processed_stage);
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
@@ -407,20 +407,29 @@ void StorageMerge::alter(
 }
 
 Block StorageMerge::getQueryHeader(
-    const SelectQueryInfo & query_info, const Context & context, QueryProcessingStage::Enum processed_stage)
+    const Names & column_names, const SelectQueryInfo & query_info, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
-    auto storage = shared_from_this();
-    auto header = InterpreterSelectQuery::getHeaderForExecutionStep(query_info.query, storage, processed_stage, 0, context, query_info.prewhere_info);
-
-    for (auto & col : header)
+    switch (processed_stage)
     {
-        if (!col.column)
-            col.column = col.type->createColumn();
-        else
-            col.column = col.column->convertToFullColumnIfConst();
+        case QueryProcessingStage::FetchColumns:
+        {
+            Block header = getSampleBlockForColumns(column_names);
+            if (query_info.prewhere_info)
+            {
+                query_info.prewhere_info->prewhere_actions->execute(header);
+                header = materializeBlock(header);
+                if (query_info.prewhere_info->remove_prewhere_column)
+                    header.erase(query_info.prewhere_info->prewhere_column_name);
+            }
+            return header;
+        }
+        case QueryProcessingStage::WithMergeableState:
+        case QueryProcessingStage::Complete:
+            return materializeBlock(InterpreterSelectQuery(
+                query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
-
-    return header;
+    throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }
 
 void StorageMerge::convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,

@@ -79,14 +79,6 @@ public:
 
     ASTPtr getQuery() const { return query_ptr; }
 
-    static Block getHeaderForExecutionStep(
-            const ASTPtr & query,
-            const StoragePtr & storage,
-            QueryProcessingStage::Enum stage,
-            size_t subquery_depth,
-            const Context & context,
-            const PrewhereInfoPtr & prewhere_info);
-
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -98,6 +90,7 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
+    Block getSampleBlockImpl();
 
     struct Pipeline
     {
@@ -192,7 +185,7 @@ private:
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
-    void getDatabaseAndTableNames(String & database_name, String & table_name);
+    static void getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context);
 
     /// Different stages of query execution.
 
