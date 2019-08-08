@@ -32,7 +32,7 @@ public:
 
     String getName() const override { return "NullAndDoCopy"; }
 
-    Block getHeader() const override { return input->getHeader(); }
+    Block getHeader() const override { return {}; }
 
 protected:
     Block readImpl() override
