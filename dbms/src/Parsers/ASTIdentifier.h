@@ -70,9 +70,13 @@ private:
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
 void setIdentifierSpecial(ASTPtr & ast);
 
-std::optional<String> getIdentifierName(const IAST * const ast);
-inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
-bool getIdentifierName(const ASTPtr & ast, String & name);
+String getIdentifierName(const IAST * ast);
+std::optional<String> tryGetIdentifierName(const IAST * ast);
+
+inline String getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
+inline std::optional<String> tryGetIdentifierName(const ASTPtr & ast) { return tryGetIdentifierName(ast.get()); }
+
+bool tryGetIdentifierNameInto(const ASTPtr & ast, String & name);
 
 
 }
