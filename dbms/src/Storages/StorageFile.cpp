@@ -63,7 +63,7 @@ std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, c
 
     std::vector<std::string> result;
     fs::directory_iterator end;
-    for (fs::directory_iterator it(path_for_ls + for_match.substr(1, end_of_path_without_globs)); it != end; ++it)
+    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
     {
         std::string full_path = it->path().string();
         size_t last_slash = full_path.rfind('/');
@@ -174,7 +174,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, size_t num_of_path)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -200,8 +200,7 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-            std::string path_to_read = storage.path_with_globs ? storage.matched_paths[num_of_path] : storage.path;
-            read_buf = std::make_unique<ReadBufferFromFile>(path_to_read);
+            read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
@@ -252,16 +251,16 @@ BlockInputStreams StorageFile::read(
     auto column_defaults = columns.getDefaults();
     if (!path_with_globs)
     {
-        BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, 0);
+        BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, path);
         if (column_defaults.empty())
             return {block_input};
         return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
     }
     BlockInputStreams blocks_input;
     blocks_input.reserve(matched_paths.size());
-    for (size_t i = 0; i < matched_paths.size(); ++i)
+    for (const auto & file_path : matched_paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, i);
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
