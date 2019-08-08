@@ -2,7 +2,6 @@
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <algorithm>
-#include <iostream>
 
 namespace DB
 {
@@ -33,7 +32,6 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
         current_index = input_for_range.data() - first_prepare.data();
     }
     second_prepare += first_prepare.substr(current_index);
-    std::cout << second_prepare <<std::endl;
     re2::RE2 enumeration(R"(({[^{}*,]+,[^{}*]*[^{}*,]}))");
     re2::StringPiece input_enum(second_prepare);
     re2::StringPiece matched_enum(second_prepare);
@@ -44,16 +42,13 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
         pos = matched_enum.data() - second_prepare.data();
         third_prepare.append(second_prepare.substr(current_index, pos - current_index));
         std::string buffer = matched_enum.ToString();
-        std::cout << "buffer before " << buffer <<std::endl;
         buffer[0] = '(';
         buffer.back() = ')';
         std::replace(buffer.begin(), buffer.end(), ',', '|');
-        std::cout << "buffer after " << buffer <<std::endl;
         third_prepare.append(buffer);
         current_index = input_enum.data() - second_prepare.data();
     }
     third_prepare += second_prepare.substr(current_index);
-    std::cout << "third_prepare " << third_prepare <<std::endl;
     std::string result;
     result.reserve(third_prepare.size());
     for (const auto & letter : third_prepare)
@@ -68,7 +63,6 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
             result.push_back('\\');
         result.push_back(letter);
     }
-    std::cout << "result " << result <<std::endl;
     return result;
 }
 }
