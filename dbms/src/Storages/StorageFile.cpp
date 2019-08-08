@@ -50,37 +50,36 @@ namespace ErrorCodes
 namespace
 {
 
-Strings LSWithRegexpMatching(const String & path_for_ls, const String & for_match)
+std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
-    Strings result;
+
     size_t first_glob = for_match.find_first_of("*?{");
 
     size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
-    String path_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
-    String path_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+    std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    size_t next_slash = path_with_globs.find('/', 1);
-    String cur_item_for_match = path_with_globs.substr(0, next_slash);  /// without '/' at the end
-    String part_pattern = makeRegexpPatternFromGlobs(cur_item_for_match);
-    re2::RE2 matcher(part_pattern);
+    size_t next_slash = suffix_with_globs.find('/', 1);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+
+    std::vector<std::string> result;
     fs::directory_iterator end;
-    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    for (fs::directory_iterator it(path_for_ls + for_match.substr(1, end_of_path_without_globs)); it != end; ++it)
     {
-        std::string cur_path = it->path().string();
-        size_t last_slash = cur_path.rfind('/');
-        String cur_path_item = cur_path.substr(last_slash);
+        std::string full_path = it->path().string();
+        size_t last_slash = full_path.rfind('/');
+        String file_name = full_path.substr(last_slash);
         if ((!is_directory(it->path())) && (next_slash == std::string::npos))
         {
-            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(it->path().string());
             }
         }
         else if ((is_directory(it->path())) && (next_slash != std::string::npos))
         {
-            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(cur_path + "/", path_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }

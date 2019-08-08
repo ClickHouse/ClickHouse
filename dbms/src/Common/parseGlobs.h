@@ -1,9 +1,10 @@
 #pragma once
 #include <string>
+#include <vector>
 
 namespace DB
 {
 /* Parse globs in string and make a regexp for it.
  */
-std::string makeRegexpPatternFromGlobs(const std::string & ipath);
+std::string makeRegexpPatternFromGlobs(const std::string & path);
 }

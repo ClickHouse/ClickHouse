@@ -137,36 +137,33 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
     size_t first_glob = for_match.find_first_of("*?{");
 
     size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
-    String path_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
-    String path_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+    String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+    String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+
+    size_t next_slash = suffix_with_globs.find('/', 1);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
 
     HDFSFileInfo ls;
-    ls.file_info = hdfsListDirectory(fs.get(), path_without_globs.data(), &ls.length);
-
+    ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
     Strings result;
-    size_t next_slash = path_with_globs.find('/', 1);
-    String cur_item_for_match = path_with_globs.substr(0, next_slash);  /// without '/' at the end
-    String part_pattern = makeRegexpPatternFromGlobs(cur_item_for_match);
-    re2::RE2 matcher(part_pattern);
-
     for (int i = 0; i < ls.length; ++i)
     {
-        String cur_path = String(ls.file_info[i].mName);
-        size_t last_slash = cur_path.rfind('/');
-        String cur_path_item = cur_path.substr(last_slash);
+        String full_path = String(ls.file_info[i].mName);
+        size_t last_slash = full_path.rfind('/');
+        String file_name = full_path.substr(last_slash);
 
         if ((ls.file_info[i].mKind == 'F') && (next_slash == std::string::npos))
         {
-            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(String(ls.file_info[i].mName));
             }
         }
         else if ((ls.file_info[i].mKind == 'D') && (next_slash != std::string::npos))
         {
-            if (re2::RE2::FullMatch(cur_path_item, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(cur_path + "/", fs, path_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
