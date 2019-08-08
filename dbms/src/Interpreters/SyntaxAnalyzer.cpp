@@ -548,10 +548,10 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
 
     if (table_join.strictness == ASTTableJoin::Strictness::Any)
         if (table_join.kind != ASTTableJoin::Kind::Left)
-            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed."
-                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys."
-                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN."
-                            "It would be equal to apply distinct for keys to right, left and both tables respectively."
+            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed. "
+                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys. "
+                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN. "
+                            "It would be equal to apply distinct for keys to right, left and both tables respectively. "
                             "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
                             ErrorCodes::NOT_IMPLEMENTED);
 }
