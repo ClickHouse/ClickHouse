@@ -4,7 +4,7 @@ Allows to connect to databases on a remote MySQL server and perform `INSERT` and
 
 The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
 
-You cannot perform the following queries with tables:
+You cannot perform the following queries:
 
 - `ATTACH`/`DETACH`
 - `DROP`
@@ -53,7 +53,7 @@ All other MySQL data types are converted into [String](../data_types/string.md).
 
 ## Examples of Use
 
-MySQL table:
+Table in MySQL:
 
 ```
 mysql> USE test;
