@@ -120,3 +120,5 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/database_engines/mysql/) <!--hide-->

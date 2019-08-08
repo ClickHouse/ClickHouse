@@ -7,3 +7,5 @@ By default, ClickHouse uses its native database engine, which provides configura
 You can also use the following database engines:
 
 - [MySQL](mysql.md)
+
+[Original article](https://clickhouse.yandex/docs/en/database_engines/) <!--hide-->
