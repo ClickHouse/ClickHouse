@@ -185,8 +185,8 @@ struct AggregationMethodOneNumber
     static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
         auto key_holder = reinterpret_cast<const char *>(&key);
-        static_cast<ColumnVectorHelper *>(key_columns[0].get())
-            ->insertRawData<sizeof(FieldType)>(key_holder);
+        auto column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
+        column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
 
@@ -269,7 +269,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         auto col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
 
-        if constexpr(std::is_same_v<Key, StringRef>)
+        if constexpr (std::is_same_v<Key, StringRef>)
         {
             col->insertData(key.data, key.size);
         }
