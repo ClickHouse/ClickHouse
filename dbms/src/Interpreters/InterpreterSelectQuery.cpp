@@ -270,7 +270,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             String database_name;
             String table_name;
 
-            getDatabaseAndTableNames(database_name, table_name);
+            getDatabaseAndTableNames(query, database_name, table_name, context);
 
             if (auto view_source = context.getViewSource())
             {
@@ -344,17 +344,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = storage->getSampleBlockForColumns(required_columns);
 
     /// Calculate structure of the result.
-    {
-        Pipeline pipeline;
-        executeImpl(pipeline, nullptr, true);
-        result_header = pipeline.firstStream()->getHeader();
-    }
+    result_header = getSampleBlockImpl();
+    for (auto & col : result_header)
+        if (!col.column)
+            col.column = col.type->createColumn();
 }
 
 
-void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
+void InterpreterSelectQuery::getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context)
 {
-    if (auto db_and_table = getDatabaseAndTable(getSelectQuery(), 0))
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
     {
         table_name = db_and_table->table;
         database_name = db_and_table->database;
@@ -403,60 +402,35 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 }
 
 
-Block InterpreterSelectQuery::getHeaderForExecutionStep(
-    const ASTPtr & query_ptr,
-    const StoragePtr & storage,
-    QueryProcessingStage::Enum stage,
-    size_t subquery_depth,
-    const Context & context,
-    const PrewhereInfoPtr & prewhere_info)
+Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    SelectQueryOptions options(stage, subquery_depth);
-    options.only_analyze = true;
-
-    Names required_result_column_names;
-
-    /// TODO: remove it.
-    auto query = query_ptr->clone();
-
-    auto syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
-            query, {}, required_result_column_names, storage);
-
-    auto query_analyzer = ExpressionAnalyzer(
-            query, syntax_analyzer_result, context, NamesAndTypesList(),
-            NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-            options.subquery_depth, !options.only_analyze);
-
-    if (stage == QueryProcessingStage::Enum::FetchColumns)
-    {
-        auto required_columns = query_analyzer.getRequiredSourceColumns();
-        auto header = storage->getSampleBlockForColumns(required_columns);
-
-        if (prewhere_info)
-        {
-            prewhere_info->prewhere_actions->execute(header);
-            header = materializeBlock(header);
-            if (prewhere_info->remove_prewhere_column)
-                header.erase(prewhere_info->prewhere_column_name);
-        }
-        return header;
-    }
-
     FilterInfoPtr filter_info;
 
-    auto & select_query = query->as<const ASTSelectQuery &>();
-
     auto analysis_result = analyzeExpressions(
-            select_query,
-            query_analyzer,
+            getSelectQuery(),
+            *query_analyzer,
             QueryProcessingStage::Enum::FetchColumns,
-            stage,
+            options.to_stage,
             context,
             storage,
             true,
             filter_info);
 
-    if (stage == QueryProcessingStage::Enum::WithMergeableState)
+    if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
+    {
+        auto header = source_header;
+
+        if (analysis_result.prewhere_info)
+        {
+            analysis_result.prewhere_info->prewhere_actions->execute(header);
+            header = materializeBlock(header);
+            if (analysis_result.prewhere_info->remove_prewhere_column)
+                header.erase(analysis_result.prewhere_info->prewhere_column_name);
+        }
+        return header;
+    }
+
+    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableState)
     {
         if (!analysis_result.need_aggregate)
             return analysis_result.before_order_and_select->getSampleBlock();
@@ -465,7 +439,7 @@ Block InterpreterSelectQuery::getHeaderForExecutionStep(
 
         Names key_names;
         AggregateDescriptions aggregates;
-        query_analyzer.getAggregateInfo(key_names, aggregates);
+        query_analyzer->getAggregateInfo(key_names, aggregates);
 
         Block res;
 
@@ -523,6 +497,24 @@ InterpreterSelectQuery::analyzeExpressions(
     auto finalizeChain = [&](ExpressionActionsChain & chain)
     {
         chain.finalize();
+
+        /// Check that actions on current step are valid.
+        /// Now this in needed for mutations to check in mutation is valid before execute it in background.
+        /// Because some functions only checking correctness of constant arguments during execution,
+        ///   but not in getReturnType method (e.g. compare date with constant string).
+        if (dry_run)
+        {
+            for (auto & step : chain.steps)
+            {
+                auto step_required_columns = step.actions->getRequiredColumnsWithTypes();
+
+                Block sample;
+                for (auto & col : step_required_columns)
+                    sample.insert({col.type->createColumn(), col.type, col.name});
+
+                step.actions->execute(sample);
+            }
+        }
 
         if (has_prewhere)
         {
