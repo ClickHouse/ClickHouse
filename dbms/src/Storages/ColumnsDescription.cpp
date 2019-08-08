@@ -91,7 +91,7 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 
 void ColumnDescription::readText(ReadBuffer & buf)
 {
-    ParserColumnDeclaration column_parser(true);
+    ParserColumnDeclaration column_parser(/* require type */ true);
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
     ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
