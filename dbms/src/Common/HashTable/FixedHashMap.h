@@ -52,11 +52,52 @@ class FixedHashMap : public FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, A
 {
 public:
     using Base = FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>;
+    using Self = FixedHashMap;
     using key_type = Key;
     using mapped_type = Mapped;
-    using value_type = typename Base::cell_type::value_type;
+    using Cell = typename Base::cell_type;
+    using value_type = typename Cell::value_type;
 
     using Base::Base;
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it;
+            bool inserted;
+            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
+            func(res_it->getSecond(), it->getSecond(), inserted);
+        }
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it = that.find(it->getFirst(), it.getHash());
+            if (res_it == that.end())
+                func(it->getSecond(), it->getSecond(), false);
+            else
+                func(res_it->getSecond(), it->getSecond(), true);
+        }
+    }
+
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getFirst(), v.getSecond());
+    }
+
+    template <typename Func>
+    void forEachMapped(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getSecond());
+    }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
