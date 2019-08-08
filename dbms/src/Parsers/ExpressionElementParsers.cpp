@@ -177,7 +177,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     {
         if (!name.empty())
             name += '.';
-        parts.emplace_back(*getIdentifierName(child));
+        parts.emplace_back(getIdentifierName(child));
         name += parts.back();
     }
 
@@ -225,7 +225,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
       * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
       *  and the query silently returns an unexpected result.
       */
-    if (*getIdentifierName(identifier) == "toDate"
+    if (getIdentifierName(identifier) == "toDate"
         && contents_end - contents_begin == strlen("2014-01-01")
         && contents_begin[0] >= '2' && contents_begin[0] <= '3'
         && contents_begin[1] >= '0' && contents_begin[1] <= '9'
@@ -267,7 +267,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     auto function_node = std::make_shared<ASTFunction>();
-    getIdentifierName(identifier, function_node->name);
+    tryGetIdentifierNameInto(identifier, function_node->name);
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
     if (has_distinct_modifier)
@@ -1158,7 +1158,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
           *  and in the query "SELECT x FRO FROM t", the word FRO was considered an alias.
           */
 
-        const String name = *getIdentifierName(node);
+        const String name = getIdentifierName(node);
 
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
@@ -1326,7 +1326,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
       */
     bool allow_alias_without_as_keyword_now = allow_alias_without_as_keyword;
     if (allow_alias_without_as_keyword)
-        if (auto opt_id = getIdentifierName(node))
+        if (auto opt_id = tryGetIdentifierName(node))
             if (0 == strcasecmp(opt_id->data(), "FROM"))
                 allow_alias_without_as_keyword_now = false;
 
@@ -1336,7 +1336,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         /// FIXME: try to prettify this cast using `as<>()`
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
-            getIdentifierName(alias_node, ast_with_alias->alias);
+            tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
         }
         else
         {

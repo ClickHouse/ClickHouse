@@ -463,7 +463,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
                     {
-                        auto opt_arg_name = getIdentifierName(lambda_arg_asts[j]);
+                        auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
                         if (!opt_arg_name)
                             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
