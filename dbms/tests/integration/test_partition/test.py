@@ -212,7 +212,7 @@ def drop_detached_parts_table(started_cluster):
 
 
 def test_drop_detached_parts(drop_detached_parts_table):
-    s = {"allow_drop_detached_part": 1}
+    s = {"allow_drop_detached": 1}
     q("ALTER TABLE test.drop_detached DETACH PARTITION 0")
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 

@@ -56,7 +56,7 @@ BlockIO InterpreterAlterQuery::execute()
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {
             if (partition_command->type == PartitionCommand::DROP_DETACHED_PARTITION
-                && !context.getSettingsRef().allow_drop_detached_part)
+                && !context.getSettingsRef().allow_drop_detached)
                 throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
                                     "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
             partition_commands.emplace_back(std::move(*partition_command));

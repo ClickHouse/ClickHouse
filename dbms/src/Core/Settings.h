@@ -341,7 +341,7 @@ struct Settings : public SettingsCollection<Settings>
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
-    M(SettingBool, allow_drop_detached_part, false, "Allow ALTER TABLE ... DROP DETACHED PART ... queries")
+    M(SettingBool, allow_drop_detached, false, "Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
