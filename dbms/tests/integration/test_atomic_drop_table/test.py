@@ -26,13 +26,11 @@ def start_cluster():
         cluster.shutdown()
 
 def test_atomic_delete_with_stopped_zookeeper(start_cluster):
-
-    node1.query("select * from zktest.atomic_drop_table")
     node1.query("insert into zktest.atomic_drop_table values (8192)")
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node1)
-        error = node1.query_and_get_error("DROP TABLE zktest.atomic_drop_table")
+        error = node1.query_and_get_error("DROP TABLE zktest.atomic_drop_table") #Table won't drop
         assert error != ""
 
     time.sleep(5)
