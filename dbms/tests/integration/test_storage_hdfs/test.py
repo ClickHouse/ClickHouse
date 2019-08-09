@@ -78,25 +78,22 @@ def test_bad_hdfs_uri(started_cluster):
 def test_globs_in_read_table(started_cluster):
     hdfs_api = HDFSApi("root")
     some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/simple_table_function", some_data)
-    hdfs_api.write_data("/dir/file", some_data)
-    hdfs_api.write_data("/some_dir/dir1/file", some_data)
-    hdfs_api.write_data("/some_dir/dir2/file", some_data)
-    hdfs_api.write_data("/some_dir/file", some_data)
-    hdfs_api.write_data("/table1_function", some_data)
-    hdfs_api.write_data("/table2_function", some_data)
-    hdfs_api.write_data("/table3_function", some_data)
+    globs_dir = "/dir_for_test_with_globs/"
+    files = ["simple_table_function", "dir/file", "some_dir/dir1/file", "some_dir/dir2/file", "some_dir/file", "table1_function", "table2_function", "table3_function"]
+    for filename in files:
+        hdfs_api.write_data(globs_dir + filename, some_data)
 
-    assert hdfs_api.read_data("/dir/file") == some_data
+    test_requests = [("*_table_functio?", 1),
+                     ("dir/fil?", 1),
+                     ("table{3..8}_function", 1),
+                     ("table{2..8}_function", 2),
+                     ("dir/*", 1),
+                     ("dir/*?*?*?*?*", 1),
+                     ("dir/*?*?*?*?*?*", 0),
+                     ("dir/*{a..z}*{a..z}*{a..z}*{a..z}*", 1),
+                     ("some_dir/*/file", 2),
+                     ("some_dir/dir?/*", 2),
+                     ("*/*/*", 2)]
 
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/*_table_functio?', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/fil?', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/table{3..8}_function', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/table{2..8}_function', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*?*?*?*?*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*?*?*?*?*?*', 'TSV', 'id UInt64, text String, number Float64')") == ""
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/dir/*{a..z}*{a..z}*{a..z}*{a..z}*', 'TSV', 'id UInt64, text String, number Float64')") == some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/some_dir/*/file', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/some_dir/dir?/*', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
-    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/*/*/*', 'TSV', 'id UInt64, text String, number Float64')") == 2 * some_data
+    for pattern, value in test_requests:
+        assert node1.query("select * from hdfs('hdfs://hdfs1:9000" + globs_dir + pattern + "', 'TSV', 'id UInt64, text String, number Float64')") == value * some_data
