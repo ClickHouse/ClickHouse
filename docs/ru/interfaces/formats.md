@@ -375,8 +375,66 @@ CREATE TABLE IF NOT EXISTS example_table
 
 В отличие от формата [JSON](#json), для `JSONEachRow` ClickHouse не заменяет невалидные UTF-8 последовательности. Значения экранируются так же, как и для формата `JSON`.
 
-!!! Примечание " Примечание"
-    В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
+!!! Примечание " Примечание"    В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
+
+### Использование вложенных структур {#jsoneachrow-nested}
+
+Если у вас есть таблица со столбцами типа [Nested](../data_types/nested_data_structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+Например, рассмотрим следующую таблицу:
+
+```sql
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+Из описания типа данных `Nested`, видно, что ClickHouse трактует каждый компонент вложенной структуры как отдельный столбец (для нашей таблицы`n.s` и `n.i`). Можно вставить данные следующим образом:
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+Чтобы вставить данные как иерархический объект JSON, установите [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Без этой установки ClickHouse генерирует исключение.
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+
+```text
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
 
 ## Native {#native}
 
@@ -397,7 +455,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 [NULL](../query_language/syntax.md) выводится как `ᴺᵁᴸᴸ`.
 
-``` sql
+```sql
 SELECT * FROM t_null
 ```
 ```
@@ -408,7 +466,7 @@ SELECT * FROM t_null
 
 В форматах `Pretty*` строки выводятся без экранирования. Ниже приведен пример для формата [PrettyCompact](#prettycompact):
 
-``` sql
+```sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
@@ -423,7 +481,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 
 Формат `Pretty` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения, в отдельных табличках. Пример (показан для формата [PrettyCompact](#prettycompact)):
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
@@ -514,7 +572,7 @@ Array представлены как длина в формате varint (unsig
 
 Пример:
 
-``` sql
+```sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 ```
@@ -526,7 +584,7 @@ y: ᴺᵁᴸᴸ
 
 В формате `Vertical` строки выводятся без экранирования. Например:
 
-``` sql
+```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
