@@ -5,7 +5,10 @@
 
 namespace DB
 {
-
+/*  Because of difference between grep-wildcard-syntax and perl-regexp one we need some transformation of string to use RE2 library for matching.
+ *  It couldn't be one pass because of various configurations of braces in filenames (Linux allow almost any symbols in paths).
+ *  So there are some iterations of escaping and replacements to make correct perl-regexp.
+ */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
 {
     std::string first_prepare;

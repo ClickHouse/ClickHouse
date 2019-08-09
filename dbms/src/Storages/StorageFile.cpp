@@ -63,7 +63,7 @@ std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, c
 
     std::vector<std::string> result;
     fs::directory_iterator end;
-    for (fs::directory_iterator it(path_for_ls); it != end; ++it)
+    for (fs::directory_iterator it(path_for_ls + for_match.substr(1, end_of_path_without_globs)); it != end; ++it)
     {
         std::string full_path = it->path().string();
         size_t last_slash = full_path.rfind('/');
@@ -139,7 +139,7 @@ StorageFile::StorageFile(
             if (first_glob != std::string::npos)
             {
                 path_with_globs = true;
-                matched_paths = LSWithRegexpMatching(db_dir_path, path);
+                matched_paths = LSWithRegexpMatching("/", path);
                 for (const auto & cur_path : matched_paths)
                     checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
             }
