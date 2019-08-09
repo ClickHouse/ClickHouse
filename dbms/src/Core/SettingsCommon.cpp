@@ -34,20 +34,19 @@ namespace ErrorCodes
 template <typename Type>
 String SettingNumber<Type>::toString() const
 {
-    return DB::toString(value.load(std::memory_order_relaxed));
+    return DB::toString(getValue());
 }
 
 template <typename Type>
 Field SettingNumber<Type>::toField() const
 {
-    return value.load(std::memory_order_relaxed);
+    return getValue();
 }
 
 template <typename Type>
 void SettingNumber<Type>::set(Type x)
 {
-    value.store(x, std::memory_order_relaxed);
-    changed = true;
+    data.store(Data{x, true}, std::memory_order_relaxed);
 }
 
 template <typename Type>
@@ -57,6 +56,14 @@ void SettingNumber<Type>::set(const Field & x)
         set(get<const String &>(x));
     else
         set(applyVisitor(FieldVisitorConvertToNumber<Type>(), x));
+}
+
+
+template <typename Type>
+SettingNumber<Type> & SettingNumber<Type>::operator= (const SettingNumber & o)
+{
+    data.store(o.data.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
 }
 
 template <typename Type>
@@ -93,9 +100,9 @@ template <typename Type>
 void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 {
     if constexpr (std::is_integral_v<Type> && std::is_unsigned_v<Type>)
-        writeVarUInt(static_cast<UInt64>(value), buf);
+        writeVarUInt(static_cast<UInt64>(getValue()), buf);
     else if constexpr (std::is_integral_v<Type> && std::is_signed_v<Type>)
-        writeVarInt(static_cast<Int64>(value), buf);
+        writeVarInt(static_cast<Int64>(getValue()), buf);
     else
     {
         static_assert(std::is_floating_point_v<Type>);
@@ -133,22 +140,28 @@ template struct SettingNumber<float>;
 template struct SettingNumber<bool>;
 
 
+SettingMaxThreads & SettingMaxThreads::operator= (const SettingMaxThreads & o)
+{
+    data.store(o.data.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
+}
+
 String SettingMaxThreads::toString() const
 {
+    auto d = data.load(std::memory_order_relaxed);
     /// Instead of the `auto` value, we output the actual value to make it easier to see.
-    return is_auto ? ("auto(" + DB::toString(getValue()) + ")") : DB::toString(getValue());
+    return d.is_auto ? ("auto(" + DB::toString(d.value) + ")") : DB::toString(d.value);
 }
 
 Field SettingMaxThreads::toField() const
 {
-    return is_auto ? 0 : getValue();
+    auto d = data.load(std::memory_order_relaxed);
+    return d.is_auto ? 0 : d.value;
 }
 
 void SettingMaxThreads::set(UInt64 x)
 {
-    value.store(x ? x : getAutoValue(), std::memory_order_relaxed);
-    is_auto = x == 0;
-    changed = true;
+    data.store({x ? x : getAutoValue(), x == 0, true});
 }
 
 void SettingMaxThreads::set(const Field & x)
@@ -169,7 +182,8 @@ void SettingMaxThreads::set(const String & x)
 
 void SettingMaxThreads::serialize(WriteBuffer & buf) const
 {
-    writeVarUInt(is_auto ? 0 : getValue(), buf);
+    auto d = data.load(std::memory_order_relaxed);
+    writeVarUInt(d.is_auto ? 0 : d.value, buf);
 }
 
 void SettingMaxThreads::deserialize(ReadBuffer & buf)
@@ -181,8 +195,7 @@ void SettingMaxThreads::deserialize(ReadBuffer & buf)
 
 void SettingMaxThreads::setAuto()
 {
-    value = getAutoValue();
-    is_auto = true;
+    data.store({getAutoValue(), true, isChanged()});
 }
 
 UInt64 SettingMaxThreads::getAutoValue() const
@@ -191,25 +204,54 @@ UInt64 SettingMaxThreads::getAutoValue() const
     return res;
 }
 
+void SettingMaxThreads::setChanged(bool changed)
+{
+    auto d = data.load(std::memory_order_relaxed);
+    data.store({d.value, d.is_auto, changed});
+}
+
+
+template <SettingTimespanIO io_unit>
+SettingTimespan<io_unit> & SettingTimespan<io_unit>::operator= (const SettingTimespan & o)
+{
+    std::shared_lock lock_o(o.mutex);
+    value = o.value;
+    changed = o.changed;
+    return *this;
+}
+
+template <SettingTimespanIO io_unit>
+SettingTimespan<io_unit>::SettingTimespan(const SettingTimespan & o)
+{
+    std::shared_lock lock_o(o.mutex);
+    value = o.value;
+    changed = o.changed;
+}
+
+
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::setChanged(bool c)
+{
+    std::unique_lock lock(mutex);
+    changed = c;
+}
 
 template <SettingTimespanIO io_unit>
 String SettingTimespan<io_unit>::toString() const
 {
-    std::lock_guard lock(m);
-    return DB::toString(value.totalMicroseconds() / microseconds_per_io_unit);
+    return DB::toString(getValue().totalMicroseconds() / microseconds_per_io_unit);
 }
 
 template <SettingTimespanIO io_unit>
 Field SettingTimespan<io_unit>::toField() const
 {
-    std::lock_guard lock(m);
-    return value.totalMicroseconds() / microseconds_per_io_unit;
+    return getValue().totalMicroseconds() / microseconds_per_io_unit;
 }
 
 template <SettingTimespanIO io_unit>
 void SettingTimespan<io_unit>::set(const Poco::Timespan & x)
 {
-    std::lock_guard lock(m);
+    std::unique_lock lock(mutex);
     value = x;
     changed = true;
 }
@@ -238,8 +280,7 @@ void SettingTimespan<io_unit>::set(const String & x)
 template <SettingTimespanIO io_unit>
 void SettingTimespan<io_unit>::serialize(WriteBuffer & buf) const
 {
-    std::lock_guard lock(m);
-    writeVarUInt(value.totalMicroseconds() / microseconds_per_io_unit, buf);
+    writeVarUInt(getValue().totalMicroseconds() / microseconds_per_io_unit, buf);
 }
 
 template <SettingTimespanIO io_unit>
@@ -253,24 +294,45 @@ void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf)
 template struct SettingTimespan<SettingTimespanIO::SECOND>;
 template struct SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
+SettingString & SettingString::operator= (const SettingString & o)
+{
+    std::shared_lock lock_o(o.mutex);
+    value = o.value;
+    changed = o.changed;
+    return *this;
+}
+
+SettingString::SettingString(const SettingString & o)
+{
+    std::shared_lock lock(o.mutex);
+    value = o.value;
+    changed = o.changed;
+}
+
 
 String SettingString::toString() const
 {
-    std::lock_guard lock(m);
+    std::shared_lock lock(mutex);
     return value;
 }
 
 Field SettingString::toField() const
 {
-    std::lock_guard lock(m);
+    std::shared_lock lock(mutex);
     return value;
 }
 
 void SettingString::set(const String & x)
 {
-    std::lock_guard lock(m);
+    std::unique_lock lock(mutex);
     value = x;
     changed = true;
+}
+
+void SettingString::setChanged(bool c)
+{
+    std::unique_lock lock(mutex);
+    changed = c;
 }
 
 void SettingString::set(const Field & x)
@@ -280,7 +342,6 @@ void SettingString::set(const Field & x)
 
 void SettingString::serialize(WriteBuffer & buf) const
 {
-    std::lock_guard lock(m);
     writeBinary(value, buf);
 }
 
@@ -291,10 +352,15 @@ void SettingString::deserialize(ReadBuffer & buf)
     set(s);
 }
 
+SettingChar & SettingChar::operator= (const SettingChar & o)
+{
+    data.store(o.data.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
+}
 
 String SettingChar::toString() const
 {
-    return String(1, value);
+    return String(1, getValue());
 }
 
 Field SettingChar::toField() const
@@ -304,8 +370,7 @@ Field SettingChar::toField() const
 
 void SettingChar::set(char x)
 {
-    value.store(x, std::memory_order_relaxed);
-    changed = true;
+    data.store({x, true});
 }
 
 void SettingChar::set(const String & x)
@@ -336,6 +401,19 @@ void SettingChar::deserialize(ReadBuffer & buf)
 
 
 template <typename EnumType, typename Tag>
+SettingEnum<EnumType, Tag> & SettingEnum<EnumType, Tag>::operator= (const SettingEnum & o)
+{
+    data.store(o.data.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
+}
+
+template <typename EnumType, typename Tag>
+void SettingEnum<EnumType, Tag>::set(EnumType x)
+{
+    data.store({x, true}, std::memory_order_relaxed);
+}
+
+template <typename EnumType, typename Tag>
 void SettingEnum<EnumType, Tag>::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
@@ -348,6 +426,7 @@ void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
     readBinary(s, buf);
     set(s);
 }
+
 
 
 #define IMPLEMENT_SETTING_ENUM(ENUM_NAME, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \

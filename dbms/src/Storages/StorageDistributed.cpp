@@ -329,7 +329,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);

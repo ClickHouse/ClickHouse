@@ -199,7 +199,7 @@ BufferPtr StorageKafka::createBuffer()
     const Settings & settings = global_context.getSettingsRef();
     size_t batch_size = max_block_size;
     if (!batch_size)
-        batch_size = settings.max_block_size.value;
+        batch_size = settings.max_block_size;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     return std::make_shared<DelimitedReadBuffer>(
@@ -350,7 +350,7 @@ bool StorageKafka::streamToViews()
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
     if (block_size == 0)
-        block_size = settings.max_block_size.value;
+        block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
     InterpreterInsertQuery interpreter{insert, global_context};
@@ -436,7 +436,7 @@ void registerStorageKafka(StorageFactory & factory)
         #define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)            \
             /* One of the four required arguments is not specified */      \
             if (args_count < ARG_NUM && ARG_NUM <= 4 &&                    \
-                !kafka_settings.PAR_NAME.changed)                          \
+                !kafka_settings.PAR_NAME.isChanged())                      \
             {                                                              \
                 throw Exception(                                           \
                     "Required parameter '" #PAR_NAME "' "                  \
@@ -445,7 +445,7 @@ void registerStorageKafka(StorageFactory & factory)
             }                                                              \
             /* The same argument is given in two places */                 \
             if (has_settings &&                                            \
-                kafka_settings.PAR_NAME.changed &&                         \
+                kafka_settings.PAR_NAME.isChanged() &&                     \
                 args_count >= ARG_NUM)                                     \
             {                                                              \
                 throw Exception(                                           \
@@ -469,7 +469,7 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         // Get and check broker list
-        String brokers = kafka_settings.kafka_broker_list.value;
+        String brokers = kafka_settings.kafka_broker_list;
         if (args_count >= 1)
         {
             const auto * ast = engine_args[0]->as<ASTLiteral>();
@@ -524,7 +524,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Parse row delimiter (optional)
-        char row_delimiter = kafka_settings.kafka_row_delimiter.value;
+        char row_delimiter = kafka_settings.kafka_row_delimiter;
         if (args_count >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
@@ -571,7 +571,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Parse number of consumers (optional)
-        UInt64 num_consumers = kafka_settings.kafka_num_consumers.value;
+        UInt64 num_consumers = kafka_settings.kafka_num_consumers;
         if (args_count >= 7)
         {
             const auto * ast = engine_args[6]->as<ASTLiteral>();
@@ -586,7 +586,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Parse max block size (optional)
-        UInt64 max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size.value);
+        UInt64 max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size);
         if (args_count >= 8)
         {
             const auto * ast = engine_args[7]->as<ASTLiteral>();
@@ -601,7 +601,7 @@ void registerStorageKafka(StorageFactory & factory)
             }
         }
 
-        size_t skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
+        size_t skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages);
         if (args_count >= 9)
         {
             const auto * ast = engine_args[8]->as<ASTLiteral>();

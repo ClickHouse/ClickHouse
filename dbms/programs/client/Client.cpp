@@ -323,7 +323,7 @@ private:
         insert_format = "Values";
 
         /// Setting value from cmd arg overrides one from config
-        if (context.getSettingsRef().max_insert_block_size.changed)
+        if (context.getSettingsRef().max_insert_block_size.isChanged())
             insert_format_max_block_size = context.getSettingsRef().max_insert_block_size;
         else
             insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);

@@ -182,11 +182,11 @@ void TCPHandler::runImpl()
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && client_logs_level.value != LogsLevel::none)
+                && client_logs_level != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
             }
 
             query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
@@ -329,7 +329,7 @@ void TCPHandler::readData(const Settings & connection_settings)
     const auto receive_timeout = query_context->getSettingsRef().receive_timeout.value;
 
     /// Poll interval should not be greater than receive_timeout
-    const size_t default_poll_interval = connection_settings.poll_interval.value * 1000000;
+    const size_t default_poll_interval = connection_settings.poll_interval * 1000000;
     size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));

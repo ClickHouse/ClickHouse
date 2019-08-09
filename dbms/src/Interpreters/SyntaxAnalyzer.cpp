@@ -596,7 +596,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         InJoinSubqueriesPreprocessor(context).visit(query);
 
         /// Optimizes logical expressions.
-        LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length).perform();
+        LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.getValue()).perform();
     }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
