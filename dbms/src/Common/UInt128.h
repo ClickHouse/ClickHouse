@@ -1,7 +1,8 @@
 #pragma once
 
 #include <tuple>
-
+#include <sstream>
+#include <iomanip>
 #include <city.h>
 
 #include <Core/Types.h>
@@ -32,6 +33,13 @@ struct UInt128
     explicit UInt128(const UInt64 rhs) : low(rhs), high() {}
 
     auto tuple() const { return std::tie(high, low); }
+
+    String toHexString() const
+    {
+        std::ostringstream os;
+        os << std::setw(16) << std::setfill('0') << std::hex << high << low;
+        return String(os.str());
+    }
 
     bool inline operator== (const UInt128 rhs) const { return tuple() == rhs.tuple(); }
     bool inline operator!= (const UInt128 rhs) const { return tuple() != rhs.tuple(); }

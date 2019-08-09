@@ -442,6 +442,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DWARF = 465;
     extern const int INSECURE_PATH = 466;
     extern const int CANNOT_PARSE_BOOL = 467;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 468;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

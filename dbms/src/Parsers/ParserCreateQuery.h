@@ -91,6 +91,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** List of table names. */
+class ParserNameList : public IParserBase
+{
+protected:
+    const char * getName() const { return "name list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
@@ -300,7 +308,7 @@ protected:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Or:
-  * CREATE [OR REPLACE]|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+  * CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [[TEMPORARY] LIVE [CHANNEL] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {

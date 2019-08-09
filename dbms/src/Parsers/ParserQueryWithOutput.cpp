@@ -11,6 +11,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 
@@ -32,6 +33,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
+    ParserWatchQuery watch_p;
 
     ASTPtr query;
 
@@ -57,7 +59,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected);
+        || optimize_p.parse(pos, query, expected)
+        || watch_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
