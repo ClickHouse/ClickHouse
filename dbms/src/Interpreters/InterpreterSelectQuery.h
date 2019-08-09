@@ -136,7 +136,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input);
 
     struct AnalysisResult
     {
