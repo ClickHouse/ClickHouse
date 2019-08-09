@@ -29,8 +29,9 @@ protected:
     void consumeTotals(Chunk) override {}
     void consumeExtremes(Chunk) override {}
 
-private:
     size_t field_number = 0;
+
+private:
     Names fields;
 
     FormatSettings settings;
