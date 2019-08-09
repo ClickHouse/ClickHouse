@@ -126,6 +126,9 @@ protected:
 
             for (const auto & column : columns)
             {
+                if (column.is_virtual)
+                    continue;
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 

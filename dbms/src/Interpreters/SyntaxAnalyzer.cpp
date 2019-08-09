@@ -43,6 +43,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -538,6 +539,23 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     }
 }
 
+void checkJoin(const ASTTablesInSelectQueryElement * join)
+{
+    if (!join->table_join)
+        return;
+
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Any)
+        if (table_join.kind != ASTTableJoin::Kind::Left)
+            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed. "
+                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys. "
+                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN. "
+                            "It would be equal to apply distinct for keys to right, left and both tables respectively. "
+                            "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
+                            ErrorCodes::NOT_IMPLEMENTED);
+}
+
 }
 
 
@@ -578,6 +596,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
+            if (!settings.any_join_distinct_right_table_keys)
+                checkJoin(node);
+
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
