@@ -202,6 +202,8 @@ void registerOutputFormatNative(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory);
 
+void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
+
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
 void registerInputFormatProcessorRowBinary(FormatFactory & factory);
@@ -246,6 +248,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatNative(*this);
     registerInputFormatTabSeparated(*this);
     registerInputFormatCSV(*this);
+
+    registerOutputFormatJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);

@@ -1,0 +1,41 @@
+--
+The following notice shall be applied to the files listed below.
+
+Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+dbms/src/Common/ErrorCodes.cpp
+dbms/src/Common/UInt128.h
+dbms/src/Core/Block.h
+dbms/src/Core/Defines.h
+dbms/src/Core/Settings.h
+dbms/src/DataStreams/PushingToViewsBlockOutputStream.cpp
+dbms/src/DataStreams/PushingToViewsBlockOutputStream.h
+dbms/src/DataStreams/copyData.cpp
+dbms/src/Databases/DatabasesCommon.cpp
+dbms/src/IO/WriteBufferValidUTF8.cpp
+dbms/src/Interpreters/InterpreterAlterQuery.cpp
+dbms/src/Interpreters/InterpreterCreateQuery.cpp
+dbms/src/Interpreters/InterpreterFactory.cpp
+dbms/src/Parsers/ASTAlterQuery.cpp
+dbms/src/Parsers/ASTAlterQuery.h
+dbms/src/Parsers/ASTCreateQuery.cpp
+dbms/src/Parsers/ASTCreateQuery.h
+dbms/src/Parsers/ParserAlterQuery.cpp
+dbms/src/Parsers/ParserAlterQuery.h
+dbms/src/Parsers/ParserCreateQuery.cpp
+dbms/src/Parsers/ParserCreateQuery.h
+dbms/src/Parsers/ParserQueryWithOutput.cpp
+dbms/src/Storages/IStorage.h
+dbms/src/Storages/StorageFactory.cpp
+dbms/src/Storages/registerStorages.cpp
+--

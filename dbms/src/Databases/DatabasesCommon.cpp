@@ -41,7 +41,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.replace_view = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create.is_view && !create.is_materialized_view)
+    if (!create.is_view && !create.is_materialized_view && !create.is_live_view)
         create.select = nullptr;
 
     create.format = nullptr;
