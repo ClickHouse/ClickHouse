@@ -559,7 +559,7 @@ private:
         std::cerr << "\n";
         for (size_t i = 1; i <= infos.size(); ++i)
         {
-            auto & info = infos[i - 1];
+            const auto & info = infos[i - 1];
 
             /// Avoid zeros, nans or exceptions
             if (0 == info->queries)
@@ -587,7 +587,7 @@ private:
         auto print_percentile = [&](double percent)
         {
             std::cerr << percent << "%\t\t";
-            for (auto & info : infos)
+            for (const auto & info : infos)
             {
                 std::cerr << info->sampler.quantileInterpolated(percent / 100.0) << " sec." << "\t";
             }
@@ -629,7 +629,7 @@ private:
 
         for (size_t i = 1; i <= infos.size(); ++i)
         {
-            auto & info = infos[i - 1];
+            const auto & info = infos[i - 1];
 
             json_out << double_quote << "connection_" + toString(i) << ": {\n";
             json_out << double_quote << "statistics" << ": {\n";
