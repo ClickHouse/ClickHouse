@@ -1,8 +1,7 @@
 #include "config_formats.h"
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_PARQUET
-#include "ParquetBlockInputFormat.h"
-
 #include <algorithm>
 #include <iterator>
 #include <vector>
@@ -29,14 +28,8 @@
 #include <common/DateLUTImpl.h>
 #include <ext/range.h>
 #include <arrow/api.h>
-//#include <arrow/buffer.h>
-//#include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
-//#include <parquet/arrow/writer.h>
-//#include <parquet/exception.h>
 #include <parquet/file_reader.h>
-
-#include <Core/iostream_debug_helpers.h> // REMOVE ME
 
 namespace DB
 {

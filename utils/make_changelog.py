@@ -131,6 +131,24 @@ def find_pull_requests(commits, token, max_retries, retry_timeout):
     return not_found_commits, pull_requests
 
 
+# Find pull requests by list of numbers
+def find_pull_requests_by_num(pull_requests_nums, token, max_retries, retry_timeout):
+    pull_requests = {}
+
+    for pr in pull_requests_nums:
+        item = github_api_get_json('repos/{}/pulls/{}'.format(repo, pr), token, max_retries, retry_timeout)
+
+        number = item['number']
+        if number not in pull_requests:
+            pull_requests[number] = {
+                'title': item['title'],
+                'description': item['body'],
+                'user': item['user']['login'],
+            }
+
+    return pull_requests
+
+
 # Get users for all unknown commits and pull requests.
 def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeout):
 
@@ -305,10 +323,12 @@ def save_state(state_file, state):
         f.write(json.dumps(state, indent=4, separators=(',', ': ')))
 
 
-def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_retries, retry_timeout):
+def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, state_file, token, max_retries, retry_timeout):
 
-    base_sha = get_merge_base(new_tag, prev_tag, repo_folder)
-    logging.info('Base sha: %s', base_sha)
+    base_sha = None
+    if new_tag and prev_tag:
+        base_sha = get_merge_base(new_tag, prev_tag, repo_folder)
+        logging.info('Base sha: %s', base_sha)
 
     # Step 1. Get commits from merge_base to new_tag HEAD.
     # Result is a list of commits + map with commits info (author, message)
@@ -349,24 +369,27 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
             users = state['users']
             is_users_loaded = True
 
-    state['base_sha'] = base_sha
-    state['new_tag'] = new_tag
-    state['prev_tag'] = prev_tag
+    if base_sha:
+        state['base_sha'] = base_sha
+        state['new_tag'] = new_tag
+        state['prev_tag'] = prev_tag
 
-    if not is_commits_loaded:
-        logging.info('Getting commits using github api.')
-        commits = get_commits_from_branch(repo, new_tag, base_sha, commits_info, 100, token, max_retries, retry_timeout)
-        state['commits'] = commits
-        state['commits_info'] = commits_info
+        if not is_commits_loaded:
+            logging.info('Getting commits using github api.')
+            commits = get_commits_from_branch(repo, new_tag, base_sha, commits_info, 100, token, max_retries, retry_timeout)
+            state['commits'] = commits
+            state['commits_info'] = commits_info
 
-    logging.info('Found %d commits from %s to %s.\n', len(commits), new_tag, base_sha)
-    save_state(state_file, state)
+        logging.info('Found %d commits from %s to %s.\n', len(commits), new_tag, base_sha)
+        save_state(state_file, state)
 
-    if not is_pull_requests_loaded:
-        logging.info('Searching for pull requests using github api.')
-        unknown_commits, pull_requests = find_pull_requests(commits, token, max_retries, retry_timeout)
-        state['unknown_commits'] = unknown_commits
-        state['pull_requests'] = pull_requests
+        if not is_pull_requests_loaded:
+            logging.info('Searching for pull requests using github api.')
+            unknown_commits, pull_requests = find_pull_requests(commits, token, max_retries, retry_timeout)
+            state['unknown_commits'] = unknown_commits
+            state['pull_requests'] = pull_requests
+    else:
+        pull_requests = find_pull_requests_by_num(pull_requests_nums.split(','), token, max_retries, retry_timeout)
 
     logging.info('Found %d pull requests and %d unknown commits.\n', len(pull_requests), len(unknown_commits))
     save_state(state_file, state)
@@ -393,8 +416,9 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Make changelog.')
-    parser.add_argument('prev_release_tag', help='Git tag from previous release.')
-    parser.add_argument('new_release_tag', help='Git tag for new release.')
+    parser.add_argument('prev_release_tag', nargs='?', help='Git tag from previous release.')
+    parser.add_argument('new_release_tag', nargs='?', help='Git tag for new release.')
+    parser.add_argument('--pull-requests', help='Process the specified list of pull-request numbers (comma separated) instead of commits between tags.')
     parser.add_argument('--token', help='Github token. Use it to increase github api query limit.')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
@@ -412,9 +436,16 @@ if __name__ == '__main__':
     repo = args.repo
     max_retry = args.max_retry
     retry_timeout = args.retry_timeout
+    pull_requests = args.pull_requests
+
+    if (not prev_release_tag or not new_release_tag) and not pull_requests:
+        raise Exception('Either release tags or --pull-requests must be specified')
+
+    if prev_release_tag and new_release_tag and pull_requests:
+        raise Exception('Either release tags or --pull-requests must be specified')
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
     repo_folder = os.path.expanduser(repo_folder)
 
-    make_changelog(new_release_tag, prev_release_tag, repo, repo_folder, state_file, token, max_retry, retry_timeout)
+    make_changelog(new_release_tag, prev_release_tag, pull_requests, repo, repo_folder, state_file, token, max_retry, retry_timeout)

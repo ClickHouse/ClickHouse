@@ -8,8 +8,8 @@ namespace DB
 {
 
 
-JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings)
-    : IRowOutputFormat(header, out_), settings(settings)
+JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings)
+    : IRowOutputFormat(header, out_, callback), settings(settings)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -57,9 +57,10 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, callback, format_settings);
     });
 }
 

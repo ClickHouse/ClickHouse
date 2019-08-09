@@ -15,7 +15,7 @@ namespace DB
 class JSONEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings);
+    JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -23,6 +23,11 @@ public:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+
+protected:
+    /// No totals and extremes.
+    void consumeTotals(Chunk) override {}
+    void consumeExtremes(Chunk) override {}
 
 private:
     size_t field_number = 0;
@@ -32,4 +37,3 @@ private:
 };
 
 }
-

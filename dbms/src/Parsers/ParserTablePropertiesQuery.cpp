@@ -75,8 +75,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    getIdentifierName(database, query->database);
-    getIdentifierName(table, query->table);
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
 
     node = query;
 

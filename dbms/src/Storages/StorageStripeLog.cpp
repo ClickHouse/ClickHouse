@@ -214,7 +214,8 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create files if they do not exist
         if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
+                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 }
 

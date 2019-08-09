@@ -58,6 +58,17 @@ public:
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
+
+public:
+    /// Compatible to IBlockOutputStream interface
+
+    void write(const Block & block) { consume(Chunk(block.getColumns(), block.rows())); }
+
+    virtual void doWritePrefix() {}
+    virtual void doWriteSuffix() { finalize(); }
+
+    void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
+    void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
 };
 }
 
