@@ -216,9 +216,9 @@ private:
 
         const std::vector<std::vector<double>> students_table = {
         /* inf */	{	1.282,	1.645,	1.960,	2.326,	2.576,	3.090  },
-        /* 1. */	{	3.078,	6.314,	12.706,	31.821,	63.657,	318.313  },
-        /* 2. */	{	1.886,	2.920,	4.303,	6.965,	9.925,	22.327  },
-        /* 3. */	{	1.638,	2.353,	3.182,	4.541,	5.841,	10.215  },
+        /* 1. */	{	3.078,	6.314,	12.706,	31.821,	63.657,	318.313},
+        /* 2. */	{	1.886,	2.920,	4.303,	6.965,	9.925,	22.327 },
+        /* 3. */	{	1.638,	2.353,	3.182,	4.541,	5.841,	10.215 },
         /* 4. */	{	1.533,	2.132,	2.776,	3.747,	4.604,	7.173  },
         /* 5. */	{	1.476,	2.015,	2.571,	3.365,	4.032,	5.893  },
         /* 6. */	{	1.440,	1.943,	2.447,	3.143,	3.707,	5.208  },
@@ -353,7 +353,6 @@ private:
                 return true;
             }
         }
-
     };
 
     RelativeAnalysis comparison_relative;
@@ -552,9 +551,10 @@ private:
         std::lock_guard lock(mutex);
 
         std::cerr << "\n";
-        size_t info_counter = 1;
-        for (auto & info : infos)
+        for (size_t i = 1; i <= infos.size(); ++i)
         {
+            auto & info = infos[i - 1];
+
             /// Avoid zeros, nans or exceptions
             if (0 == info->queries)
                 return;
@@ -562,7 +562,7 @@ private:
             double seconds = info->work_time / concurrency;
 
             std::cerr
-                    << "connection " << info_counter++ << ", "
+                    << "connection " << i << ", "
                     << "queries " << info->queries << ", "
                     << "QPS: " << (info->queries / seconds) << ", "
                     << "RPS: " << (info->read_rows / seconds) << ", "
@@ -571,6 +571,7 @@ private:
                     << "result MiB/s: " << (info->result_bytes / seconds / 1048576) << "."
                     << "\n";
         }
+
         std::cerr << "\n\t\t";
 
         for (size_t i = 1; i <= infos.size(); ++i)
@@ -622,7 +623,7 @@ private:
 
         for (size_t i = 1; i <= infos.size(); ++i)
         {
-            auto info = infos[i - 1];
+            auto & info = infos[i - 1];
 
             json_out << double_quote << "connection_" + toString(i) << ": {\n";
             json_out << double_quote << "statistics" << ": {\n";
