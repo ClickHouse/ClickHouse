@@ -113,7 +113,7 @@ public:
         }
 
         TKey key;
-        ssize_t slot;
+        size_t slot;
         size_t hash;
         UInt64 count;
         UInt64 error;
@@ -229,17 +229,35 @@ public:
         // The list is sorted in descending order, we have to scan in reverse
         for (auto counter : boost::adaptors::reverse(rhs.counter_list))
         {
-            if (findCounter(counter->key, counter_map.hash(counter->key)))
+            size_t hash = counter_map.hash(counter->key);
+            if (auto current = findCounter(counter->key, hash))
             {
                 // Subtract m2 previously added, guaranteed not negative
-                insert(counter->key, counter->count - m2, counter->error - m2);
+                current->count += (counter->count - m2);
+                current->error += (counter->error - m2);
             }
             else
             {
                 // Counters not monitored in S1
-                insert(counter->key, counter->count + m1, counter->error + m1);
+                counter_list.push_back(new Counter(arena.emplace(counter->key), counter->count + m1, counter->error + m1, hash));
             }
         }
+
+        std::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
+
+        if (counter_list.size() > m_capacity)
+        {
+            for (size_t i = m_capacity; i < counter_list.size(); ++i)
+            {
+                arena.free(counter_list[i]->key);
+                delete counter_list[i];
+            }
+            counter_list.resize(m_capacity);
+        }
+
+        for (size_t i = 0; i < counter_list.size(); ++i)
+            counter_list[i]->slot = i;
+        rebuildCounterMap();
     }
 
     std::vector<Counter> topK(size_t k) const
@@ -323,7 +341,10 @@ private:
     void destroyElements()
     {
         for (auto counter : counter_list)
+        {
+            arena.free(counter->key);
             delete counter;
+        }
 
         counter_map.clear();
         counter_list.clear();
@@ -333,7 +354,8 @@ private:
     void destroyLastElement()
     {
         auto last_element = counter_list.back();
-        last_element->slot = -1;
+        arena.free(last_element->key);
+        delete last_element;
         counter_list.pop_back();
 
         ++removed_keys;
@@ -344,7 +366,7 @@ private:
     Counter * findCounter(const TKey & key, size_t hash)
     {
         auto it = counter_map.find(key, hash);
-        if (it == counter_map.end() || it->getSecond()->slot == -1)
+        if (it == counter_map.end())
             return nullptr;
 
         return it->getSecond();
@@ -353,13 +375,6 @@ private:
     void rebuildCounterMap()
     {
         removed_keys = 0;
-        for (const auto & cell : counter_map)
-        {
-            auto counter = cell.getSecond();
-            if (counter->slot == -1)
-                delete counter;
-        }
-
         counter_map.clear();
         for (auto counter : counter_list)
             counter_map[counter->key] = counter;
