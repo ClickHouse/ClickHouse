@@ -80,6 +80,12 @@ public:
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
+        if (confidence > 5)
+        {
+            std::cerr << "Confidence can't be set to " + toString(confidence) + ". It was set to 5 instead." << '\n';
+            confidence = 5;
+        }
+
         global_context.makeGlobalContext();
 
         std::cerr << std::fixed << std::setprecision(3);
@@ -334,7 +340,7 @@ private:
 
             double s = spool * sqrt(1.0 / data[0].cnt + 1.0 / data[1].cnt);
 
-            double d = data[0].avg() - data[1].avg();
+            double d = data[1].avg() - data[0].avg();
 
             double e = t * s;
 
@@ -343,7 +349,7 @@ private:
             {
                 std::cerr << std::setprecision(1) << "Difference at " << confidence_level[confidence_index] <<  "% confidence\n" << std::setprecision(6);
                 std::cerr << "\t" << d << " +/- " << e << "\n";
-                std::cerr << "\t" << d * 100 / data[1].avg() << " +/- " << e * 100 / data[1].avg() << "\n";
+                std::cerr << "\t" << d * 100 / data[0].avg() << "% +/- " << e * 100 / data[0].avg() << "%\n";
                 std::cerr << "\t(Student's t, pooled s = " << spool << ")\n" << std::setprecision(3);
                 return false;
             }
