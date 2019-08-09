@@ -206,7 +206,7 @@ private:
     void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline);
+    void executeUnion(Pipeline & pipeline, Block header = {});
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
@@ -231,7 +231,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
     /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
-    void unifyStreams(Pipeline & pipeline);
+    void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {
