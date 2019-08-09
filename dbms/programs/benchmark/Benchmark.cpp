@@ -55,11 +55,12 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, const Settings & settings_)
+            const String & json_path_, size_t confidence_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
+        confidence(confidence_), json_path(json_path_), settings(settings_),
+        global_context(Context::createGlobal()), pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -139,6 +140,7 @@ private:
     bool cumulative;
     size_t max_iterations;
     double max_time;
+    size_t confidence;
     String json_path;
     Settings settings;
     Context global_context;
@@ -199,20 +201,20 @@ private:
                 squares_sum += seconds * seconds;
             }
 
-            double avg()
+            double avg() const
             {
                 return sum / cnt;
             }
 
-            double var()
+            double var() const
             {
                 return (squares_sum - (sum * sum / cnt)) / static_cast<double>(cnt - 1);
             }
         };
 
-        std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
+        const std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
 
-        std::vector<std::vector<double>> students_table = {
+        const std::vector<std::vector<double>> students_table = {
         /* inf */	{	1.282,	1.645,	1.960,	2.326,	2.576,	3.090  },
         /* 1. */	{	3.078,	6.314,	12.706,	31.821,	63.657,	318.313  },
         /* 2. */	{	1.886,	2.920,	4.303,	6.965,	9.925,	22.327  },
@@ -318,7 +320,7 @@ private:
 
         std::vector<RelativeStats> data;
 
-        bool report(UInt8 confidence_index)
+        bool report(size_t confidence_index)
         {
             if (data.size() != 2) /// Works for two connections only
                 return true;
@@ -427,8 +429,7 @@ private:
             {
                 printNumberOfQueriesExecuted(queries_executed);
                 cumulative ? report(comparison_info_total) : report(comparison_info_per_interval);
-
-                comparison_relative.report(5);
+                comparison_relative.report(confidence);
 
                 delay_watch.restart();
             }
@@ -476,7 +477,7 @@ private:
 
         printNumberOfQueriesExecuted(queries_executed);
         report(comparison_info_total);
-        comparison_relative.report(5);
+        comparison_relative.report(confidence);
     }
 
 
@@ -693,6 +694,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
+            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
         ;
 
         Settings settings;
@@ -728,6 +730,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
+            options["confidence"].as<size_t>(),
             settings);
         return benchmark.run();
     }
