@@ -379,7 +379,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, options.only_analyze);
+    executeImpl(pipeline, input);
     executeUnion(pipeline);
 
     BlockIO res;
@@ -390,14 +390,14 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, options.only_analyze);
+    executeImpl(pipeline, input);
     return pipeline.streams;
 }
 
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
-    executeImpl(query_pipeline, input, options.only_analyze);
+    executeImpl(query_pipeline, input);
     return query_pipeline;
 }
 
@@ -824,7 +824,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
 
 
 template <typename TPipeline>
-void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run)
+void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
@@ -848,7 +848,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     /// Turn off, if the table filter is applied.
     if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
-        if (!dry_run)
+        if (!options.only_analyze)
             from_stage = storage->getQueryProcessingStage(context);
 
         query_analyzer->makeSetsForIndex();
@@ -887,7 +887,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
     }
 
-    if (dry_run)
+    if (options.only_analyze)
     {
         if constexpr (pipeline_with_processors)
             pipeline.init({std::make_shared<NullSource>(source_header)});
