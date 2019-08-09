@@ -96,15 +96,13 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             try
             {
-                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);git
-                std::cout << "RENAMED" << std::endl;
+                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
                 /// Delete table data
                 database_and_table.second->drop();
             }
             catch (...)
             {
                 Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
-                std::cout << "RENAMED BACK" << std::endl;
                 throw;
             }
 
