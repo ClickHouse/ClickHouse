@@ -50,9 +50,6 @@ struct ExpressionAnalyzerData
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
-    /// Predicate optimizer overrides the sub queries
-    bool rewrite_subqueries = false;
-
 protected:
     ExpressionAnalyzerData(const NameSet & required_result_columns_,
                            const SubqueriesForSets & subqueries_for_sets_)
