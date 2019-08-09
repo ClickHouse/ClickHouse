@@ -2476,7 +2476,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
             auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
             if (!blocksHaveEqualStructure(header, stream_header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
+                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode);
         }
     }
 }
