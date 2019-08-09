@@ -90,11 +90,26 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             /// If table was already dropped by anyone, an exception will be thrown
 
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
-            /// Delete table metadata and table itself from memory
 
+            const auto prev_metadata_name = database_and_table.first->getMetadataPath() + database_and_table.second->getTableName() + ".sql";
+            const auto drop_metadata_name = database_and_table.first->getMetadataPath() + database_and_table.second->getTableName() + ".sql.tmp_drop";
+
+            try
+            {
+                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+                std::cout << "RENAMED" << std::endl;
+                /// Delete table data
+                database_and_table.second->drop();
+            }
+            catch (...)
+            {
+                Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+                std::cout << "RENAMED BACK" << std::endl;
+                throw;
+            }
+
+            /// Delete table metadata and table itself from memory
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
-            /// Delete table data
-            database_and_table.second->drop();
             database_and_table.second->is_dropped = true;
 
             String database_data_path = database_and_table.first->getDataPath();
