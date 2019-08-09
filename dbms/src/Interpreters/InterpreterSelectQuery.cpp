@@ -406,6 +406,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 {
     FilterInfoPtr filter_info;
 
+    /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
+    query_analyzer->makeSetsForIndex();
+
     auto analysis_result = analyzeExpressions(
             getSelectQuery(),
             *query_analyzer,
@@ -497,24 +500,6 @@ InterpreterSelectQuery::analyzeExpressions(
     auto finalizeChain = [&](ExpressionActionsChain & chain)
     {
         chain.finalize();
-
-        /// Check that actions on current step are valid.
-        /// Now this in needed for mutations to check in mutation is valid before execute it in background.
-        /// Because some functions only checking correctness of constant arguments during execution,
-        ///   but not in getReturnType method (e.g. compare date with constant string).
-        if (dry_run)
-        {
-            for (auto & step : chain.steps)
-            {
-                auto step_required_columns = step.actions->getRequiredColumnsWithTypes();
-
-                Block sample;
-                for (auto & col : step_required_columns)
-                    sample.insert({col.type->createColumn(), col.type, col.name});
-
-                step.actions->execute(sample);
-            }
-        }
 
         if (has_prewhere)
         {

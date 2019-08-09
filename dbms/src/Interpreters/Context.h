@@ -135,7 +135,7 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TableAndCreateASTs external_tables;     /// Temporary tables.
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
-    mutable Tables table_function_results;  /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
@@ -245,7 +245,7 @@ public:
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
-    StoragePtr executeTableFunction(const ASTPtr & table_expression) const;
+    StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource();

@@ -50,7 +50,6 @@ private:
     Context context;
 
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
-    Blocks nested_headers;
 
     Block result_header;
 
