@@ -96,7 +96,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             try
             {
-                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);git
                 std::cout << "RENAMED" << std::endl;
                 /// Delete table data
                 database_and_table.second->drop();
