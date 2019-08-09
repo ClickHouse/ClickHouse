@@ -537,7 +537,6 @@ void decompress(
     if (source_size == 0 || dest_size == 0)
         return;
 
-
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {

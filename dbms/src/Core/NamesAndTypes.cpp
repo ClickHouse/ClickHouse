@@ -26,16 +26,20 @@ void NamesAndTypesList::readText(ReadBuffer & buf)
     size_t count;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
-    resize(count);
-    for (NameAndTypePair & it : *this)
+
+    String column_name;
+    String type_name;
+    for (size_t i = 0; i < count; ++i)
     {
-        readBackQuotedStringWithSQLStyle(it.name, buf);
+        readBackQuotedStringWithSQLStyle(column_name, buf);
         assertChar(' ', buf);
-        String type_name;
         readString(type_name, buf);
-        it.type = data_type_factory.get(type_name);
         assertChar('\n', buf);
+
+        emplace_back(column_name, data_type_factory.get(type_name));
     }
+
+    assertEOF(buf);
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
