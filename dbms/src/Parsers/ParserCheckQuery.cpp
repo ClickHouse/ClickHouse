@@ -32,13 +32,13 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!table_parser.parse(pos, table, expected))
             return false;
 
-        getIdentifierName(database, query->database);
-        getIdentifierName(table, query->table);
+        tryGetIdentifierNameInto(database, query->database);
+        tryGetIdentifierNameInto(table, query->table);
     }
     else
     {
         table = database;
-        getIdentifierName(table, query->table);
+        tryGetIdentifierNameInto(table, query->table);
     }
 
     if (s_partition.ignore(pos, expected))

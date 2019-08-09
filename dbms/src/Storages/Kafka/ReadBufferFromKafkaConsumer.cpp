@@ -55,17 +55,43 @@ void ReadBufferFromKafkaConsumer::commit()
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 {
+    {
+        String message = "Already subscribed to topics:";
+        for (const auto & topic : consumer->get_subscription())
+            message += " " + topic;
+        LOG_TRACE(log, message);
+    }
+
+    {
+        String message = "Already assigned to topics:";
+        for (const auto & toppar : consumer->get_assignment())
+            message += " " + toppar.get_topic();
+        LOG_TRACE(log, message);
+    }
+
     // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-    if (consumer->get_subscription().empty())
+    // But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state:
+    // see https://github.com/edenhill/librdkafka/issues/2455
+    while (consumer->get_subscription().empty())
     {
-        consumer->pause(); // don't accidentally read any messages
-        consumer->subscribe(topics);
-        consumer->poll(5s);
-        consumer->resume();
+        stalled = false;
 
-        // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-        //        see https://github.com/edenhill/librdkafka/issues/2077
+        try
+        {
+            consumer->subscribe(topics);
+            if (nextImpl())
+                break;
+
+            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+            //        see https://github.com/edenhill/librdkafka/issues/2077
+        }
+        catch (cppkafka::HandleException & e)
+        {
+            if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
+                continue;
+            throw;
+        }
     }
 
     stalled = false;
@@ -74,6 +100,11 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
+
+    messages.clear();
+    current = messages.begin();
+    BufferBase::set(nullptr, 0, 0);
+
     consumer->unsubscribe();
 }
 

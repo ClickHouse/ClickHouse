@@ -23,6 +23,8 @@ void registerFunctionTan(FunctionFactory & factory);
 void registerFunctionAsin(FunctionFactory & factory);
 void registerFunctionAcos(FunctionFactory & factory);
 void registerFunctionAtan(FunctionFactory & factory);
+void registerFunctionSigmoid(FunctionFactory & factory);
+void registerFunctionTanh(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
 
 void registerFunctionsMath(FunctionFactory & factory)
@@ -47,6 +49,8 @@ void registerFunctionsMath(FunctionFactory & factory)
     registerFunctionAsin(factory);
     registerFunctionAcos(factory);
     registerFunctionAtan(factory);
+    registerFunctionSigmoid(factory);
+    registerFunctionTanh(factory);
     registerFunctionPow(factory);
 }
 

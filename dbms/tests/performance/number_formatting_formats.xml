@@ -1,5 +1,4 @@
 <test>
-    <name>number_formatting_formats</name>
     <type>loop</type>
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File(`{format}`)</create_query>

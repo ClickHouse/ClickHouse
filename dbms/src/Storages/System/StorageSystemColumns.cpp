@@ -121,15 +121,14 @@ protected:
                 cols_required_for_primary_key = storage->getColumnsRequiredForPrimaryKey();
                 cols_required_for_sampling = storage->getColumnsRequiredForSampling();
 
-                /** Info about sizes of columns for tables of MergeTree family.
-                  * NOTE: It is possible to add getter for this info to IStorage interface.
-                  */
-                if (auto storage_concrete = dynamic_cast<const MergeTreeData *>(storage.get()))
-                    column_sizes = storage_concrete->getColumnSizes();
+                column_sizes = storage->getColumnSizes();
             }
 
             for (const auto & column : columns)
             {
+                if (column.is_virtual)
+                    continue;
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 
