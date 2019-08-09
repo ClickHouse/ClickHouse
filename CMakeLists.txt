@@ -421,10 +421,10 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
+include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
-include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
