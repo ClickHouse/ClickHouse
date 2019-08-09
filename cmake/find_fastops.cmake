@@ -1,4 +1,4 @@
-option (ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Michael Parakhin" ${NOT_UNBUNDLED})
+option (ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${NOT_UNBUNDLED})
 
 if (ENABLE_FASTOPS)
     if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/fastops/fastops/fastops.h")
