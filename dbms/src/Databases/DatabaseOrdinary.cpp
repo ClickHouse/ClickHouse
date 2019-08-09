@@ -153,7 +153,7 @@ void DatabaseOrdinary::loadTables(
             continue;
         }
 
-        /// There are files .sql.tmp and .sql.tmp_drop - delete
+        /// There are files .sql.tmp - delete
         if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             LOG_INFO(log, "Removing file " << dir_it->path());
