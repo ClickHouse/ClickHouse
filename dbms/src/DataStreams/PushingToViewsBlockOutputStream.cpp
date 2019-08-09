@@ -215,16 +215,16 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
                                           block));
             InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            in = std::make_shared<SquashingBlockInputStream>(
+                    in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
-
-        /// Squashing is needed here because the materialized view query can generate a lot of blocks
-        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-        /// and two-level aggregation is triggered).
-        in = std::make_shared<SquashingBlockInputStream>(
-            in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-        in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
 
         in->readPrefix();
 
