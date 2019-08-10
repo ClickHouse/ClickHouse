@@ -18,16 +18,16 @@ class MergeTreeBaseSelectBlockInputStream : public IBlockInputStream
 {
 public:
     MergeTreeBaseSelectBlockInputStream(
-        const MergeTreeData & storage,
-        const PrewhereInfoPtr & prewhere_info,
-        UInt64 max_block_size_rows,
-        UInt64 preferred_block_size_bytes,
-        UInt64 preferred_max_column_in_block_size_bytes,
-        UInt64 min_bytes_to_use_direct_io,
-        UInt64 max_read_buffer_size,
-        bool use_uncompressed_cache,
-        bool save_marks_in_cache = true,
-        const Names & virt_column_names = {});
+        const MergeTreeData & storage_,
+        const PrewhereInfoPtr & prewhere_info_,
+        UInt64 max_block_size_rows_,
+        UInt64 preferred_block_size_bytes_,
+        UInt64 preferred_max_column_in_block_size_bytes_,
+        UInt64 min_bytes_to_use_direct_io_,
+        UInt64 max_read_buffer_size_,
+        bool use_uncompressed_cache_,
+        bool save_marks_in_cache_ = true,
+        const Names & virt_column_names_ = {});
 
     ~MergeTreeBaseSelectBlockInputStream() override;
 

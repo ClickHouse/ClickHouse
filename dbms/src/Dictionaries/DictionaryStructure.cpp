@@ -43,20 +43,20 @@ namespace
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
     static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{
-        {"UInt8", AttributeUnderlyingType::UInt8},
-        {"UInt16", AttributeUnderlyingType::UInt16},
-        {"UInt32", AttributeUnderlyingType::UInt32},
-        {"UInt64", AttributeUnderlyingType::UInt64},
-        {"UUID", AttributeUnderlyingType::UInt128},
-        {"Int8", AttributeUnderlyingType::Int8},
-        {"Int16", AttributeUnderlyingType::Int16},
-        {"Int32", AttributeUnderlyingType::Int32},
-        {"Int64", AttributeUnderlyingType::Int64},
-        {"Float32", AttributeUnderlyingType::Float32},
-        {"Float64", AttributeUnderlyingType::Float64},
-        {"String", AttributeUnderlyingType::String},
-        {"Date", AttributeUnderlyingType::UInt16},
-        {"DateTime", AttributeUnderlyingType::UInt32},
+        {"UInt8", AttributeUnderlyingType::utUInt8},
+        {"UInt16", AttributeUnderlyingType::utUInt16},
+        {"UInt32", AttributeUnderlyingType::utUInt32},
+        {"UInt64", AttributeUnderlyingType::utUInt64},
+        {"UUID", AttributeUnderlyingType::utUInt128},
+        {"Int8", AttributeUnderlyingType::utInt8},
+        {"Int16", AttributeUnderlyingType::utInt16},
+        {"Int32", AttributeUnderlyingType::utInt32},
+        {"Int64", AttributeUnderlyingType::utInt64},
+        {"Float32", AttributeUnderlyingType::utFloat32},
+        {"Float64", AttributeUnderlyingType::utFloat64},
+        {"String", AttributeUnderlyingType::utString},
+        {"Date", AttributeUnderlyingType::utUInt16},
+        {"DateTime", AttributeUnderlyingType::utUInt32},
     };
 
     const auto it = dictionary.find(type);
@@ -67,11 +67,11 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
     {
         size_t start = strlen("Decimal");
         if (type.find("32", start) == start)
-            return AttributeUnderlyingType::Decimal32;
+            return AttributeUnderlyingType::utDecimal32;
         if (type.find("64", start) == start)
-            return AttributeUnderlyingType::Decimal64;
+            return AttributeUnderlyingType::utDecimal64;
         if (type.find("128", start) == start)
-            return AttributeUnderlyingType::Decimal128;
+            return AttributeUnderlyingType::utDecimal128;
     }
 
     throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
@@ -82,35 +82,35 @@ std::string toString(const AttributeUnderlyingType type)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             return "UInt8";
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             return "UInt16";
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             return "UInt32";
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             return "UInt64";
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             return "UUID";
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             return "Int8";
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             return "Int16";
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             return "Int32";
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             return "Int64";
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             return "Float32";
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             return "Float64";
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             return "Decimal32";
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             return "Decimal64";
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             return "Decimal128";
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             return "String";
     }
 
@@ -243,7 +243,7 @@ bool DictionaryStructure::isKeySizeFixed() const
         return true;
 
     for (const auto & key_i : *key)
-        if (key_i.underlying_type == AttributeUnderlyingType::String)
+        if (key_i.underlying_type == AttributeUnderlyingType::utString)
             return false;
 
     return true;

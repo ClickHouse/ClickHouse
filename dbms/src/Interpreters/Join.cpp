@@ -81,14 +81,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
     : kind(kind_), strictness(strictness_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     any_take_last_row(any_take_last_row_),
     log(&Logger::get("Join")),
-    limits(limits)
+    limits(limits_)
 {
 }
 

@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 
 FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                                               const String & filter_column_name, bool remove_filter)
-    : remove_filter(remove_filter), expression(expression_)
+                                               const String & filter_column_name, bool remove_filter_)
+    : remove_filter(remove_filter_), expression(expression_)
 {
     children.push_back(input);
 
