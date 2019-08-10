@@ -257,8 +257,8 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    const ColumnsDescription & columns = getColumns();
-    auto column_defaults = columns.getDefaults();
+    const ColumnsDescription & columns_ = getColumns();
+    auto column_defaults = columns_.getDefaults();
     if (!path_with_globs)
     {
         BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, path);
