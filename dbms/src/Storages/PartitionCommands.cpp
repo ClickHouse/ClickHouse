@@ -65,7 +65,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = CLEAR_COLUMN;
         res.partition = command_ast->partition;
-        res.column_name = *getIdentifierName(command_ast->column);
+        res.column_name = getIdentifierName(command_ast->column);
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::DROP_INDEX && command_ast->partition)
@@ -76,7 +76,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = CLEAR_INDEX;
         res.partition = command_ast->partition;
-        res.index_name = *getIdentifierName(command_ast->index);
+        res.index_name = getIdentifierName(command_ast->index);
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)

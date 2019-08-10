@@ -37,14 +37,14 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id)
+MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_context(server.context())
-    , connection_id(connection_id)
-    , public_key(public_key)
-    , private_key(private_key)
+    , connection_id(connection_id_)
+    , public_key(public_key_)
+    , private_key(private_key_)
 {
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -77,7 +77,7 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-        LOG_DEBUG(log, "Capabilities: " << handshake_response.capability_flags
+/*        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags
                                         << "\nmax_packet_size: "
                                         << handshake_response.max_packet_size
                                         << "\ncharacter_set: "
@@ -91,7 +91,7 @@ void MySQLHandler::run()
                                         << "\ndatabase: "
                                         << handshake_response.database
                                         << "\nauth_plugin_name: "
-                                        << handshake_response.auth_plugin_name);
+                                        << handshake_response.auth_plugin_name);*/
 
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))

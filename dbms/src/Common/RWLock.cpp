@@ -161,9 +161,9 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
 }
 
 
-RWLockImpl::LockHolderImpl::LockHolderImpl(RWLock && parent, RWLockImpl::GroupsContainer::iterator it_group,
-                                             RWLockImpl::ClientsContainer::iterator it_client)
-    : parent{std::move(parent)}, it_group{it_group}, it_client{it_client},
+RWLockImpl::LockHolderImpl::LockHolderImpl(RWLock && parent_, RWLockImpl::GroupsContainer::iterator it_group_,
+                                             RWLockImpl::ClientsContainer::iterator it_client_)
+    : parent{std::move(parent_)}, it_group{it_group_}, it_client{it_client_},
       active_client_increment{(*it_client == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
                                                                : CurrentMetrics::RWLockActiveWriters}
 {}
