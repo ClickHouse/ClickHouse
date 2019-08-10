@@ -1047,7 +1047,6 @@ public:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1057,9 +1056,7 @@ public:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        StringRefs & keys,
         AggregateDataPtr overflow_row) const;
 
     template <typename AggregateFunctionsList>
