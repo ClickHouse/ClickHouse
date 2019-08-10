@@ -185,7 +185,7 @@
 * Fixed "select_format" performance test for `Pretty` formats [#5642](https://github.com/yandex/ClickHouse/pull/5642) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 
-## ClickHouse release 19.9.4.1, 2019-07-05
+## ClickHouse release 19.9.3.31, 2019-07-05
 
 ### Bug Fix
 * Fix segfault in Delta codec which affects columns with values less than 32 bits size. The bug led to random memory corruption. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
@@ -197,7 +197,7 @@
 * Fix race condition, which cause that some queries may not appear in query_log instantly after SYSTEM FLUSH LOGS query. [#5685](https://github.com/yandex/ClickHouse/pull/5685) ([Anton Popov](https://github.com/CurtizJ))
 * Added missing support for constant arguments to `evalMLModel` function. [#5820](https://github.com/yandex/ClickHouse/pull/5820) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
-## ClickHouse release 19.7.6.1, 2019-07-05
+## ClickHouse release 19.7.5.29, 2019-07-05
 
 ### Bug Fix
 * Fix performance regression in some queries with JOIN. [#5192](https://github.com/yandex/ClickHouse/pull/5192) ([Winter Zhang](https://github.com/zhang2014))

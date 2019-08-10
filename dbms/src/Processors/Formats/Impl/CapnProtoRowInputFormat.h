@@ -33,7 +33,7 @@ public:
       * schema_file - location of the capnproto schema, e.g. "schema.capnp"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSchemaInfo & info);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 

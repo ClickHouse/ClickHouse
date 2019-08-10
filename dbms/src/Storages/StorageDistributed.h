@@ -158,7 +158,7 @@ public:
 
 protected:
     StorageDistributed(
-        const String & database_name,
+        const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
         const String & remote_database_,
@@ -167,7 +167,7 @@ protected:
         const Context & context_,
         const ASTPtr & sharding_key_,
         const String & data_path_,
-        bool attach);
+        bool attach_);
 
     StorageDistributed(
         const String & database_name,

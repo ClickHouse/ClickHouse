@@ -8,8 +8,8 @@ namespace DB
 {
 
 
-CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, const FormatSettings & format_settings)
-    : IRowOutputFormat(header, out_), with_names(with_names_), format_settings(format_settings)
+CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), with_names(with_names_), format_settings(format_settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

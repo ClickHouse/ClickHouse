@@ -20,27 +20,27 @@ namespace ErrorCodes
 
 
 MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
-    const MergeTreeData & storage,
-    const PrewhereInfoPtr & prewhere_info,
-    UInt64 max_block_size_rows,
-    UInt64 preferred_block_size_bytes,
-    UInt64 preferred_max_column_in_block_size_bytes,
-    UInt64 min_bytes_to_use_direct_io,
-    UInt64 max_read_buffer_size,
-    bool use_uncompressed_cache,
-    bool save_marks_in_cache,
-    const Names & virt_column_names)
+    const MergeTreeData & storage_,
+    const PrewhereInfoPtr & prewhere_info_,
+    UInt64 max_block_size_rows_,
+    UInt64 preferred_block_size_bytes_,
+    UInt64 preferred_max_column_in_block_size_bytes_,
+    UInt64 min_bytes_to_use_direct_io_,
+    UInt64 max_read_buffer_size_,
+    bool use_uncompressed_cache_,
+    bool save_marks_in_cache_,
+    const Names & virt_column_names_)
 :
-    storage(storage),
-    prewhere_info(prewhere_info),
-    max_block_size_rows(max_block_size_rows),
-    preferred_block_size_bytes(preferred_block_size_bytes),
-    preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes),
-    min_bytes_to_use_direct_io(min_bytes_to_use_direct_io),
-    max_read_buffer_size(max_read_buffer_size),
-    use_uncompressed_cache(use_uncompressed_cache),
-    save_marks_in_cache(save_marks_in_cache),
-    virt_column_names(virt_column_names)
+    storage(storage_),
+    prewhere_info(prewhere_info_),
+    max_block_size_rows(max_block_size_rows_),
+    preferred_block_size_bytes(preferred_block_size_bytes_),
+    preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
+    min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_),
+    max_read_buffer_size(max_read_buffer_size_),
+    use_uncompressed_cache(use_uncompressed_cache_),
+    save_marks_in_cache(save_marks_in_cache_),
+    virt_column_names(virt_column_names_)
 {
 }
 

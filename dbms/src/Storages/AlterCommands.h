@@ -72,13 +72,13 @@ struct AlterCommand
     CompressionCodecPtr codec;
 
     AlterCommand() = default;
-    AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
-                 const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
-                 const String & after_column, const String & comment,
-                 const bool if_exists, const bool if_not_exists)
-        : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
-        default_expression{default_expression}, comment(comment), after_column{after_column},
-        if_exists(if_exists), if_not_exists(if_not_exists)
+    AlterCommand(const Type type_, const String & column_name_, const DataTypePtr & data_type_,
+                 const ColumnDefaultKind default_kind_, const ASTPtr & default_expression_,
+                 const String & after_column_, const String & comment_,
+                 const bool if_exists_, const bool if_not_exists_)
+        : type{type_}, column_name{column_name_}, data_type{data_type_}, default_kind{default_kind_},
+        default_expression{default_expression_}, comment(comment_), after_column{after_column_},
+        if_exists(if_exists_), if_not_exists(if_not_exists_)
     {}
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
