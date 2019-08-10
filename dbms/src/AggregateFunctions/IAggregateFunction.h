@@ -128,6 +128,11 @@ public:
     using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
     virtual AddFunc getAddressOfAddFunction() const = 0;
 
+    /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
+      *  and do a single call to "addBatch" for devirtualization and inlining.
+      */
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const;
+
     /** This is used for runtime code generation to determine, which header files to include in generated source.
       * Always implement it as
       * const char * getHeaderFilePath() const override { return __FILE__; }

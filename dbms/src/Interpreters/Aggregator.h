@@ -1003,7 +1003,6 @@ protected:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1014,10 +1013,16 @@ protected:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        StringRefs & keys,
         AggregateDataPtr overflow_row) const;
+
+    template <typename Method>
+    void executeImplBatch(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     void executeWithoutKeyImpl(

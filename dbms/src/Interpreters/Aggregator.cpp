@@ -583,16 +583,16 @@ void NO_INLINE Aggregator::executeImpl(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
-    StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
+        //executeImplCase<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        executeImplBatch(method, state, aggregates_pool, rows, aggregate_instructions);
     else
-        executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
+        executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
 }
 
 
@@ -602,9 +602,7 @@ void NO_INLINE Aggregator::executeImplCase(
     typename Method::State & state,
     Arena * aggregates_pool,
     size_t rows,
-    ColumnRawPtrs & /*key_columns*/,
     AggregateFunctionInstruction * aggregate_instructions,
-    StringRefs & /*keys*/,
     AggregateDataPtr overflow_row) const
 {
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
@@ -652,6 +650,46 @@ void NO_INLINE Aggregator::executeImplCase(
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
             (*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
     }
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::executeImplBatch(
+    Method & method,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    size_t rows,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    PODArray<AggregateDataPtr> places(rows);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        AggregateDataPtr aggregate_data = nullptr;
+
+        auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+        if (emplace_result.isInserted())
+        {
+            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+            emplace_result.setMapped(nullptr);
+
+            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+
+            emplace_result.setMapped(aggregate_data);
+        }
+        else
+            aggregate_data = emplace_result.getMapped();
+
+        places[i] = aggregate_data;
+    }
+
+    /// Add values to the aggregate functions.
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        inst->that->addBatch(rows, places.data(), inst->state_offset, inst->arguments, aggregates_pool);
 }
 
 
@@ -826,7 +864,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
                 executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_functions_instructions.data(), \
-                    key, no_more_keys, overflow_row_ptr);
+                    no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
