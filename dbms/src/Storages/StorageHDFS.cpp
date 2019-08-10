@@ -132,6 +132,9 @@ private:
     BlockOutputStreamPtr writer;
 };
 
+/* Recursive directory listing with matched paths as a result.
+ * Have the same method in StorageFile.
+ */
 Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
 {
     size_t first_glob = for_match.find_first_of("*?{");
@@ -151,7 +154,8 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         String full_path = String(ls.file_info[i].mName);
         size_t last_slash = full_path.rfind('/');
         String file_name = full_path.substr(last_slash);
-
+        /// Condition with next_slash means what we are looking for (it is from current position in psttern of path)
+        /// Condition with type of current file_info means what kind of path is it in current iteration of ls
         if ((ls.file_info[i].mKind == 'F') && (next_slash == std::string::npos))
         {
             if (re2::RE2::FullMatch(file_name, matcher))

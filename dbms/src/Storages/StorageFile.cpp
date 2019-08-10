@@ -49,7 +49,9 @@ namespace ErrorCodes
 
 namespace
 {
-
+/* Recursive directory listing with matched paths as a result.
+ * Have the same method in StorageHDFS.
+ */
 std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
 
@@ -62,20 +64,27 @@ std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, c
     re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
 
     std::vector<std::string> result;
+    std::string preffix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
+    if (!fs::exists(fs::path(preffix_without_globs.data())))
+    {
+        return result;
+    }
     fs::directory_iterator end;
-    for (fs::directory_iterator it(path_for_ls + for_match.substr(1, end_of_path_without_globs)); it != end; ++it)
+    for (fs::directory_iterator it(preffix_without_globs); it != end; ++it)
     {
         std::string full_path = it->path().string();
         size_t last_slash = full_path.rfind('/');
         String file_name = full_path.substr(last_slash);
-        if ((!is_directory(it->path())) && (next_slash == std::string::npos))
+        /// Condition with next_slash means what we are looking for (it is from current position in psttern of path)
+        /// Condition is_directory means what kind of path is it in current iteration of ls
+        if ((!fs::is_directory(it->path())) && (next_slash == std::string::npos))
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(it->path().string());
             }
         }
-        else if ((is_directory(it->path())) && (next_slash != std::string::npos))
+        else if ((fs::is_directory(it->path())) && (next_slash != std::string::npos))
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
@@ -130,6 +139,7 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
+            /// rwlock is common because path with globs and many files in this case is readonly now
             Poco::Path poco_path = Poco::Path(table_path_);
             if (poco_path.isRelative())
                 poco_path = Poco::Path(db_dir_path, poco_path);
