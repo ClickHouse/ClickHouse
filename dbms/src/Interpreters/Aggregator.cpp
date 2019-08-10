@@ -11,7 +11,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
@@ -698,19 +697,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregateFunctionInstruction * aggregate_instructions,
     Arena * arena) const
 {
-    /// Optimization in the case of a single aggregate function `count`.
-    AggregateFunctionCount * agg_count = params.aggregates_size == 1
-        ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : nullptr;
-
-    if (agg_count)
-        agg_count->addDelta(res, rows);
-    else
-    {
-        /// Adding values
-        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-            inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
-    }
+    /// Adding values
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
 }
 
 
