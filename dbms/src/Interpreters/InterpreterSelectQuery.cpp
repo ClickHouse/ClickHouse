@@ -156,9 +156,9 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const SelectQueryOptions & options,
-    const Names & required_result_column_names)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options, required_result_column_names)
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options_, required_result_column_names_)
 {
 }
 
@@ -166,16 +166,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;

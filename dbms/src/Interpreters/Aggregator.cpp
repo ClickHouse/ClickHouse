@@ -1809,7 +1809,7 @@ private:
         std::condition_variable condvar;
         ThreadPool pool;
 
-        explicit ParallelMergeData(size_t threads) : pool(threads) {}
+        explicit ParallelMergeData(size_t threads_) : pool(threads_) {}
     };
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;
