@@ -324,7 +324,6 @@ try
     using po::value;
     using Strings = DB::Strings;
 
-
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")

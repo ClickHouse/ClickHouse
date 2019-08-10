@@ -26,16 +26,19 @@ void createHardLink(const String & source_path, const String & destination_path)
             struct stat destination_descr;
 
             if (0 != lstat(source_path.c_str(), &source_descr))
-                throwFromErrno("Cannot stat " + source_path, ErrorCodes::CANNOT_STAT);
+                throwFromErrnoWithPath("Cannot stat " + source_path, source_path, ErrorCodes::CANNOT_STAT);
 
             if (0 != lstat(destination_path.c_str(), &destination_descr))
-                throwFromErrno("Cannot stat " + destination_path, ErrorCodes::CANNOT_STAT);
+                throwFromErrnoWithPath("Cannot stat " + destination_path, destination_path, ErrorCodes::CANNOT_STAT);
 
             if (source_descr.st_ino != destination_descr.st_ino)
-                throwFromErrno("Destination file " + destination_path + " is already exist and have different inode.", ErrorCodes::CANNOT_LINK, link_errno);
+                throwFromErrnoWithPath(
+                        "Destination file " + destination_path + " is already exist and have different inode.",
+                        destination_path, ErrorCodes::CANNOT_LINK, link_errno);
         }
         else
-            throwFromErrno("Cannot link " + source_path + " to " + destination_path, ErrorCodes::CANNOT_LINK);
+            throwFromErrnoWithPath("Cannot link " + source_path + " to " + destination_path, destination_path,
+                                   ErrorCodes::CANNOT_LINK);
     }
 }
 

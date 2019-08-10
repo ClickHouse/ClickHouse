@@ -40,8 +40,8 @@ namespace
             const Context & context,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
-            const String name)
-            : name(name)
+            const String name_)
+            : name(name_)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
             reader

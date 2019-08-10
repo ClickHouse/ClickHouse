@@ -16,7 +16,7 @@ class Context;
 class ParquetBlockInputFormat: public IInputFormat
 {
 public:
-    ParquetBlockInputFormat(ReadBuffer & in_, Block header, const Context & context);
+    ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 

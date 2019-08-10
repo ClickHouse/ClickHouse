@@ -123,6 +123,7 @@ target_link_libraries (common
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
+    ${CMAKE_DL_LIBS}
     ${MALLOC_LIBRARIES}
     Threads::Threads
     ${MEMCPY_LIBRARIES})
