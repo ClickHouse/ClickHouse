@@ -16,7 +16,7 @@ namespace DB
 class XMLRowOutputFormat : public IRowOutputFormat
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings);
+    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
 

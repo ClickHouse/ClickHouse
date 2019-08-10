@@ -87,8 +87,8 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
+        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size_)
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
             compressed(plain)
         {
             if (offset)

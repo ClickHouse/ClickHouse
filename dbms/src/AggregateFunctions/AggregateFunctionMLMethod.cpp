@@ -104,21 +104,21 @@ void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 }
 
 LinearModelData::LinearModelData(
-    Float64 learning_rate,
-    Float64 l2_reg_coef,
-    UInt64 param_num,
-    UInt64 batch_capacity,
-    std::shared_ptr<DB::IGradientComputer> gradient_computer,
-    std::shared_ptr<DB::IWeightsUpdater> weights_updater)
-    : learning_rate(learning_rate)
-    , l2_reg_coef(l2_reg_coef)
-    , batch_capacity(batch_capacity)
+    Float64 learning_rate_,
+    Float64 l2_reg_coef_,
+    UInt64 param_num_,
+    UInt64 batch_capacity_,
+    std::shared_ptr<DB::IGradientComputer> gradient_computer_,
+    std::shared_ptr<DB::IWeightsUpdater> weights_updater_)
+    : learning_rate(learning_rate_)
+    , l2_reg_coef(l2_reg_coef_)
+    , batch_capacity(batch_capacity_)
     , batch_size(0)
-    , gradient_computer(std::move(gradient_computer))
-    , weights_updater(std::move(weights_updater))
+    , gradient_computer(std::move(gradient_computer_))
+    , weights_updater(std::move(weights_updater_))
 {
-    weights.resize(param_num, Float64{0.0});
-    gradient_batch.resize(param_num + 1, Float64{0.0});
+    weights.resize(param_num_, Float64{0.0});
+    gradient_batch.resize(param_num_ + 1, Float64{0.0});
 }
 
 void LinearModelData::update_state()

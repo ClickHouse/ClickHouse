@@ -1485,8 +1485,8 @@ class PreparedFunctionCast : public PreparedFunctionImpl
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
 
-    explicit PreparedFunctionCast(WrapperType && wrapper_function, const char * name)
-            : wrapper_function(std::move(wrapper_function)), name(name) {}
+    explicit PreparedFunctionCast(WrapperType && wrapper_function_, const char * name_)
+            : wrapper_function(std::move(wrapper_function_)), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -1520,10 +1520,10 @@ public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
-    FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
-            , const DataTypes & argument_types, const DataTypePtr & return_type)
-            : context(context), name(name), monotonicity_for_range(monotonicity_for_range)
-            , argument_types(argument_types), return_type(return_type)
+    FunctionCast(const Context & context_, const char * name_, MonotonicityForRange && monotonicity_for_range_
+            , const DataTypes & argument_types_, const DataTypePtr & return_type_)
+            : context(context_), name(name_), monotonicity_for_range(monotonicity_for_range_)
+            , argument_types(argument_types_), return_type(return_type_)
     {
     }
 
@@ -2164,7 +2164,7 @@ public:
     static constexpr auto name = "CAST";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
 
-    FunctionBuilderCast(const Context & context) : context(context) {}
+    FunctionBuilderCast(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 
