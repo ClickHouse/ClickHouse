@@ -30,7 +30,7 @@ private:
     Block res_block;
 
 protected:
-    StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns, const Block & res_block_);
+    StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_, const Block & res_block_);
 };
 
 }

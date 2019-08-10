@@ -59,7 +59,7 @@ private:
 
     struct Stage
     {
-        Stage(const Context & context) : expressions_chain(context) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;

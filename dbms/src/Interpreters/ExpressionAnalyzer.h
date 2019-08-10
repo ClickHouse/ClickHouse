@@ -88,12 +88,12 @@ private:
         const SizeLimits size_limits_for_join;
         const String join_default_strictness;
 
-        ExtractedSettings(const Settings & settings)
-        :   use_index_for_in_with_subqueries(settings.use_index_for_in_with_subqueries),
-            join_use_nulls(settings.join_use_nulls),
-            size_limits_for_set(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode),
-            size_limits_for_join(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
-            join_default_strictness(settings.join_default_strictness.toString())
+        ExtractedSettings(const Settings & settings_)
+        :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
+            join_use_nulls(settings_.join_use_nulls),
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
+            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode),
+            join_default_strictness(settings_.join_default_strictness.toString())
         {}
     };
 

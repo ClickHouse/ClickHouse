@@ -24,8 +24,8 @@ struct AggregatingTransformParams
     Aggregator aggregator;
     bool final;
 
-    AggregatingTransformParams(const Aggregator::Params & params, bool final)
-        : params(params), aggregator(params), final(final) {}
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+        : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
 };

@@ -156,19 +156,19 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & _options)
+void Server::defineOptions(Poco::Util::OptionSet & options)
 {
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
             .required(false)
             .repeatable(false)
             .binding("help"));
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("version", "V", "show version and exit")
             .required(false)
             .repeatable(false)
             .binding("version"));
-    BaseDaemon::defineOptions(_options);
+    BaseDaemon::defineOptions(options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)

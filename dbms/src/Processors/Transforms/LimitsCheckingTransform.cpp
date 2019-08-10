@@ -38,9 +38,9 @@ void ProcessorProfileInfo::update(const Chunk & block)
     bytes += block.bytes();
 }
 
-LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimits limits)
-    : ISimpleTransform(header, header, false)
-    , limits(std::move(limits))
+LimitsCheckingTransform::LimitsCheckingTransform(const Block & header_, LocalLimits limits_)
+    : ISimpleTransform(header_, header_, false)
+    , limits(std::move(limits_))
 {
 }
 
