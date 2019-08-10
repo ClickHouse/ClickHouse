@@ -12,6 +12,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_DEEP_RECURSION;
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** Collects variants, how parser could proceed further at rightmost position.
   */
 struct Expected
@@ -44,7 +51,28 @@ struct Expected
 class IParser
 {
 public:
-    using Pos = TokenIterator;
+    /// Token iterator augmented with depth information. This allows to control recursion depth.
+    struct Pos : TokenIterator
+    {
+        using TokenIterator::TokenIterator;
+
+        uint32_t depth = 0;
+        uint32_t max_depth = 1000;
+
+        void increaseDepth()
+        {
+            ++depth;
+            if (depth > max_depth)
+                throw Exception("Maximum parse depth exceeded", ErrorCodes::TOO_DEEP_RECURSION);
+        }
+
+        void decreaseDepth()
+        {
+            if (depth == 0)
+                throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
+            --depth;
+        }
+    };
 
     /** Get the text of this parser parses. */
     virtual const char * getName() const = 0;

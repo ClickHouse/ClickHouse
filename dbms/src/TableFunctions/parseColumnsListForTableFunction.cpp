@@ -17,7 +17,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     Expected expected;
 
     Tokens tokens(structure.c_str(), structure.c_str() + structure.size());
-    TokenIterator token_iterator(tokens);
+    IParser::Pos token_iterator(tokens);
 
     ParserColumnDeclarationList parser;
     ASTPtr columns_list_raw;
