@@ -79,11 +79,12 @@ def test_globs_in_read_table(started_cluster):
     hdfs_api = HDFSApi("root")
     some_data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     globs_dir = "/dir_for_test_with_globs/"
-    files = ["simple_table_function", "dir/file", "some_dir/dir1/file", "some_dir/dir2/file", "some_dir/file", "table1_function", "table2_function", "table3_function"]
+    files = ["dir1/dir_dir/file1", "dir2/file2", "simple_table_function", "dir/file", "some_dir/dir1/file", "some_dir/dir2/file", "some_dir/file", "table1_function", "table2_function", "table3_function"]
     for filename in files:
         hdfs_api.write_data(globs_dir + filename, some_data)
 
-    test_requests = [("*_table_functio?", 1),
+    test_requests = [("dir{1..5}/dir_dir/file1", 1),
+                     ("*_table_functio?", 1),
                      ("dir/fil?", 1),
                      ("table{3..8}_function", 1),
                      ("table{2..8}_function", 2),
@@ -93,7 +94,8 @@ def test_globs_in_read_table(started_cluster):
                      ("dir/*{a..z}*{a..z}*{a..z}*{a..z}*", 1),
                      ("some_dir/*/file", 2),
                      ("some_dir/dir?/*", 2),
-                     ("*/*/*", 2)]
+                     ("*/*/*", 3),
+                     ("?", 0)]
 
     for pattern, value in test_requests:
         assert node1.query("select * from hdfs('hdfs://hdfs1:9000" + globs_dir + pattern + "', 'TSV', 'id UInt64, text String, number Float64')") == value * some_data
