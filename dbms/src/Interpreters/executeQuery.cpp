@@ -14,13 +14,16 @@
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -488,6 +491,56 @@ BlockIO executeQuery(
     return streams;
 }
 
+void dependentTables(ASTPtr ast, Context & context, std::set<String> * names)
+{
+    auto current_database = context.getCurrentDatabase();
+
+    auto * select_query = ast->as<ASTSelectQuery>();
+    if (select_query)
+    {
+        std::vector<DatabaseAndTableWithAlias> databases_and_tables = getDatabaseAndTables(*select_query, current_database);
+        for (auto database_and_table : databases_and_tables)
+        {
+            if (!database_and_table.table.empty())
+            {
+                ASTIdentifier id_({database_and_table.database, database_and_table.table});
+                names->emplace(serializeAST(id_, true));
+                auto dependencies = context.getDependencies(database_and_table.database, database_and_table.table);
+            }
+        }
+    }
+
+    auto * insert_query = ast->as<ASTInsertQuery>();
+    if (insert_query && !insert_query->table_function)
+    {
+        auto database = insert_query->database.empty() ? current_database : insert_query->database;
+        ASTIdentifier id_({database, insert_query->table});
+        names->emplace(serializeAST(id_, true));
+        auto dependencies = context.getDependencies(database, insert_query->table);
+        for (auto dep : dependencies)
+        {
+            ASTIdentifier id_({dep.first, dep.second});
+            names->emplace(serializeAST(id_, true));
+        }
+    }
+
+    for (const auto & child : ast->children)
+        dependentTables(child, context, names);
+}
+
+String dependentTables(ASTPtr ast, Context & context)
+{
+    std::set<std::string> names_;
+    dependentTables(ast, context, &names_);
+    std::string dependent_tables = std::accumulate(names_.begin(), names_.end(), std::string(),
+        [](std::string &ss, std::string s)
+        {
+            return ss.empty() ? s : ss + " " + s;
+        }
+    );
+    return dependent_tables;
+}
+
 
 void executeQuery(
     ReadBuffer & istr,
@@ -495,7 +548,8 @@ void executeQuery(
     bool allow_into_outfile,
     Context & context,
     std::function<void(const String &)> set_content_type,
-    std::function<void(const String &)> set_query_id)
+    std::function<void(const String &)> set_query_id,
+    std::function<void(const String &)> set_dependent_tables)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -590,6 +644,11 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
+            if (set_dependent_tables)
+            {
+                set_dependent_tables(dependentTables(ast, context));
+            }
+
             copyData(*streams.in, *out);
         }
 
@@ -639,6 +698,11 @@ void executeQuery(
 
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
+
+            if (set_dependent_tables)
+            {
+                set_dependent_tables(dependentTables(ast, context));
+            }
 
             pipeline.setOutput(std::move(out));
 

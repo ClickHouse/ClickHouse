@@ -381,7 +381,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         should_replace = true;
     }
 
-    executeQuery(should_replace ? empty_select : payload, *out, true, connection_context, set_content_type, nullptr);
+    executeQuery(should_replace ? empty_select : payload, *out, true, connection_context, set_content_type, nullptr, nullptr);
 
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

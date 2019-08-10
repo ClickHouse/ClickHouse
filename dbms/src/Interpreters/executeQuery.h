@@ -20,7 +20,8 @@ void executeQuery(
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     Context & context,                  /// DB, tables, data types, storage engines, functions, aggregate functions...
     std::function<void(const String &)> set_content_type, /// If non-empty callback is passed, it will be called with the Content-Type of the result.
-    std::function<void(const String &)> set_query_id /// If non-empty callback is passed, it will be called with the query id.
+    std::function<void(const String &)> set_query_id, /// If non-empty callback is passed, it will be called with the query id.
+    std::function<void(const String &)> set_dependent_tables /// If non-empty callback is passed, it will be called with the dependent tables.
     );
 
 
