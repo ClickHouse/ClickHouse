@@ -131,7 +131,7 @@ public:
     /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
       *  and do a single call to "addBatch" for devirtualization and inlining.
       */
-    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const;
+    virtual void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const = 0;
 
     /** This is used for runtime code generation to determine, which header files to include in generated source.
       * Always implement it as
@@ -161,7 +161,14 @@ private:
 public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunction(argument_types_, parameters_) {}
+
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
+
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+    }
 };
 
 
