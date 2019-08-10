@@ -61,8 +61,8 @@ namespace
     class ConvertingAggregatedToBlocksTransform : public ISource
     {
     public:
-        ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
-            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream)) {}
+        ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream_)
+            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream_)) {}
 
         String getName() const override { return "ConvertingAggregatedToBlocksTransform"; }
 
@@ -99,15 +99,15 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 
 AggregatingTransform::AggregatingTransform(
     Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t temporary_data_merge_threads, size_t max_threads)
+    size_t current_variant, size_t temporary_data_merge_threads_, size_t max_threads_)
     : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
     , key(params->params.keys_size)
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
-    , max_threads(std::min(many_data->variants.size(), max_threads))
-    , temporary_data_merge_threads(temporary_data_merge_threads)
+    , max_threads(std::min(many_data->variants.size(), max_threads_))
+    , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
 }
 

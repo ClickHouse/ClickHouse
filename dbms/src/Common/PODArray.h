@@ -636,6 +636,6 @@ using PaddedPODArray = PODArray<T, initial_bytes, TAllocator, 15, 16>;
 template <typename T, size_t inline_bytes,
           size_t rounded_bytes = integerRoundUp(inline_bytes, sizeof(T))>
 using PODArrayWithStackMemory = PODArray<T, rounded_bytes,
-    AllocatorWithStackMemory<Allocator<false>, rounded_bytes>>;
+    AllocatorWithStackMemory<Allocator<false>, rounded_bytes, alignof(T)>>;
 
 }

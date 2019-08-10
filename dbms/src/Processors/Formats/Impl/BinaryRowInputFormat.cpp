@@ -7,8 +7,8 @@
 namespace DB
 {
 
-BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params, bool with_names_, bool with_types_)
-    : IRowInputFormat(std::move(header), in_, params), with_names(with_names_), with_types(with_types_)
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_)
+    : IRowInputFormat(std::move(header), in_, params_), with_names(with_names_), with_types(with_types_)
 {
 }
 

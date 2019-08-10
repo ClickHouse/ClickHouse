@@ -15,7 +15,7 @@ class ReadBuffer;
 class BinaryRowInputFormat : public IRowInputFormat
 {
 public:
-    BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params, bool with_names_, bool with_types_);
+    BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_);
 
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     void readPrefix() override;

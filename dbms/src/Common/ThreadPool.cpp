@@ -22,14 +22,14 @@ namespace CurrentMetrics
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
-    : ThreadPoolImpl(max_threads, max_threads, max_threads)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
+    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
-    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_)
+    : max_threads(max_threads_), max_free_threads(max_free_threads_), queue_size(queue_size_)
 {
 }
 
