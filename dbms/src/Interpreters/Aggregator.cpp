@@ -708,12 +708,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         agg_count->addDelta(res, rows);
     else
     {
-        for (size_t i = 0; i < rows; ++i)
-        {
-            /// Adding values
-            for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-                (*inst->func)(inst->that, res + inst->state_offset, inst->arguments, i, arena);
-        }
+        /// Adding values
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+            inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
     }
 }
 

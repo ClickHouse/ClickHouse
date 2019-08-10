@@ -133,6 +133,10 @@ public:
       */
     virtual void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const = 0;
 
+    /** The same for single place.
+      */
+    virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
     /** This is used for runtime code generation to determine, which header files to include in generated source.
       * Always implement it as
       * const char * getHeaderFilePath() const override { return __FILE__; }
@@ -168,6 +172,12 @@ public:
     {
         for (size_t i = 0; i < batch_size; ++i)
             static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 };
 
