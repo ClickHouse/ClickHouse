@@ -27,11 +27,26 @@ protected:
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
 
+#ifdef __SSE2__
+        __m128i values { static_cast<long long>(next), static_cast<long long>(next + 1) };
+        const __m128i increment { 2, 2 };
+
+        __m128i * pos = reinterpret_cast<__m128i *>(vec.data());
+        __m128i * end = reinterpret_cast<__m128i *>(&vec[block_size]);    /// We have padding at the end of the array.
+
+        while (pos < end)
+        {
+            _mm_storeu_si128(pos, values);
+            values = _mm_add_epi64(values, increment);
+            ++pos;
+        }
+#else
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
         while (pos < end)
             *pos++ = curr++;
+#endif
 
         next += step;
         return { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "number") };
