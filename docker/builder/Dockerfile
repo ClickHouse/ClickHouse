@@ -28,6 +28,10 @@ RUN apt-get update -y \
             tzdata \
             gperf
 
+RUN apt install -y wget
+RUN printf "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main\ndeb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list \
+    && wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && apt update && apt-get install -y clang-8 lldb-8 lld-8
+
 COPY build.sh /
 
 CMD ["/bin/bash", "/build.sh"]
