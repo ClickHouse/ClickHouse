@@ -743,7 +743,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     auto lock = lockParts();
     data_parts_indexes.clear();
 
-    bool has_adaptive_parts = false, has_non_adaptive_parts = false;
+    bool has_adaptive_parts = false;
+    bool has_non_adaptive_parts = false;
     for (const String & file_name : part_file_names)
     {
         MergeTreePartInfo part_info;
