@@ -11,8 +11,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & format_settings)
-    : IRowOutputFormat(header, out_, callback), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

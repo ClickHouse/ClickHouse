@@ -408,7 +408,7 @@ protected:
 class DefaultExecutable final : public PreparedFunctionImpl
 {
 public:
-    explicit DefaultExecutable(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
+    explicit DefaultExecutable(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     String getName() const override { return function->getName(); }
 
@@ -434,8 +434,8 @@ private:
 class DefaultFunction final : public IFunctionBase
 {
 public:
-    DefaultFunction(std::shared_ptr<IFunction> function, DataTypes arguments, DataTypePtr return_type)
-            : function(std::move(function)), arguments(std::move(arguments)), return_type(std::move(return_type)) {}
+    DefaultFunction(std::shared_ptr<IFunction> function_, DataTypes arguments_, DataTypePtr return_type_)
+            : function(std::move(function_)), arguments(std::move(arguments_)), return_type(std::move(return_type_)) {}
 
     String getName() const override { return function->getName(); }
 
@@ -478,7 +478,7 @@ private:
 class DefaultFunctionBuilder : public FunctionBuilderImpl
 {
 public:
-    explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
+    explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     void checkNumberOfArguments(size_t number_of_arguments) const override
     {

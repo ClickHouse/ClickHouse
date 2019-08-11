@@ -4,11 +4,11 @@
 namespace DB
 {
 
-ISimpleTransform::ISimpleTransform(Block input_header, Block output_header, bool skip_empty_chunks)
-    : IProcessor({std::move(input_header)}, {std::move(output_header)})
+ISimpleTransform::ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_)
+    : IProcessor({std::move(input_header_)}, {std::move(output_header_)})
     , input(inputs.front())
     , output(outputs.front())
-    , skip_empty_chunks(skip_empty_chunks)
+    , skip_empty_chunks(skip_empty_chunks_)
 {
 }
 
