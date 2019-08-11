@@ -842,7 +842,6 @@ public:
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);
 
     /** Convert the aggregation data structure into a block.
@@ -1181,7 +1180,6 @@ protected:
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,
-        StringRefs & keys,
         const Block & source,
         std::vector<Block> & destinations) const;
 
