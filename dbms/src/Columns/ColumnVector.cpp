@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
+#include <Common/HashTable/Hash.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -407,6 +408,85 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     min = NearestFieldType<T>(cur_min);
     max = NearestFieldType<T>(cur_max);
 }
+
+template <typename T>
+void ColumnVector<T>::calculateBadHashes(IColumn::BadHashes & hashes) const
+{
+    if constexpr (sizeof(T) <= 8)
+    {
+        size_t size = data.size();
+        hashes.resize(size);
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            hashes[i].first = intHashCRC32(data[i]);
+            hashes[i].second = i;
+        }
+    }
+}
+
+template <typename T>
+void ColumnVector<T>::updateBadHashes(IColumn::BadHashes &) const
+{
+/*    size_t size = data.size();
+
+    for (size_t i = 0; i < size; ++i)
+        hashes[i].first = _mm_crc32_u64(hashes[i].first, data[i]);*/
+}
+
+template <typename T>
+void ColumnVector<T>::disambiguateBadHashes(IColumn::BadHashes & hashes) const
+{
+    size_t size = data.size();
+
+    if (size < 2)
+        return;
+
+    uint32_t prev_hash = hashes[0].first;
+    auto prev_value = data[hashes[0].second];
+    size_t equal_range_begin = 0;
+    uint32_t hash_increment = 0;
+
+    size_t i = 1;
+    while (i < size)
+    {
+        uint32_t curr_hash = hashes[i].first;
+        auto curr_index = hashes[i].second;
+
+        if (curr_hash == prev_hash)
+        {
+            if (unlikely(prev_value != data[curr_index]))    /// TODO NaNs
+            {
+                do
+                {
+                    ++i;
+                }
+                while (i < size && hashes[i].first == prev_hash);
+
+                std::stable_sort(&hashes[equal_range_begin], &hashes[i],
+                    [&](const auto & a, const auto & b) { return CompareHelper<T>::less(data[a.second], data[b.second], -1); });
+
+                for (size_t equal_range_idx = equal_range_begin + 1; equal_range_idx < i; ++equal_range_idx)
+                {
+                    if (0 != compareAt(hashes[equal_range_idx - 1].second, hashes[equal_range_idx].second, *this, -1))
+                        ++hash_increment;
+                    hashes[equal_range_idx].first += hash_increment;
+                }
+                continue;
+            }
+        }
+        else
+        {
+            prev_hash = curr_hash;
+            prev_value = data[curr_index];
+            equal_range_begin = i;
+        }
+
+        hashes[i].first += hash_increment;
+        ++i;
+    }
+}
+
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;

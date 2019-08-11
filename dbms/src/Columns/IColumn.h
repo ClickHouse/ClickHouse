@@ -242,6 +242,13 @@ public:
     /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
+    using BadHash = std::pair<UInt32, UInt32>;
+    using BadHashes = PaddedPODArray<BadHash>;
+    virtual void calculateBadHashes(BadHashes &) const { throw Exception("Method is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    virtual void updateBadHashes(BadHashes &) const { throw Exception("Method is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    static void sortBadHashes(BadHashes &);
+    virtual void disambiguateBadHashes(BadHashes &) const { throw Exception("Method is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+
     /** Computes minimum and maximum element of the column.
       * In addition to numeric types, the function is completely implemented for Date and DateTime.
       * For strings and arrays function should return default value.

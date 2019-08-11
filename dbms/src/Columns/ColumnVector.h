@@ -112,7 +112,8 @@ private:
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
+    template <typename U>
+    ColumnVector(std::initializer_list<U> il) : data{il} {}
 
 public:
     bool isNumeric() const override { return IsNumber<T>; }
@@ -279,6 +280,10 @@ public:
     {
         return data[n];
     }
+
+    void calculateBadHashes(IColumn::BadHashes & hashes) const override;
+    void updateBadHashes(IColumn::BadHashes & hashes) const override;
+    void disambiguateBadHashes(IColumn::BadHashes & hashes) const override;
 
 protected:
     Container data;
