@@ -33,6 +33,7 @@ struct AnalyzedJoin
 
 private:
     friend class SyntaxAnalyzer;
+    friend struct SyntaxAnalyzerResult;
     friend class ExpressionAnalyzer;
 
     Names key_names_left;
