@@ -1,6 +1,7 @@
 #include "WriteBufferToKafkaProducer.h"
 
-namespace DB {
+namespace DB
+{
 WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
     ProducerPtr producer_, const std::string & topic_, size_t rows_per_message, size_t chunk_size_, std::chrono::milliseconds poll_timeout)
     : WriteBuffer(nullptr, 0)
@@ -64,4 +65,4 @@ void WriteBufferToKafkaProducer::nextImpl()
     set(chunks.back().data(), chunk_size);
 }
 
-} // namespace DB
+}

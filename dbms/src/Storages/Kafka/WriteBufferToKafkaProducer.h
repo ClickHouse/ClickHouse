@@ -4,7 +4,8 @@
 
 #include <cppkafka/cppkafka.h>
 
-namespace DB {
+namespace DB
+{
 
 class WriteBufferToKafkaProducer;
 
@@ -38,4 +39,4 @@ private:
     std::list<std::string> chunks;
 };
 
-} // namespace DB
+}

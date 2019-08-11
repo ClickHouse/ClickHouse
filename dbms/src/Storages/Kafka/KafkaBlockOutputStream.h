@@ -4,9 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Storages/Kafka/StorageKafka.h>
 
-namespace DB {
+namespace DB
+{
 
-class KafkaBlockOutputStream : public IBlockOutputStream {
+class KafkaBlockOutputStream : public IBlockOutputStream
+{
 public:
     explicit KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_);
     ~KafkaBlockOutputStream() override;
@@ -26,4 +28,4 @@ private:
     BlockOutputStreamPtr child;
 };
 
-} // namespace DB
+}

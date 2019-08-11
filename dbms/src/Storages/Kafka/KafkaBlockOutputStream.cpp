@@ -2,7 +2,8 @@
 
 #include <Formats/FormatFactory.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -50,4 +51,4 @@ void KafkaBlockOutputStream::flush()
         buffer->flush();
 }
 
-} // namespace DB
+}

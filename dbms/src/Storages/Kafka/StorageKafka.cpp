@@ -137,7 +137,8 @@ BlockInputStreams StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context) {
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context)
+{
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
     return std::make_shared<KafkaBlockOutputStream>(*this, context);
