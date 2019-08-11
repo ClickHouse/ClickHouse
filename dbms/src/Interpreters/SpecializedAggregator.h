@@ -181,20 +181,10 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
     AggregateColumns & aggregate_columns,
     Arena * arena) const
 {
-    /// Optimization in the case of a single aggregate function `count`.
-    AggregateFunctionCount * agg_count = params.aggregates_size == 1
-        ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : nullptr;
-
-    if (agg_count)
-        agg_count->addDelta(res, rows);
-    else
+    for (size_t i = 0; i < rows; ++i)
     {
-        for (size_t i = 0; i < rows; ++i)
-        {
-            AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-                aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
-        }
+        AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+            aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
     }
 }
 
