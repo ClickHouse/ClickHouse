@@ -39,7 +39,7 @@ public:
     void writeSuffix() override;
 
 private:
-    const ColumnUInt8* executeOnBlock(const Block & block, const ExpressionActionsPtr & constraint);
+    const ColumnUInt8* executeOnBlock(Block & block, const ExpressionActionsPtr & constraint);
     std::vector<size_t> findAllWrong(const void *data, size_t size);
 
     String table;
