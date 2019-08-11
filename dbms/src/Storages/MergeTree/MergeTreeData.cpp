@@ -1064,15 +1064,56 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
 void MergeTreeData::clearOldPartsFromFilesystem()
 {
-    auto parts_to_remove = grabOldParts();
-
-    for (const DataPartPtr & part : parts_to_remove)
-    {
-        LOG_DEBUG(log, "Removing part from filesystem " << part->name);
-        part->remove();
-    }
-
+    DataPartsVector parts_to_remove = grabOldParts();
+    clearPartsFromFilesystem(parts_to_remove);
     removePartsFinally(parts_to_remove);
+}
+
+void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
+{
+    if (parts_to_remove.size() > 1 && settings.max_part_removal_threads > 1 && parts_to_remove.size() > settings.concurrent_part_removal_threshold)
+    {
+        /// Parallel parts removal.
+
+        size_t num_threads = std::min(size_t(settings.max_part_removal_threads), parts_to_remove.size());
+
+        std::mutex mutex;
+        ThreadPool pool(num_threads);
+        DataPartsVector parts_to_process = parts_to_remove;
+
+        /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            pool.schedule([&]
+            {
+                for (auto & part : parts_to_process)
+                {
+                    /// Take out a part to remove.
+                    DataPartPtr part_to_remove;
+                    {
+                        std::lock_guard lock(mutex);
+                        if (!part)
+                            continue;
+                        std::swap(part_to_remove, part);
+                    }
+
+                    LOG_DEBUG(log, "Removing part from filesystem " << part_to_remove->name);
+                    part_to_remove->remove();
+                }
+            });
+        }
+
+        pool.wait();
+    }
+    else
+    {
+        for (const DataPartPtr & part : parts_to_remove)
+        {
+            LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+            part->remove();
+        }
+    }
 }
 
 void MergeTreeData::setPath(const String & new_full_path)
@@ -1094,6 +1135,8 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
+    DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
+
     data_parts_indexes.clear();
     column_sizes.clear();
 
@@ -1102,8 +1145,7 @@ void MergeTreeData::dropAllData()
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
-    for (DataPartPtr part : data_parts_by_info) /// a copy intended
-        part->remove();
+    clearPartsFromFilesystem(all_parts);
 
     Poco::File(full_path).remove(true);
 
