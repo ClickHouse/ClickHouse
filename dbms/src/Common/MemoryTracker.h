@@ -31,9 +31,9 @@ class MemoryTracker
     const char * description = nullptr;
 
 public:
-    MemoryTracker(VariableContext level = VariableContext::Thread) : level(level) {}
-    MemoryTracker(Int64 limit_, VariableContext level = VariableContext::Thread) : limit(limit_), level(level) {}
-    MemoryTracker(MemoryTracker * parent_, VariableContext level = VariableContext::Thread) : parent(parent_), level(level) {}
+    MemoryTracker(VariableContext level_ = VariableContext::Thread) : level(level_) {}
+    MemoryTracker(Int64 limit_, VariableContext level_ = VariableContext::Thread) : limit(limit_), level(level_) {}
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread) : parent(parent_), level(level_) {}
 
     ~MemoryTracker();
 
@@ -45,7 +45,11 @@ public:
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        alloc(new_size - old_size);
+        Int64 addition = new_size - old_size;
+        if (addition > 0)
+            alloc(addition);
+        else
+            free(-addition);
     }
 
     /** This function should be called after memory deallocation.

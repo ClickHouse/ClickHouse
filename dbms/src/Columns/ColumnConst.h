@@ -26,7 +26,7 @@ private:
     WrappedPtr data;
     size_t s;
 
-    ColumnConst(const ColumnPtr & data, size_t s);
+    ColumnConst(const ColumnPtr & data, size_t s_);
     ColumnConst(const ColumnConst & src) = default;
 
 public:

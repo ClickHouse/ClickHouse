@@ -22,6 +22,7 @@
 namespace DB
 {
 
+struct ColumnSize;
 class MergeTreeData;
 
 
@@ -38,20 +39,6 @@ struct MergeTreeDataPart
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
-
-    struct ColumnSize
-    {
-        size_t marks = 0;
-        size_t data_compressed = 0;
-        size_t data_uncompressed = 0;
-
-        void add(const ColumnSize & other)
-        {
-            marks += other.marks;
-            data_compressed += other.data_compressed;
-            data_uncompressed += other.data_uncompressed;
-        }
-    };
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
@@ -166,7 +153,7 @@ struct MergeTreeDataPart
     struct StatesFilter
     {
         std::initializer_list<State> affordable_states;
-        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
+        StatesFilter(const std::initializer_list<State> & affordable_states_) : affordable_states(affordable_states_) {}
 
         bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
         {

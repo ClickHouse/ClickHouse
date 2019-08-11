@@ -4,7 +4,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/AnalyzedJoin.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -75,7 +74,7 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
     if (functionIsInOrGlobalInOperator(func_name))
     {
         auto & ast = func_arguments->children.at(1);
-        if (auto opt_name = getIdentifierName(ast))
+        if (auto opt_name = tryGetIdentifierName(ast))
             if (!aliases.count(*opt_name))
                 setIdentifierSpecial(ast);
     }

@@ -5,7 +5,9 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/likely.h>
-#include <sanitizer/asan_interface.h>
+#if __has_include(<sanitizer/asan_interface.h>)
+#   include <sanitizer/asan_interface.h>
+#endif
 #include <Core/Defines.h>
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>

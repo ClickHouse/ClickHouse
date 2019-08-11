@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
+    extern const int INSECURE_PATH;
 }
 
 namespace DataPartsExchange
@@ -53,6 +54,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     String part_name = params.get("part");
+
+    /// Validation of the input that may come from malicious replica.
+    MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     static std::atomic_uint total_sends {0};
 
@@ -168,6 +172,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_)
 {
+    /// Validation of the input that may come from malicious replica.
+    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
@@ -200,7 +207,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String absolute_part_path = data.getFullPath() + relative_part_path + "/";
+    String absolute_part_path = Poco::Path(data.getFullPath() + relative_part_path + "/").absolute().toString();
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
@@ -225,7 +232,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        WriteBufferFromFile file_out(absolute_part_path + file_name);
+        /// File must be inside "absolute_part_path" directory.
+        /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
+        String absolute_file_path = Poco::Path(absolute_part_path + file_name).absolute().toString();
+        if (!startsWith(absolute_file_path, absolute_part_path))
+            throw Exception("File path (" + absolute_file_path + ") doesn't appear to be inside part path (" + absolute_part_path + ")."
+                " This may happen if we are trying to download part from malicious replica or logical error.",
+                ErrorCodes::INSECURE_PATH);
+
+        WriteBufferFromFile file_out(absolute_file_path);
         HashingWriteBuffer hashing_out(file_out);
         copyData(in, hashing_out, file_size, blocker.getCounter());
 

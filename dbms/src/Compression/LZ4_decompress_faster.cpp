@@ -154,7 +154,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
   */
 inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
@@ -268,7 +268,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 
     static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {
@@ -536,7 +536,6 @@ void decompress(
 {
     if (source_size == 0 || dest_size == 0)
         return;
-
 
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)

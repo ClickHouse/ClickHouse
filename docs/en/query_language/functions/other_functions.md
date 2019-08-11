@@ -627,15 +627,36 @@ SELECT replicate(1, ['a', 'b', 'c'])
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable
+## filesystemAvailable {#function-filesystemavailable}
 
-Returns the remaining space information of the disk, in bytes. This information is evaluated using the configured by path.
+Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+
+```
+filesystemAvailable()
+```
+
+**Returned values**
+
+- Amount of remaining space in bytes.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
 
 ## filesystemCapacity
 
 Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
 
-## finalizeAggregation
+## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (finalized state).
 
@@ -647,9 +668,9 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
 
-Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
 Evaluate external model.

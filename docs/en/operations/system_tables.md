@@ -8,12 +8,12 @@ They are located in the 'system' database.
 
 ## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-Contains metrics which are calculated periodically in background. For example, the amount of RAM in use.
+Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 
 Columns:
 
-- `metric` ([String](../data_types/string.md)) — Metric's name.
-- `value` ([Float64](../data_types/float.md)) — Metric's value.
+- `metric` ([String](../data_types/string.md)) — Metric name.
+- `value` ([Float64](../data_types/float.md)) — Metric value.
 
 **Example**
 
@@ -40,7 +40,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
-- [system.events](#system_tables-events) — Contains a number of happened events.
+- [system.events](#system_tables-events) — Contains a number of events that have occurred.
 
 ## system.clusters
 
@@ -48,7 +48,7 @@ Contains information about clusters available in the config file and the servers
 Columns:
 
 ```
-cluster String      — The cluster name.
+cluster String — The cluster name.
 shard_num UInt32 — The shard number in the cluster, starting from 1.
 shard_weight UInt32 — The relative weight of the shard when writing data.
 replica_num UInt32 — The replica number in the shard, starting from 1.
@@ -119,13 +119,13 @@ Note that the amount of memory used by the dictionary is not proportional to the
 
 ## system.events {#system_tables-events}
 
-Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries are processed from the moment of ClickHouse server start.
+Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
 
 Columns:
 
 - `event` ([String](../data_types/string.md)) — Event name.
-- `value` ([UInt64](../data_types/int_uint.md)) — Count of events occurred.
-- `description` ([String](../data_types/string.md)) — Description of an event.
+- `value` ([UInt64](../data_types/int_uint.md)) — Number of events occurred.
+- `description` ([String](../data_types/string.md)) — Event description.
 
 **Example**
 
@@ -135,11 +135,11 @@ SELECT * FROM system.events LIMIT 5
 
 ```text
 ┌─event─────────────────────────────────┬─value─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Query                                 │    12 │ Number of queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries. │
+│ Query                                 │    12 │ Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.                  │
 │ SelectQuery                           │     8 │ Same as Query, but only for SELECT queries.                                                                                                                                                                                                                │
 │ FileOpen                              │    73 │ Number of files opened.                                                                                                                                                                                                                                    │
 │ ReadBufferFromFileDescriptorRead      │   155 │ Number of reads (read/pread) from a file descriptor. Does not include sockets.                                                                                                                                                                             │
-│ ReadBufferFromFileDescriptorReadBytes │  9931 │ Number of bytes read from file descriptors. If the file is compressed, this will show compressed data size.                                                                                                                                                │
+│ ReadBufferFromFileDescriptorReadBytes │  9931 │ Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.                                                                                                                                              │
 └───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -197,13 +197,13 @@ Columns:
 
 ## system.metrics {#system_tables-metrics}
 
-Contains metrics which can be calculated instantly, or have an current value. For example, a number of simultaneously processed queries, the current value for replica delay. This table is always up to date.
+Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
 
 Columns:
 
-- `metric` ([String](../data_types/string.md)) — Metric's name.
-- `value` ([Int64](../data_types/int_uint.md)) — Metric's value.
-- `description` ([String](../data_types/string.md)) — Description of the metric.
+- `metric` ([String](../data_types/string.md)) — Metric name.
+- `value` ([Int64](../data_types/int_uint.md)) — Metric value.
+- `description` ([String](../data_types/string.md)) — Metric description.
 
 **Example**
 
@@ -216,19 +216,19 @@ SELECT * FROM system.metrics LIMIT 10
 │ Query                      │     1 │ Number of executing queries                                                                                                                                                                      │
 │ Merge                      │     0 │ Number of executing background merges                                                                                                                                                            │
 │ PartMutation               │     0 │ Number of mutations (ALTER DELETE/UPDATE)                                                                                                                                                        │
-│ ReplicatedFetch            │     0 │ Number of data parts fetching from replica                                                                                                                                                       │
-│ ReplicatedSend             │     0 │ Number of data parts sending to replicas                                                                                                                                                         │
+│ ReplicatedFetch            │     0 │ Number of data parts being fetched from replicas                                                                                                                                                │
+│ ReplicatedSend             │     0 │ Number of data parts being sent to replicas                                                                                                                                                      │
 │ ReplicatedChecks           │     0 │ Number of data parts checking for consistency                                                                                                                                                    │
-│ BackgroundPoolTask         │     0 │ Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches or replication queue bookkeeping)                                                                                 │
-│ BackgroundSchedulePoolTask │     0 │ Number of active tasks in BackgroundSchedulePool. This pool is used for periodic tasks of ReplicatedMergeTree like cleaning old data parts, altering data parts, replica re-initialization, etc. │
-│ DiskSpaceReservedForMerge  │     0 │ Disk space reserved for currently running background merges. It is slightly more than total size of currently merging parts.                                                                     │
-│ DistributedSend            │     0 │ Number of connections sending data, that was INSERTed to Distributed tables, to remote servers. Both synchronous and asynchronous mode.                                                          │
+│ BackgroundPoolTask         │     0 │ Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches, or replication queue bookkeeping)                                                                                │
+│ BackgroundSchedulePoolTask │     0 │ Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.   │
+│ DiskSpaceReservedForMerge  │     0 │ Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.                                                                     │
+│ DistributedSend            │     0 │ Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.                                                          │
 └────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 **See Also**
 
 - [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.events](#system_tables-events) — Contains a umber of happened events.
+- [system.events](#system_tables-events) — Contains a number of events that occurred.
 - [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## system.numbers
@@ -356,19 +356,19 @@ query_id String          - Query ID, if defined.
 
 ## system.query_log {#system_tables-query-log}
 
-Contains information about queries execution. For each query, you can see processing start time, duration of processing, error message and other information.
+Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
 !!! note
     The table doesn't contain input data for `INSERT` queries.
+    
+ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
-ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, a logging interval or name of a table the queries will be logged in.
-
-To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the [Settings](settings/settings.md) section.
+To enable query logging, set the [log_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
-
-1. Initial queries, that were run directly by the client.
-2. Child queries that were initiated by other queries (for distributed query execution). For such a kind of queries, information about the parent queries is shown in the `initial_*` columns.
+ 
+1. Initial queries that were run directly by the client.
+2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns. 
 
 Columns:
 
@@ -379,29 +379,29 @@ Columns:
     - 4 — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
-- `query_start_time` (DateTime) — Time of the query processing start.
-- `query_duration_ms` (UInt64) — Duration of the query processing.
+- `query_start_time` (DateTime) — Start time of query processing.
+- `query_duration_ms` (UInt64) — Duration of query processing. 
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
-- `written_rows` (UInt64) — For `INSERT` queries, number of written rows. For other queries, the column value is 0.
-- `written_bytes` (UInt64) — For `INSERT` queries, number of written bytes. For other queries, the column value is 0.
-- `result_rows` (UInt64) — Number of rows in a result.
-- `result_bytes` (UInt64) — Number of bytes in a result.
+- `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+- `result_rows` (UInt64) — Number of rows in the result.
+- `result_bytes` (UInt64) — Number of bytes in the result.
 - `memory_usage` (UInt64) — Memory consumption by the query.
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Kind of query. Possible values:
+- `is_initial_query` (UInt8) — Kind of query. Possible values: 
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
-- `user` (String) — Name of the user initiated the current query.
+- `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (FixedString(16)) — IP address the query was initiated from.
-- `port` (UInt16) — A server port that was used to receive the query.
-- `initial_user` (String) —  Name of the user who run the parent query (for distributed query execution).
+- `port` (UInt16) — The server port that was used to receive the query.
+- `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
 - `initial_query_id` (String) — ID of the parent query.
 - `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — A server port that was used to receive the parent query from the client.
+- `initial_port` (UInt16) — The server port that was used to receive the parent query from the client.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
@@ -412,12 +412,12 @@ Columns:
 - `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
-- `http_method` (UInt8) — HTTP method initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface.
-    - 1 — `GET` method is used.
-    - 2 — `POST` method is used.
+- `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    - 0 — The query was launched from the TCP interface. 
+    - 1 — `GET` method was used.
+    - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The quota key specified in [quotas](quotas.md) setting.
+- `quota_key` (String) — The quota key specified in the [quotas](quotas.md) setting.
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
 - `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
@@ -426,21 +426,21 @@ Columns:
     - Number of network errors.
     - Time spent on waiting when the network bandwidth is limited.
 - `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
-- `Settings.Names` (Array(String)) — Names of settings that were changed when the client run a query. To enable logging of settings changing, set the `log_query_settings` parameter to 1.
+- `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 - `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
 Each query creates one or two rows in the `query_log` table, depending on the status of the query:
 
 1. If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
-2. If the error occurred during the query processing, two events with types 1 and 4 are created.
-3. If the error occurred before the query launching, a single event with type 3 is created.
+2. If an error occurred during query processing, two events with types 1 and 4 are created.
+3. If an error occurred before launching the query, a single event with type 3 is created.
 
-By default, logs are added into the table at intervals of 7,5 seconds. You can set this interval in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
 When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
 
 !!! note
-    The storage period for logs is unlimited; the logs aren't automatically deleted from the table. You need to organize the removing of non-actual logs yourself.
+    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
 

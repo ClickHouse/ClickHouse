@@ -16,12 +16,6 @@
 #include <typeinfo>
 #include <iostream>
 
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wundef"
-#endif
-
 #include <gtest/gtest.h>
 
 using namespace DB;

@@ -142,7 +142,10 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(
+    const MergeTreeData & storage_,
+    const String & name_,
+    const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
@@ -153,7 +156,7 @@ MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const Strin
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(
+ColumnSize MergeTreeDataPart::getColumnSizeImpl(
     const String & column_name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
@@ -182,12 +185,12 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(
     return size;
 }
 
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
+ColumnSize MergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
 {
     return getColumnSizeImpl(column_name, type, nullptr);
 }
 
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
+ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 {
     ColumnSize totals;
     std::unordered_set<String> processed_substreams;
@@ -410,7 +413,8 @@ void MergeTreeDataPart::remove() const
         {
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
+                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,
+                                       ErrorCodes::CANNOT_UNLINK);
         }
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -420,11 +424,12 @@ void MergeTreeDataPart::remove() const
         {
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
+                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,
+                                       ErrorCodes::CANNOT_UNLINK);
         }
 
         if (0 != rmdir(to.c_str()))
-            throwFromErrno("Cannot rmdir file " + to, ErrorCodes::CANNOT_UNLINK);
+            throwFromErrnoWithPath("Cannot rmdir file " + to, to, ErrorCodes::CANNOT_UNLINK);
     }
     catch (...)
     {

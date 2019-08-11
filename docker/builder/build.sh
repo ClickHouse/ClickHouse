@@ -3,7 +3,6 @@
 #ccache -s
 mkdir -p /server/build_docker
 cd /server/build_docker
-
 cmake -G Ninja /server -DCMAKE_C_COMPILER=`which clang-8` -DCMAKE_CXX_COMPILER=`which clang++-8` -DCMAKE_BUILD_TYPE=Debug
 
 # Set the number of build jobs to the half of number of virtual CPU cores (rounded up).

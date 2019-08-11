@@ -370,6 +370,11 @@ Block Block::cloneWithColumns(const Columns & columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
+                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
 
@@ -469,6 +474,9 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
         if (!actual.type->equals(*expected.type))
             return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+
+        if (!actual.column || !expected.column)
+            continue;
 
         if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"

@@ -84,11 +84,11 @@ private:
         ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
 
-        ThreadData(size_t keys_size, size_t aggregates_size)
+        ThreadData(size_t keys_size_, size_t aggregates_size_)
         {
-            key.resize(keys_size);
-            key_columns.resize(keys_size);
-            aggregate_columns.resize(aggregates_size);
+            key.resize(keys_size_);
+            key_columns.resize(keys_size_);
+            aggregate_columns.resize(aggregates_size_);
         }
     };
 

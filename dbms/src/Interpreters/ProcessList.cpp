@@ -406,6 +406,15 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 }
 
 
+void ProcessList::killAllQueries()
+{
+    std::lock_guard lock(mutex);
+
+    for (auto & process : processes)
+        process.cancelQuery(true);
+}
+
+
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
     QueryStatusInfo res;

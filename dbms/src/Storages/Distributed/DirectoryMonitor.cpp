@@ -60,13 +60,13 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker)
-    : storage(storage), pool{pool}, path{storage.path + name + '/'}
+    StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_)
+    : storage(storage_), pool{pool_}, path{storage.path + name_ + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
     , log{&Logger::get(getLoggerName())}
-    , monitor_blocker(monitor_blocker)
+    , monitor_blocker(monitor_blocker_)
 {
     const Settings & settings = storage.global_context.getSettingsRef();
     should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;

@@ -53,16 +53,30 @@ public:
 
 private:
     ReadBufferFromFile mrk_file_buf;
+
+    std::pair<MarkInCompressedFile, size_t> readMarkFromFile()
+    {
+        size_t mrk_rows;
+        MarkInCompressedFile mrk_mark;
+        readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
+        readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
+        if (mrk_file_extension == ".mrk2")
+            readIntBinary(mrk_rows, mrk_hashing_buf);
+        else
+            mrk_rows = index_granularity.getMarkRows(mark_position);
+
+        return {mrk_mark, mrk_rows};
+    }
 public:
     HashingReadBuffer mrk_hashing_buf;
 
         Stream(
             const String & path,
-            const String & base_name,
+            const String & base_name_,
             const String & bin_file_extension_,
             const String & mrk_file_extension_,
             const MergeTreeIndexGranularity & index_granularity_)
-        : base_name(base_name)
+        : base_name(base_name_)
         , bin_file_extension(bin_file_extension_)
         , mrk_file_extension(mrk_file_extension_)
         , bin_file_path(path + base_name + bin_file_extension)
@@ -78,15 +92,8 @@ public:
 
     void assertMark(bool only_read=false)
     {
-        MarkInCompressedFile mrk_mark;
-        readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
-        readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
-        size_t mrk_rows;
-        if (mrk_file_extension == ".mrk2")
-            readIntBinary(mrk_rows, mrk_hashing_buf);
-        else
-            mrk_rows = index_granularity.getMarkRows(mark_position);
 
+        auto [mrk_mark, mrk_rows] = readMarkFromFile();
         bool has_alternative_mark = false;
         MarkInCompressedFile alternative_data_mark = {};
         MarkInCompressedFile data_mark = {};
@@ -136,6 +143,12 @@ public:
                 + toString(compressed_hashing_buf.count()) + " (compressed), "
                 + toString(uncompressed_hashing_buf.count()) + " (uncompressed)", ErrorCodes::CORRUPTED_DATA);
 
+        if (index_granularity.hasFinalMark())
+        {
+            auto final_mark_rows = readMarkFromFile().second;
+            if (final_mark_rows != 0)
+                throw Exception("Incorrect final mark at the end of " + mrk_file_path + " expected 0 rows, got " + toString(final_mark_rows), ErrorCodes::CORRUPTED_DATA);
+        }
         if (!mrk_hashing_buf.eof())
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "

@@ -1,6 +1,6 @@
 #include <common/DateLUT.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <Poco/Exception.h>
 #include <Poco/SHA1Engine.h>
 #include <Poco/DigestStream.h>
@@ -26,7 +26,7 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 
 std::string determineDefaultTimeZone()
 {
-    namespace fs = boost::filesystem;
+    namespace fs = std::filesystem;
 
     const char * tzdir_env_var = std::getenv("TZDIR");
     fs::path tz_database_path = tzdir_env_var ? tzdir_env_var : "/usr/share/zoneinfo/";
@@ -64,7 +64,12 @@ std::string determineDefaultTimeZone()
         ///  /usr/share/zoneinfo//UTC -> UCT
         /// But the preferred time zone name is pointed by the first link (UTC), and the second link is just an internal detail.
         if (fs::is_symlink(tz_file_path))
+        {
             tz_file_path = fs::read_symlink(tz_file_path);
+            /// If it's relative - make it absolute.
+            if (tz_file_path.is_relative())
+                tz_file_path = (fs::path("/etc/") / tz_file_path).lexically_normal();
+        }
     }
 
     try
@@ -82,7 +87,10 @@ std::string determineDefaultTimeZone()
 
         /// Try the same with full symlinks resolution
         {
-            tz_file_path = fs::canonical(tz_file_path, tz_database_path);
+            if (!tz_file_path.is_absolute())
+                tz_file_path = tz_database_path / tz_file_path;
+
+            tz_file_path = fs::canonical(tz_file_path);
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
@@ -104,11 +112,11 @@ std::string determineDefaultTimeZone()
             {
                 /// Some timezone databases contain copies of toplevel tzdata files in the posix/ directory
                 /// and tzdata files with leap seconds in the right/ directory. Skip them.
-                candidate_it.no_push();
+                candidate_it.disable_recursion_pending();
                 continue;
             }
 
-            if (candidate_it->status().type() != fs::regular_file || path.filename() == "localtime")
+            if (!fs::is_regular_file(*candidate_it) || path.filename() == "localtime")
                 continue;
 
             if (fs::file_size(path) == tzfile_size && calcSHA1(path.string()) == tzfile_sha1)

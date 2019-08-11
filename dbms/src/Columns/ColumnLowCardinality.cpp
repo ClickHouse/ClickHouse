@@ -352,15 +352,20 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     return counter;
 }
 
+bool ColumnLowCardinality::containsNull() const
+{
+    return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
+
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
-ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(MutableColumnPtr && positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
 
-ColumnLowCardinality::Index::Index(ColumnPtr positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(ColumnPtr positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
@@ -603,6 +608,28 @@ void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) co
             ++counts[pos];
     };
     callForType(std::move(counter), size_of_type);
+}
+
+bool ColumnLowCardinality::Index::containsDefault() const
+{
+    bool contains = false;
+
+    auto check_contains_default = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        for (auto pos : data)
+        {
+            if (pos == 0)
+            {
+                contains = true;
+                break;
+            }
+        }
+    };
+
+    callForType(std::move(check_contains_default), size_of_type);
+    return contains;
 }
 
 

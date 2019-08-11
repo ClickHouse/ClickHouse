@@ -76,20 +76,12 @@ private:
     DataTypePtr & argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type}, params)
+    AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
         , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
-        {
-            /// QuantileTiming only supports integers (it works only for unsigned integers but signed are also accepted for convenience).
-            if (!isInteger(argument_type))
-                throw Exception("Argument for function " + std::string(Name::name) + " must be integer, but it has type "
-                    + argument_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
     }
 
     String getName() const override { return Name::name; }
@@ -111,16 +103,21 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        /// Out of range conversion may occur. This is Ok.
+        auto value = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+        {
+            /// QuantileTiming only supports integers.
+            if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
+                return;
+        }
 
         if constexpr (has_second_arg)
             this->data(place).add(
-                column.getData()[row_num],
+                value,
                 columns[1]->getUInt(row_num));
         else
-            this->data(place).add(column.getData()[row_num]);
+            this->data(place).add(value);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -31,9 +31,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits, bool fill_set_elements)
+    Set(const SizeLimits & limits_, bool fill_set_elements_)
         : log(&Logger::get("Set")),
-        limits(limits), fill_set_elements(fill_set_elements)
+        limits(limits_), fill_set_elements(fill_set_elements_)
     {
     }
 
