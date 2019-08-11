@@ -190,7 +190,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         else if (command_ast->type == ASTAlterCommand::DROP_COLUMN)
         {
             command.type = AlterCommand::DROP_COLUMN;
-            command.column_name = *getIdentifierName(command_ast->column);
+            command.column_name = getIdentifierName(command_ast->column);
         }
 
         return command;
