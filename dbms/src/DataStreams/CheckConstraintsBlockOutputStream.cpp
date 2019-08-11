@@ -11,8 +11,9 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
     for (size_t i = 0; i < expressions.size(); ++i)
     {
+        Block res = block;
         auto constraint_expr = expressions[i];
-        auto res_column_uint8 = executeOnBlock(block, constraint_expr);
+        auto res_column_uint8 = executeOnBlock(res, constraint_expr);
         if (!memoryIsByte(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize(), 0x1))
         {
             auto indices_wrong = findAllWrong(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize());
@@ -48,13 +49,11 @@ void CheckConstraintsBlockOutputStream::writeSuffix()
 }
 
 const ColumnUInt8 *CheckConstraintsBlockOutputStream::executeOnBlock(
-        const Block & block,
+        Block & block,
         const ExpressionActionsPtr & constraint)
 {
-    Block res = block;
-
-    constraint->execute(res);
-    ColumnWithTypeAndName res_column = res.safeGetByPosition(res.columns() - 1);
+    constraint->execute(block);
+    ColumnWithTypeAndName res_column = block.safeGetByPosition(block.columns() - 1);
     return checkAndGetColumn<ColumnUInt8>(res_column.column.get());
 }
 
