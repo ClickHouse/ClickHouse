@@ -17,7 +17,7 @@
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
-#include <Formats/ValuesRowInputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -136,8 +136,7 @@ MergeTreeData::MergeTreeData(
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
         auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
-            .getRequiredSourceColumns();
+        columns_required_for_sampling = syntax->requiredSourceColumns();
     }
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -298,8 +297,7 @@ void MergeTreeData::setProperties(
         if (!added_key_column_expr_list->children.empty())
         {
             auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
-                .getRequiredSourceColumns();
+            Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
             NamesAndTypesList added_columns;
@@ -2383,8 +2381,8 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
 }
@@ -2395,8 +2393,8 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
     for (const auto & column : part->columns)
     {
-        DataPart::ColumnSize & total_column_size = column_sizes[column.name];
-        DataPart::ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -2493,17 +2491,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
-        MutableColumns columns = partition_key_sample.cloneEmptyColumns();
+        auto input_stream = FormatFactory::instance().getInput("Values", buf, partition_key_sample, context, context.getSettingsRef().max_block_size);
 
-        RowReadExtension unused;
-        if (!input_stream.read(columns, unused))
+        auto block = input_stream->read();
+        if (!block || !block.rows())
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
-            columns[i]->get(0, partition_row[i]);
+            block.getByPosition(i).column->get(0, partition_row[i]);
     }
 
     MergeTreePartition partition(std::move(partition_row));

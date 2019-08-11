@@ -9,11 +9,11 @@ namespace ErrorCodes
 }
 
 DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(
-    const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns)
+    const BlockInputStreamPtr & input, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns)
     : description(input->getSortDescription())
     , columns_names(columns)
     , limit_hint(limit_hint_)
-    , set_size_limits(set_size_limits)
+    , set_size_limits(set_size_limits_)
 {
     children.push_back(input);
 }

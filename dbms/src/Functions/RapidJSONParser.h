@@ -22,15 +22,17 @@ struct RapidJSONParser
 
     bool parse(const StringRef & json)
     {
-        document.Parse(json.data);
-        return !document.HasParseError();
+        rapidjson::MemoryStream ms(json.data, json.size);
+        rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
+        document.ParseStream(is);
+        return !document.HasParseError() && (ms.Tell() == json.size);
     }
 
     struct Iterator
     {
     public:
         Iterator() {}
-        Iterator(const rapidjson::Document & document) : value(&document) {}
+        Iterator(const rapidjson::Document & document_) : value(&document_) {}
         Iterator(const Iterator & src)
             : value(src.value)
             , is_object_member(src.is_object_member)

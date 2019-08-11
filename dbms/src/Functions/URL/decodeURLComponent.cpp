@@ -89,7 +89,7 @@ struct DecodeURLComponentImpl
         res_data.resize(res_offset);
     }
 
-    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }

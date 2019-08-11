@@ -218,6 +218,7 @@ private:
 
         configReadClient(config(), home_path);
 
+        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
@@ -710,7 +711,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        TokenIterator token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;

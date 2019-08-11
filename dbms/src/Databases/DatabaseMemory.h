@@ -25,7 +25,6 @@ public:
 
     void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     void createTable(

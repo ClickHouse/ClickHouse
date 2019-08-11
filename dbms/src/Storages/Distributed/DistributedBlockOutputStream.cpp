@@ -59,9 +59,9 @@ namespace ErrorCodes
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-        const Context & context_, StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+        const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_, const ClusterPtr & cluster_,
         bool insert_sync_, UInt64 insert_timeout_)
-        : context(context_), storage(storage), query_ast(query_ast), query_string(queryToString(query_ast)),
+        : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
         cluster(cluster_), insert_sync(insert_sync_),
         insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
@@ -565,7 +565,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
+            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
+                                   ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

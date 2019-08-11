@@ -236,6 +236,9 @@ void Compiler::compile(
             " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
             " -fdiagnostics-color=never"
 
+            /// Do not use libgcc and startup files. The library will work nevertheless and we avoid extra dependency.
+            " -nodefaultlibs -nostartfiles"
+
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             /// To get correct order merge this results carefully:
             /// echo | clang -x c++ -E -Wp,-v -

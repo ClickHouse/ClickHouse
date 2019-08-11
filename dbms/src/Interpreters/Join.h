@@ -3,6 +3,7 @@
 #include <variant>
 #include <optional>
 #include <shared_mutex>
+#include <deque>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -120,7 +121,7 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
 class Join
 {
 public:
-    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
          ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
@@ -288,9 +289,12 @@ private:
     /// Overwrite existing values when encountering the same key again
     bool any_take_last_row;
 
-    /** Blocks of "right" table.
-      */
+    /// Blocks of "right" table.
     BlocksList blocks;
+
+    /// Nullmaps for blocks of "right" table (if needed)
+    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
+    BlockNullmapList blocks_nullmaps;
 
     MapsVariant maps;
 

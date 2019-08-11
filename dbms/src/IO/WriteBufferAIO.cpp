@@ -62,7 +62,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     if (fd == -1)
     {
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        throwFromErrno("Cannot open file " + filename, error_code);
+        throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
     }
 }
 
@@ -96,7 +96,7 @@ void WriteBufferAIO::sync()
     /// Ask OS to flush data to disk.
     int res = ::fsync(fd);
     if (res == -1)
-        throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+        throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }
 
 void WriteBufferAIO::nextImpl()
@@ -173,7 +173,7 @@ void WriteBufferAIO::doTruncate(off_t length)
 
     int res = ::ftruncate(fd, length);
     if (res == -1)
-        throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+        throwFromErrnoWithPath("Cannot truncate file " + filename, filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void WriteBufferAIO::flush()
@@ -274,7 +274,7 @@ void WriteBufferAIO::prepare()
     /// Region of the disk in which we want to write data.
     const off_t region_begin = pos_in_file;
 
-    if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
+    if ((flush_buffer.offset() > static_cast<size_t>(std::numeric_limits<off_t>::max())) ||
         (pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(flush_buffer.offset()))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 
@@ -427,7 +427,7 @@ void WriteBufferAIO::finalize()
         /// Truncate the file to remove unnecessary zeros from it.
         int res = ::ftruncate(fd, max_pos_in_file);
         if (res == -1)
-            throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+            throwFromErrnoWithPath("Cannot truncate file " + filename, filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
     }
 }
 

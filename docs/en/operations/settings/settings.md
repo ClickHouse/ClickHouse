@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 **Usage**
 
@@ -116,7 +116,7 @@ Default value: 0.
 
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
-Enables or disables sending of the `X-ClickHouse-Progress` HTTP response headers in an answer from `clickhouse-server`.
+Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
 For more information, read the [HTTP interface description](../../interfaces/http.md).
 
@@ -199,22 +199,22 @@ Ok.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with
-default values of the respective columns. This option only applies to
-[JSONEachRow](../../interfaces/formats.md#jsoneachrow) and
-[CSV](../../interfaces/formats.md#csv) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
 
 !!! note "Note"
-    When this option is enabled, extended table metadata are sent
-from server to client. It consumes additional computing resources on the server
-and can reduce performance.
+    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
 
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
+
+## input_format_null_as_default {#settings-input_format_null_as_default}
+
+Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for CSV format).
+
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
@@ -236,6 +236,25 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables inserting of JSON data with nested objects.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -254,6 +273,27 @@ Possible values:
 
 Default value: 1.
 
+## date_time_input_format {#settings-date_time_input_format}
+
+Enables or disables extended parsing of date and time formatted strings.
+
+The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic format.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+
 ## join_default_strictness {#settings-join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
@@ -271,8 +311,8 @@ Default value: `ALL`.
 
 Changes behavior of join operations with `ANY` strictness.
 
-!!! note "Attention"
-    This setting applies only for the [Join](../table_engines/join.md) table engine.
+!!! warning "Attention"
+    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
 
 Possible values:
 
@@ -301,7 +341,7 @@ Default value: 0.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
-Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row, if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
 
 Possible values:
 
@@ -654,6 +694,10 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+
+For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
@@ -715,7 +759,7 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## max_network_bytes {#settings-max_network_bytes}
-Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies for every individual query.
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
 
 Possible values:
 
@@ -726,7 +770,7 @@ Default value: 0.
 
 ## max_network_bandwidth {#settings-max_network_bandwidth}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for every individual query.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
 Possible values:
 
@@ -737,7 +781,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries performed by a single user.
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
 
 Possible values:
 
@@ -748,7 +792,7 @@ Default value: 0.
 
 ## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
 
-Limits speed of data exchange over the network in bytes per second. This setting applies for all concurrently running queries on the server.
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
 
 Possible values:
 
@@ -778,7 +822,7 @@ Default value: 1.
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used for performing the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
 
 Possible values:
 

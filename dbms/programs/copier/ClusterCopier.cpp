@@ -123,7 +123,7 @@ enum class TaskState
 struct TaskStateWithOwner
 {
     TaskStateWithOwner() = default;
-    TaskStateWithOwner(TaskState state, const String & owner) : state(state), owner(owner) {}
+    TaskStateWithOwner(TaskState state_, const String & owner_) : state(state_), owner(owner_) {}
 
     TaskState state{TaskState::Unknown};
     String owner;
@@ -2100,9 +2100,9 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
-    auto pid = Poco::Process::id();
+    auto curr_pid = Poco::Process::id();
 
-    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(pid);
+    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
     process_path = Poco::Path(base_dir + "/clickhouse-copier_" + process_id).absolute().toString();
     Poco::File(process_path).createDirectories();
@@ -2171,10 +2171,10 @@ void ClusterCopierApp::mainImpl()
         << "revision " << ClickHouseRevision::get() << ")");
 
     auto context = std::make_unique<Context>(Context::createGlobal());
+    context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
-    context->setGlobalContext(*context);
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
 
@@ -2201,6 +2201,10 @@ void ClusterCopierApp::mainImpl()
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
+
+    /// Reset ZooKeeper before removing ClusterCopier.
+    /// Otherwise zookeeper watch can call callback which use already removed ClusterCopier object.
+    context->resetZooKeeper();
 }
 
 

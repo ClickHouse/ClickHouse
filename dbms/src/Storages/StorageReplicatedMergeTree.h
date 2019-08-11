@@ -170,6 +170,8 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    CheckResults checkData(const ASTPtr & query, const Context & context) override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -422,6 +424,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         bool deduplicate,
+        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);

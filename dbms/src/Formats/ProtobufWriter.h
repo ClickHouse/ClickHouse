@@ -7,7 +7,7 @@
 #include "config_formats.h"
 #if USE_PROTOBUF
 
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/WriteBufferFromString.h>
 #include <boost/noncopyable.hpp>
 #include <Common/PODArray.h>
@@ -108,7 +108,7 @@ private:
         {
             size_t start;
             size_t end;
-            Piece(size_t start, size_t end) : start(start), end(end) {}
+            Piece(size_t start_, size_t end_) : start(start_), end(end_) {}
             Piece() = default;
         };
 
@@ -116,8 +116,8 @@ private:
         {
             size_t num_pieces_at_start;
             size_t num_bytes_skipped_at_start;
-            NestedInfo(size_t num_pieces_at_start, size_t num_bytes_skipped_at_start)
-                : num_pieces_at_start(num_pieces_at_start), num_bytes_skipped_at_start(num_bytes_skipped_at_start)
+            NestedInfo(size_t num_pieces_at_start_, size_t num_bytes_skipped_at_start_)
+                : num_pieces_at_start(num_pieces_at_start_), num_bytes_skipped_at_start(num_bytes_skipped_at_start_)
             {
             }
         };

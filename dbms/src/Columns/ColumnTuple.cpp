@@ -142,11 +142,15 @@ void ColumnTuple::popBack(size_t n)
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    size_t values_size = 0;
+    StringRef res(begin, 0);
     for (auto & column : columns)
-        values_size += column->serializeValueIntoArena(n, arena, begin).size;
+    {
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
 
-    return StringRef(begin, values_size);
+    return res;
 }
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
@@ -253,8 +257,8 @@ struct ColumnTuple::Less
     TupleColumns columns;
     int nan_direction_hint;
 
-    Less(const TupleColumns & columns, int nan_direction_hint_)
-        : columns(columns), nan_direction_hint(nan_direction_hint_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
 

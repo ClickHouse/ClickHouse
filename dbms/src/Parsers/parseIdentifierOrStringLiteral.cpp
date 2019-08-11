@@ -20,7 +20,7 @@ bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, Str
         result = res->as<ASTLiteral &>().value.safeGet<String>();
     }
     else
-        result = *getIdentifierName(res);
+        result = getIdentifierName(res);
 
     return true;
 }

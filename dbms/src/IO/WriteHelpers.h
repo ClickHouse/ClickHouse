@@ -47,6 +47,18 @@ inline void writeChar(char x, WriteBuffer & buf)
     ++buf.position();
 }
 
+/// Write the same character n times.
+inline void writeChar(char c, size_t n, WriteBuffer & buf)
+{
+    while (n)
+    {
+        buf.nextIfAtEnd();
+        size_t count = std::min(n, buf.available());
+        memset(buf.position(), c, count);
+        n -= count;
+        buf.position() += count;
+    }
+}
 
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
@@ -830,7 +842,7 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-inline void writeCSV(const UInt128, WriteBuffer &)
+[[noreturn]] inline void writeCSV(const UInt128, WriteBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
