@@ -761,7 +761,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         else
             return BackgroundProcessingPoolTaskResult::ERROR;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
