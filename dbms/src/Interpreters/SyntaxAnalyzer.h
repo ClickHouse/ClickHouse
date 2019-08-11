@@ -13,8 +13,13 @@ NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
+    AnalyzedJoin analyzed_join;
 
     NamesAndTypesList source_columns;
+    /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
+    NamesAndTypesList required_source_columns;
+    /// Columns will be added to block by JOIN. It's a subset of analyzed_join.available_joined_columns
+    NamesAndTypesList columns_added_by_join;
 
     Aliases aliases;
 
@@ -31,10 +36,11 @@ struct SyntaxAnalyzerResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
-    AnalyzedJoin analyzed_join;
-
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
+
+    void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
+    Names requiredSourceColumns() const { return required_source_columns.getNames(); }
 };
 
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -64,7 +70,8 @@ public:
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         const Names & required_result_columns = {},
-        StoragePtr storage = {}) const;
+        StoragePtr storage = {},
+        const NamesAndTypesList & additional_source_columns = {}) const;
 
 private:
     const Context & context;

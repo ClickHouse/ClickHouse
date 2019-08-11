@@ -134,8 +134,7 @@ MergeTreeData::MergeTreeData(
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
         auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
-            .getRequiredSourceColumns();
+        columns_required_for_sampling = syntax->requiredSourceColumns();
     }
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -295,8 +294,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
         if (!added_key_column_expr_list->children.empty())
         {
             auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
-                .getRequiredSourceColumns();
+            Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
             NamesAndTypesList added_columns;
