@@ -48,7 +48,7 @@ public:
     bool is_live_view;
     bool is_live_channel;
 
-    ParserAlterCommandList(bool is_live_view = false, bool is_live_channel = false) : is_live_view(is_live_view), is_live_channel(is_live_channel) {}
+    ParserAlterCommandList(bool is_live_view_ = false, bool is_live_channel_ = false) : is_live_view(is_live_view_), is_live_channel(is_live_channel_) {}
 };
 
 
@@ -62,7 +62,7 @@ public:
     bool is_live_view;
     bool is_live_channel;
 
-    ParserAlterCommand(bool is_live_view = false, bool is_live_channel = false) : is_live_view(is_live_view), is_live_channel(is_live_channel) {}
+    ParserAlterCommand(bool is_live_view_ = false, bool is_live_channel_ = false) : is_live_view(is_live_view_), is_live_channel(is_live_channel_) {}
 };
 
 
