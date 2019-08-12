@@ -39,6 +39,9 @@ namespace DB
 
         void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
         {
+            /// This function is mainly used in query analysis instead of "in" functions
+            /// in the case when only header is needed and set for in is not calculated.
+            /// Because of that function must return the same column type as "in" function, which is ColumnUInt8.
             auto res = ColumnUInt8::create(input_rows_count, 0);
             block.getByPosition(result).column = std::move(res);
         }
