@@ -27,7 +27,7 @@ SELECT 1 - 0.9
 - Floating-point calculations might result in numbers such as infinity (`Inf`) and "not-a-number" (`NaN`). This should be taken into account when processing the results of calculations.
 - When parsing floating point numbers from text, the result might not be the nearest machine-representable number.
 
-## NaN and Inf
+## NaN and Inf {#data_type-float-nan-inf}
 
 In contrast to standard SQL, ClickHouse supports the following categories of floating-point numbers:
 
