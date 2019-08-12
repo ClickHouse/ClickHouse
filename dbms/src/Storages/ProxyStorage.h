@@ -8,8 +8,8 @@ namespace DB
 class ProxyStorage : public IStorage
 {
 public:
-    ProxyStorage(StoragePtr storage, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
-    : storage(std::move(storage)), streams(std::move(streams)), to_stage(to_stage) {}
+    ProxyStorage(StoragePtr storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
+    : storage(std::move(storage_)), streams(std::move(streams_)), to_stage(to_stage_) {}
 
 public:
     std::string getName() const override { return "ProxyStorage(" + storage->getName() + ")"; }
