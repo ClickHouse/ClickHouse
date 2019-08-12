@@ -97,16 +97,20 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             //Try to rename metadata file and delete the data
             try
             {
-                //Memory database has no metadata on disk
-                if (database_and_table.first->getEngineName() != "Memory")
+                //There some kind of tables that have no metadata - ignore renaming
+                try
+                {
                     Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+                } catch (...) {}
                 /// Delete table data
                 database_and_table.second->drop();
             }
             catch (...)
             {
-                if (database_and_table.first->getEngineName() != "Memory")
+                try
+                {
                     Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+                } catch (...) {}
                 throw;
             }
 
