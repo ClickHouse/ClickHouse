@@ -94,18 +94,19 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             const auto prev_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql";
             const auto drop_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql.tmp_drop";
 
+            //Try to rename metadata file and delete the data
             try
             {
-                Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+                //Memory database has no metadata on disk
+                if (database_and_table.first->getEngineName() != "Memory")
+                    Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
                 /// Delete table data
                 database_and_table.second->drop();
             }
             catch (...)
             {
-                try
-                {
+                if (database_and_table.first->getEngineName() != "Memory")
                     Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
-                } catch (...) {}
                 throw;
             }
 
