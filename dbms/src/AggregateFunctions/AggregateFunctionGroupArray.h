@@ -253,8 +253,8 @@ class GroupArrayGeneralListImpl final
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(const DataTypePtr & data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type}, {})
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type_}, {})
         , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
