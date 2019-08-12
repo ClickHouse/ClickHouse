@@ -29,6 +29,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getExecutablePath.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
@@ -212,6 +213,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     const auto memory_amount = getMemoryAmount();
 
 #if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+    if (executable_path.empty())
+        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
+
     /// After full config loaded
     {
         if (config().getBool("mlock_executable", false))
@@ -228,7 +233,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
                     " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
                     " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
@@ -547,7 +552,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -556,7 +561,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
