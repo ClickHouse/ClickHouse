@@ -4,6 +4,8 @@
 
 #include <cppkafka/cppkafka.h>
 
+#include <list>
+
 namespace DB
 {
 
