@@ -71,7 +71,6 @@ private:
     AggregatingTransformParamsPtr params;
     Logger * log = &Logger::get("AggregatingTransform");
 
-    StringRefs key;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;
