@@ -24,6 +24,13 @@
 
 #include <string.h>
 
+/// For the expansion of gtest macros.
+#if defined(__clang__)
+    #pragma clang diagnostic ignored "-Wdeprecated"
+#elif defined (__GNUC__)
+    #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+#endif
+
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -182,11 +189,6 @@ struct Codec
     Codec()
         : Codec(std::string())
     {}
-
-    Codec(const Codec &) = default;
-    Codec & operator=(const Codec &) = default;
-    Codec(Codec &&) = default;
-    Codec & operator=(Codec &&) = default;
 };
 
 
