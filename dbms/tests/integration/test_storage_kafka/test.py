@@ -4,6 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.client import QueryRuntimeException
 
 import json
 import subprocess
@@ -464,7 +465,15 @@ def test_kafka_insert(kafka_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ','.join(values)
 
-    instance.query("INSERT INTO test.kafka VALUES {}".format(values))
+    while True:
+        try:
+            instance.query("INSERT INTO test.kafka VALUES {}".format(values))
+            break
+        except QueryRuntimeException as e:
+            if 'Local: Timed out.' in str(e):
+                continue
+            else:
+                raise
 
     messages = []
     while True:
