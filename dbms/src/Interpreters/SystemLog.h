@@ -79,6 +79,8 @@ struct SystemLogs
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
 
+    void threadFunction();
+
     String part_log_database;
 };
 

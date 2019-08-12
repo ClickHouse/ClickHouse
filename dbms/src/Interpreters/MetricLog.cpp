@@ -36,16 +36,6 @@ Block MetricLogElement::createBlock()
         }
     }
 
-    //AsyncMetrics
-    auto async_metrics_values = async_metrics_ptr.getValues();
-    for (const auto & name_value : async_metrics_values)
-    {
-        std::string name;
-        name += "AsynchronousMetrics_";
-        name += name_value.first;
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeFloat64>(), name);
-    }
-
     return Block(columns_with_type_and_name);
 }
 
@@ -75,13 +65,6 @@ void MetricLogElement::appendToBlock(Block & block) const
         {
             columns[iter++]->insert(value);
         }
-    }
-
-    //AsyncMetrics
-    auto async_metrics_values = async_metrics_ptr.getValues();
-    for (const auto & name_value : async_metrics_values)
-    {
-        columns[iter++]->insert(name_value.second);
     }
 }
 

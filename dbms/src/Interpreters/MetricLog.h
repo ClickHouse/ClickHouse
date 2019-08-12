@@ -9,8 +9,6 @@ using Poco::Message;
 
 struct MetricLogElement
 {
-    std::shared_ptr<AsynchronousMetrics> async_metrics_ptr{nullptr};
-
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
     void appendToBlock(Block & block) const;
