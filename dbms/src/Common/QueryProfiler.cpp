@@ -127,9 +127,9 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
     : log(&Logger::get("QueryProfiler"))
-    , pause_signal(pause_signal)
+    , pause_signal(pause_signal_)
 {
 #if USE_INTERNAL_UNWIND_LIBRARY
     /// Sanity check.

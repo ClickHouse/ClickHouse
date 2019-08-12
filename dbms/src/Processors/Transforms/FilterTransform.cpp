@@ -42,14 +42,14 @@ static Block transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    const Block & header,
+    const Block & header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
-    bool remove_filter_column)
-    : ISimpleTransform(header, transformHeader(header, expression_, filter_column_name_, remove_filter_column), true)
+    bool remove_filter_column_)
+    : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
-    , remove_filter_column(remove_filter_column)
+    , remove_filter_column(remove_filter_column_)
 {
     transformed_header = getInputPort().getHeader();
     expression->execute(transformed_header);

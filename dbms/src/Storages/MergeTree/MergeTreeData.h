@@ -477,6 +477,7 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
+    void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime

@@ -35,7 +35,7 @@ class FunctionArrayIntersect : public IFunction
 public:
     static constexpr auto name = "arrayIntersect";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIntersect>(context); }
-    FunctionArrayIntersect(const Context & context) : context(context) {}
+    FunctionArrayIntersect(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -81,8 +81,8 @@ private:
         const DataTypePtr & data_type;
         ColumnPtr & result;
 
-        NumberExecutor(const UnpackedArrays & arrays, const DataTypePtr & data_type, ColumnPtr & result)
-            : arrays(arrays), data_type(data_type), result(result) {}
+        NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
+            : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <typename T, size_t>
         void operator()();
