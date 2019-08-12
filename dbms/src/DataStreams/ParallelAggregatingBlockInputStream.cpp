@@ -110,8 +110,7 @@ ParallelAggregatingBlockInputStream::TemporaryFileStream::TemporaryFileStream(co
 void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t thread_num)
 {
     parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
-        parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
-        parent.threads_data[thread_num].key, parent.no_more_keys);
+        parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns, parent.no_more_keys);
 
     parent.threads_data[thread_num].src_rows += block.rows();
     parent.threads_data[thread_num].src_bytes += block.bytes();
@@ -205,8 +204,7 @@ void ParallelAggregatingBlockInputStream::execute()
     /// To do this, we pass a block with zero rows to aggregate.
     if (total_src_rows == 0 && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
         aggregator.executeOnBlock(children.at(0)->getHeader(), *many_data[0],
-            threads_data[0].key_columns, threads_data[0].aggregate_columns,
-            threads_data[0].key, no_more_keys);
+            threads_data[0].key_columns, threads_data[0].aggregate_columns, no_more_keys);
 }
 
 }

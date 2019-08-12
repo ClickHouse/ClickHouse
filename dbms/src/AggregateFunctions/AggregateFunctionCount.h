@@ -62,12 +62,6 @@ public:
         static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
-    /// May be used for optimization.
-    void addDelta(AggregateDataPtr place, UInt64 x) const
-    {
-        data(place).count += x;
-    }
-
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
