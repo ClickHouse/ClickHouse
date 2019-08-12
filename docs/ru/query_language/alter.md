@@ -384,7 +384,7 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 
-Команда пересчитает вторичный индекс `name` для партиции `partition_name`.
+Команда перестроит вторичный индекс `name` для партиции `partition_name`.
 
 В одном запросе можно указать несколько команд через запятую.
 
