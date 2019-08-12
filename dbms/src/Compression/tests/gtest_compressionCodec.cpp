@@ -1,13 +1,14 @@
 #include <Compression/CompressionFactory.h>
 
-
-#include <Core/Types.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <Common/PODArray.h>
-#include <DataTypes/IDataType.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IParser.h>
+#include <Parsers/TokenIterator.h>
 
 #include <boost/format.hpp>
 
@@ -68,7 +69,7 @@ template <typename T>
 const char* type_name()
 {
 #define MAKE_TYPE_NAME(TYPE) \
-    if constexpr (std::is_same_v<TYPE, T>) return #TYPE;
+    if constexpr (std::is_same_v<TYPE, T>) return #TYPE
 
     MAKE_TYPE_NAME(UInt8);
     MAKE_TYPE_NAME(UInt16);
@@ -168,14 +169,6 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
     return result;
 }
 
-struct CodecTestSequence
-{
-    std::string name;
-    std::vector<char> serialized_data;
-
-    DataTypePtr data_type;
-};
-
 struct Codec
 {
     std::string codec_statement;
@@ -189,6 +182,36 @@ struct Codec
     Codec()
         : Codec(std::string())
     {}
+
+    Codec(const Codec &) = default;
+    Codec & operator=(const Codec &) = default;
+    Codec(Codec &&) = default;
+    Codec & operator=(Codec &&) = default;
+};
+
+
+struct CodecTestSequence
+{
+    std::string name;
+    std::vector<char> serialized_data;
+    DataTypePtr data_type;
+
+    CodecTestSequence()
+        : name(),
+          serialized_data(),
+          data_type()
+    {}
+
+    CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
+        : name(name_),
+          serialized_data(serialized_data_),
+          data_type(data_type_)
+    {}
+
+    CodecTestSequence(const CodecTestSequence &) = default;
+    CodecTestSequence & operator=(const CodecTestSequence &) = default;
+    CodecTestSequence(CodecTestSequence &&) = default;
+    CodecTestSequence & operator=(CodecTestSequence &&) = default;
 };
 
 CodecTestSequence operator+(CodecTestSequence && left, CodecTestSequence && right)
@@ -307,8 +330,8 @@ public:
         Expected expected;
         ASTPtr codec_ast;
         ParserCodec parser;
-        parser.parse(token_iterator, codec_ast, expected);
 
+        parser.parse(token_iterator, codec_ast, expected);
 
         return CompressionCodecFactory::instance().get(codec_ast, data_type);
     }
