@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -39,6 +40,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
+    checkStackSize();
 }
 
 

@@ -33,14 +33,14 @@ protected:
     {
         ColumnStream(
             const String & escaped_column_name_,
-            const String & data_path,
+            const String & data_path_,
             const std::string & data_file_extension_,
-            const std::string & marks_path,
+            const std::string & marks_path_,
             const std::string & marks_file_extension_,
-            const CompressionCodecPtr & compression_codec,
-            size_t max_compress_block_size,
-            size_t estimated_size,
-            size_t aio_threshold);
+            const CompressionCodecPtr & compression_codec_,
+            size_t max_compress_block_size_,
+            size_t estimated_size_,
+            size_t aio_threshold_);
 
         String escaped_column_name;
         std::string data_file_extension;

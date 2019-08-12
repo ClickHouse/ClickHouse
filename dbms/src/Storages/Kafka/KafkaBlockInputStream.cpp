@@ -19,7 +19,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
 
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -51,23 +51,28 @@ void KafkaBlockInputStream::readPrefixImpl()
 
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.getTopics());
 
-    const auto & limits = getLimits();
+    const auto & limits_ = getLimits();
     const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
-    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
+    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
     auto read_callback = [this]
     {
         const auto * sub_buffer = buffer->subBufferAs<ReadBufferFromKafkaConsumer>();
-        virtual_columns[0]->insert(sub_buffer->currentTopic());  // "topic"
-        virtual_columns[1]->insert(sub_buffer->currentKey());    // "key"
-        virtual_columns[2]->insert(sub_buffer->currentOffset()); // "offset"
+        virtual_columns[0]->insert(sub_buffer->currentTopic());     // "topic"
+        virtual_columns[1]->insert(sub_buffer->currentKey());       // "key"
+        virtual_columns[2]->insert(sub_buffer->currentOffset());    // "offset"
+        virtual_columns[3]->insert(sub_buffer->currentPartition()); // "partition"
+
+        auto timestamp = sub_buffer->currentTimestamp();
+        if (timestamp)
+            virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
 
     auto child = FormatFactory::instance().getInput(
         storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, read_callback);
-    child->setLimits(limits);
+    child->setLimits(limits_);
     addChild(child);
 
     broken = true;
@@ -79,8 +84,8 @@ Block KafkaBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneWithColumns(std::move(virtual_columns));
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
+    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneWithColumns(std::move(virtual_columns));
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         block.insert(column);

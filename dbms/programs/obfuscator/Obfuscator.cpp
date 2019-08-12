@@ -176,7 +176,7 @@ private:
     const UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed) : seed(seed) {}
+    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -212,7 +212,7 @@ private:
     const UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed) : seed(seed) {}
+    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -256,7 +256,7 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed) : seed(seed) {}
+    FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -348,7 +348,7 @@ private:
     const UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed) : seed(seed) {}
+    FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -385,7 +385,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed) : seed(seed), date_lut(DateLUT::instance()) {}
+    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -533,8 +533,8 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params)
-        : params(std::move(params)), code_points(params.order, BEGIN) {}
+    MarkovModel(MarkovModelParameters params_)
+        : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -745,7 +745,7 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed, MarkovModelParameters params) : seed(seed), markov_model(std::move(params)) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
 
     void train(const IColumn & column) override
     {
@@ -797,7 +797,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
@@ -830,7 +830,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {

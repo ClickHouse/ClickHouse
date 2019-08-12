@@ -45,8 +45,8 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
-ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header, const Context & context)
-    : IInputFormat(std::move(header), in_), context{context}
+ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_)
+    : IInputFormat(std::move(header_), in_), context{context_}
 {
 }
 

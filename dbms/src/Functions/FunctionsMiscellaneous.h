@@ -16,11 +16,11 @@ class FunctionExpression : public IFunctionBase, public IPreparedFunction,
                            public std::enable_shared_from_this<FunctionExpression>
 {
 public:
-    FunctionExpression(const ExpressionActionsPtr & expression_actions,
-                       const DataTypes & argument_types, const Names & argument_names,
-                       const DataTypePtr & return_type, const std::string & return_name)
-            : expression_actions(expression_actions), argument_types(argument_types),
-              argument_names(argument_names), return_type(return_type), return_name(return_name)
+    FunctionExpression(const ExpressionActionsPtr & expression_actions_,
+                       const DataTypes & argument_types_, const Names & argument_names_,
+                       const DataTypePtr & return_type_, const std::string & return_name_)
+            : expression_actions(expression_actions_), argument_types(argument_types_),
+              argument_names(argument_names_), return_type(return_type_), return_name(return_name_)
     {
     }
 
@@ -65,11 +65,11 @@ class FunctionCapture : public IFunctionBase, public IPreparedFunction, public F
                         public std::enable_shared_from_this<FunctionCapture>
 {
 public:
-    FunctionCapture(const ExpressionActionsPtr & expression_actions, const Names & captured,
-                    const NamesAndTypesList & lambda_arguments,
-                    const DataTypePtr & function_return_type, const std::string & expression_return_name)
-            : expression_actions(expression_actions), captured_names(captured), lambda_arguments(lambda_arguments)
-            , function_return_type(function_return_type), expression_return_name(expression_return_name)
+    FunctionCapture(const ExpressionActionsPtr & expression_actions_, const Names & captured,
+                    const NamesAndTypesList & lambda_arguments_,
+                    const DataTypePtr & function_return_type_, const std::string & expression_return_name_)
+            : expression_actions(expression_actions_), captured_names(captured), lambda_arguments(lambda_arguments_)
+            , function_return_type(function_return_type_), expression_return_name(expression_return_name_)
     {
         const auto & all_arguments = expression_actions->getRequiredColumnsWithTypes();
 
