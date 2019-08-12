@@ -23,6 +23,7 @@ target_link_libraries(clickhouse_functions
 
     PRIVATE
         ${Boost_FILESYSTEM_LIBRARY}
+        ${CMAKE_DL_LIBS}
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
