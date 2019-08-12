@@ -325,7 +325,7 @@ public:
 
         const std::string codec_statement = "(" + codec_string + ")";
         Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-        TokenIterator token_iterator(tokens);
+        IParser::Pos token_iterator(tokens);
 
         Expected expected;
         ASTPtr codec_ast;
