@@ -387,6 +387,7 @@ void DatabaseOrdinary::renameTable(
         throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     StoragePtr table = tryGetTable(context, table_name);
+
     if (!table)
         throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
