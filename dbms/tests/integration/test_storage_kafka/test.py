@@ -61,10 +61,10 @@ def wait_kafka_is_available(max_retries=50):
             time.sleep(1)
 
 
-def kafka_produce(topic, messages):
+def kafka_produce(topic, messages, timestamp=None):
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
     for message in messages:
-        producer.send(topic=topic, value=message)
+        producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
     print ("Produced {} messages for topic {}".format(len(messages), topic))
 
@@ -389,16 +389,16 @@ def test_kafka_virtual_columns(kafka_cluster):
     messages = ''
     for i in range(25):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('virt1', [messages])
+    kafka_produce('virt1', [messages], 0)
 
     messages = ''
     for i in range(25, 50):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
-    kafka_produce('virt1', [messages])
+    kafka_produce('virt1', [messages], 0)
 
     result = ''
     while True:
-        result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka', ignore_error=True)
+        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
         if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
             break
 
@@ -417,20 +417,20 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
                      kafka_group_name = 'virt2',
                      kafka_format = 'JSONEachRow',
                      kafka_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64)
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT *, _key as kafka_key, _topic as topic, _offset as offset FROM test.kafka;
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
     ''')
 
     messages = []
     for i in range(50):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('virt2', messages)
+    kafka_produce('virt2', messages, 0)
 
     while True:
-        result = instance.query('SELECT kafka_key, key, topic, value, offset FROM test.view')
+        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view')
         if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
             break
 

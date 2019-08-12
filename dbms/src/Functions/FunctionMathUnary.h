@@ -31,7 +31,7 @@
 #endif
 
 
-/** FastOps is a fast vector math library from Michael Parakhin (former Yandex CTO),
+/** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.
   */
 #if USE_FASTOPS

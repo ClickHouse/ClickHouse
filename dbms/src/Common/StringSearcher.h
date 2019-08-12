@@ -75,8 +75,8 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+    StringSearcher(const char * const needle_, const size_t needle_size_)
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size_}
     {
         if (0 == needle_size)
             return;
@@ -714,8 +714,8 @@ struct LibCASCIICaseSensitiveStringSearcher
 {
     const char * const needle;
 
-    LibCASCIICaseSensitiveStringSearcher(const char * const needle, const size_t /* needle_size */)
-        : needle(needle) {}
+    LibCASCIICaseSensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
+        : needle(needle_) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
@@ -735,8 +735,8 @@ struct LibCASCIICaseInsensitiveStringSearcher
 {
     const char * const needle;
 
-    LibCASCIICaseInsensitiveStringSearcher(const char * const needle, const size_t /* needle_size */)
-        : needle(needle) {}
+    LibCASCIICaseInsensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
+        : needle(needle_) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {

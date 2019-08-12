@@ -334,10 +334,10 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 struct MonotonicGenerator
 {
-    MonotonicGenerator(T stride = 1, size_t max_step = 10)
+    MonotonicGenerator(T stride_ = 1, size_t max_step_ = 10)
         : prev_value(0),
-          stride(stride),
-          max_step(max_step)
+          stride(stride_),
+          max_step(max_step_)
     {}
 
     template <typename U>
@@ -369,9 +369,9 @@ auto MinMaxGenerator = [](auto i)
 template <typename T>
 struct RandomGenerator
 {
-    RandomGenerator(T seed = 0, T value_cap = std::numeric_limits<T>::max())
+    RandomGenerator(T seed = 0, T value_cap_ = std::numeric_limits<T>::max())
         : e(seed),
-          value_cap(value_cap)
+          value_cap(value_cap_)
     {
     }
 
