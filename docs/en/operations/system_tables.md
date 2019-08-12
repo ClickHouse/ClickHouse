@@ -265,7 +265,7 @@ Columns:
 
 - `name` (`String`) – Name of the data part.
 
-- `active` (`UInt8`) – Indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
+- `active` (`UInt8`) – Flag that indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
 
 - `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192).
 
