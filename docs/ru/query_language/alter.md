@@ -264,7 +264,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
-Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо столбцов.
+Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо данных в столбцах.
 
 #### FREEZE PARTITION {#alter_freeze-partition}
 
