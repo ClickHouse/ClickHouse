@@ -28,7 +28,7 @@ void CurrentThread::updatePerformanceCounters()
 
 bool CurrentThread::isInitialized()
 {
-    return unlikely(current_thread);
+    return likely(current_thread);
 }
 
 ThreadStatus & CurrentThread::get()
