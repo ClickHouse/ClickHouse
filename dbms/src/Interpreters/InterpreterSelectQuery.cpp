@@ -346,8 +346,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Calculate structure of the result.
     result_header = getSampleBlockImpl();
     for (auto & col : result_header)
+    {
         if (!col.column)
             col.column = col.type->createColumn();
+        else if (isColumnConst(*col.column) && !col.column->empty())
+            col.column = col.column->cloneEmpty();
+    }
 }
 
 
