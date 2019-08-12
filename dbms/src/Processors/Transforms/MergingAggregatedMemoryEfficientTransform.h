@@ -22,7 +22,7 @@ public:
 
 protected:
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
 private:
     size_t num_inputs;

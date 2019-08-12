@@ -4,6 +4,8 @@
 #include <ext/scope_guard.h>
 #include <openssl/err.h>
 
+#pragma GCC diagnostic warning "-Wold-style-cast"
+
 namespace DB
 {
 

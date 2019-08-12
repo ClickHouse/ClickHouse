@@ -26,7 +26,7 @@ ISink::Status ISink::prepare()
     return Status::Ready;
 }
 
-void ISink::work()
+void ISink::doWork()
 {
     consume(std::move(current_chunk));
     has_input = false;

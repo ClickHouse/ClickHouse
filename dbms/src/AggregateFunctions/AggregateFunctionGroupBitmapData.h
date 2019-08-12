@@ -1,11 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 #include <roaring/roaring.h>
+#include <roaring/roaring.hh>
+#pragma GCC diagnostic pop
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/noncopyable.hpp>
-#include <roaring/roaring.hh>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -508,7 +512,7 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (UInt32(val) >= range_start)
+                if (static_cast<UInt32>(val) >= range_start)
                 {
                     ans.push_back(val);
                 }
@@ -626,7 +630,7 @@ private:
         size_t ctr = 0;
         for (Int32 i = 0; i < ra->size; ++i)
         {
-            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], ((UInt32)ra->keys[i]) << 16);
+            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], (static_cast<UInt32>(ra->keys[i])) << 16);
             ctr += num_added;
         }
     }
@@ -637,18 +641,18 @@ private:
         switch (typecode)
         {
             case BITSET_CONTAINER_TYPE_CODE:
-                return db_bitset_container_to_uint32_array(dbBuf, (const bitset_container_t *)container, base);
+                return db_bitset_container_to_uint32_array(dbBuf, static_cast<const bitset_container_t *>(container), base);
             case ARRAY_CONTAINER_TYPE_CODE:
-                return db_array_container_to_uint32_array(dbBuf, (const array_container_t *)container, base);
+                return db_array_container_to_uint32_array(dbBuf, static_cast<const array_container_t *>(container), base);
             case RUN_CONTAINER_TYPE_CODE:
-                return db_run_container_to_uint32_array(dbBuf, (const run_container_t *)container, base);
+                return db_run_container_to_uint32_array(dbBuf, static_cast<const run_container_t *>(container), base);
         }
         return 0;
     }
 
     UInt32 db_bitset_container_to_uint32_array(DB::WriteBuffer & dbBuf, const bitset_container_t * cont, UInt32 base) const
     {
-        return (UInt32)db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base);
+        return static_cast<UInt32>(db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base));
     }
 
     size_t db_bitset_extract_setbits(DB::WriteBuffer & dbBuf, UInt64 * bitset, size_t length, UInt32 base) const

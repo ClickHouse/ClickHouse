@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/Block.h>

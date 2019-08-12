@@ -1,4 +1,5 @@
 #include <Functions/IFunction.h>
+#include "registerFunctionsArray.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>

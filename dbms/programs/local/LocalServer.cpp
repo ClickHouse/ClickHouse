@@ -504,6 +504,7 @@ void LocalServer::applyCmdOptions()
 }
 
 }
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

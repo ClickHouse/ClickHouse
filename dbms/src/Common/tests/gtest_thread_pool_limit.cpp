@@ -2,6 +2,7 @@
 #include <iostream>
 #include <Common/ThreadPool.h>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 /// Test for thread self-removal when number of free threads in pool is too large.

@@ -312,7 +312,7 @@ IProcessor::Status SortingTransform::prepareGenerate()
     }
 }
 
-void SortingTransform::work()
+void SortingTransform::doWork()
 {
     if (stage == Stage::Consume)
         consume(std::move(current_chunk));

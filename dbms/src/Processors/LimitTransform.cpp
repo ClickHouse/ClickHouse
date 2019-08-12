@@ -144,7 +144,7 @@ LimitTransform::Status LimitTransform::prepare()
 }
 
 
-void LimitTransform::work()
+void LimitTransform::doWork()
 {
     SharedChunkPtr shared_chunk = new detail::SharedChunk(std::move(current_chunk));
     shared_chunk->sort_columns = extractSortColumns(shared_chunk->getColumns());

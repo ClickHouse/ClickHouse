@@ -5,13 +5,14 @@
 namespace DB
 {
 
+
 struct IReadableWriteBuffer
 {
     /// At the first time returns getReadBufferImpl(). Next calls return nullptr.
     inline std::shared_ptr<ReadBuffer> tryGetReadBuffer()
     {
-        if (!can_reread)
-            return nullptr;
+//        if (!can_reread)
+//            return {};
 
         can_reread = false;
         return getReadBufferImpl();

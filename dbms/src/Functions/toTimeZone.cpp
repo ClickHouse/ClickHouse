@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDateTime.h>
+#include <Functions/registerFunctions.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -30,7 +31,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "

@@ -73,7 +73,7 @@ public:
 
 protected:
     Status prepare() override final;
-    void work() override final;
+    void doWork() override final;
 
     virtual void consume(Chunk chunk) = 0;
     virtual void generate() = 0;

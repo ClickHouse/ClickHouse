@@ -1,3 +1,4 @@
+#include "narrowBlockInputStreams.h"
 #include <random>
 #include <Common/thread_local_rng.h>
 #include <DataStreams/ConcatBlockInputStream.h>

@@ -771,7 +771,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (to_decimal && arguments.size() != 2)
         {
@@ -963,7 +963,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
@@ -1092,7 +1092,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUnsignedInteger(arguments[1].type))
             throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
@@ -2201,7 +2201,7 @@ protected:
         return std::make_shared<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)

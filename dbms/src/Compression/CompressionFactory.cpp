@@ -131,16 +131,6 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 }
 
 
-void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecNone(CompressionCodecFactory & factory);
-void registerCodecZSTD(CompressionCodecFactory & factory);
-void registerCodecMultiple(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
-void registerCodecDelta(CompressionCodecFactory & factory);
-void registerCodecT64(CompressionCodecFactory & factory);
-void registerCodecDoubleDelta(CompressionCodecFactory & factory);
-void registerCodecGorilla(CompressionCodecFactory & factory);
-
 CompressionCodecFactory::CompressionCodecFactory()
 {
     default_codec = std::make_shared<CompressionCodecLZ4>();

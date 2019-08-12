@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionSimpleLinearRegression.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>

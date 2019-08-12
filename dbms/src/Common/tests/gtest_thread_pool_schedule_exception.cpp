@@ -2,10 +2,11 @@
 #include <stdexcept>
 #include <Common/ThreadPool.h>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 
-bool check()
+static bool check()
 {
     ThreadPool pool(10);
 

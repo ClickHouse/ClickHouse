@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include "AggregateFunctionTimeSeriesGroupSum.h"
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"

@@ -63,7 +63,7 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
     return Status::Ready;
 }
 
-void IAccumulatingTransform::work()
+void IAccumulatingTransform::doWork()
 {
     if (!finished_input)
     {

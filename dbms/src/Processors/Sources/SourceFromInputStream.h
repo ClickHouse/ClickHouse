@@ -14,7 +14,7 @@ public:
     String getName() const override { return "SourceFromInputStream"; }
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     Chunk generate() override;
 

@@ -3,8 +3,9 @@
 #include <IO/WriteBufferFromOStream.h>
 #include "hashing_buffer.h"
 #include <iostream>
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
-void test(size_t data_size)
+static void test(size_t data_size)
 {
     std::vector<char> vec(data_size);
     char * data = vec.data();

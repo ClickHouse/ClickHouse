@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Columns/ColumnString.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>

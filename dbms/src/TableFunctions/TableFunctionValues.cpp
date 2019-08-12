@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 

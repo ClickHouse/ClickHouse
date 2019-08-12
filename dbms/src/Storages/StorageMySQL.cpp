@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-String backQuoteMySQL(const String & x)
+static String backQuoteMySQL(const String & x)
 {
     String res(x.size(), '\0');
     {

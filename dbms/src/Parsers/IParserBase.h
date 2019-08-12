@@ -5,13 +5,12 @@
 
 namespace DB
 {
-
 /** Base class for most parsers
   */
 class IParserBase : public IParser
 {
 public:
-    bool parse(Pos & pos, ASTPtr & node, Expected & expected);
+    bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 protected:
     virtual bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) = 0;

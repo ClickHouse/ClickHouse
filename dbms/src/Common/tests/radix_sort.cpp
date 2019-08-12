@@ -8,6 +8,7 @@
 #include <Core/Defines.h>
 
 using Key = double;
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void NO_INLINE sort1(Key * data, size_t size)
 {

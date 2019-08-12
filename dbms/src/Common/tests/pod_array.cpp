@@ -13,6 +13,7 @@ do                                    \
     }                                \
 } \
 while (0)
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void test1()
 {

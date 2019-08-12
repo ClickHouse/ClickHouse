@@ -5,6 +5,7 @@
 #include <iostream>
 #include <chrono>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 #include <Common/ShellCommand.h>

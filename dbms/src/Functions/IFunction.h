@@ -292,8 +292,10 @@ public:
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {}; }
 
 protected:
+    friend class DefaultFunctionBuilder;
+
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+    virtual DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const
     {
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -337,7 +339,7 @@ private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
-
+//#pragma GCC diagnostic pop
 /// Previous function interface.
 class IFunction : public std::enable_shared_from_this<IFunction>,
                   public FunctionBuilderImpl, public IFunctionBase, public PreparedFunctionImpl
@@ -360,7 +362,7 @@ public:
 
     using PreparedFunctionImpl::execute;
     using PreparedFunctionImpl::executeImplDryRun;
-    using FunctionBuilderImpl::getReturnTypeImpl;
+    using FunctionBuilderImpl::getReturnTypeForColumnsImpl;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
 
@@ -519,7 +521,7 @@ public:
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeForColumnsImpl(arguments); }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }

@@ -98,7 +98,7 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
     };
 }
 
-void fillIndexGranularityImpl(
+static void fillIndexGranularityImpl(
     const Block & block,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,

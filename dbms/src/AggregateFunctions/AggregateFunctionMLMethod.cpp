@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include "AggregateFunctionMLMethod.h"
 
 #include <IO/ReadHelpers.h>

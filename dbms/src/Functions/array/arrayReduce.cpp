@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -46,7 +47,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
@@ -57,7 +58,7 @@ private:
 };
 
 
-DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionArrayReduce::getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const
 {
     /// The first argument is a constant string with the name of the aggregate function
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").

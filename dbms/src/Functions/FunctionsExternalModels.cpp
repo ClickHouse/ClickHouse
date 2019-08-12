@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionsExternalModels.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -32,7 +33,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionModelEvaluate::getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 2)
         throw Exception("Function " + getName() + " expects at least 2 arguments",

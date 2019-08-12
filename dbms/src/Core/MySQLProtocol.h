@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma GCC diagnostic warning "-Wold-style-cast"
+
 #include "config_core.h"
 
 #if USE_SSL

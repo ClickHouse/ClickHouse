@@ -84,7 +84,7 @@ public:
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t min_args = Impl::needExpression() ? 2 : 1;
         if (arguments.size() < min_args)

@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"

@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 

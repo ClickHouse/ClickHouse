@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -140,7 +141,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         bool first_argument_is_date = false;
         auto check_first_argument = [&]

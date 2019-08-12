@@ -582,6 +582,7 @@ std::exception_ptr CacheDictionary::getLastException() const
     return last_exception;
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,

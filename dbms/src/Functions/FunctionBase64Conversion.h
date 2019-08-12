@@ -77,7 +77,7 @@ public:
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(

@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include "FunctionsStringRegex.h"
 
 #include "FunctionsStringSearch.h"

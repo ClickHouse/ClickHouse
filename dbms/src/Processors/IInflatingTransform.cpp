@@ -58,7 +58,7 @@ IInflatingTransform::Status IInflatingTransform::prepare()
     return Status::Ready;
 }
 
-void IInflatingTransform::work()
+void IInflatingTransform::doWork()
 {
     if (can_generate)
     {

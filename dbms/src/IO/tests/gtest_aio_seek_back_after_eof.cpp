@@ -1,5 +1,6 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>

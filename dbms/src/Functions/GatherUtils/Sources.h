@@ -15,7 +15,6 @@
 #include "Slices.h"
 #include <Functions/FunctionHelpers.h>
 
-
 namespace DB
 {
 
@@ -119,6 +118,9 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -146,7 +148,7 @@ struct ConstSource : public Base
     ConstSource(const ConstSource &) = default;
     virtual ~ConstSource() = default;
 
-    virtual void accept(ArraySourceVisitor & visitor) // override
+    virtual void accept(ArraySourceVisitor & visitor)
     {
         if constexpr (std::is_base_of<IArraySource, Base>::value)
             visitor.visit(*this);
@@ -156,7 +158,7 @@ struct ConstSource : public Base
                     + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void accept(ValueSourceVisitor & visitor) // override
+    virtual void accept(ValueSourceVisitor & visitor)
     {
         if constexpr (std::is_base_of<IValueSource, Base>::value)
             visitor.visit(*this);
@@ -196,6 +198,7 @@ struct ConstSource : public Base
         return true;
     }
 };
+#pragma GCC diagnostic pop
 
 struct StringSource
 {

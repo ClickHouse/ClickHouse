@@ -7,6 +7,8 @@
 #include <dlfcn.h>
 
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);

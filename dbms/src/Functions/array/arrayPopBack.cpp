@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include "arrayPop.h"
 #include <Functions/FunctionFactory.h>
 

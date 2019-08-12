@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/HelpersMinMaxAny.h>
 #include <AggregateFunctions/FactoryHelpers.h>

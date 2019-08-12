@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "HashedDictionary.h"
 #include <ext/size.h>
 #include "DictionaryBlockInputStream.h"

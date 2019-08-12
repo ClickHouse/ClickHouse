@@ -54,7 +54,7 @@ public:
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override;
 
 private:
     bool isVariadic() const override { return true; }

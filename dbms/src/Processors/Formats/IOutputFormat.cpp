@@ -44,7 +44,7 @@ IOutputFormat::Status IOutputFormat::prepare()
     return Status::Finished;
 }
 
-void IOutputFormat::work()
+void IOutputFormat::doWork()
 {
     if (finished && !finalized)
     {

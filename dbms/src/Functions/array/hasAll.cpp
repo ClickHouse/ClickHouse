@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include "hasAllAny.h"
 #include <Functions/FunctionFactory.h>
 

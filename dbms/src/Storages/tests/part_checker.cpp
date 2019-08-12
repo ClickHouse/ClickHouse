@@ -6,7 +6,7 @@
 
 using namespace DB;
 
-Poco::Path getMarksFile(const std::string & part_path)
+static Poco::Path getMarksFile(const std::string & part_path)
 {
     Poco::DirectoryIterator it(part_path);
     Poco::DirectoryIterator end;
@@ -21,7 +21,7 @@ Poco::Path getMarksFile(const std::string & part_path)
     throw Exception("Cannot find any mark file in directory " + part_path, DB::ErrorCodes::METRIKA_OTHER_ERROR);
 }
 
-MergeTreeIndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
+static MergeTreeIndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
 {
 
     MergeTreeIndexGranularity result;

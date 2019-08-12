@@ -392,6 +392,7 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,

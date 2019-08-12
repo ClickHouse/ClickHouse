@@ -1351,7 +1351,7 @@ private:
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
@@ -1499,7 +1499,7 @@ private:
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         String dict_name;
         if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))

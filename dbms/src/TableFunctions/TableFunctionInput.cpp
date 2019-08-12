@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionInput.h>
 #include <TableFunctions/TableFunctionFactory.h>

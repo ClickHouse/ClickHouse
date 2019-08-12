@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <type_traits>
 #include <ext/bit_cast.h>
 #include <Functions/FunctionFactory.h>

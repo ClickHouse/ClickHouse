@@ -1,5 +1,5 @@
 #include "FileDictionarySource.h"
-
+#include "registerDictionaries.h"
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>

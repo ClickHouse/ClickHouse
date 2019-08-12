@@ -214,7 +214,7 @@ public:
         return processors;
     }
 
-    void work() override
+    void doWork() override
     {
         auto num_rows = chunk_from_add_inp.getNumRows();
         auto columns = chunk_from_add_inp.mutateColumns();

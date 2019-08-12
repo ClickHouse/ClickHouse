@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
@@ -8,9 +9,10 @@
 
 using namespace DB;
 
+namespace
+{
 Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, size_t stride, size_t & start)
 {
-
     ColumnsWithTypeAndName cols;
     size_t size_of_row_in_bytes = columns.size() * sizeof(UInt64);
     for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++)
@@ -27,7 +29,8 @@ Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, si
 }
 
 
-BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+BlockInputStreams
+getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
     for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
@@ -39,11 +42,11 @@ BlockInputStreams getInputStreams(const std::vector<std::string> & column_names,
         result.push_back(std::make_shared<BlocksListBlockInputStream>(std::move(blocks)));
     }
     return result;
-
 }
 
 
-BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+BlockInputStreams getInputStreamsEqualStride(
+    const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
     size_t i = 0;
@@ -57,7 +60,6 @@ BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & co
         i++;
     }
     return result;
-
 }
 
 
@@ -69,6 +71,7 @@ SortDescription getSortDescription(const std::vector<std::string> & column_names
         descr.emplace_back(column, 1, 1);
     }
     return descr;
+}
 }
 
 TEST(MergingSortedTest, SimpleBlockSizeTest)

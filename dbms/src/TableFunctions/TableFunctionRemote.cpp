@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include "TableFunctionRemote.h"
 
 #include <Storages/getStructureOfRemoteTable.h>

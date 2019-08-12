@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>

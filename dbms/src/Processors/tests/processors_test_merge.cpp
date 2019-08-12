@@ -110,7 +110,7 @@ public:
         return Status::Ready;
     }
 
-    void work() override
+    void doWork() override
     {
         using Key = std::pair<UInt64, size_t>;
         std::priority_queue<Key, std::vector<Key>, std::greater<>> queue;

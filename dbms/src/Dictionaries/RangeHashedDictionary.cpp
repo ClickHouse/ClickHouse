@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "RangeHashedDictionary.h"
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
@@ -61,7 +62,7 @@ bool RangeHashedDictionary::Range::contains(const RangeStorageType & value) cons
     return left <= value && value <= right;
 }
 
-bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDictionary::Range & right)
+static bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDictionary::Range & right)
 {
     return std::tie(left.left, left.right) < std::tie(right.left, right.right);
 }

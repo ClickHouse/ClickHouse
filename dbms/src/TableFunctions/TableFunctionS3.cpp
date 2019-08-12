@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include <Storages/StorageS3.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>

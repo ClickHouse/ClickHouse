@@ -1,3 +1,5 @@
+#include <Functions/URL/registerFunctionsURL.h>
+#include "registerFunctionsURL.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringArray.h>
 

@@ -11,6 +11,8 @@
 
 #ifdef __clang__
     #pragma clang diagnostic ignored "-Wold-style-cast"
+#elif __GNUC__
+    #pragma GCC diagnostic ignored "-Wold-style-cast"
 #endif
 
 

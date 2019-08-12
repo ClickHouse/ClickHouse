@@ -1,6 +1,7 @@
 #include <Common/config.h>
 
 #if USE_HDFS
+#include "registerTableFunctions.h"
 #include <Storages/StorageHDFS.h>
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>

@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>

@@ -41,7 +41,7 @@ protected:
             switch (status)
             {
                 case IProcessor::Status::Ready:
-                    input_format->work();
+                    input_format->doWork();
                     break;
 
                 case IProcessor::Status::Finished:

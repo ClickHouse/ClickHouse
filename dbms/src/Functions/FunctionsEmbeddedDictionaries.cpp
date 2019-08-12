@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include "FunctionFactory.h"
 #include "FunctionsEmbeddedDictionaries.h"
 

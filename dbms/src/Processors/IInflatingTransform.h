@@ -23,7 +23,7 @@ public:
     IInflatingTransform(Block input_header, Block output_header);
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

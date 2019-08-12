@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 

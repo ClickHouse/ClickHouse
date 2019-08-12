@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include <Storages/StorageFile.h>
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>

@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>

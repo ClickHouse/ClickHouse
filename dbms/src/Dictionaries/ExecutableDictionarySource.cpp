@@ -1,5 +1,5 @@
 #include "ExecutableDictionarySource.h"
-
+#include "registerDictionaries.h"
 #include <future>
 #include <thread>
 #include <ext/scope_guard.h>

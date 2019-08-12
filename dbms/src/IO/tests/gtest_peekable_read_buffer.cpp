@@ -1,3 +1,5 @@
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+
 #include <gtest/gtest.h>
 
 #include <Core/Types.h>
@@ -20,7 +22,7 @@ void readAndAssert(DB::ReadBuffer & buf, const char * str)
     ASSERT_EQ(strncmp(tmp, str, n), 0);
 }
 
-void assertAvailable(DB::ReadBuffer & buf, const char * str)
+static void assertAvailable(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
     ASSERT_EQ(buf.available(), n);

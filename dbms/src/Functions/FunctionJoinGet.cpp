@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionJoinGet.h>
 
 #include <Functions/FunctionFactory.h>
@@ -74,7 +75,7 @@ FunctionBasePtr FunctionBuilderJoinGet::buildImpl(const ColumnsWithTypeAndName &
         std::make_shared<FunctionJoinGet>(table_lock, storage_join, join, attr_name, return_type), data_types, return_type);
 }
 
-DataTypePtr FunctionBuilderJoinGet::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionBuilderJoinGet::getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();

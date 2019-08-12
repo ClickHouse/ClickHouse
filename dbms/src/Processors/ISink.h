@@ -19,7 +19,7 @@ public:
     explicit ISink(Block header);
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     InputPort & getPort() { return input; }
 };

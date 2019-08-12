@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "FlatDictionary.h"
 #include <IO/WriteHelpers.h>
 #include "DictionaryBlockInputStream.h"

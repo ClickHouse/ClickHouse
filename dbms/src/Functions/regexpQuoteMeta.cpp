@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -39,7 +40,7 @@ public:
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(

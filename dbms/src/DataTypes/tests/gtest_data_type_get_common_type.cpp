@@ -4,6 +4,7 @@
 
 #include <sstream>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 

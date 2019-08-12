@@ -30,7 +30,7 @@ void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVecto
 
 /// Recursive method which goes through all substitution blocks in xml
 /// and replaces property {names} by their values
-void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
+static void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
     StringToVector::iterator substitutions_right,
     const std::string & template_query,
     Strings & out_queries)

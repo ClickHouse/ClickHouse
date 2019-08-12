@@ -58,7 +58,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 }
 
 
-void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
 {
     if (!ast)
         return;

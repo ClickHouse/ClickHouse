@@ -14,7 +14,7 @@ public:
     OutputPort & getExtremesPort() { return outputs.back(); }
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
 protected:
     void transform(Chunk & chunk) override;

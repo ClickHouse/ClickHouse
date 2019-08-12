@@ -1,3 +1,4 @@
+#include <Functions/URL/registerFunctionsURL.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include "firstSignificantSubdomain.h"
@@ -31,6 +32,7 @@ struct CutToFirstSignificantSubdomain
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 void registerFunctionCutToFirstSignificantSubdomain(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>();

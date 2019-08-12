@@ -1,3 +1,4 @@
+#include "ColumnsCommon.h"
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif

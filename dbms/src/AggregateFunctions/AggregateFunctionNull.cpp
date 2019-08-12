@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/AggregateFunctionNull.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>

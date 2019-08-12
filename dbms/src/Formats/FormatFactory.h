@@ -11,7 +11,6 @@
 
 namespace DB
 {
-
 class Block;
 class Context;
 struct FormatSettings;
@@ -55,25 +54,17 @@ private:
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
-        WriteBuffer & buf,
-        const Block & sample,
-        const Context & context,
-        WriteCallback callback,
-        const FormatSettings & settings)>;
+        WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const FormatSettings & settings)>;
 
     using InputProcessorCreator = std::function<InputFormatPtr(
-            ReadBuffer & buf,
-            const Block & header,
-            const Context & context,
-            const RowInputFormatParams & params,
-            const FormatSettings & settings)>;
+        ReadBuffer & buf,
+        const Block & header,
+        const Context & context,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings)>;
 
     using OutputProcessorCreator = std::function<OutputFormatPtr(
-            WriteBuffer & buf,
-            const Block & sample,
-            const Context & context,
-            WriteCallback callback,
-            const FormatSettings & settings)>;
+        WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const FormatSettings & settings)>;
 
     struct Creators
     {
@@ -86,7 +77,6 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-
     static FormatFactory & instance();
 
     BlockInputStreamPtr getInput(
@@ -97,8 +87,8 @@ public:
         UInt64 max_block_size,
         ReadCallback callback = {}) const;
 
-    BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {}) const;
+    BlockOutputStreamPtr
+    getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -118,10 +108,7 @@ public:
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
-    const FormatsDictionary & getAllFormats() const
-    {
-        return dict;
-    }
+    const FormatsDictionary & getAllFormats() const { return dict; }
 
 private:
     /// FormatsDictionary dict;
@@ -131,5 +118,52 @@ private:
 
     const Creators & getCreators(const String & name) const;
 };
+
+void registerInputFormatNative(FormatFactory & factory);
+void registerOutputFormatNative(FormatFactory & factory);
+
+void registerInputFormatProcessorNative(FormatFactory & factory);
+void registerOutputFormatProcessorNative(FormatFactory & factory);
+void registerInputFormatProcessorRowBinary(FormatFactory & factory);
+void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
+void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerInputFormatProcessorValues(FormatFactory & factory);
+void registerOutputFormatProcessorValues(FormatFactory & factory);
+void registerInputFormatProcessorCSV(FormatFactory & factory);
+void registerOutputFormatProcessorCSV(FormatFactory & factory);
+void registerInputFormatProcessorTSKV(FormatFactory & factory);
+void registerOutputFormatProcessorTSKV(FormatFactory & factory);
+void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
+void registerOutputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorProtobuf(FormatFactory & factory);
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory & factory);
+
+/// Output only (presentational) formats.
+
+void registerOutputFormatNull(FormatFactory & factory);
+
+void registerOutputFormatProcessorPretty(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorVertical(FormatFactory & factory);
+void registerOutputFormatProcessorJSON(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatProcessorXML(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
+void registerOutputFormatProcessorNull(FormatFactory & factory);
+#if USE_SSL
+void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
+#endif
+
+/// Input only formats.
+void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 
 }

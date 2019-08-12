@@ -33,7 +33,7 @@ public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

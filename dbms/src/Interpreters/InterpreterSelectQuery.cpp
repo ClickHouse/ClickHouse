@@ -2431,15 +2431,16 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
 }
 
 
-// TODO: move to anonymous namespace
+namespace
+{
 bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 {
     if (query.group_by_with_totals)
         return true;
 
     /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-      */
+  * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+  */
 
     if (auto query_table = extractTableExpression(query, 0))
     {
@@ -2453,7 +2454,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
     return false;
 }
-
+}
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {

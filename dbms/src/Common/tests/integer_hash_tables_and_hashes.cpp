@@ -325,7 +325,7 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
     test<Map, Hashes::SipHash>(data, size, init);
 }
 
-void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
+static void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 {
     auto nothing = [](auto &){};
 

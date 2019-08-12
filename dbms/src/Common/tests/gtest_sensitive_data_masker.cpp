@@ -9,6 +9,7 @@
 #    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #    pragma clang diagnostic ignored "-Wundef"
 #endif
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 
 #include <gtest/gtest.h>
 #include <chrono>

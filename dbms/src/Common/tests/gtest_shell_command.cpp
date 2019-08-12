@@ -9,6 +9,7 @@
 #include <chrono>
 #include <thread>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 

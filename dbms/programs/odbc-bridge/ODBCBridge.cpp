@@ -193,6 +193,8 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 }
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseODBCBridge(int argc, char ** argv)
 {
     DB::ODBCBridge app;

@@ -6,6 +6,7 @@
 #include <memory>
 #include <type_traits>
 
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 

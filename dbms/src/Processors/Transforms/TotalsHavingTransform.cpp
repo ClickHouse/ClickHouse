@@ -105,12 +105,12 @@ IProcessor::Status TotalsHavingTransform::prepare()
     return Status::Finished;
 }
 
-void TotalsHavingTransform::work()
+void TotalsHavingTransform::doWork()
 {
     if (finished_transform)
         prepareTotals();
     else
-        ISimpleTransform::work();
+        ISimpleTransform::doWork();
 }
 
 void TotalsHavingTransform::transform(Chunk & chunk)

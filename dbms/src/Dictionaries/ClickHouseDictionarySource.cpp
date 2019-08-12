@@ -200,6 +200,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 }
 
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
     auto createTableSource = [=](const DictionaryStructure & dict_struct,

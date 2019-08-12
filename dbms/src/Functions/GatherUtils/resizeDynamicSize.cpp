@@ -1,3 +1,4 @@
+#include <Functions/GatherUtils/GatherUtils.h>
 #include "Selectors.h"
 #include "Algorithms.h"
 

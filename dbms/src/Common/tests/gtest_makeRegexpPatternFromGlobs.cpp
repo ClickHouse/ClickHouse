@@ -1,5 +1,6 @@
 #include <Common/parseGlobs.h>
 #include <re2/re2.h>
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 

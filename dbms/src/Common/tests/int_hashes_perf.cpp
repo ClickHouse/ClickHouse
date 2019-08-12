@@ -11,6 +11,7 @@
 #include "AvalancheTest.h"  /// Taken from SMHasher.
 #include <port/clock.h>
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void setAffinity()
 {

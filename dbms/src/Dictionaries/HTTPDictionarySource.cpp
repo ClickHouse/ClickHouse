@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "HTTPDictionarySource.h"
 
 #include <DataStreams/IBlockOutputStream.h>

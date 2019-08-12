@@ -23,7 +23,7 @@ public:
 
     String getName() const override { return "MergingSortedTransform"; }
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     void addInput();
     void setHaveAllInputs();

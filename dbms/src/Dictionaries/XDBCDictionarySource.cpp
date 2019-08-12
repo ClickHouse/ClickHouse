@@ -1,5 +1,5 @@
+#include "registerDictionaries.h"
 #include "XDBCDictionarySource.h"
-
 #include <Columns/ColumnString.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>

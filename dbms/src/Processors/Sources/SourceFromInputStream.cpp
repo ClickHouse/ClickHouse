@@ -61,13 +61,13 @@ IProcessor::Status SourceFromInputStream::prepare()
     return status;
 }
 
-void SourceFromInputStream::work()
+void SourceFromInputStream::doWork()
 {
     if (!is_generating_finished)
     {
         try
         {
-            ISource::work();
+            ISource::doWork();
         }
         catch (...)
         {

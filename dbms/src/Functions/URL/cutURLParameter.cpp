@@ -1,3 +1,4 @@
+#include <Functions/URL/registerFunctionsURL.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearch.h>
 #include <common/find_symbols.h>

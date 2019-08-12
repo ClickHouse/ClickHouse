@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>

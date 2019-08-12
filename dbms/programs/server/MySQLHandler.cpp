@@ -21,6 +21,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Storages/IStorage.h>
 
+#pragma GCC diagnostic warning "-Wold-style-cast"
 
 namespace DB
 {

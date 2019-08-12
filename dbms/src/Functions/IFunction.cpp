@@ -506,13 +506,13 @@ DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutLowCardinality(const Column
         if (null_presence.has_nullable)
         {
             Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
-            auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
+            auto return_type = getReturnTypeForColumnsImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
 
         }
     }
 
-    return getReturnTypeImpl(arguments);
+    return getReturnTypeForColumnsImpl(arguments);
 }
 
 #if USE_EMBEDDED_COMPILER

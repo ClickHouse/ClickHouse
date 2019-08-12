@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>

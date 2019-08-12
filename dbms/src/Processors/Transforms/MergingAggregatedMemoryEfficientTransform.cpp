@@ -267,7 +267,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     }
 }
 
-void GroupingAggregatedTransform::work()
+void GroupingAggregatedTransform::doWork()
 {
     if (!single_level_chunks.empty())
     {

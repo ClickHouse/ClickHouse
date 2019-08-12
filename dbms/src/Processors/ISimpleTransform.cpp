@@ -78,7 +78,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     return Status::Ready;
 }
 
-void ISimpleTransform::work()
+void ISimpleTransform::doWork()
 {
     if (current_data.exception)
         return;

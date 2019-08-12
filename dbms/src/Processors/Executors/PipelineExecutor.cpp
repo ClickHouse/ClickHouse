@@ -139,7 +139,7 @@ static void executeJob(IProcessor * processor)
 {
     try
     {
-        processor->work();
+        processor->doWork();
     }
     catch (Exception & exception)
     {

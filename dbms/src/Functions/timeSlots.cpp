@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
@@ -118,7 +119,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "

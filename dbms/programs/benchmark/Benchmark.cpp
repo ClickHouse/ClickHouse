@@ -101,7 +101,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -111,7 +111,7 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> &)
+    int main(const std::vector<std::string> &) override
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
             Poco::File(json_path).remove();
@@ -495,6 +495,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

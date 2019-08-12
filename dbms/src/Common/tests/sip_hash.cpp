@@ -87,6 +87,7 @@ uint8_t vectors[64][8] =
   { 0x72, 0x45, 0x06, 0xeb, 0x4c, 0x32, 0x8a, 0x95, }
 };
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int test_vectors()
 {

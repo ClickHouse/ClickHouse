@@ -9,6 +9,7 @@
 
 
 int value = 0;
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void f() { ++value; }
 void * g(void *) { f(); return {}; }

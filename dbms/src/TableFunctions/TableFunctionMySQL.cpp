@@ -1,6 +1,6 @@
 #include "config_core.h"
 #if USE_MYSQL
-
+#include "registerTableFunctions.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

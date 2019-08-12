@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionMathBinaryFloat64.h>
 #include <Functions/FunctionFactory.h>
 

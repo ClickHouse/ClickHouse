@@ -126,7 +126,7 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksTransform"; }
 
-    void work() override
+    void doWork() override
     {
         if (data->empty())
         {
@@ -475,7 +475,7 @@ IProcessor::Status AggregatingTransform::prepare()
     return Status::Ready;
 }
 
-void AggregatingTransform::work()
+void AggregatingTransform::doWork()
 {
     if (is_consume_finished)
         initGenerate();

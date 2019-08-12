@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/sleep.h>
 #include <Functions/FunctionFactory.h>
 

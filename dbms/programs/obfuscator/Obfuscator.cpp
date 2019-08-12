@@ -123,14 +123,14 @@ UInt64 hash(Ts... xs)
 }
 
 
-UInt64 maskBits(UInt64 x, size_t num_bits)
+static UInt64 maskBits(UInt64 x, size_t num_bits)
 {
     return x & ((1ULL << num_bits) - 1);
 }
 
 
 /// Apply Feistel network round to least significant num_bits part of x.
-UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
+static UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
     size_t num_bits_left_half = num_bits / 2;
     size_t num_bits_right_half = num_bits - num_bits_left_half;
@@ -146,7 +146,7 @@ UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
-UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
+static UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
@@ -156,7 +156,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 
 
 /// Pseudorandom permutation within set of numbers with the same log2(x).
-UInt64 transform(UInt64 x, UInt64 seed)
+static UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
     if (x == 0 || x == 1)
@@ -199,7 +199,7 @@ public:
 
 
 /// Keep sign and apply pseudorandom permutation after converting to unsigned as above.
-Int64 transformSigned(Int64 x, UInt64 seed)
+static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
@@ -298,7 +298,7 @@ public:
 
 
 /// Pseudorandom function, but keep word characters as word characters.
-void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
         SipHash hash;
@@ -943,159 +943,170 @@ public:
 
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
-try
 {
-    using namespace DB;
-    namespace po = boost::program_options;
-
-    po::options_description description = createOptionsDescription("Options", getTerminalWidth());
-    description.add_options()
-        ("help", "produce help message")
-        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
-        ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
-        ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
-        ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
-        ("frequency-cutoff", po::value<UInt64>()->default_value(5), "frequency cutoff for markov model: remove all buckets with count less than specified")
-        ("num-buckets-cutoff", po::value<UInt64>()->default_value(0), "cutoff for number of different possible continuations for a context: remove all histograms with less than specified number of buckets")
-        ("frequency-add", po::value<UInt64>()->default_value(0), "add a constant to every count to lower probability distribution skew")
-        ("frequency-desaturate", po::value<double>()->default_value(0), "0..1 - move every frequency towards average to lower probability distribution skew")
-        ("determinator-sliding-window-size", po::value<UInt64>()->default_value(8), "size of a sliding window in a source string - its hash is used as a seed for RNG in markov model")
-        ;
-
-    po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
-    po::variables_map options;
-    po::store(parsed, options);
-
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("structure")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    try
     {
-        std::cout << documantation << "\n"
-            << "\nUsage: " << argv[0] << " [options] < in > out\n"
-            << "\nInput must be seekable file (it will be read twice).\n"
-            << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+        using namespace DB;
+        namespace po = boost::program_options;
+
+        po::options_description description = createOptionsDescription("Options", getTerminalWidth());
+        description.add_options()("help", "produce help message")(
+            "structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")(
+            "input-format", po::value<std::string>(), "input format of the initial table data")(
+            "output-format", po::value<std::string>(), "default output format")(
+            "seed",
+            po::value<std::string>(),
+            "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")(
+            "limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")(
+            "silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")(
+            "order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")(
+            "frequency-cutoff",
+            po::value<UInt64>()->default_value(5),
+            "frequency cutoff for markov model: remove all buckets with count less than specified")(
+            "num-buckets-cutoff",
+            po::value<UInt64>()->default_value(0),
+            "cutoff for number of different possible continuations for a context: remove all histograms with less than specified number of buckets")(
+            "frequency-add", po::value<UInt64>()->default_value(0), "add a constant to every count to lower probability distribution skew")(
+            "frequency-desaturate",
+            po::value<double>()->default_value(0),
+            "0..1 - move every frequency towards average to lower probability distribution skew")(
+            "determinator-sliding-window-size",
+            po::value<UInt64>()->default_value(8),
+            "size of a sliding window in a source string - its hash is used as a seed for RNG in markov model");
+
+        po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
+        po::variables_map options;
+        po::store(parsed, options);
+
+        if (options.count("help") || !options.count("seed") || !options.count("structure") || !options.count("input-format")
+            || !options.count("output-format"))
+        {
+            std::cout << documantation << "\n"
+                      << "\nUsage: " << argv[0] << " [options] < in > out\n"
+                      << "\nInput must be seekable file (it will be read twice).\n"
+                      << "\n"
+                      << description << "\n"
+                      << "\nExample:\n    " << argv[0]
+                      << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            return 0;
+        }
+
+        UInt64 seed = sipHash64(options["seed"].as<std::string>());
+
+        std::string structure = options["structure"].as<std::string>();
+        std::string input_format = options["input-format"].as<std::string>();
+        std::string output_format = options["output-format"].as<std::string>();
+
+        std::optional<UInt64> limit;
+        if (options.count("limit"))
+            limit = options["limit"].as<UInt64>();
+
+        bool silent = options["silent"].as<bool>();
+
+        MarkovModelParameters markov_model_params;
+
+        markov_model_params.order = options["order"].as<UInt64>();
+        markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();
+        markov_model_params.num_buckets_cutoff = options["num-buckets-cutoff"].as<UInt64>();
+        markov_model_params.frequency_add = options["frequency-add"].as<UInt64>();
+        markov_model_params.frequency_desaturate = options["frequency-desaturate"].as<double>();
+        markov_model_params.determinator_sliding_window_size = options["determinator-sliding-window-size"].as<UInt64>();
+
+        // Create header block
+        std::vector<std::string> structure_vals;
+        boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
+
+        if (structure_vals.size() % 2 != 0)
+            throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
+
+        Block header;
+        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+        for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+        {
+            ColumnWithTypeAndName column;
+            column.name = structure_vals[i];
+            column.type = data_type_factory.get(structure_vals[i + 1]);
+            column.column = column.type->createColumn();
+            header.insert(std::move(column));
+        }
+
+        Context context = Context::createGlobal();
+        context.makeGlobalContext();
+
+        ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
+        WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
+
+        {
+            /// stdin must be seekable
+            auto res = lseek(file_in.getFD(), 0, SEEK_SET);
+            if (-1 == res)
+                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        }
+
+        Obfuscator obfuscator(header, seed, markov_model_params);
+
+        UInt64 max_block_size = 8192;
+
+        /// Train step
+        {
+            if (!silent)
+                std::cerr << "Training models\n";
+
+            BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
+
+            UInt64 processed_rows = 0;
+            input->readPrefix();
+            while (Block block = input->read())
+            {
+                obfuscator.train(block.getColumns());
+                processed_rows += block.rows();
+                if (!silent)
+                    std::cerr << "Processed " << processed_rows << " rows\n";
+            }
+            input->readSuffix();
+        }
+
+        obfuscator.finalize();
+
+        /// Generation step
+        {
+            if (!silent)
+                std::cerr << "Generating data\n";
+
+            file_in.seek(0);
+
+            BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
+            BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
+
+            if (limit)
+                input = std::make_shared<LimitBlockInputStream>(input, *limit, 0);
+
+            UInt64 processed_rows = 0;
+            input->readPrefix();
+            output->writePrefix();
+            while (Block block = input->read())
+            {
+                Columns columns = obfuscator.generate(block.getColumns());
+                output->write(header.cloneWithColumns(columns));
+                processed_rows += block.rows();
+                if (!silent)
+                    std::cerr << "Processed " << processed_rows << " rows\n";
+            }
+            output->writeSuffix();
+            input->readSuffix();
+        }
+
         return 0;
     }
-
-    UInt64 seed = sipHash64(options["seed"].as<std::string>());
-
-    std::string structure = options["structure"].as<std::string>();
-    std::string input_format = options["input-format"].as<std::string>();
-    std::string output_format = options["output-format"].as<std::string>();
-
-    std::optional<UInt64> limit;
-    if (options.count("limit"))
-        limit = options["limit"].as<UInt64>();
-
-    bool silent = options["silent"].as<bool>();
-
-    MarkovModelParameters markov_model_params;
-
-    markov_model_params.order = options["order"].as<UInt64>();
-    markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();
-    markov_model_params.num_buckets_cutoff = options["num-buckets-cutoff"].as<UInt64>();
-    markov_model_params.frequency_add = options["frequency-add"].as<UInt64>();
-    markov_model_params.frequency_desaturate = options["frequency-desaturate"].as<double>();
-    markov_model_params.determinator_sliding_window_size = options["determinator-sliding-window-size"].as<UInt64>();
-
-    // Create header block
-    std::vector<std::string> structure_vals;
-    boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
-
-    if (structure_vals.size() % 2 != 0)
-        throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
-
-    Block header;
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-    for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+    catch (...)
     {
-        ColumnWithTypeAndName column;
-        column.name = structure_vals[i];
-        column.type = data_type_factory.get(structure_vals[i + 1]);
-        column.column = column.type->createColumn();
-        header.insert(std::move(column));
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
     }
-
-    Context context = Context::createGlobal();
-    context.makeGlobalContext();
-
-    ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
-    WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
-
-    {
-        /// stdin must be seekable
-        auto res = lseek(file_in.getFD(), 0, SEEK_SET);
-        if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-    }
-
-    Obfuscator obfuscator(header, seed, markov_model_params);
-
-    UInt64 max_block_size = 8192;
-
-    /// Train step
-    {
-        if (!silent)
-            std::cerr << "Training models\n";
-
-        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
-
-        UInt64 processed_rows = 0;
-        input->readPrefix();
-        while (Block block = input->read())
-        {
-            obfuscator.train(block.getColumns());
-            processed_rows += block.rows();
-            if (!silent)
-                std::cerr << "Processed " << processed_rows << " rows\n";
-        }
-        input->readSuffix();
-    }
-
-    obfuscator.finalize();
-
-    /// Generation step
-    {
-        if (!silent)
-            std::cerr << "Generating data\n";
-
-        file_in.seek(0);
-
-        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
-
-        if (limit)
-            input = std::make_shared<LimitBlockInputStream>(input, *limit, 0);
-
-        UInt64 processed_rows = 0;
-        input->readPrefix();
-        output->writePrefix();
-        while (Block block = input->read())
-        {
-            Columns columns = obfuscator.generate(block.getColumns());
-            output->write(header.cloneWithColumns(columns));
-            processed_rows += block.rows();
-            if (!silent)
-                std::cerr << "Processed " << processed_rows << " rows\n";
-        }
-        output->writeSuffix();
-        input->readSuffix();
-    }
-
-    return 0;
-}
-catch (...)
-{
-    std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-    auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
 }

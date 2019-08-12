@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -74,7 +75,7 @@ private:
     UnpackedArrays prepareArrays(const Columns & columns) const;
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
-    static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data);
+    static ColumnPtr doExecute(const UnpackedArrays & arrays, MutableColumnPtr result_data);
 
     struct NumberExecutor
     {
@@ -347,17 +348,17 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
         WhichDataType which(not_nullable_nested_return_type);
 
         if (which.isDate())
-            result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
+            result_column = doExecute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
         else if (which.isDateTime())
-            result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
+            result_column = doExecute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
         else if (which.isString())
-            result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column));
+            result_column = doExecute<StringMap, ColumnString, false>(arrays, std::move(column));
         else if (which.isFixedString())
-            result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
+            result_column = doExecute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {
             column = static_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
-            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), return_type);
+            result_column = castRemoveNullable(doExecute<StringMap, IColumn, false>(arrays, std::move(column)), return_type);
         }
     }
 
@@ -371,11 +372,11 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
             HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
-        result = execute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
+        result = doExecute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
 }
 
 template <typename Map, typename ColumnType, bool is_numeric_column>
-ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
+ColumnPtr FunctionArrayIntersect::doExecute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
 {
     auto args = arrays.nested_columns.size();
     auto rows = arrays.base_rows;

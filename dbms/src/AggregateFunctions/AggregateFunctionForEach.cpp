@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionForEach.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>

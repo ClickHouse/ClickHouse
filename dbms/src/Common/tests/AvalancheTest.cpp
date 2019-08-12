@@ -3,6 +3,7 @@
 #include "AvalancheTest.h"
 
 //-----------------------------------------------------------------------------
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void PrintAvalancheDiagram(int x, int y, int reps, double scale, int * bins)
 {

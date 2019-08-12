@@ -1,3 +1,4 @@
+#include <Functions/URL/registerFunctionsURL.h>
 #include <Common/hex.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>

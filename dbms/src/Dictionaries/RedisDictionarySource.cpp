@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "RedisDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"

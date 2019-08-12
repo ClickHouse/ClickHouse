@@ -1,3 +1,4 @@
+#include <Functions/URL/registerFunctionsURL.h>
 #include "domain.h"
 
 #include <Functions/FunctionFactory.h>

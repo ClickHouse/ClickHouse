@@ -29,6 +29,7 @@
     #pragma clang diagnostic ignored "-Wdeprecated"
 #elif defined (__GNUC__) && __GNUC__ >= 9
     #pragma GCC diagnostic ignored "-Wdeprecated-copy"
+    #pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
 
 #include <gtest/gtest.h>

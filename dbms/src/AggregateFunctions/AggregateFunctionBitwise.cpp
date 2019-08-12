@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionBitwise.h>
 #include <AggregateFunctions/Helpers.h>
@@ -31,6 +32,7 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
 
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("groupBitOr", createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>);

@@ -1,5 +1,6 @@
 #include <string>
 #include <common/find_symbols.h>
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 

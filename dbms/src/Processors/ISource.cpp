@@ -41,7 +41,7 @@ ISource::Status ISource::prepare()
     return Status::PortFull;
 }
 
-void ISource::work()
+void ISource::doWork()
 {
     try
     {

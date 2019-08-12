@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>

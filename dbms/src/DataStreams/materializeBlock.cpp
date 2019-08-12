@@ -7,7 +7,7 @@ namespace DB
 Block materializeBlock(const Block & block)
 {
     if (!block)
-        return block;
+        return Block();
 
     Block res = block;
     size_t columns = res.columns();

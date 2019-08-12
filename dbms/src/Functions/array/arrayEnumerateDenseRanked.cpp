@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include <Functions/FunctionFactory.h>
 #include "arrayEnumerateRanked.h"
 

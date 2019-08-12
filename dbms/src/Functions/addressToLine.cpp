@@ -1,5 +1,6 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
+#include <Functions/registerFunctions.h>
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
@@ -53,7 +54,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception("Function " + getName() + " needs exactly one argument; passed "

@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include "FunctionsHashing.h"
 
 #include <Functions/FunctionFactory.h>

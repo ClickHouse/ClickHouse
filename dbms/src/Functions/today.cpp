@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <common/DateLUT.h>
 
 #include <DataTypes/DataTypeDate.h>

@@ -1,3 +1,4 @@
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <AggregateFunctions/AggregateFunctionUniqCombined.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>

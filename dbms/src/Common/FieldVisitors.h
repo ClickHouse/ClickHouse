@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <common/demangle.h>
+#include <IO/ReadHelpers.h>
 
 
 class SipHash;
@@ -17,8 +18,6 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int LOGICAL_ERROR;
 }
-
-UInt128 stringToUUID(const String &);
 
 
 /** StaticVisitor (and its descendants) - class with overloaded operator() for all types of fields.

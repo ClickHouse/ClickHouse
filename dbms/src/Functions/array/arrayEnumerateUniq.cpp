@@ -1,3 +1,4 @@
+#include "registerFunctionsArray.h"
 #include "arrayEnumerateExtended.h"
 #include <Functions/FunctionFactory.h>
 

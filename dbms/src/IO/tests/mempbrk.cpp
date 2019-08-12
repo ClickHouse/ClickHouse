@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 namespace test
 {
-    void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
+static void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
     {
         s = "";
         while (!buf.eof())

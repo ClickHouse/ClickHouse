@@ -1,3 +1,4 @@
+#include "registerTableFunctions.h"
 #include <type_traits>
 #include <ext/scope_guard.h>
 
@@ -90,8 +91,11 @@ void registerTableFunctionJDBC(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionJDBC>();
 }
 
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionODBC>();
 }
+#endif
+
 }

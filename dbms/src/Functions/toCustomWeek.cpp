@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/CustomWeekTransforms.h>
 #include <Functions/FunctionCustomWeekToSomething.h>

@@ -16,6 +16,7 @@
 #include <port/unistd.h>
 
 namespace fs = std::filesystem;
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 std::string createTmpPath(const std::string & filename)
 {

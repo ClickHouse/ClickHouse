@@ -1,12 +1,9 @@
 #include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
-
-#include <Common/Exception.h>
-
-#include <Poco/String.h>
-
+#include <Functions/registerFunctions.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Poco/String.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

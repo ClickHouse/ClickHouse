@@ -1,5 +1,8 @@
-#include <Functions/FunctionBase64Conversion.h>
+#include <config_functions.h>
+
 #if USE_BASE64
+#include <Functions/registerFunctions.h>
+#include <Functions/FunctionBase64Conversion.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 

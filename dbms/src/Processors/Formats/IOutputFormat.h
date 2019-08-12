@@ -42,7 +42,7 @@ public:
     IOutputFormat(const Block & header_, WriteBuffer & out_);
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     /// Flush output buffers if any.
     virtual void flush();

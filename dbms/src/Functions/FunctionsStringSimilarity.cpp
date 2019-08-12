@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionsStringSimilarity.h>
 
 #include <Functions/FunctionFactory.h>

@@ -178,14 +178,14 @@ public:
       *
       * Method work can be executed in parallel for different processors.
       */
-    virtual void work()
+    virtual void doWork()
     {
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual void work(size_t /*thread_num*/)
     {
-        work();
+        doWork();
     }
 
     /** You may call this method if 'prepare' returned Async.

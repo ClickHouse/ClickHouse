@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 
-String toQueryStringWithQuote(const std::vector<String> & quote_list)
+static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 {
     WriteBufferFromOwnString quote_list_query;
     quote_list_query << "(";

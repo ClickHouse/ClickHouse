@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 #include <Common/RWLock.h>
@@ -9,7 +10,6 @@
 #include <thread>
 #include <atomic>
 #include <iomanip>
-
 
 using namespace DB;
 

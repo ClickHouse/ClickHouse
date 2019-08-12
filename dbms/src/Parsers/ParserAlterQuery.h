@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IParserBase.h>
 
 namespace DB
 {
-
 /** Query like this:
   * ALTER TABLE [db.]name [ON CLUSTER cluster]
   *     [ADD COLUMN [IF NOT EXISTS] col_name type [AFTER col_after],]
@@ -27,16 +26,16 @@ namespace DB
 class ParserAlterQuery : public IParserBase
 {
 protected:
-    const char * getName() const { return "ALTER query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "ALTER query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
 class ParserAlterCommandList : public IParserBase
 {
 protected:
-    const char * getName() const { return "a list of ALTER commands"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "a list of ALTER commands"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
     bool is_live_view;
@@ -48,8 +47,8 @@ public:
 class ParserAlterCommand : public IParserBase
 {
 protected:
-    const char * getName() const { return "ALTER command"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "ALTER command"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
     bool is_live_view;
@@ -62,8 +61,8 @@ public:
 class ParserAssignment : public IParserBase
 {
 protected:
-    const char * getName() const { return "column assignment"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "column assignment"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 }

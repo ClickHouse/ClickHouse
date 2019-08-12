@@ -946,6 +946,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 }
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {

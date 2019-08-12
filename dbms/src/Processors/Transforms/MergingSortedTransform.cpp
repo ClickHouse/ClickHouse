@@ -189,7 +189,7 @@ IProcessor::Status MergingSortedTransform::prepare()
     }
 }
 
-void MergingSortedTransform::work()
+void MergingSortedTransform::doWork()
 {
     if (has_collation)
         merge(queue_with_collation);

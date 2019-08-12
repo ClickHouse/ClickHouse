@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <mutex>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>

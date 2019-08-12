@@ -149,7 +149,7 @@ public:
     size_t getNumberOfArguments() const override { return captured_types.size(); }
 
 protected:
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
     bool useDefaultImplementationForNulls() const override { return false; }
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {

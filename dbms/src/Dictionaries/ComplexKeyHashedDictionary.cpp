@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "ComplexKeyHashedDictionary.h"
 #include <ext/map.h>
 #include <ext/range.h>

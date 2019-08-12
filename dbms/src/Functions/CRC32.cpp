@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <zlib.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>

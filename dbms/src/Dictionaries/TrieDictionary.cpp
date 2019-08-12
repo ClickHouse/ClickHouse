@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "TrieDictionary.h"
 #include <stack>
 #include <Columns/ColumnFixedString.h>
@@ -18,10 +19,11 @@
 #ifdef __clang__
     #pragma clang diagnostic ignored "-Wold-style-cast"
     #pragma clang diagnostic ignored "-Wnewline-eof"
+#elif __GNUC__
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 #endif
 
 #include <btrie.h>
-
 
 namespace DB
 {

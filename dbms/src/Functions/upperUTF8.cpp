@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/LowerUpperUTF8Impl.h>

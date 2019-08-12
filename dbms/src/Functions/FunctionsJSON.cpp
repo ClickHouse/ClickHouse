@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/FunctionsJSON.h>
 #include <Functions/FunctionFactory.h>
 

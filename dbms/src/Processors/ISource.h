@@ -21,7 +21,7 @@ public:
     ISource(Block header);
 
     Status prepare() override;
-    void work() override;
+    void doWork() override;
 
     OutputPort & getPort() { return output; }
     const OutputPort & getPort() const { return output; }

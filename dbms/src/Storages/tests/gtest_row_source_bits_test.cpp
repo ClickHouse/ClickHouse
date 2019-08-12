@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include <gtest/gtest.h>
 
 #include <DataStreams/ColumnGathererStream.h>

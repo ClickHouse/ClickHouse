@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
 #include <Core/Defines.h>

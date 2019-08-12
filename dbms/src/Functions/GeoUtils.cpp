@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Core/Types.h>
 #include <Functions/GeoUtils.h>
 

@@ -115,7 +115,7 @@ void CreatingSetsTransform::init()
             elem.second.set->setHeader(elem.second.source->getHeader());
 }
 
-void CreatingSetsTransform::work()
+void CreatingSetsTransform::doWork()
 {
     if (!is_initialized)
         init();

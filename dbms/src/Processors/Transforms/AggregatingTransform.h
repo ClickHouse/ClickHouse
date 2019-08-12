@@ -62,7 +62,7 @@ public:
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
-    void work() override;
+    void doWork() override;
     Processors expandPipeline() override;
 
 protected:

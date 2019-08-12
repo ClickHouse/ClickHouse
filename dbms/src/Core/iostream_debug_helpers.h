@@ -24,6 +24,9 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what);
 class TableStructureReadLock;
 std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock & what);
 
+class IFunctionBuilder;
+std::ostream & operator<<(std::ostream & stream, const IFunctionBuilder & what);
+
 class IFunctionBase;
 std::ostream & operator<<(std::ostream & stream, const IFunctionBase & what);
 

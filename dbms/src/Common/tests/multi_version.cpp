@@ -10,6 +10,7 @@ using T = std::string;
 using MV = MultiVersion<T>;
 using Results = std::vector<T>;
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 void thread1(MV & x, T & result)
 {

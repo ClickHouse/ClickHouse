@@ -41,7 +41,7 @@ IProcessor::Status ExtremesTransform::prepare()
     return Status::Finished;
 }
 
-void ExtremesTransform::work()
+void ExtremesTransform::doWork()
 {
     if (finished_transform)
     {
@@ -49,7 +49,7 @@ void ExtremesTransform::work()
             extremes.setColumns(std::move(extremes_columns), 2);
     }
     else
-        ISimpleTransform::work();
+        ISimpleTransform::doWork();
 }
 
 void ExtremesTransform::transform(DB::Chunk & chunk)

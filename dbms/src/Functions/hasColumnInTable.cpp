@@ -1,3 +1,4 @@
+#include <Functions/registerFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -50,7 +51,7 @@ public:
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    DataTypePtr getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     bool isDeterministic() const override { return false; }
 
@@ -61,7 +62,7 @@ private:
 };
 
 
-DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionHasColumnInTable::getReturnTypeForColumnsImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 3 || arguments.size() > 6)
         throw Exception{"Invalid number of arguments for function " + getName(),

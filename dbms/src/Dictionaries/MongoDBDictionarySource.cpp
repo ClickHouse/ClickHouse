@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "MongoDBDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
