@@ -4,6 +4,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/MetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -73,6 +74,11 @@ void SystemLogs::shutdown()
         text_log->shutdown();
     if (metric_log)
         metric_log->shutdown();
+}
+
+void SystemLogs::threadFunction()
+{
+
 }
 
 }
