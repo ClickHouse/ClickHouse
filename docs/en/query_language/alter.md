@@ -299,7 +299,7 @@ For more information about backups and restoring data, see the [Data Backup](../
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
-The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column.
+The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
 #### FETCH PARTITION {#alter_fetch-partition}
 
