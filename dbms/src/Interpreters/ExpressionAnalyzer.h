@@ -161,7 +161,7 @@ public:
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
     /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex();
+    void makeSetsForIndex(const ASTPtr & node);
 
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
@@ -200,7 +200,6 @@ private:
       */
     void analyzeAggregation();
     void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
-    void assertNoAggregates(const ASTPtr & ast, const char * description);
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
@@ -213,8 +212,6 @@ private:
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

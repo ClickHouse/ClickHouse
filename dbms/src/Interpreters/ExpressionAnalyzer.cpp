@@ -58,6 +58,7 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
+#include <Interpreters/GetAggregatesVisitor.h>
 
 namespace DB
 {
@@ -68,7 +69,6 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int ILLEGAL_AGGREGATION;
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
@@ -238,20 +238,6 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 }
 
 
-void ExpressionAnalyzer::makeSetsForIndex()
-{
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    if (storage() && select_query && storage()->supportsIndexForIn())
-    {
-        if (select_query->where())
-            makeSetsForIndexImpl(select_query->where());
-        if (select_query->prewhere())
-            makeSetsForIndexImpl(select_query->prewhere());
-    }
-}
-
-
 void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
@@ -277,8 +263,12 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 }
 
 
-void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
+/// Perfomance optimisation for IN() if storage supports it.
+void ExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
+    if (!node || !storage() || !storage()->supportsIndexForIn())
+        return;
+
     for (auto & child : node->children)
     {
         /// Don't descend into subqueries.
@@ -290,15 +280,16 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
         if (func && func->name == "lambda")
             continue;
 
-        makeSetsForIndexImpl(child);
+        makeSetsForIndex(child);
     }
 
     const auto * func = node->as<ASTFunction>();
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
+        const ASTPtr & left_in_operand = args.children.at(0);
 
-        if (storage() && storage()->mayBenefitFromIndexForIn(args.children.at(0), context))
+        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context))
         {
             const ASTPtr & arg = args.children.at(1);
             if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
@@ -310,13 +301,13 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
             {
                 NamesAndTypesList temp_columns = sourceColumns();
                 temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                for (const auto & joined_column : columnsAddedByJoin())
-                    temp_columns.push_back(joined_column);
+                temp_columns.insert(temp_columns.end(), columnsAddedByJoin().begin(), columnsAddedByJoin().end());
+
                 ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
-                getRootActions(func->arguments->children.at(0), true, temp_actions);
+                getRootActions(left_in_operand, true, temp_actions);
 
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
-                if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                if (sample_block_with_calculated_columns.has(left_in_operand->getColumnName()))
                     makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
                         settings.size_limits_for_set, prepared_sets);
             }
@@ -356,17 +347,15 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
     actions = actions_visitor.popActionsLevel();
 }
 
+static void assertNoAggregates(const ASTPtr & ast, const char * description)
+{
+    GetAggregatesVisitor::Data data{true, description, {}, {}};
+    GetAggregatesVisitor(data).visit(ast);
+}
 
 void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    /// There can not be aggregate functions inside the WHERE and PREWHERE.
-    if (select_query && (ast.get() == select_query->where().get() || ast.get() == select_query->prewhere().get()))
-    {
-        assertNoAggregates(ast, "in WHERE or PREWHERE");
-        return;
-    }
+    auto * select_query = query->as<ASTSelectQuery>();
 
     /// If we are not analyzing a SELECT query, but a separate expression, then there can not be aggregate functions in it.
     if (!select_query)
@@ -375,17 +364,20 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         return;
     }
 
-    const auto * node = ast->as<ASTFunction>();
-    if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
+    /// There can not be aggregate functions inside the WHERE and PREWHERE.
+    if (select_query->where())
+        assertNoAggregates(select_query->where(), "in WHERE");
+    if (select_query->prewhere())
+        assertNoAggregates(select_query->prewhere(), "in PREWHERE");
+
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(ast);
+    has_aggregation = !data.aggregates.empty();
+
+    for (const ASTFunction * node : data.aggregates)
     {
-        has_aggregation = true;
         AggregateDescription aggregate;
         aggregate.column_name = node->getColumnName();
-
-        /// Make unique aggregate functions.
-        for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
-            if (aggregate_descriptions[i].column_name == aggregate.column_name)
-                return;
 
         const ASTs & arguments = node->arguments->children;
         aggregate.argument_names.resize(arguments.size());
@@ -407,26 +399,6 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         aggregate_descriptions.push_back(aggregate);
     }
-    else
-    {
-        for (const auto & child : ast->children)
-            if (!child->as<ASTSubquery>() && !child->as<ASTSelectQuery>())
-                getAggregates(child, actions);
-    }
-}
-
-
-void ExpressionAnalyzer::assertNoAggregates(const ASTPtr & ast, const char * description)
-{
-    const auto * node = ast->as<ASTFunction>();
-
-    if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
-        throw Exception("Aggregate function " + node->getColumnName()
-            + " is found " + String(description) + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
-
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSubquery>() && !child->as<ASTSelectQuery>())
-            assertNoAggregates(child, description);
 }
 
 
