@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
-     : IOutputFormat(header, out_), format_settings(format_settings_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_)
 {
     struct winsize w;
     if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
@@ -54,8 +54,8 @@ void PrettyBlockOutputFormat::calculateWidths(
         for (size_t j = 0; j < num_rows; ++j)
         {
             {
-                WriteBufferFromString out(serialized_value);
-                elem.type->serializeAsText(*column, j, out, format_settings);
+                WriteBufferFromString out_(serialized_value);
+                elem.type->serializeAsText(*column, j, out_, format_settings);
             }
 
             widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,

@@ -222,7 +222,7 @@ class FieldVisitorHash : public StaticVisitor<>
 private:
     SipHash & hash;
 public:
-    FieldVisitorHash(SipHash & hash);
+    FieldVisitorHash(SipHash & hash_);
 
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;

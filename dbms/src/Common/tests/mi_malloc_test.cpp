@@ -58,8 +58,8 @@ struct Allocation
 
     Allocation() {}
 
-    Allocation(size_t size)
-        : size(size)
+    Allocation(size_t size_)
+        : size(size_)
     {
         ptr = malloc(size);
         if (!ptr)

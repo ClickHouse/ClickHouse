@@ -120,13 +120,13 @@ namespace
 LibraryDictionarySource::LibraryDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    Block & sample_block)
+    const std::string & config_prefix_,
+    Block & sample_block_)
     : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
-    , config_prefix{config_prefix}
+    , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
 {
     if (!Poco::File(path).exists())
         throw Exception(
