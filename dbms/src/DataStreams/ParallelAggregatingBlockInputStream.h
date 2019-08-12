@@ -80,13 +80,11 @@ private:
         size_t src_rows = 0;
         size_t src_bytes = 0;
 
-        StringRefs key;
         ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
 
         ThreadData(size_t keys_size_, size_t aggregates_size_)
         {
-            key.resize(keys_size_);
             key_columns.resize(keys_size_);
             aggregate_columns.resize(aggregates_size_);
         }
