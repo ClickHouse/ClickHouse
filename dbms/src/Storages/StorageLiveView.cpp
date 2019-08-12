@@ -103,8 +103,8 @@ StorageLiveView::StorageLiveView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns)
-    : IStorage(columns), table_name(table_name_),
+    const ColumnsDescription & columns_)
+    : IStorage(columns_), table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
