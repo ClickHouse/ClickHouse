@@ -304,10 +304,6 @@ BlockInputStreams StorageDistributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
-    for (auto & col : header)
-        if (isColumnConst(*col.column))
-            col.column = col.type->createColumn();
-
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, context.getExternalTables())
