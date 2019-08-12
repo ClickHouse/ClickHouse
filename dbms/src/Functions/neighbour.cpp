@@ -101,7 +101,7 @@ public:
                 target->insertRangeFrom(*default_values_column, offset, row_count);
             }
         } else {
-            for(size_t row = 0; row <= row_count;row++) {
+            for(size_t row = 0; row < row_count;row++) {
                 target->insertDefault();
             }
         }
@@ -156,9 +156,11 @@ public:
             if (offset_value > 0)
             {
                 // insert shifted value
-                column->insertRangeFrom(*source_column, offset_value, input_rows_count - offset_value);
-                // insert defaults into the end
-                insertDefaults(column, input_rows_count - offset_value, default_values_column, offset_value);
+                if ((size_t)std::abs(offset_value) <= input_rows_count) {
+                    column->insertRangeFrom(*source_column, offset_value, input_rows_count - offset_value);
+                    // insert defaults into the end
+                    insertDefaults(column, input_rows_count - offset_value, default_values_column, offset_value);
+                }
             } else if(offset_value < 0) {
                 // insert defaults up to offset_value
                 insertDefaults(column, input_rows_count - std::abs(offset_value), default_values_column, std::abs(offset_value));
