@@ -31,9 +31,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 count, UInt64 block_size, unsigned sleep_useconds)
+    NumbersSource(UInt64 count_, UInt64 block_size_, unsigned sleep_useconds_)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-            count(count), block_size(block_size), sleep_useconds(sleep_useconds)
+            count(count_), block_size(block_size_), sleep_useconds(sleep_useconds_)
     {
     }
 

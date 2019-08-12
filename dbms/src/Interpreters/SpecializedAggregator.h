@@ -103,7 +103,6 @@ void NO_INLINE Aggregator::executeSpecialized(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
 {
@@ -111,10 +110,10 @@ void NO_INLINE Aggregator::executeSpecialized(
 
     if (!no_more_keys)
         executeSpecializedCase<false, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
+            method, state, aggregates_pool, rows, aggregate_columns, overflow_row);
     else
         executeSpecializedCase<true, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
+            method, state, aggregates_pool, rows, aggregate_columns, overflow_row);
 }
 
 #pragma GCC diagnostic push
@@ -126,9 +125,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     typename Method::State & state,
     Arena * aggregates_pool,
     size_t rows,
-    ColumnRawPtrs & /*key_columns*/,
     AggregateColumns & aggregate_columns,
-    StringRefs & /*keys*/,
     AggregateDataPtr overflow_row) const
 {
     /// For all rows.
@@ -184,20 +181,10 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
     AggregateColumns & aggregate_columns,
     Arena * arena) const
 {
-    /// Optimization in the case of a single aggregate function `count`.
-    AggregateFunctionCount * agg_count = params.aggregates_size == 1
-        ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : nullptr;
-
-    if (agg_count)
-        agg_count->addDelta(res, rows);
-    else
+    for (size_t i = 0; i < rows; ++i)
     {
-        for (size_t i = 0; i < rows; ++i)
-        {
-            AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-                aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
-        }
+        AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+            aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i, arena));
     }
 }
 

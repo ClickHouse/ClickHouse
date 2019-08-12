@@ -204,8 +204,8 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     const auto & columns_for_parts = new_columns.getAllPhysical();
 
-    const Settings & settings = context.getSettingsRef();
-    size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
+    const Settings & settings_ = context.getSettingsRef();
+    size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
     ThreadPool thread_pool(thread_pool_size);
 
 
@@ -761,7 +761,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         else
             return BackgroundProcessingPoolTaskResult::ERROR;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
