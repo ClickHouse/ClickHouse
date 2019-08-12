@@ -383,7 +383,7 @@ The command is available starting with the 18.12.14 version. The `filter_expr` m
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 
-The query recalculates the secondary index `name` in the partition `partition_name`.
+The query rebuilds the secondary index `name` in the partition `partition_name`.
 
 One query can contain several commands separated by commas.
 
