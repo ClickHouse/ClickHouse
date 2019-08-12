@@ -452,7 +452,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         Block res;
 
         for (auto & key : key_names)
-            res.insert(header.getByName(key).cloneEmpty());
+            res.insert({nullptr, header.getByName(key).type, key});
 
         for (auto & aggregate : aggregates)
         {
