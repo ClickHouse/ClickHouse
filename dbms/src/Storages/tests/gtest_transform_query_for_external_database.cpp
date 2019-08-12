@@ -69,3 +69,10 @@ TEST(TransformQueryForExternalDatabase, Like)
           "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" NOT LIKE 'w%rld'",
           state().context, state().columns);
 }
+
+TEST(TransformQueryForExternalDatabase, Substring)
+{
+    check("SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'",
+          "SELECT \"column\" FROM \"test\".\"table\"",
+          state().context, state().columns);
+}

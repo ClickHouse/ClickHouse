@@ -16,7 +16,7 @@ class MergeTreeIndexFullText;
 struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleFullText(
-            const MergeTreeIndexFullText & index);
+            const MergeTreeIndexFullText & index_);
 
     ~MergeTreeIndexGranuleFullText() override = default;
 

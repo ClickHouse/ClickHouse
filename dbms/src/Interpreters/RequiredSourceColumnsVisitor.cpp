@@ -40,7 +40,7 @@ static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
     return names;
 }
 
-bool RequiredSourceColumnsMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
+bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 {
     if (child->as<ASTSelectQuery>())
         return false;
@@ -60,7 +60,7 @@ bool RequiredSourceColumnsMatcher::needChildVisit(ASTPtr & node, const ASTPtr & 
     return true;
 }
 
-void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
 {
     /// results are columns
 
@@ -111,7 +111,7 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
     }
 }
 
-void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select()->children)
@@ -128,7 +128,7 @@ void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &
             Visitor(data).visit(node);
 
     /// revisit select_expression_list (with children) when all the aliases are set
-    Visitor(data).visit(select.refSelect());
+    Visitor(data).visit(select.select());
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
@@ -158,7 +158,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
     }
 }
 
-void RequiredSourceColumnsMatcher::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
     ASTTableExpression * expr = nullptr;
     ASTTableJoin * join = nullptr;
@@ -177,7 +177,7 @@ void RequiredSourceColumnsMatcher::visit(ASTTablesInSelectQueryElement & node, c
 }
 
 /// ASTIdentifiers here are tables. Do not visit them as generic ones.
-void RequiredSourceColumnsMatcher::visit(ASTTableExpression & node, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTTableExpression & node, const ASTPtr &, Data & data)
 {
     if (node.database_and_table_name)
         data.addTableAliasIfAny(*node.database_and_table_name);

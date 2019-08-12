@@ -24,11 +24,11 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        const size_t size);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getName() const override { return name; }
 

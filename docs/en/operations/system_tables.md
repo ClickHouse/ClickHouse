@@ -60,11 +60,11 @@ user String — The name of the user for connecting to the server.
 
 ## system.columns
 
-Contains information about the columns in all the tables.
+Contains information about columns in all the tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) query, but for multiple tables at once.
 
-The `system.columns` table contains the following columns (the type of the corresponding column is shown in brackets):
+The `system.columns` table contains the following columns (the column type is shown in brackets):
 
 - `database` (String) — Database name.
 - `table` (String) — Table name.
@@ -75,11 +75,11 @@ The `system.columns` table contains the following columns (the type of the corre
 - `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
 - `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
 - `marks_bytes` (UInt64) — The size of marks, in bytes.
-- `comment` (String) — The comment about column, or an empty string if it is not defined.
-- `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in partition expression.
-- `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in sorting key expression.
-- `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in primary key expression.
-- `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in sampling key expression.
+- `comment` (String) — Comment on the column, or an empty string if it is not defined.
+- `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in the partition expression.
+- `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in the sorting key expression.
+- `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
+- `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
 ## system.databases
 
@@ -89,11 +89,8 @@ This system table is used for implementing the `SHOW DATABASES` query.
 
 ## system.detached_parts
 
-Contains information about detached parts of
-[MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies
-why the part was detached. For user-detached parts, the reason is empty. Such
-parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition)
-command. For the description of other columns, see [system.parts](#system_tables-parts).
+Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts).
+
 
 ## system.dictionaries
 
@@ -110,7 +107,7 @@ Columns:
 - `bytes_allocated UInt64` — The amount of RAM the dictionary uses.
 - `hit_rate Float64` — For cache dictionaries, the percentage of uses for which the value was in the cache.
 - `element_count UInt64` — The number of items stored in the dictionary.
-- `load_factor Float64` — The percentage full of the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+- `load_factor Float64` — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 - `creation_time DateTime` — The time when the dictionary was created or last successfully reloaded.
 - `last_exception String` — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 - `source String` — Text describing the data source for the dictionary.
@@ -160,7 +157,7 @@ Columns:
 
 ## system.graphite_retentions
 
-Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which use in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
 Columns:
 
@@ -170,9 +167,9 @@ Columns:
 - `age`             (UInt64) - The minimum age of the data in seconds.
 - `precision`       (UInt64) - How precisely to define the age of the data in seconds.
 - `priority`        (UInt16) - Pattern priority.
-- `is_default`      (UInt8) - Is pattern default or not.
-- `Tables.database` (Array(String)) - Array of databases names of tables, which use `config_name` parameter.
-- `Tables.table`    (Array(String)) - Array of tables names, which use `config_name` parameter.
+- `is_default`      (UInt8) - Whether the pattern is the default.
+- `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
+- `Tables.table`    (Array(String)) - Array of table names that use the `config_name` parameter.
 
 
 ## system.merges
@@ -193,7 +190,7 @@ Columns:
 - `bytes_read_uncompressed UInt64` — Number of bytes read, uncompressed.
 - `rows_read UInt64` — Number of rows read.
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
-- `rows_written UInt64` — Number of lines rows written.
+- `rows_written UInt64` — Number of rows written.
 
 ## system.metrics {#system_tables-metrics}
 
@@ -603,9 +600,9 @@ WHERE changed
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
 
-This table contains the following columns (the type of the corresponding column is shown in brackets):
+This table contains the following columns (the column type is shown in brackets):
 
-- `database` (String) — The name of database the table is in.
+- `database` (String) — The name of the database the table is in.
 - `name` (String) — Table name.
 - `engine` (String) — Table engine name (without parameters).
 - `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
@@ -621,7 +618,7 @@ This table contains the following columns (the type of the corresponding column 
 - `primary_key` (String) - The primary key expression specified in the table.
 - `sampling_key` (String) - The sampling key expression specified in the table.
 
-The `system.tables` is used in `SHOW TABLES` query implementation.
+The `system.tables` table is used in `SHOW TABLES` query implementation.
 
 ## system.zookeeper
 
@@ -647,7 +644,7 @@ Columns:
 - `version Int32` — Node version: the number of times the node was changed.
 - `cversion Int32` — Number of added or removed descendants.
 - `aversion Int32` — Number of changes to the ACL.
-- `ephemeralOwner Int64` — For ephemeral nodes, the ID of hte session that owns this node.
+- `ephemeralOwner Int64` — For ephemeral nodes, the ID of the session that owns this node.
 
 Example:
 
@@ -706,13 +703,13 @@ The table contains information about [mutations](../query_language/alter.md#alte
 
 **create_time** - When this mutation command was submitted for execution.
 
-**block_numbers.partition_id**, **block_numbers.number** - A Nested column. For mutations of replicated tables contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). Because in non-replicated tables blocks numbers in all partitions form a single sequence, for mutatations of non-replicated tables the column will contain one record with a single block number acquired by the mutation.
+**block_numbers.partition_id**, **block_numbers.number** - A nested column. For mutations of replicated tables, it contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition, only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). In non-replicated tables, block numbers in all partitions form a single sequence. This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation.
 
 **parts_to_do** - The number of data parts that need to be mutated for the mutation to finish.
 
 **is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 
-If there were problems with mutating some parts the following columns contain additional information:
+If there were problems with mutating some parts, the following columns contain additional information:
 
 **latest_failed_part** - The name of the most recent part that could not be mutated.
 

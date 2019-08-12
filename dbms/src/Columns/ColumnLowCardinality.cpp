@@ -360,12 +360,12 @@ bool ColumnLowCardinality::containsNull() const
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
-ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(MutableColumnPtr && positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
 
-ColumnLowCardinality::Index::Index(ColumnPtr positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(ColumnPtr positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }

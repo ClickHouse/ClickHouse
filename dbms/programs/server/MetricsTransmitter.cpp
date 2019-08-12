@@ -16,8 +16,8 @@ namespace DB
 {
 
 MetricsTransmitter::MetricsTransmitter(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_name, const AsynchronousMetrics & async_metrics)
-    : async_metrics(async_metrics), config_name(config_name)
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_name_, const AsynchronousMetrics & async_metrics_)
+    : async_metrics(async_metrics_), config_name(config_name_)
 {
     interval_seconds = config.getInt(config_name + ".interval", 60);
     send_events = config.getBool(config_name + ".events", true);

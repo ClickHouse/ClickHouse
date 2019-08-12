@@ -18,8 +18,8 @@ extern const int UNKNOWN_CODEC;
 extern const int CORRUPTED_DATA;
 }
 
-CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs)
-    : codecs(codecs)
+CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
+    : codecs(codecs_)
 {
 }
 
