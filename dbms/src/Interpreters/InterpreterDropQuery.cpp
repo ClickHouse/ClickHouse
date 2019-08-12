@@ -91,8 +91,8 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
 
-            const auto prev_metadata_name = database_and_table.first->getMetadataPath() + database_and_table.second->getTableName() + ".sql";
-            const auto drop_metadata_name = database_and_table.first->getMetadataPath() + database_and_table.second->getTableName() + ".sql.tmp_drop";
+            const auto prev_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql";
+            const auto drop_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql.tmp_drop";
 
             try
             {
@@ -102,7 +102,10 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             }
             catch (...)
             {
-                Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+                try
+                {
+                    Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+                } catch (...) {}
                 throw;
             }
 
