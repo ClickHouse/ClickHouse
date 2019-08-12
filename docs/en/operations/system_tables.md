@@ -271,11 +271,11 @@ Columns:
 
 - `rows` (`UInt64`) – The number of rows.
 
-- `bytes_on_disk` (`UInt64`) – The number of bytes when compressed.
+- `bytes_on_disk` (`UInt64`) – Total size of all the data part files in bytes.
 
-- `data_compressed_bytes` (`UInt64`) –
+- `data_compressed_bytes` (`UInt64`) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
-- `data_uncompressed_bytes` (`UInt64`) –
+- `data_uncompressed_bytes` (`UInt64`) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
 - `marks_bytes` (`UInt64`) – The size of the file with marks.
 
@@ -301,7 +301,7 @@ Columns:
 
 - `level` (`UInt32`) – Depth of the merge tree. If a merge was not performed, `level=0`.
 
-- `data_version` (`UInt64`)  –
+- `data_version` (`UInt64`) – Block number that is used to determine which mutations should be applied to the data part (the mutations with the bigger version than `data_version`).
 
 - `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
 
@@ -317,11 +317,11 @@ Columns:
 
 - `path` (`String`) – Absolute path to the folder with data part files.
 
-- `hash_of_all_files` (`String`) – Hash of compressed files.
+- `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
 
-- `hash_of_uncompressed_files` (`String`) – Hash of uncompressed data.
+- `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed data.
 
-- `uncompressed_hash_of_compressed_files` (`String`) – Hash of the file with marks
+- `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of the file with marks.
 
 - `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 
