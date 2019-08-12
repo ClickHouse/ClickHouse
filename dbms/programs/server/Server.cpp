@@ -29,6 +29,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getExecutablePath.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
@@ -156,19 +157,19 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & _options)
+void Server::defineOptions(Poco::Util::OptionSet & options)
 {
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
             .required(false)
             .repeatable(false)
             .binding("help"));
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("version", "V", "show version and exit")
             .required(false)
             .repeatable(false)
             .binding("version"));
-    BaseDaemon::defineOptions(_options);
+    BaseDaemon::defineOptions(options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -212,6 +213,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     const auto memory_amount = getMemoryAmount();
 
 #if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+    if (executable_path.empty())
+        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
+
     /// After full config loaded
     {
         if (config().getBool("mlock_executable", false))
@@ -228,7 +233,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
                     " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
                     " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
@@ -547,7 +552,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -556,7 +561,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
@@ -696,6 +701,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -732,6 +738,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -768,6 +775,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -788,6 +796,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif

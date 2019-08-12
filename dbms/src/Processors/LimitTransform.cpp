@@ -5,12 +5,12 @@ namespace DB
 {
 
 LimitTransform::LimitTransform(
-    const Block & header, size_t limit, size_t offset,
-    bool always_read_till_end)
-    : IProcessor({header}, {header})
+    const Block & header_, size_t limit_, size_t offset_,
+    bool always_read_till_end_)
+    : IProcessor({header_}, {header_})
     , input(inputs.front()), output(outputs.front())
-    , limit(limit), offset(offset)
-    , always_read_till_end(always_read_till_end)
+    , limit(limit_), offset(offset_)
+    , always_read_till_end(always_read_till_end_)
 {
 }
 

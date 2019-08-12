@@ -331,11 +331,11 @@ public:
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
       */
-    VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
-        : needle{reinterpret_cast<const UInt8 *>(needle)}
-        , needle_size{needle_size}
+    VolnitskyBase(const char * const needle_, const size_t needle_size_, size_t haystack_size_hint = 0)
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}
+        , needle_size{needle_size_}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle, needle_size}
+        , fallback_searcher{needle_, needle_size}
     {
         if (fallback)
             return;

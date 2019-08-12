@@ -39,7 +39,7 @@ protected:
     virtual void finalize() {}
 
 public:
-    IOutputFormat(const Block & header, WriteBuffer & out);
+    IOutputFormat(const Block & header_, WriteBuffer & out_);
 
     Status prepare() override;
     void work() override;

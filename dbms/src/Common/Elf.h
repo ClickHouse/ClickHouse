@@ -35,7 +35,7 @@ public:
         const char * end() const;
         size_t size() const;
 
-        Section(const ElfShdr & header, const Elf & elf);
+        Section(const ElfShdr & header_, const Elf & elf_);
 
     private:
         const Elf & elf;
