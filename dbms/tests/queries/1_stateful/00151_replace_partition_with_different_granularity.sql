@@ -20,7 +20,7 @@ SELECT COUNT() FROM mixed_granularity_table;
 
 DROP TABLE IF EXISTS non_mixed_granularity_adaptive_table;
 
-CREATE TABLE non_mixed_granularity_adaptive_table AS test.hits PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192, enable_mixed_granularity_parts=0;
+CREATE TABLE non_mixed_granularity_adaptive_table AS test.hits ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192, enable_mixed_granularity_parts=0;
 
 INSERT INTO non_mixed_granularity_adaptive_table SELECT * FROM test.hits LIMIT 10;
 
