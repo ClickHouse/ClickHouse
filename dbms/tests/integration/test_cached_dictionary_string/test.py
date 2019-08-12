@@ -21,16 +21,31 @@ def started_cluster():
 
 
 def test_memory_consumption(started_cluster):
-    node.query("insert into radars_table select toString(number), 'xxxxxxxx', 'yyyyyyyy' from numbers(100000)")
+    node.query("insert into radars_table select toString(rand() % 5000), '{0}', '{0}' from numbers(1000)".format('w' * 8))
+    node.query("insert into radars_table select toString(rand() % 5000), '{0}', '{0}' from numbers(1000)".format('x' * 16))
+    node.query("insert into radars_table select toString(rand() % 5000), '{0}', '{0}' from numbers(1000)".format('y' * 32))
+    node.query("insert into radars_table select toString(rand() % 5000), '{0}', '{0}' from numbers(1000)".format('z' * 64))
 
-    for i in xrange(30):
-        node.query("select dictGetString('radars', 'client_id', tuple('{}'))".format(random.randint(0, 10000)))
+    # Fill dictionary
+    node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers(0, 5000)")
 
     allocated_first = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
 
-    for i in xrange(100):
-        node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers({}, 1000)".format(random.randint(0, 10000)))
+    alloc_array = []
+    for i in xrange(5):
+        node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers(0, 5000)")
 
-    allocated_second = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
-    one_element_size = allocated_first / 30 # number of elemnts in dict
-    assert abs(allocated_first - allocated_second) <= one_element_size * 2 # less than two elements
+        allocated = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
+        alloc_array.append(allocated)
+
+    # size doesn't grow
+    assert all(allocated_first >= a for a in alloc_array)
+
+    for i in xrange(5):
+        node.query("select dictGetString('radars', 'client_id', tuple(toString(number))) from numbers(0, 5000)")
+
+        allocated = int(node.query("select bytes_allocated from system.dictionaries where name = 'radars'").strip())
+        alloc_array.append(allocated)
+
+    # size doesn't grow
+    assert all(allocated_first >= a for a in alloc_array)
