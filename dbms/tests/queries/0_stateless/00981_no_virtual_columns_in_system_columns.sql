@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS merge_ab;
 
 CREATE TABLE merge_a (x UInt8) ENGINE = StripeLog;
 CREATE TABLE merge_b (x UInt8) ENGINE = StripeLog;
-CREATE TABLE merge_ab AS merge(currentDatabase(), '^merge_[ab]$');
+CREATE TABLE merge_ab (x UInt8) ENGINE = Merge(currentDatabase(), '^merge_[ab]$');
 
 SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'merge_ab';
 
