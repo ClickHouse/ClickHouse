@@ -174,7 +174,7 @@ ALTER TABLE [db].name DROP INDEX name
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
 - [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
-- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить посчитанные вторичные индексы для заданной партиции;
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
 - [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера.
 
