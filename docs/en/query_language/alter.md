@@ -175,7 +175,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
-- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the secondary index in a partition.
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 
