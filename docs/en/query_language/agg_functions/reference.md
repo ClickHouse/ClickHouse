@@ -685,7 +685,7 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a Numeric-type value.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -754,14 +754,14 @@ The function can take the window size as a parameter. If left unspecified, the f
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a Numeric-type value.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
 
 - Array of the same size and type as the input data.
 
-The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places irrelevant for the resulting data type.
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
 
 **Example**
 
