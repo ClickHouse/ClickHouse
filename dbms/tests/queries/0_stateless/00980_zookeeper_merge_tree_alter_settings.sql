@@ -13,7 +13,7 @@ CREATE TABLE replicated_table_for_alter2 (
 
 SHOW CREATE TABLE replicated_table_for_alter1;
 
-ALTER TABLE replicated_table_for_alter1 MODIFY SETTING index_granularity = 4096; -- { serverError 469 }
+ALTER TABLE replicated_table_for_alter1 MODIFY SETTING index_granularity = 4096; -- { serverError 470 }
 
 SHOW CREATE TABLE replicated_table_for_alter1;
 
