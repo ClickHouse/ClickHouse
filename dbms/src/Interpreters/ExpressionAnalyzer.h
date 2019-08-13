@@ -178,6 +178,7 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
+    const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
@@ -191,15 +192,13 @@ private:
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
-    void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
-
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
-    void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
+    bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
