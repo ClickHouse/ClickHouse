@@ -37,7 +37,7 @@ The table engine (type of table) determines:
 
 - Intergation engines
 
-    Engines for communicating with other data systems.
+    Engines for communicating with other data storage and processing systems.
 
     Engines of the family:
 
