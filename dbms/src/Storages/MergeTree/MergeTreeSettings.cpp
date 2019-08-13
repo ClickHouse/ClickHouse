@@ -75,4 +75,9 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
+
+MergeTreeSettings * MergeTreeSettings::clone() const
+{
+    return new MergeTreeSettings(*this);
+}
 }

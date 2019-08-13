@@ -313,7 +313,7 @@ public:
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
-                  const MergeTreeSettings & settings_,
+                  MergeTreeSettingsPtr settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
@@ -591,8 +591,9 @@ public:
 
     bool canUseAdaptiveGranularity() const
     {
-        return settings.index_granularity_bytes != 0 &&
-            (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+        auto settings_ptr = getImmutableSettings();
+        return settings_ptr->index_granularity_bytes != 0 &&
+            (settings_ptr->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
 
@@ -645,8 +646,6 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    MergeTreeSettings settings;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -655,7 +654,13 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+    MergeTreeSettingsPtr getImmutableSettings() const
+    {
+        return mutable_settings;
+    }
+
 protected:
+
     friend struct MergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
@@ -683,6 +688,9 @@ protected:
     String log_name;
     Logger * log;
 
+    /// Settings COW pointer. Data maybe changed at any point of time.
+    /// If you need consistent settings, just copy pointer to your scope.
+    MergeTreeSettingsPtr mutable_settings;
 
     /// Work with data parts
 
