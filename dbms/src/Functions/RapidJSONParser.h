@@ -32,7 +32,7 @@ struct RapidJSONParser
     {
     public:
         Iterator() {}
-        Iterator(const rapidjson::Document & document) : value(&document) {}
+        Iterator(const rapidjson::Document & document_) : value(&document_) {}
         Iterator(const Iterator & src)
             : value(src.value)
             , is_object_member(src.is_object_member)

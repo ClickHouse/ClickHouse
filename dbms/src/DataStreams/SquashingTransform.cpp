@@ -4,8 +4,8 @@
 namespace DB
 {
 
-SquashingTransform::SquashingTransform(size_t min_block_size_rows, size_t min_block_size_bytes)
-    : min_block_size_rows(min_block_size_rows), min_block_size_bytes(min_block_size_bytes)
+SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
+    : min_block_size_rows(min_block_size_rows_), min_block_size_bytes(min_block_size_bytes_)
 {
 }
 

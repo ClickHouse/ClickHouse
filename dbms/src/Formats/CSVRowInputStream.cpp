@@ -92,8 +92,8 @@ static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, siz
 }
 
 
-CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings_)
+    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings_)
 {
     const auto num_columns = header.columns();
 

@@ -21,7 +21,7 @@ private:
 
 public:
     FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                           const String & filter_column_name_, bool remove_filter = false);
+                           const String & filter_column_name_, bool remove_filter_ = false);
 
     String getName() const override;
     Block getTotals() override;

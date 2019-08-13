@@ -1,3 +1,5 @@
+SET any_join_distinct_right_table_keys = 1;
+
 DROP TABLE IF EXISTS local_statements;
 DROP TABLE IF EXISTS statements;
 
