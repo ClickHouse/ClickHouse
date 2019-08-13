@@ -109,14 +109,5 @@ void SystemLogs::metricThreadFunction()
         }
 
     }
-=======
-        metric_log->shutdown();
-}
-
-void SystemLogs::threadFunction()
-{
-
->>>>>>> 46a5ec5c16ed274956cc2051d0d2da213d975051
-}
 
 }

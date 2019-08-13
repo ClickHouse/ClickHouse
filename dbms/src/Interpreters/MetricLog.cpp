@@ -1,11 +1,8 @@
 #include <Interpreters/MetricLog.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-<<<<<<< HEAD
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-=======
->>>>>>> 46a5ec5c16ed274956cc2051d0d2da213d975051
 
 namespace DB
 {
