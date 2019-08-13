@@ -63,9 +63,9 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(str_size + 1);
-                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, str_size};
+                auto str_ptr = string_arena->alloc(str_size);
+                std::copy(string.data(), string.data() + str_size, str_ptr);
+                string_ref = StringRef{str_ptr, str_size};
             }
             else
                 string_ref = {};
