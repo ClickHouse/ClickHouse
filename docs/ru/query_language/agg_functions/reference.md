@@ -778,7 +778,7 @@ groupArrayMovingAvg(window_size)(numbers_for_summing)
 
 **Пример**
 
-Таблица `b`:
+Входная таблица:
 
 ```sql
 CREATE TABLE t
