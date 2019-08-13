@@ -76,8 +76,8 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 }
 
 
-MergeTreeSettings * MergeTreeSettings::clone() const
+MergeTreeSettings::MutablePtr MergeTreeSettings::clone() const
 {
-    return new MergeTreeSettings(*this);
+    return COW::create(*this);
 }
 }

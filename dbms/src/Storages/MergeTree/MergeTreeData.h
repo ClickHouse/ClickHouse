@@ -594,9 +594,9 @@ public:
     /// Has additional constraint in replicated version
     virtual bool canUseAdaptiveGranularity() const
     {
-        auto settings_ptr = getImmutableSettings();
-        return settings_ptr->index_granularity_bytes != 0 &&
-            (settings_ptr->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+        const auto settings = getCOWSettings();
+        return settings->index_granularity_bytes != 0 &&
+            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
 
@@ -657,9 +657,12 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    MergeTreeSettingsPtr getImmutableSettings() const
+    /// Get copy-on-write pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    const MergeTreeSettingsPtr getCOWSettings() const
     {
-        return mutable_settings;
+        return guarded_settings.copyPtr();
     }
 
 protected:
@@ -691,9 +694,26 @@ protected:
     String log_name;
     Logger * log;
 
-    /// Settings COW pointer. Data maybe changed at any point of time.
-    /// If you need consistent settings, just copy pointer to your scope.
-    MergeTreeSettingsPtr mutable_settings;
+    /// Just hides settings pointer from direct usage
+    class MergeTreeSettingsGuard
+    {
+    private:
+        /// Settings COW pointer. Data maybe changed at any point of time.
+        /// If you need consistent settings, just copy pointer to your scope.
+        MergeTreeSettingsPtr settings_ptr;
+    public:
+        MergeTreeSettingsGuard(MergeTreeSettingsPtr settings_ptr_)
+            : settings_ptr(settings_ptr_)
+        {}
+
+        const MergeTreeSettingsPtr copyPtr() const { return settings_ptr; }
+        MergeTreeSettingsPtr & getPtr() { return settings_ptr; }
+        void setPtr(MergeTreeSettingsPtr ptr) { settings_ptr = ptr; }
+    };
+
+    /// Storage settings. Don't use this field directly, if you
+    /// want readonly settings. Prefer getCOWSettings() method.
+    MergeTreeSettingsGuard guarded_settings;
 
     /// Work with data parts
 

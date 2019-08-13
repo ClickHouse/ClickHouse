@@ -100,7 +100,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>, public 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def);
 
-    MergeTreeSettings * clone() const;
+    MutablePtr clone() const;
     ~MergeTreeSettings() {}
 };
 
