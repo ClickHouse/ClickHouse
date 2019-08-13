@@ -66,13 +66,13 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
-    const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-    const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-    MergeTreeBlockSizePredictorPtr && size_predictor)
-    : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
-    ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-    remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
+    const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
+    const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
+    const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+    MergeTreeBlockSizePredictorPtr && size_predictor_)
+    : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
+    ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
+    remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
 {}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;

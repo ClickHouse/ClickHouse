@@ -39,7 +39,7 @@ Block TextLogElement::createBlock()
 
         {std::move(priority_datatype),                                                        "level"},
         {std::make_shared<DataTypeString>(),                                                  "query_id"},
-        {std::make_shared<DataTypeString>(),                                                  "logger_name"},
+        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "logger_name"},
         {std::make_shared<DataTypeString>(),                                                  "message"},
 
         {std::make_shared<DataTypeUInt32>(),                                                  "revision"},

@@ -24,7 +24,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors);
+    explicit PipelineExecutor(Processors & processors_);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -35,14 +35,11 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Cancel execution. May be called from another thread.
-    void cancel()
-    {
-        cancelled = true;
-        finish();
-    }
+    void cancel();
 
 private:
     Processors & processors;
+    std::mutex processors_mutex;
 
     struct Edge
     {
@@ -75,8 +72,8 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
 
-        IProcessor * processor;
-        UInt64 processors_id;
+        IProcessor * processor = nullptr;
+        UInt64 processors_id = 0;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;

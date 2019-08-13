@@ -56,8 +56,8 @@ class EmplaceResultImpl
     bool inserted;
 
 public:
-    EmplaceResultImpl(Mapped & value, Mapped & cached_value, bool inserted)
-            : value(value), cached_value(cached_value), inserted(inserted) {}
+    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_)
+            : value(value_), cached_value(cached_value_), inserted(inserted_) {}
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
@@ -75,7 +75,7 @@ class EmplaceResultImpl<void>
     bool inserted;
 
 public:
-    explicit EmplaceResultImpl(bool inserted) : inserted(inserted) {}
+    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
     bool isInserted() const { return inserted; }
 };
 
@@ -86,7 +86,7 @@ class FindResultImpl
     bool found;
 
 public:
-    FindResultImpl(Mapped * value, bool found) : value(value), found(found) {}
+    FindResultImpl(Mapped * value_, bool found_) : value(value_), found(found_) {}
     bool isFound() const { return found; }
     Mapped & getMapped() const { return *value; }
 };
@@ -97,7 +97,7 @@ class FindResultImpl<void>
     bool found;
 
 public:
-    explicit FindResultImpl(bool found) : found(found) {}
+    explicit FindResultImpl(bool found_) : found(found_) {}
     bool isFound() const { return found; }
 };
 

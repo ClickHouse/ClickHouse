@@ -65,7 +65,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = CLEAR_COLUMN;
         res.partition = command_ast->partition;
-        res.column_name = *getIdentifierName(command_ast->column);
+        res.column_name = getIdentifierName(command_ast->column);
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
