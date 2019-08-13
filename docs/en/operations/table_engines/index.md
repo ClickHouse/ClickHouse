@@ -43,6 +43,8 @@ Engines of the family:
 
 - [Kafka](kafka.md)
 - [MySQL](mysql.md)
+- [ODBC](odbc.md)
+- [JDBC](jdbc.md)
 
 ### Special engines
 
@@ -62,8 +64,6 @@ Engines of the family:
 - [View](view.md)
 - [Memory](memory.md)
 - [Buffer](buffer.md)
-- [ODBC](odbc.md)
-- [JDBC](jdbc.md)
 
 ## Virtual columns {#table_engines-virtual_columns}
 
