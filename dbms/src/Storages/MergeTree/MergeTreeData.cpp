@@ -104,7 +104,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    MergeTreeSettingsPtr settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
@@ -132,7 +132,7 @@ MergeTreeData::MergeTreeData(
         sampling_expr_column_name = sample_by_ast->getColumnName();
 
         if (!primary_key_sample.has(sampling_expr_column_name)
-            && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+            && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
         auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
@@ -727,6 +727,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
+    auto settings_ptr = getImmutableSettings();
     Strings part_file_names;
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
@@ -843,12 +844,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
     }
 
-    if (has_non_adaptive_parts && has_adaptive_parts && !settings.enable_mixed_granularity_parts)
+    if (has_non_adaptive_parts && has_adaptive_parts && !settings_ptr->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
-    if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
+    if (suspicious_broken_parts > settings_ptr->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
@@ -938,7 +939,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings.temporary_directories_lifetime.totalSeconds();
+        : current_time - settings_ptr->temporary_directories_lifetime.totalSeconds();
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
@@ -989,7 +990,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 part_remove_time < now &&
-                now - part_remove_time > settings.old_parts_lifetime.totalSeconds())
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1290,7 +1291,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     if (part)
         part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
     else
-        part_mrk_file_extension = settings.index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
+        part_mrk_file_extension = mutable_settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1448,6 +1449,7 @@ void MergeTreeData::alterDataPart(
     bool skip_sanity_checks,
     AlterDataPartTransactionPtr & transaction)
 {
+    auto settings = getImmutableSettings();
     ExpressionActionsPtr expression;
     const auto & part = transaction->getDataPart();
     bool force_update_metadata;
@@ -1463,12 +1465,12 @@ void MergeTreeData::alterDataPart(
             ++num_files_to_remove;
 
     if (!skip_sanity_checks
-        && (num_files_to_modify > settings.max_files_to_modify_in_alter_columns
-            || num_files_to_remove > settings.max_files_to_remove_in_alter_columns))
+        && (num_files_to_modify > settings->max_files_to_modify_in_alter_columns
+            || num_files_to_remove > settings->max_files_to_remove_in_alter_columns))
     {
         transaction->clear();
 
-        const bool forbidden_because_of_modify = num_files_to_modify > settings.max_files_to_modify_in_alter_columns;
+        const bool forbidden_because_of_modify = num_files_to_modify > settings->max_files_to_modify_in_alter_columns;
 
         std::stringstream exception_message;
         exception_message
@@ -1500,7 +1502,7 @@ void MergeTreeData::alterDataPart(
             << " If it is not an error, you could increase merge_tree/"
             << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
             << " parameter in configuration file (current value: "
-            << (forbidden_because_of_modify ? settings.max_files_to_modify_in_alter_columns : settings.max_files_to_remove_in_alter_columns)
+            << (forbidden_because_of_modify ? settings->max_files_to_modify_in_alter_columns : settings->max_files_to_remove_in_alter_columns)
             << ")";
 
         throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
@@ -1590,13 +1592,17 @@ void MergeTreeData::alterSettings(
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder)
 {
-    settings.updateFromChanges(new_changes);
-    IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
+    {
+        MutableMergeTreeSettingsPtr settings = std::move(*mutable_settings).mutate();
+        settings->updateFromChanges(new_changes);
+        IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
+        mutable_settings = std::move(settings);
+    }
 }
 
 bool MergeTreeData::hasSetting(const String & setting_name) const
 {
-    return settings.findIndex(setting_name) != MergeTreeSettings::npos;
+    return MergeTreeSettings::findIndex(setting_name) != MergeTreeSettings::npos;
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
@@ -2231,26 +2237,27 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 {
+    auto settings_ptr = getImmutableSettings();
     const size_t parts_count_in_total = getPartsCount();
-    if (parts_count_in_total >= settings.max_parts_in_total)
+    if (parts_count_in_total >= settings_ptr->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
     }
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
-    if (parts_count_in_partition < settings.parts_to_delay_insert)
+    if (parts_count_in_partition < settings_ptr->parts_to_delay_insert)
         return;
 
-    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    if (parts_count_in_partition >= settings_ptr->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 
-    const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count_in_partition - settings.parts_to_delay_insert; /// from 1 to max_k
-    const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
+    const size_t max_k = settings_ptr->parts_to_throw_insert - settings_ptr->parts_to_delay_insert; /// always > 0
+    const size_t k = 1 + parts_count_in_partition - settings_ptr->parts_to_delay_insert; /// from 1 to max_k
+    const double delay_milliseconds = ::pow(settings_ptr->max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
@@ -2268,8 +2275,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 
 void MergeTreeData::throwInsertIfNeeded() const
 {
+    auto settings_ptr = getImmutableSettings();
     const size_t parts_count_in_total = getPartsCount();
-    if (parts_count_in_total >= settings.max_parts_in_total)
+    if (parts_count_in_total >= settings_ptr->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
@@ -2277,7 +2285,7 @@ void MergeTreeData::throwInsertIfNeeded() const
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
 
-    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    if (parts_count_in_partition >= settings_ptr->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
@@ -2860,7 +2868,9 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {
-    if (!settings.enable_mixed_granularity_parts || settings.index_granularity_bytes == 0)
+    auto settings_ptr = getImmutableSettings();
+
+    if (!settings_ptr->enable_mixed_granularity_parts || settings_ptr->index_granularity_bytes == 0)
     {
         if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
             return false;
