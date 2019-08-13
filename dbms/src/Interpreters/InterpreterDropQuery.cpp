@@ -98,19 +98,15 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             try
             {
                 //There some kind of tables that have no metadata - ignore renaming
-                try
-                {
+                if (Poco::File(prev_metadata_name).exists())
                     Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
-                } catch (...) {}
                 /// Delete table data
                 database_and_table.second->drop();
             }
             catch (...)
             {
-                try
-                {
+                if (Poco::File(drop_metadata_name).exists())
                     Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
-                } catch (...) {}
                 throw;
             }
 
