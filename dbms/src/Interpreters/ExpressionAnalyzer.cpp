@@ -78,16 +78,15 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const Context & context_,
     const NameSet & required_result_columns_,
     size_t subquery_depth_,
-    bool do_global_,
-    const SubqueriesForSets & subqueries_for_sets_)
-    : ExpressionAnalyzerData(required_result_columns_, subqueries_for_sets_)
+    bool do_global)
+    : ExpressionAnalyzerData(required_result_columns_)
     , query(query_), context(context_), settings(context.getSettings())
-    , subquery_depth(subquery_depth_), do_global(do_global_)
+    , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
     /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
-    initGlobalSubqueriesAndExternalTables();
+    initGlobalSubqueriesAndExternalTables(do_global);
 
     /// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
     /// This analysis should be performed after processing global subqueries, because otherwise,
@@ -153,7 +152,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     if (has_aggregation)
     {
-        assertSelect();
+        getSelectQuery(); /// assertSelect()
 
         /// Find out aggregation keys.
         if (select_query->groupBy())
@@ -222,7 +221,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 }
 
 
-void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
+void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 {
     /// Adds existing external tables (not subqueries) to the external_tables dictionary.
     ExternalTablesVisitor::Data tables_data{context, external_tables};
@@ -375,18 +374,19 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 }
 
 
-void ExpressionAnalyzer::assertSelect() const
+const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 {
     const auto * select_query = query->as<ASTSelectQuery>();
-
     if (!select_query)
         throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
+    return select_query;
 }
 
-void ExpressionAnalyzer::assertAggregation() const
+const ASTSelectQuery * ExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
         throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
+    return getSelectQuery();
 }
 
 void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const
@@ -416,9 +416,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     bool is_array_join_left;
     ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
@@ -460,9 +458,7 @@ static void appendRequiredColumns(
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     if (!select_query->join())
         return false;
@@ -571,9 +567,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 bool ExpressionAnalyzer::appendPrewhere(
     ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     if (!select_query->prewhere())
         return false;
@@ -646,9 +640,7 @@ bool ExpressionAnalyzer::appendPrewhere(
 
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     if (!select_query->where())
         return false;
@@ -666,9 +658,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
 
 bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertAggregation();
+    const auto * select_query = getAggregatingQuery();
 
     if (!select_query->groupBy())
         return false;
@@ -688,9 +678,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only
 
 void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertAggregation();
+    const auto * select_query = getAggregatingQuery();
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
@@ -723,9 +711,7 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
 
 bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertAggregation();
+    const auto * select_query = getAggregatingQuery();
 
     if (!select_query->having())
         return false;
@@ -741,9 +727,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_
 
 void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     initChain(chain, aggregated_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
@@ -756,9 +740,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     if (!select_query->orderBy())
         return false;
@@ -782,9 +764,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 
 bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     if (!select_query->limitBy())
         return false;
@@ -813,9 +793,7 @@ bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only
 
 void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    assertSelect();
+    const auto * select_query = getSelectQuery();
 
     initChain(chain, aggregated_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
