@@ -7,6 +7,7 @@
 #include "config_functions.h"
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -15,7 +16,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
