@@ -69,7 +69,7 @@ The table engine (type of table) determines:
 
 Virtual column is an integral attribute of a table engine that is defined in the source code of the engine.
 
-You should not specify virtual columns in the `CREATE TABLE` query, and you cannot see them in the results of `SHOW CREATE TABLE` and `DESCRIBE TABLE` queries. Also, you cannot insert data to virtual columns.
+You should not specify virtual columns in the `CREATE TABLE` query, and you cannot see them in the results of `SHOW CREATE TABLE` and `DESCRIBE TABLE` queries. Also, virtual columns are read-only, so you can't insert data into virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. The `SELECT *` doesn't return values from virtual columns.
 
