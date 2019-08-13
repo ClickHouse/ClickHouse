@@ -12,8 +12,8 @@ namespace DB
 class MaterializingBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MaterializingBlockOutputStream(const BlockOutputStreamPtr & output, const Block & header)
-        : output{output}, header(header) {}
+    MaterializingBlockOutputStream(const BlockOutputStreamPtr & output_, const Block & header_)
+        : output{output_}, header(header_) {}
 
     Block getHeader() const                           override { return header; }
     void write(const Block & block)                   override { output->write(materializeBlock(block)); }

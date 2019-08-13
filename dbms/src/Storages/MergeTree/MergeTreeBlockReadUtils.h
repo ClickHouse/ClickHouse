@@ -56,14 +56,26 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
-        const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-        MergeTreeBlockSizePredictorPtr && size_predictor);
+        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
+        const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
+        const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+        MergeTreeBlockSizePredictorPtr && size_predictor_);
 
     virtual ~MergeTreeReadTask();
 };
 
+struct MergeTreeReadTaskColumns
+{
+    /// column names to read during WHERE
+    NamesAndTypesList columns;
+    /// column names to read during PREWHERE
+    NamesAndTypesList pre_columns;
+    /// resulting block may require reordering in accordance with `ordered_names`
+    bool should_reorder;
+};
+
+MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns);
 
 struct MergeTreeBlockSizePredictor
 {

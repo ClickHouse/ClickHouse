@@ -21,7 +21,7 @@ class CSVRowInputStream : public IRowInputStream
 public:
     /** with_names - in the first line the header with column names
       */
-    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings);
+    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings_);
 
     bool read(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -67,10 +67,17 @@ private:
     char * pos_of_current_row = nullptr;
     char * pos_of_prev_row = nullptr;
 
+    /// For setting input_format_null_as_default
+    DataTypes nullable_types;
+    MutableColumns nullable_columns;
+    OptionalIndexes column_idx_to_nullable_column_idx;
+
     void updateDiagnosticInfo();
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
+
+    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx);
 };
 
 }

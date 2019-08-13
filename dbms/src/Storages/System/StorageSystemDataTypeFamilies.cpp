@@ -20,13 +20,13 @@ void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const
 {
     const auto & factory = DataTypeFactory::instance();
     auto names = factory.getAllRegisteredNames();
-    for (const auto & name : names)
+    for (const auto & dtf_name : names)
     {
-        res_columns[0]->insert(name);
-        res_columns[1]->insert(factory.isCaseInsensitive(name));
+        res_columns[0]->insert(dtf_name);
+        res_columns[1]->insert(factory.isCaseInsensitive(dtf_name));
 
-        if (factory.isAlias(name))
-            res_columns[2]->insert(factory.aliasTo(name));
+        if (factory.isAlias(dtf_name))
+            res_columns[2]->insert(factory.aliasTo(dtf_name));
         else
             res_columns[2]->insertDefault();
     }

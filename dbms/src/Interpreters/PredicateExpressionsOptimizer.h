@@ -43,13 +43,13 @@ class PredicateExpressionsOptimizer
         const bool join_use_nulls;
 
         template<typename T>
-        ExtractedSettings(const T & settings)
-        :   max_ast_depth(settings.max_ast_depth),
-            max_expanded_ast_elements(settings.max_expanded_ast_elements),
-            count_distinct_implementation(settings.count_distinct_implementation),
-            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
-            enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery),
-            join_use_nulls(settings.join_use_nulls)
+        ExtractedSettings(const T & settings_)
+        :   max_ast_depth(settings_.max_ast_depth),
+            max_expanded_ast_elements(settings_.max_expanded_ast_elements),
+            count_distinct_implementation(settings_.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings_.enable_optimize_predicate_expression),
+            enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery),
+            join_use_nulls(settings_.join_use_nulls)
         {}
     };
 

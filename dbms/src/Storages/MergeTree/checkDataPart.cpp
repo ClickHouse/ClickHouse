@@ -72,11 +72,11 @@ public:
 
         Stream(
             const String & path,
-            const String & base_name,
+            const String & base_name_,
             const String & bin_file_extension_,
             const String & mrk_file_extension_,
             const MergeTreeIndexGranularity & index_granularity_)
-        : base_name(base_name)
+        : base_name(base_name_)
         , bin_file_extension(bin_file_extension_)
         , mrk_file_extension(mrk_file_extension_)
         , bin_file_path(path + base_name + bin_file_extension)

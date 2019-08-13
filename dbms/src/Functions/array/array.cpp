@@ -19,8 +19,8 @@ public:
         return std::make_shared<FunctionArray>(context);
     }
 
-    FunctionArray(const Context & context)
-        : context(context)
+    FunctionArray(const Context & context_)
+        : context(context_)
     {
     }
 

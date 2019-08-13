@@ -39,9 +39,11 @@ The `CHECK TABLE` query supports the following table engines:
 - [StripeLog](../operations/table_engines/stripelog.md)
 - [MergeTree family](../operations/table_engines/mergetree.md)
 
-The `*Log` engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+Performed over the tables with another table engines causes an exception.
 
-For the `MergeTree` family engines the `CHECK TABLE` query shows a check status for every individual table data part at the local server.
+Engines from the `*Log` family don't provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+
+For `MergeTree` family engines, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
 
 **If the data is corrupted**
 
@@ -193,18 +195,21 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
 All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
 
-## SET
+## SET {#query-set}
 
-``` sql
+```sql
 SET param = value
 ```
 
-Allows you to set `param` to `value`. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings".
-The setting is made for the session, or for the server (globally) if `GLOBAL` is specified.
-When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
+Assigns `value` to the `param` configurations settings for the current session. You cannot change [server settings](../operations/server_settings/index.md) this way.
 
-When the server is restarted, global settings made using `SET` are lost.
-To make settings that persist after a server restart, you can only use the server's config file.
+You can also set all the values from the specified settings profile in a single query.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+For more information, see [Settings](../operations/settings/settings.md).
 
 ## SHOW CREATE TABLE
 
