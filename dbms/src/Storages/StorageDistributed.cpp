@@ -190,8 +190,8 @@ static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_k
 }
 
 StorageDistributed::StorageDistributed(
-    const String & database_name,
-    const String & table_name,
+    const String & database_name_,
+    const String & table_name_,
     const ColumnsDescription & columns_,
     const String & remote_database_,
     const String & remote_table_,
@@ -199,8 +199,8 @@ StorageDistributed::StorageDistributed(
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_,
-    bool attach)
-    : IStorage{columns_}, table_name(table_name), database_name(database_name),
+    bool attach_)
+    : IStorage{columns_}, table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
@@ -208,7 +208,7 @@ StorageDistributed::StorageDistributed(
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach && !cluster_name.empty())
+    if (!attach_ && !cluster_name.empty())
     {
         size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
         if (num_local_shards && remote_database == database_name && remote_table == table_name)
@@ -218,7 +218,7 @@ StorageDistributed::StorageDistributed(
 
 
 StorageDistributed::StorageDistributed(
-    const String & database_name,
+    const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
     ASTPtr remote_table_function_ptr_,
@@ -227,7 +227,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : StorageDistributed(database_name, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name_, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
 {
         remote_table_function_ptr = remote_table_function_ptr_;
 }
@@ -493,7 +493,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where())
+    if (!select.where() || !sharding_key_expr)
         return nullptr;
 
     const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);

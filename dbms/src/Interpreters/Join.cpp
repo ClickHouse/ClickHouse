@@ -26,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
@@ -81,14 +81,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
     : kind(kind_), strictness(strictness_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     any_take_last_row(any_take_last_row_),
     log(&Logger::get("Join")),
-    limits(limits)
+    limits(limits_)
 {
 }
 
@@ -770,7 +770,7 @@ IColumn::Filter switchJoinRightColumns(
     #undef M
 
         default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+            throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(type)), ErrorCodes::UNSUPPORTED_JOIN_KEYS);
     }
 }
 
@@ -1350,7 +1350,8 @@ private:
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
             default:
-                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+                throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(parent.type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         __builtin_unreachable();

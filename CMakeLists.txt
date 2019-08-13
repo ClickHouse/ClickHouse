@@ -34,14 +34,16 @@ else()
 endif()
 
 if (COMPILER_GCC)
-    # Require at least gcc 7
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 7. For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require minimum version of gcc
+    set (GCC_MINIMUM_VERSION 8)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 6
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
-        message (FATAL_ERROR "Clang version must be at least 6.")
+    # Require minimum version of clang
+    set (CLANG_MINIMUM_VERSION 7)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
+        message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
     endif ()
 else ()
     message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
@@ -262,7 +264,9 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-if (NOT SANITIZE AND NOT SPLIT_SHARED_LIBRARIES)
+# TODO: only make this extra-checks in CI builds, since a lot of contrib libs won't link -
+#       CI works around this problem by explicitly adding GLIBC_COMPATIBILITY flag.
+if (NOT SANITIZE AND YANDEX_OFFICIAL_BUILD)
     set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
@@ -326,7 +330,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
         if (USE_INTERNAL_LIBCXX_LIBRARY)
             set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
-            set (LIBCXX_LIBS "-lc++ -lc++abi")
+            set (LIBCXX_LIBS "-lc++ -lc++abi -lc++fs")
         endif ()
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
@@ -435,10 +439,10 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
+include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
-include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)

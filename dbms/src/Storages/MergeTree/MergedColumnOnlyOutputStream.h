@@ -15,7 +15,7 @@ public:
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
-        WrittenOffsetColumns & already_written_offset_columns,
+        WrittenOffsetColumns & already_written_offset_columns_,
         const MergeTreeIndexGranularity & index_granularity_);
 
     Block getHeader() const override { return header; }

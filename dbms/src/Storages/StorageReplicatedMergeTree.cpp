@@ -297,6 +297,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
+
+    other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+}
+
+
+bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+{
+    auto zookeeper = getZooKeeper();
+    String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    return metadata_from_zk.index_granularity_bytes == 0;
 }
 
 
@@ -2892,14 +2903,14 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings_ = context.getSettingsRef();
 
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    if (settings.select_sequential_consistency)
+    if (settings_.select_sequential_consistency)
     {
         ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
 
@@ -5142,5 +5153,13 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const C
     }
     return results;
 }
+
+bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
+{
+    return settings.index_granularity_bytes != 0 &&
+        (settings.enable_mixed_granularity_parts ||
+            (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
+}
+
 
 }

@@ -75,8 +75,7 @@ struct SystemLogs
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
     std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
-    std::weak_ptr<TextLog> text_log;                    /// Used to log all text. We use weak_ptr, because this log is
-                                                        /// a server's field.
+    std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
 
     String part_log_database;
 };

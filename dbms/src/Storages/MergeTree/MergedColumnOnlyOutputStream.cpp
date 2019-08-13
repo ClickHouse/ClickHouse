@@ -6,7 +6,7 @@ namespace DB
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
-    WrittenOffsetColumns & already_written_offset_columns,
+    WrittenOffsetColumns & already_written_offset_columns_,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
@@ -15,7 +15,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         false,
         index_granularity_),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
-    already_written_offset_columns(already_written_offset_columns)
+    already_written_offset_columns(already_written_offset_columns_)
 {
 }
 
