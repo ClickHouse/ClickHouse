@@ -27,7 +27,7 @@ The table engine (type of table) determines:
 
 - `*Log`
 
-    Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to 1 million rows) and read them later as a whole.
+    Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to about 1 million rows) and read them later as a whole.
 
     Engines of the family:
 
