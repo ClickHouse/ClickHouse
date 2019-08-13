@@ -21,7 +21,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 
 ### FLUSH DISTRIBUTED {#query_language-system-flush-distributed}
 
-Forces ClickHouse to send data to cluster servers synchronously. If any servers are unavailable, ClickHouse throws an exception and stops processing of the query. You should repeat the query when all servers are back online.
+Forces ClickHouse to send data to cluster servers synchronously. If any servers are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all servers are back online.
 
 ```
 SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
