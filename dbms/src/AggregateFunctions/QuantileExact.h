@@ -64,7 +64,7 @@ struct QuantileExact
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    Value get(Float64 level)
+    virtual Value get(Float64 level)
     {
         if (!array.empty())
         {
@@ -81,7 +81,7 @@ struct QuantileExact
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    virtual void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
@@ -108,14 +108,76 @@ struct QuantileExact
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    Float64 getFloat(Float64) const
+    virtual Float64 getFloat(Float64)
     {
         throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
+    virtual void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *)
     {
         throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual ~QuantileExact() = default;
+};
+
+template <typename Value>
+struct QuantileExactExclusive : public QuantileExact<Value>
+{
+    using QuantileExact<Value>::array;
+    /// Get the value of the `level` quantile. The level must be between 0 and 1.
+    Float64 getFloat(Float64 level) override
+    {
+        if (!array.empty())
+        {
+            Float64 h = level * (array.size() + 1);
+            auto n = static_cast<size_t>(h);
+
+            if (n >= array.size())
+                return array[array.size() - 1];
+            else if (n < 1)
+                return array[0];
+
+            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+            std::nth_element(array.begin() + n, array.begin() + n, array.end());
+
+            return array[n - 1] + (h - n) * (array[n] - array[n - 1]);
+        }
+
+        return std::numeric_limits<Float64>::quiet_NaN();
+    }
+
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result) override
+    {
+        if (!array.empty())
+        {
+            size_t prev_n = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto level = levels[indices[i]];
+
+                Float64 h = level * (array.size() + 1);
+                auto n = static_cast<size_t>(h);
+
+                if (n >= array.size())
+                    result[indices[i]] = array[array.size() - 1];
+                else if (n < 1)
+                    result[indices[i]] = array[0];
+                else
+                {
+                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    std::nth_element(array.begin() + n, array.begin() + n, array.end());
+
+                    result[indices[i]] = array[n - 1] + (h - n) * (array[n] - array[n - 1]);
+                    prev_n = n;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                result[i] = std::numeric_limits<Float64>::quiet_NaN();
+        }
     }
 };
 
