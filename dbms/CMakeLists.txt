@@ -162,9 +162,7 @@ if (OS_FREEBSD)
 endif ()
 
 if (USE_UNWIND)
-    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
-    endif ()
+    target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
@@ -243,12 +241,6 @@ target_link_libraries(clickhouse_common_io
         PRIVATE
     apple_rt
         PUBLIC
-    Threads::Threads
-        PRIVATE
-    ${CMAKE_DL_LIBS}
-        PRIVATE
-    rt
-        PUBLIC
     roaring
 )
 
@@ -296,7 +288,6 @@ target_link_libraries (dbms
     ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
-    Threads::Threads
 )
 
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
@@ -379,7 +370,6 @@ endif ()
 if(OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
-target_link_libraries(dbms PRIVATE Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
