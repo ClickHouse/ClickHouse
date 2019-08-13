@@ -1,0 +1,42 @@
+Result with different type
+0	1
+1	2
+2	-10
+Offset > block
+0	0
+1	0
+2	0
+Abs(Offset) > block
+0	0
+1	0
+2	0
+Positive offset
+0	1
+1	2
+2	0
+Negative offset
+0	1
+1	2
+2	0
+Positive offset with defaults
+0	2
+1	3
+2	12
+3	13
+Negative offset with defaults
+0	10
+1	11
+2	0
+3	1
+Positive offset with const defaults
+0	1
+1	2
+2	1000
+Negative offset with const defaults
+0	1000
+1	0
+2	1
+Constant column
+0	1000
+1	1000
+2	1000

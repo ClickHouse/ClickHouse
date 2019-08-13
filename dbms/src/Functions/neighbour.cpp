@@ -119,9 +119,6 @@ public:
             default_values_column = block.getByPosition(arguments[2]).column;
         }
 
-//        Field offset_field = (*block.getByPosition(arguments[1]).column)[0];
-//        auto raw_value = safeGet<UInt64>(offset_field);
-
         ColumnWithTypeAndName &source_column_name_and_type = block.getByPosition(arguments[0]);
         DataTypes types = {source_column_name_and_type.type};
         if (default_values_column)
@@ -140,72 +137,74 @@ public:
             default_values_column = castColumn(block.getByPosition(arguments[2]), result_type, context);
         }
 
-        auto column = result_type->createColumn();
-        column->reserve(input_rows_count);
-
         const DataTypePtr desired_type = std::make_shared<DataTypeInt64>();
         if (!block.getByPosition(arguments[1]).type->equals(*desired_type)) {
             offset_column = castColumn(offset_structure, desired_type, context);
         }
-        
-        // with constant offset - insertRangeFrom
-        if (is_constant_offset)
-        {
-            Int64 offset_value = offset_column->getInt(0);
 
-            if (offset_value > 0)
-            {
-                // insert shifted value
-                if ((size_t)std::abs(offset_value) <= input_rows_count) {
-                    column->insertRangeFrom(*source_column, offset_value, input_rows_count - offset_value);
-                    // insert defaults into the end
-                    insertDefaults(column, input_rows_count - offset_value, default_values_column, offset_value);
-                }
-            } else if(offset_value < 0) {
-                // insert defaults up to offset_value
-                insertDefaults(column, input_rows_count - std::abs(offset_value), default_values_column, std::abs(offset_value));
-                // insert range, where possible
-                column->insertRangeFrom(*source_column, 0, input_rows_count - std::abs(offset_value));
-            } else {
-                // populate column with source values
-                column->insertRangeFrom(*source_column, 0, input_rows_count);
-            }
+        if (isColumnConst(*source_column)) {
+            auto column = result_type->createColumnConst(input_rows_count, (*source_column)[0]);
+            block.getByPosition(result).column = std::move(column);
         } else {
-            // with dynamic offset - handle row by row
-            for (size_t row = 0; row < input_rows_count; row++)
+            auto column = result_type->createColumn();
+            column->reserve(input_rows_count);
+            // with constant offset - insertRangeFrom
+            if (is_constant_offset)
             {
-                Int64 offset_value = offset_column->getInt(row);
-                if (offset_value == 0) {
-                     column->insertFrom(*source_column, row);
-                } else if (offset_value > 0) {
-                    size_t real_offset = row + offset_value;
-                    if (real_offset > input_rows_count) {
-                        if (default_values_column) {
-                            column->insertFrom(*default_values_column, row);
-                        } else {
-                            column->insertDefault();
-                        }
-                    } else {
-                        column->insertFrom(*column, real_offset);
+                Int64 offset_value = offset_column->getInt(0);
+
+                if (offset_value > 0)
+                {
+                    // insert shifted value
+                    if ((size_t)offset_value <= input_rows_count) {
+                        column->insertRangeFrom(*source_column, offset_value, input_rows_count - offset_value);
                     }
+                    size_t row_count = (size_t)offset_value > input_rows_count ? input_rows_count : offset_value;
+                    insertDefaults(column, row_count, default_values_column, input_rows_count - row_count);
+                } else if (offset_value < 0) {
+                    size_t row_count = (size_t)std::abs(offset_value) > input_rows_count ? input_rows_count : std::abs(offset_value);
+                    // insert defaults up to offset_value
+                    insertDefaults(column, row_count, default_values_column, 0);
+                    column->insertRangeFrom(*source_column, 0, input_rows_count - row_count);
                 } else {
-                    // out of range
-                    if ((size_t)std::abs(offset_value) > row)
-                    {
-                        if (default_values_column) {
-                            column->insertFrom(*default_values_column, row);
+                    // populate column with source values
+                    column->insertRangeFrom(*source_column, 0, input_rows_count);
+                }
+            } else {
+                // with dynamic offset - handle row by row
+                for (size_t row = 0; row < input_rows_count; row++)
+                {
+                    Int64 offset_value = offset_column->getInt(row);
+                    if (offset_value == 0) {
+                        column->insertFrom(*source_column, row);
+                    } else if (offset_value > 0) {
+                        size_t real_offset = row + offset_value;
+                        if (real_offset > input_rows_count) {
+                            if (default_values_column) {
+                                column->insertFrom(*default_values_column, row);
+                            } else {
+                                column->insertDefault();
+                            }
                         } else {
-                            column->insertDefault();
+                            column->insertFrom(*column, real_offset);
                         }
                     } else {
-                        column->insertFrom(*column, row - std::abs(offset_value));
+                        // out of range
+                        if ((size_t)std::abs(offset_value) > row)
+                        {
+                            if (default_values_column) {
+                                column->insertFrom(*default_values_column, row);
+                            } else {
+                                column->insertDefault();
+                            }
+                        } else {
+                            column->insertFrom(*column, row - std::abs(offset_value));
+                        }
                     }
                 }
             }
+            block.getByPosition(result).column = std::move(column);
         }
-
-
-        block.getByPosition(result).column = std::move(column);
     }
 private:
     const Context & context;
