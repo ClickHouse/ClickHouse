@@ -76,7 +76,6 @@ void MetricLog::stopCollectMetric()
 
 void MetricLog::metricThreadFunction()
 {
-    const size_t flush_interval_milliseconds = 1000;
     while (true)
     {
         try
@@ -90,7 +89,7 @@ void MetricLog::metricThreadFunction()
             elem.event_time = std::time(nullptr);
             this->add(elem);
 
-            const auto next_timepoint = prev_timepoint + std::chrono::milliseconds(flush_interval_milliseconds);
+            const auto next_timepoint = prev_timepoint + std::chrono::milliseconds(collect_interval_milliseconds);
             std::this_thread::sleep_until(next_timepoint);
         }
         catch (...)
