@@ -707,7 +707,7 @@ protected:
         {}
 
         const MergeTreeSettingsPtr copyPtr() const { return settings_ptr; }
-        MergeTreeSettingsPtr & getPtr() { return settings_ptr; }
+        MergeTreeSettingsPtr getPtr() { return settings_ptr; }
         void setPtr(MergeTreeSettingsPtr ptr) { settings_ptr = ptr; }
     };
 
