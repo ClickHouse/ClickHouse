@@ -347,15 +347,9 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
     actions = actions_visitor.popActionsLevel();
 }
 
-static void assertNoAggregates(const ASTPtr & ast, const char * description)
-{
-    GetAggregatesVisitor::Data data{true, description, {}, {}};
-    GetAggregatesVisitor(data).visit(ast);
-}
-
 void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions)
 {
-    auto * select_query = query->as<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     /// If we are not analyzing a SELECT query, but a separate expression, then there can not be aggregate functions in it.
     if (!select_query)
@@ -371,11 +365,14 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         assertNoAggregates(select_query->prewhere(), "in PREWHERE");
 
     GetAggregatesVisitor::Data data;
+    /// @warning It's not clear that aggregate_descriptions could be not empty here. But they do.
+    for (const AggregateDescription & agg : aggregate_descriptions)
+        data.uniq_names.insert(agg.column_name);
     GetAggregatesVisitor(data).visit(ast);
-    has_aggregation = !data.aggregates.empty();
 
     for (const ASTFunction * node : data.aggregates)
     {
+        has_aggregation = true;
         AggregateDescription aggregate;
         aggregate.column_name = node->getColumnName();
 
