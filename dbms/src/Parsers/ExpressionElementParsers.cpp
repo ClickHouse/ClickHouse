@@ -1307,6 +1307,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
+            ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;
         }
         else
         {
