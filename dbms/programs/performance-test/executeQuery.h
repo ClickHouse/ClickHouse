@@ -10,11 +10,12 @@
 namespace DB
 {
 void executeQuery(
-    Connection & connection,
+    Connections & connections,
     const std::string & query,
-    TestStats & statistics,
+    TestStatsPtrs & statistics,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
     Context & context,
-    const Settings & settings);
+    const Settings & settings,
+    size_t connection_index);
 }
