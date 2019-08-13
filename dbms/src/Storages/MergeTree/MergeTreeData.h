@@ -662,6 +662,7 @@ public:
     /// get consistent settings.
     const MergeTreeSettingsPtr getCOWSettings() const
     {
+        std::shared_lock lock(settings_mutex);
         return guarded_settings.copyPtr();
     }
 
@@ -801,6 +802,8 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// Mutex for settings usage
+    mutable std::shared_mutex settings_mutex;
 
     void setPrimaryKeyIndicesAndColumns(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,

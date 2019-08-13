@@ -1644,7 +1644,7 @@ void MergeTreeData::alterSettings(
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder)
 {
-    /// No additional locking required, because we took table_lock_holder
+    std::unique_lock lock(settings_mutex);
     MutableMergeTreeSettingsPtr settings = std::move(*guarded_settings.getPtr()).mutate();
     settings->updateFromChanges(new_changes);
     IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
