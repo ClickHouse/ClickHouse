@@ -440,7 +440,7 @@ void registerStorageKafka(StorageFactory & factory)
         #define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)            \
             /* One of the four required arguments is not specified */      \
             if (args_count < ARG_NUM && ARG_NUM <= 4 &&                    \
-                !kafka_settings.PAR_NAME.isChanged())                      \
+                !kafka_settings.PAR_NAME.changed)                          \
             {                                                              \
                 throw Exception(                                           \
                     "Required parameter '" #PAR_NAME "' "                  \
@@ -449,7 +449,7 @@ void registerStorageKafka(StorageFactory & factory)
             }                                                              \
             /* The same argument is given in two places */                 \
             if (has_settings &&                                            \
-                kafka_settings.PAR_NAME.isChanged() &&                     \
+                kafka_settings.PAR_NAME.changed &&                         \
                 args_count >= ARG_NUM)                                     \
             {                                                              \
                 throw Exception(                                           \
