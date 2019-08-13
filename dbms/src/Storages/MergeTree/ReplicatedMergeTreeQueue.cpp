@@ -961,7 +961,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           *  (because it may be ordered by OPTIMIZE or early with differrent settings).
           */
         UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-        if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
+        const auto data_settings = data.getCOWSettings();
+        if (max_source_parts_size != data_settings->max_bytes_to_merge_at_max_space_in_pool
             && sum_parts_size_in_bytes > max_source_parts_size)
         {
             String reason = "Not executing log entry for part " + entry.new_part_name

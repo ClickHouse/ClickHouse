@@ -672,6 +672,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     size_t sum_marks = 0;
     size_t total_rows = 0;
 
+    const auto data_settings = data.getCOWSettings();
     size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
@@ -688,18 +689,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
     size_t index_granularity_bytes = 0;
     if (adaptive_parts > parts.size() / 2)
-        index_granularity_bytes = data.settings.index_granularity_bytes;
+        index_granularity_bytes = data_settings->index_granularity_bytes;
 
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,
-        data.settings.index_granularity,
+        data_settings->index_granularity,
         index_granularity_bytes);
 
     const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_concurrent_read,
         settings.merge_tree_min_bytes_for_concurrent_read,
-        data.settings.index_granularity,
+        data_settings->index_granularity,
         index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
@@ -830,6 +831,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     SortingInfoPtr sorting_info = query_info.sorting_info;
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
+    const auto data_settings = data.getCOWSettings();
 
     /// In case of reverse order let's split ranges to avoid reading much data.
     auto split_ranges = [max_block_size](const auto & ranges, size_t rows_granularity, size_t num_marks_in_part)
@@ -862,7 +864,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
         sum_marks += sum_marks_in_parts[i];
 
         if (sorting_info->direction == -1)
-            parts[i].ranges = split_ranges(parts[i].ranges, data.settings.index_granularity, sum_marks_in_parts[i]);
+            parts[i].ranges = split_ranges(parts[i].ranges, data_settings->index_granularity, sum_marks_in_parts[i]);
 
         /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
@@ -873,18 +875,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
 
     size_t index_granularity_bytes = 0;
     if (adaptive_parts > parts.size() / 2)
-        index_granularity_bytes = data.settings.index_granularity_bytes;
+        index_granularity_bytes = data_settings->index_granularity_bytes;
 
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,
-        data.settings.index_granularity,
+        data_settings->index_granularity,
         index_granularity_bytes);
 
     const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_concurrent_read,
         settings.merge_tree_min_bytes_for_concurrent_read,
-        data.settings.index_granularity,
+        data_settings->index_granularity,
         index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)
@@ -1012,6 +1014,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & virt_columns,
     const Settings & settings) const
 {
+    const auto data_settings = data.getCOWSettings();
     size_t sum_marks = 0;
     size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
@@ -1025,12 +1028,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
     size_t index_granularity_bytes = 0;
     if (adaptive_parts >= parts.size() / 2)
-        index_granularity_bytes = data.settings.index_granularity_bytes;
+        index_granularity_bytes = data_settings->index_granularity_bytes;
 
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,
-        data.settings.index_granularity,
+        data_settings->index_granularity,
         index_granularity_bytes);
 
     if (sum_marks > max_marks_to_use_cache)

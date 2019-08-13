@@ -62,7 +62,7 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    MergeTreeSettingsPtr settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
@@ -801,14 +801,15 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
 
 void StorageMergeTree::clearOldMutations()
 {
-    if (!settings.finished_mutations_to_keep)
+    const auto settings = getCOWSettings();
+    if (!settings->finished_mutations_to_keep)
         return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        if (current_mutations_by_version.size() <= settings.finished_mutations_to_keep)
+        if (current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
             return;
 
         auto begin_it = current_mutations_by_version.begin();
@@ -819,10 +820,10 @@ void StorageMergeTree::clearOldMutations()
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
         size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= settings.finished_mutations_to_keep)
+        if (done_count <= settings->finished_mutations_to_keep)
             return;
 
-        size_t to_delete_count = done_count - settings.finished_mutations_to_keep;
+        size_t to_delete_count = done_count - settings->finished_mutations_to_keep;
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
