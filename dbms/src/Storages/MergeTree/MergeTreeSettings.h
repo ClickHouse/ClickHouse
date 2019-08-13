@@ -101,7 +101,9 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>, public 
     void loadFromQuery(ASTStorage & storage_def);
 
     MutablePtr clone() const;
-    ~MergeTreeSettings() {}
+private:
+    MergeTreeSettings() = default;
+    MergeTreeSettings(const MergeTreeSettings & o) = default;
 };
 
 using MergeTreeSettingsPtr = MergeTreeSettings::Ptr;
