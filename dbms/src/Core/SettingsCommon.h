@@ -308,6 +308,7 @@ private:
     Derived & castToDerived() { return *static_cast<Derived *>(this); }
     const Derived & castToDerived() const { return *static_cast<const Derived *>(this); }
 
+    using IsChangedFunction = bool (*)(const Derived &);
     using GetStringFunction = String (*)(const Derived &);
     using GetFieldFunction = Field (*)(const Derived &);
     using SetStringFunction = void (*)(Derived &, const String &);
@@ -318,11 +319,11 @@ private:
 
     struct MemberInfo
     {
-        size_t offset_of_changed;
+        IsChangedFunction is_changed;
         StringRef name;
         StringRef description;
         /// Can be updated after first load for config/definition.
-        /// Non updatable settings can be isChanged,
+        /// Non updatable settings can be `changed`,
         /// if they were overwritten in config/definition.
         bool updateable;
         GetStringFunction get_string;
@@ -333,7 +334,7 @@ private:
         DeserializeFunction deserialize;
         CastValueWithoutApplyingFunction cast_value_without_applying;
 
-        bool isChanged(const Derived & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
+        bool isChanged(const Derived & collection) const { return is_changed(collection); }
     };
 
     class MemberInfos
@@ -693,8 +694,7 @@ public:
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
-    add({offsetof(Derived, NAME.changed), \
+    add({[](const Derived & d) { return d.NAME.changed; },          \
          StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
@@ -702,8 +702,7 @@ public:
          &Functions::NAME##_castValueWithoutApplying });
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
-    add({offsetof(Derived, NAME.changed),                               \
+    add({[](const Derived & d) { return d.NAME.changed; },              \
         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
         &Functions::NAME##_getString, &Functions::NAME##_getField, \
         &Functions::NAME##_setString, &Functions::NAME##_setField, \

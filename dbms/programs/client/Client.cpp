@@ -225,7 +225,7 @@ private:
         for (auto && setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
-            if (config().has(name) && !setting.isChanged())
+            if (config().has(name) && setting.isChanged())
                 setting.setValue(config().getString(name));
         }
 
@@ -323,7 +323,7 @@ private:
         insert_format = "Values";
 
         /// Setting value from cmd arg overrides one from config
-        if (context.getSettingsRef().max_insert_block_size.isChanged())
+        if (context.getSettingsRef().max_insert_block_size.changed)
             insert_format_max_block_size = context.getSettingsRef().max_insert_block_size;
         else
             insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
