@@ -365,9 +365,6 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         assertNoAggregates(select_query->prewhere(), "in PREWHERE");
 
     GetAggregatesVisitor::Data data;
-    /// @warning It's not clear that aggregate_descriptions could be not empty here. But they do.
-    for (const AggregateDescription & agg : aggregate_descriptions)
-        data.uniq_names.insert(agg.column_name);
     GetAggregatesVisitor(data).visit(ast);
 
     for (const ASTFunction * node : data.aggregates)
