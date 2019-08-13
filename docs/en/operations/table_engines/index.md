@@ -9,7 +9,7 @@ The table engine (type of table) determines:
 - Whether multithreaded request execution is possible.
 - Data replication parameters.
 
-## Engine families
+## Engine Families
 
 - `*MergeTree`
 
