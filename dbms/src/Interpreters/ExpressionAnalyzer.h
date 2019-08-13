@@ -51,10 +51,8 @@ struct ExpressionAnalyzerData
     Tables external_tables;
 
 protected:
-    ExpressionAnalyzerData(const NameSet & required_result_columns_,
-                           const SubqueriesForSets & subqueries_for_sets_)
-    :   required_result_columns(required_result_columns_),
-        subqueries_for_sets(subqueries_for_sets_)
+    ExpressionAnalyzerData(const NameSet & required_result_columns_)
+    :   required_result_columns(required_result_columns_)
     {}
 };
 
@@ -91,8 +89,7 @@ public:
         const Context & context_,
         const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
-        bool do_global_ = false,
-        const SubqueriesForSets & subqueries_for_set_ = {});
+        bool do_global_ = false);
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
@@ -170,7 +167,6 @@ private:
     const Context & context;
     const ExtractedSettings settings;
     size_t subquery_depth;
-    bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
     SyntaxAnalyzerResultPtr syntax;
 
@@ -181,7 +177,7 @@ private:
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables();
+    void initGlobalSubqueriesAndExternalTables(bool do_global);
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
@@ -203,8 +199,8 @@ private:
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
-    void assertSelect() const;
-    void assertAggregation() const;
+    const ASTSelectQuery * getSelectQuery() const;
+    const ASTSelectQuery * getAggregatingQuery() const;
 
     /**
       * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
