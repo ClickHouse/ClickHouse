@@ -264,7 +264,9 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-if (NOT SANITIZE AND NOT SPLIT_SHARED_LIBRARIES)
+# TODO: only make this extra-checks in CI builds, since a lot of contrib libs won't link -
+#       CI works around this problem by explicitly adding GLIBC_COMPATIBILITY flag.
+if (NOT SANITIZE AND YANDEX_OFFICIAL_BUILD)
     set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
@@ -328,7 +330,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
         if (USE_INTERNAL_LIBCXX_LIBRARY)
             set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
-            set (LIBCXX_LIBS "-lc++ -lc++abi")
+            set (LIBCXX_LIBS "-lc++ -lc++abi -lc++fs")
         endif ()
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
