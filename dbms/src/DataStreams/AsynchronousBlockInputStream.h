@@ -80,10 +80,7 @@ public:
         /// Wait for some backgroud calculations to be sure,
         ///  that after end of stream nothing is being executing.
         if (started)
-        {
             pool.wait();
-            started = false;
-        }
     }
 
     ~AsynchronousBlockInputStream() override
