@@ -38,7 +38,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
-
 }
 
 
