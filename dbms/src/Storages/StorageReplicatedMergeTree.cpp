@@ -297,6 +297,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
+
+    other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+}
+
+
+bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+{
+    auto zookeeper = getZooKeeper();
+    String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    return metadata_from_zk.index_granularity_bytes == 0;
 }
 
 
@@ -5142,5 +5153,13 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const C
     }
     return results;
 }
+
+bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
+{
+    return settings.index_granularity_bytes != 0 &&
+        (settings.enable_mixed_granularity_parts ||
+            (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
+}
+
 
 }
