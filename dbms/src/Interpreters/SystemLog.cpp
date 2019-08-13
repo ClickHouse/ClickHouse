@@ -4,6 +4,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/MetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -48,7 +49,10 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
     trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
+    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
 
+    if (metric_log)
+        metric_flush_thread = ThreadFromGlobalPool([this] { metricThreadFunction(); });
     part_log_database = config.getString("part_log.database", "system");
 }
 
@@ -70,6 +74,41 @@ void SystemLogs::shutdown()
         trace_log->shutdown();
     if (text_log)
         text_log->shutdown();
+    if (metric_log)
+    {
+        bool old_val = false;
+        if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
+            return;
+        metric_flush_thread.join();
+        metric_log->shutdown();
+    }
+}
+
+void SystemLogs::metricThreadFunction()
+{
+    const size_t flush_interval_milliseconds = 1000;
+    while (true)
+    {
+        try
+        {
+            const auto prev_timepoint = std::chrono::system_clock::now();
+
+            if (is_shutdown_metric_thread)
+                break;
+
+            MetricLogElement elem;
+            elem.event_time = std::time(nullptr);
+            metric_log->add(elem);
+
+            const auto next_timepoint = prev_timepoint + std::chrono::milliseconds(flush_interval_milliseconds);
+            std::this_thread::sleep_until(next_timepoint);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+    }
 }
 
 }
