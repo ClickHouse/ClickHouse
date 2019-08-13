@@ -187,7 +187,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
-qq
+
     data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
     saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
