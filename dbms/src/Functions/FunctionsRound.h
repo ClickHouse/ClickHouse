@@ -574,7 +574,7 @@ class FunctionRoundDown : public IFunction
 public:
     static constexpr auto name = "roundDown";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
-    FunctionRoundDown(const Context & context) : context(context) {}
+    FunctionRoundDown(const Context & context_) : context(context_) {}
 
 public:
     String getName() const override { return name; }

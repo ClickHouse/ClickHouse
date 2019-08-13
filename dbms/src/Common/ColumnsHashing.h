@@ -61,7 +61,7 @@ struct HashMethodOneNumber
     /// Get StringRef from value which can be inserted into column.
     static StringRef getValueRef(const Value & value)
     {
-        return StringRef(reinterpret_cast<const char *>(&value.getFirst()), sizeof(value.getFirst()));
+        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 
@@ -90,7 +90,7 @@ struct HashMethodString
         return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
     }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -127,7 +127,7 @@ struct HashMethodFixedString
 
     StringRef getKey(size_t row, Arena &) const { return StringRef(&(*chars)[row * n], n); }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
+    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -243,11 +243,11 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             throw Exception("Cache wasn't created for HashMethodSingleLowCardinalityColumn",
                             ErrorCodes::LOGICAL_ERROR);
 
-        LowCardinalityDictionaryCache * cache;
+        LowCardinalityDictionaryCache * lcd_cache;
         if constexpr (use_cache)
         {
-            cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
-            if (!cache)
+            lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
+            if (!lcd_cache)
             {
                 const auto & cached_val = *context;
                 throw Exception("Invalid type for HashMethodSingleLowCardinalityColumn cache: "
@@ -267,7 +267,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         {
             dictionary_key = {column->getDictionary().getHash(), dict->size()};
             if constexpr (use_cache)
-                cached_values = cache->get(dictionary_key);
+                cached_values = lcd_cache->get(dictionary_key);
         }
 
         if (cached_values)
@@ -288,7 +288,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                     cached_values->saved_hash = saved_hash;
                     cached_values->dictionary_holder = dictionary_holder;
 
-                    cache->set(dictionary_key, cached_values);
+                    lcd_cache->set(dictionary_key, cached_values);
                 }
             }
         }
@@ -470,8 +470,8 @@ struct HashMethodKeysFixed
     Sizes key_sizes;
     size_t keys_size;
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr &)
-        : Base(key_columns), key_sizes(std::move(key_sizes)), keys_size(key_columns.size())
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
+        : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
         {
@@ -525,8 +525,8 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : key_columns(key_columns), keys_size(key_columns.size()) {}
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -550,8 +550,8 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
-    HashMethodHashed(ColumnRawPtrs key_columns, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns)) {}
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
+        : key_columns(std::move(key_columns_)) {}
 
     ALWAYS_INLINE Key getKey(size_t row, Arena &) const { return hash128(row, key_columns.size(), key_columns); }
 

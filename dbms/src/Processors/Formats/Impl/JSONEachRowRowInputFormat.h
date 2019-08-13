@@ -13,14 +13,14 @@ class ReadBuffer;
 
 
 /** A stream for reading data in JSON format, where each row is represented by a separate JSON object.
-  * Objects can be separated by feed return, other whitespace characters in any number and possibly a comma.
+  * Objects can be separated by line feed, other whitespace characters in any number and possibly a comma.
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
 class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSettings & format_settings);
+    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 

@@ -1,4 +1,4 @@
-#include <Functions/FunctionMathUnaryFloat64.h>
+#include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 #if !USE_VECTORCLASS
 #   include <common/preciseExp10.h>
@@ -9,7 +9,7 @@ namespace DB
 
 struct Exp10Name { static constexpr auto name = "exp10"; };
 
-using FunctionExp10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp10Name,
+using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name,
 #if USE_VECTORCLASS
     exp10
 #else

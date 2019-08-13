@@ -116,7 +116,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names) const;
+    void check(const Names & column_names, bool include_virtuals = false) const;
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;
@@ -347,6 +347,10 @@ public:
 
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
+
+    /// Returns names of primary key + secondary sorting columns
+    virtual Names getSortingKeyColumns() const { return {}; }
+
 
 private:
     /// You always need to take the next three locks in this order.

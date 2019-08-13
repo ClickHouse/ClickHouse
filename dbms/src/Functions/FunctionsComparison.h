@@ -554,8 +554,8 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
 
-    FunctionComparison(const Context & context)
-    :   context(context),
+    FunctionComparison(const Context & context_)
+    :   context(context_),
         check_decimal_overflow(decimalCheckComparisonOverflow(context))
     {}
 

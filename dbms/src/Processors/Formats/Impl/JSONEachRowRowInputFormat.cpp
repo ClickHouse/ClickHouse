@@ -27,8 +27,8 @@ enum
 
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(header, in_, params), format_settings(format_settings), name_map(header.columns())
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);
@@ -38,7 +38,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     {
         const String & column_name = columnName(i);
         name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
-        if (format_settings.import_nested_json)
+        if (format_settings_.import_nested_json)
         {
             const auto splitted = Nested::splitName(column_name);
             if (!splitted.second.empty())
@@ -263,7 +263,7 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, params, settings);
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
     });
 }
 

@@ -75,7 +75,7 @@ public:
             if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                if (external_tables.end() != external_tables.find(*getIdentifierName(subquery_or_table_name)))
+                if (external_tables.end() != external_tables.find(getIdentifierName(subquery_or_table_name)))
                     return;
             }
 

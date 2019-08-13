@@ -19,16 +19,16 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    MergeTreeReader(const String & path, /// Path to the directory containing the part
-        const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        bool save_marks_in_cache,
-        const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-        size_t aio_threshold, size_t max_read_buffer_size,
-        const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
-        clockid_t clock_type = CLOCK_MONOTONIC_COARSE);
+    MergeTreeReader(const String & path_, /// Path to the directory containing the part
+        const MergeTreeData::DataPartPtr & data_part_, const NamesAndTypesList & columns_,
+        UncompressedCache * uncompressed_cache_,
+        MarkCache * mark_cache_,
+        bool save_marks_in_cache_,
+        const MergeTreeData & storage_, const MarkRanges & all_mark_ranges_,
+        size_t aio_threshold_, size_t max_read_buffer_size_,
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
+        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     ~MergeTreeReader();
 
