@@ -350,7 +350,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc -latomic")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
 
     # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
