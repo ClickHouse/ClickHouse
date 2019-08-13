@@ -23,10 +23,13 @@ public:
         std::vector<const ASTFunction *> aggregates;
     };
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr & child)
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
     {
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
+        if (auto * func = node->as<ASTFunction>())
+            if (isAggregateFunction(func->name))
+                return false;
         return true;
     }
 
@@ -39,7 +42,7 @@ public:
 private:
     static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
     {
-        if (!AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
+        if (!isAggregateFunction(node.name))
             return;
 
         if (data.assert_no_aggregates)
@@ -50,10 +53,23 @@ private:
         if (data.uniq_names.count(column_name))
             return;
 
+        data.uniq_names.insert(column_name);
         data.aggregates.push_back(&node);
+    }
+
+    static bool isAggregateFunction(const String & name)
+    {
+        return AggregateFunctionFactory::instance().isAggregateFunctionName(name);
     }
 };
 
 using GetAggregatesVisitor = GetAggregatesMatcher::Visitor;
+
+
+inline void assertNoAggregates(const ASTPtr & ast, const char * description)
+{
+    GetAggregatesVisitor::Data data{true, description, {}, {}};
+    GetAggregatesVisitor(data).visit(ast);
+}
 
 }
