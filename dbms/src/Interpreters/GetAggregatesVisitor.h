@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -17,8 +18,7 @@ public:
 
     struct Data
     {
-        bool assert_no_aggregates = false;
-        const char * description = nullptr;
+        const char * assert_no_aggregates = nullptr;
         std::unordered_set<String> uniq_names;
         std::vector<const ASTFunction *> aggregates;
     };
@@ -46,7 +46,7 @@ private:
             return;
 
         if (data.assert_no_aggregates)
-            throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.description) + " in query",
+            throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
                             ErrorCodes::ILLEGAL_AGGREGATION);
 
         String column_name = node.getColumnName();
@@ -68,7 +68,7 @@ using GetAggregatesVisitor = GetAggregatesMatcher::Visitor;
 
 inline void assertNoAggregates(const ASTPtr & ast, const char * description)
 {
-    GetAggregatesVisitor::Data data{true, description, {}, {}};
+    GetAggregatesVisitor::Data data{description, {}, {}};
     GetAggregatesVisitor(data).visit(ast);
 }
 

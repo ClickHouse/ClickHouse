@@ -116,9 +116,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     auto * select_query = query->as<ASTSelectQuery>();
 
-    if (select_query && (select_query->groupBy() || select_query->having()))
-        has_aggregation = true;
-
     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
 
     if (select_query)
@@ -150,7 +147,9 @@ void ExpressionAnalyzer::analyzeAggregation()
         }
     }
 
-    getAggregates(query, temp_actions);
+    has_aggregation = makeAggregateDescriptions(temp_actions);
+    if (select_query && (select_query->groupBy() || select_query->having()))
+        has_aggregation = true;
 
     if (has_aggregation)
     {
@@ -347,29 +346,10 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
     actions = actions_visitor.popActionsLevel();
 }
 
-void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions)
+bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & actions)
 {
-    const auto * select_query = query->as<ASTSelectQuery>();
-
-    /// If we are not analyzing a SELECT query, but a separate expression, then there can not be aggregate functions in it.
-    if (!select_query)
+    for (const ASTFunction * node : aggregates())
     {
-        assertNoAggregates(ast, "in wrong place");
-        return;
-    }
-
-    /// There can not be aggregate functions inside the WHERE and PREWHERE.
-    if (select_query->where())
-        assertNoAggregates(select_query->where(), "in WHERE");
-    if (select_query->prewhere())
-        assertNoAggregates(select_query->prewhere(), "in PREWHERE");
-
-    GetAggregatesVisitor::Data data;
-    GetAggregatesVisitor(data).visit(ast);
-
-    for (const ASTFunction * node : data.aggregates)
-    {
-        has_aggregation = true;
         AggregateDescription aggregate;
         aggregate.column_name = node->getColumnName();
 
@@ -379,9 +359,6 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            /// There can not be other aggregate functions within the aggregate functions.
-            assertNoAggregates(arguments[i], "inside another aggregate function");
-
             getRootActions(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
@@ -393,6 +370,8 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
         aggregate_descriptions.push_back(aggregate);
     }
+
+    return !aggregates().empty();
 }
 
 
@@ -724,13 +703,22 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
         }
     }
 
-    getActionsBeforeAggregation(select_query->select(), step.actions, only_types);
+    /// Collect aggregates removing duplicates by node.getColumnName()
+    /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
+    /// @note The original recollection logic didn't remove duplicates.
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(select_query->select());
 
     if (select_query->having())
-        getActionsBeforeAggregation(select_query->having(), step.actions, only_types);
+        GetAggregatesVisitor(data).visit(select_query->having());
 
     if (select_query->orderBy())
-        getActionsBeforeAggregation(select_query->orderBy(), step.actions, only_types);
+        GetAggregatesVisitor(data).visit(select_query->orderBy());
+
+    /// TODO: data.aggregates -> aggregates()
+    for (const ASTFunction * node : data.aggregates)
+        for (auto & argument : node->arguments->children)
+            getRootActions(argument, only_types, step.actions);
 }
 
 bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
@@ -855,19 +843,6 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
     ExpressionActionsChain::Step & step = chain.steps.back();
     getRootActions(expr, only_types, step.actions);
     step.required_output.push_back(expr->getColumnName());
-}
-
-
-void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
-{
-    const auto * node = ast->as<ASTFunction>();
-
-    if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
-        for (auto & argument : node->arguments->children)
-            getRootActions(argument, no_subqueries, actions);
-    else
-        for (auto & child : ast->children)
-            getActionsBeforeAggregation(child, actions, no_subqueries);
 }
 
 
