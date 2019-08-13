@@ -225,7 +225,7 @@ private:
         for (auto && setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
-            if (config().has(name) && setting.isChanged())
+            if (config().has(name) && !setting.isChanged())
                 setting.setValue(config().getString(name));
         }
 
