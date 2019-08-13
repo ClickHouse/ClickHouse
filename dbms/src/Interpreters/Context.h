@@ -64,6 +64,7 @@ class QueryThreadLog;
 class PartLog;
 class TextLog;
 class TraceLog;
+class MetricLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -434,6 +435,7 @@ public:
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
     std::shared_ptr<TraceLog> getTraceLog();
     std::shared_ptr<TextLog> getTextLog();
+    std::shared_ptr<MetricLog> getMetricLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
