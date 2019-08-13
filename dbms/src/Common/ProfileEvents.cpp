@@ -191,10 +191,10 @@ Counters global_counters(global_counters_array);
 const Event Counters::num_counters = END;
 
 
-Counters::Counters(VariableContext level, Counters * parent)
+Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),
-      parent(parent),
-      level(level)
+      parent(parent_),
+      level(level_)
 {
     counters = counters_holder.get();
 }

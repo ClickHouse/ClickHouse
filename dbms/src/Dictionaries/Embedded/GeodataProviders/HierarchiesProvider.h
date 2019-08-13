@@ -40,7 +40,7 @@ public:
       * For example, if /opt/geo/regions_hierarchy.txt is specified,
       *  then the /opt/geo/regions_hierarchy_ua.txt file will also be loaded, if any, it will be accessible by the `ua` key.
       */
-    RegionsHierarchiesDataProvider(const std::string & path);
+    RegionsHierarchiesDataProvider(const std::string & path_);
 
     std::vector<std::string> listCustomHierarchies() const override;
 
