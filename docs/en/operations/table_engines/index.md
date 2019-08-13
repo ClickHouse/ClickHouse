@@ -9,7 +9,7 @@ The table engine (type of table) determines:
 - Whether multithreaded request execution is possible.
 - Data replication parameters.
 
-## Engine families
+## Engine Families
 
 ### *MergeTree
 
@@ -27,7 +27,7 @@ Engines of the family:
 
 ### *Log
 
-Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to 1 million rows) and read them later as a whole.
+Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to about 1 million rows) and read them later as a whole.
 
 Engines of the family:
 
@@ -37,7 +37,7 @@ Engines of the family:
 
 ### Intergation engines
 
-Engines for communicating with other data systems.
+Engines for communicating with other data storage and processing systems.
 
 Engines of the family:
 
@@ -69,10 +69,10 @@ Engines of the family:
 
 Virtual column is an integral attribute of a table engine that is defined in the source code of the engine.
 
-You should not specify virtual columns in the `CREATE TABLE` query, and you cannot see them in the results of `SHOW CREATE TABLE` and `DESCRIBE TABLE` queries. Also, you cannot insert data to virtual columns.
+You should not specify virtual columns in the `CREATE TABLE` query, and you cannot see them in the results of `SHOW CREATE TABLE` and `DESCRIBE TABLE` queries. Also, virtual columns are read-only, so you can't insert data into virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. The `SELECT *` doesn't return values from virtual columns.
 
-If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible.
+If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. Doing so is not recommended. To help avoiding conflicts virtual column names are usually prefixed with an underscore.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/) <!--hide-->
