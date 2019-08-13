@@ -8,8 +8,6 @@
 #include <Core/Types.h>
 #include <ext/singleton.h>
 #include <unordered_map>
-#include <atomic>
-#include <shared_mutex>
 
 
 namespace DB
@@ -34,25 +32,13 @@ namespace ErrorCodes
 template <typename Type>
 struct SettingNumber
 {
-    struct Data
-    {
-        Type value;
-        bool changed;
-    };
+    Type value;
+    bool changed = false;
 
-    std::atomic<Data> data;
+    SettingNumber(Type x = 0) : value(x) {}
 
-    SettingNumber(Type x = 0) : data{{x, false}} {}
-    SettingNumber(const SettingNumber & o) : data{o.data.load(std::memory_order_relaxed)} {}
-
-    bool isChanged() const { return data.load(std::memory_order_relaxed).changed; }
-    void setChanged(bool changed) { data.store({getValue(), changed}, std::memory_order_relaxed); }
-
-    operator Type() const { return getValue(); }
-    Type getValue() const { return data.load(std::memory_order_relaxed).value; }
-
+    operator Type() const { return value; }
     SettingNumber & operator= (Type x) { set(x); return *this; }
-    SettingNumber & operator= (const SettingNumber & o);
 
     /// Serialize to a test string.
     String toString() const;
@@ -87,26 +73,14 @@ using SettingBool = SettingNumber<bool>;
   */
 struct SettingMaxThreads
 {
-    struct Data
-    {
-        UInt64 value;
-        bool is_auto;
-        bool changed;
-    };
+    UInt64 value;
+    bool is_auto;
+    bool changed = false;
 
-    std::atomic<Data> data;
+    SettingMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
 
-    SettingMaxThreads(UInt64 x = 0) : data{{x ? x : getAutoValue(), x == 0, false}} {}
-    SettingMaxThreads(const SettingMaxThreads & o) : data{o.data.load(std::memory_order_relaxed)} {}
-
-    bool isChanged() const { return data.load(std::memory_order_relaxed).changed; }
-    void setChanged(bool changed);
-
-    operator UInt64() const { return getValue(); }
-    UInt64 getValue() const { return data.load(std::memory_order_relaxed).value; }
-
+    operator UInt64() const { return value; }
     SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
-    SettingMaxThreads & operator= (const SettingMaxThreads & o);
 
     String toString() const;
     Field toField() const;
@@ -118,7 +92,6 @@ struct SettingMaxThreads
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
 
-    bool isAuto() const { return data.load(std::memory_order_relaxed).is_auto; }
     void setAuto();
     UInt64 getAutoValue() const;
 };
@@ -129,37 +102,16 @@ enum class SettingTimespanIO { MILLISECOND, SECOND };
 template <SettingTimespanIO io_unit>
 struct SettingTimespan
 {
-    mutable std::shared_mutex mutex;
     Poco::Timespan value;
     bool changed = false;
 
     SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
-    SettingTimespan(const SettingTimespan & o);
 
-    operator Poco::Timespan() const { return getValue(); }
-    Poco::Timespan getValue() const { std::shared_lock lock(mutex); return value; }
+    operator Poco::Timespan() const { return value; }
     SettingTimespan & operator= (const Poco::Timespan & x) { set(x); return *this; }
-    SettingTimespan & operator= (const SettingTimespan & o);
 
-    Poco::Timespan::TimeDiff totalSeconds() const
-    {
-        std::shared_lock lock(mutex);
-        return value.totalSeconds();
-    }
-
-    Poco::Timespan::TimeDiff totalMilliseconds() const
-    {
-        std::shared_lock lock(mutex);
-        return value.totalMilliseconds();
-    }
-
-    bool isChanged() const
-    {
-        std::shared_lock lock(mutex);
-        return changed;
-    }
-
-    void setChanged(bool changed);
+    Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
+    Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
     String toString() const;
     Field toField() const;
@@ -182,19 +134,13 @@ using SettingMilliseconds = SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
 struct SettingString
 {
-    mutable std::shared_mutex mutex;
     String value;
     bool changed = false;
 
     SettingString(const String & x = String{}) : value(x) {}
-    SettingString(const SettingString & o);
 
-    operator String() const { return getValue(); }
-    String getValue() const { std::shared_lock lock(mutex); return value; }
+    operator String() const { return value; }
     SettingString & operator= (const String & x) { set(x); return *this; }
-    SettingString & operator= (const SettingString & o);
-    bool isChanged() const { std::shared_lock lock(mutex); return changed; }
-    void setChanged(bool changed);
 
     String toString() const;
     Field toField() const;
@@ -210,25 +156,13 @@ struct SettingString
 struct SettingChar
 {
 public:
-    struct Data
-    {
-        char value;
-        bool changed;
-    };
+    char value;
+    bool changed = false;
 
-    std::atomic<Data> data;
+    SettingChar(char x = '\0') : value(x) {}
 
-    SettingChar(char x = '\0') : data({x, false}) {}
-    SettingChar(const SettingChar & o) : data{o.data.load(std::memory_order_relaxed)} {}
-
-    operator char() const { return getValue(); }
-    char getValue() const { return data.load(std::memory_order_relaxed).value; }
-
+    operator char() const { return value; }
     SettingChar & operator= (char x) { set(x); return *this; }
-    SettingChar & operator= (const SettingChar & o);
-
-    bool isChanged() const { return data.load(std::memory_order_relaxed).changed; }
-    void setChanged(bool changed) { data.store({getValue(), changed}, std::memory_order_relaxed);}
 
     String toString() const;
     Field toField() const;
@@ -246,30 +180,18 @@ public:
 template <typename EnumType, typename Tag = void>
 struct SettingEnum
 {
-    struct Data
-    {
-        EnumType value;
-        bool changed;
-    };
+    EnumType value;
+    bool changed = false;
 
-    std::atomic<Data> data;
+    SettingEnum(EnumType x) : value(x) {}
 
-    SettingEnum(EnumType x) : data({x, false}) {}
-    SettingEnum(const SettingEnum & o) : data{o.data.load(std::memory_order_relaxed)} {}
-
-    operator EnumType() const { return getValue(); }
-    EnumType getValue() const { return data.load(std::memory_order_relaxed).value; }
-
+    operator EnumType() const { return value; }
     SettingEnum & operator= (EnumType x) { set(x); return *this; }
-    SettingEnum & operator= (const SettingEnum & o);
-
-    bool isChanged() const { return data.load(std::memory_order_relaxed).changed; }
-    void setChanged(bool changed) { data.store({getValue(), changed}, std::memory_order_relaxed);}
 
     String toString() const;
     Field toField() const { return toString(); }
 
-    void set(EnumType x);
+    void set(EnumType x) { value = x; changed = true; }
     void set(const Field & x) { set(safeGet<const String &>(x)); }
     void set(const String & x);
 
@@ -386,7 +308,6 @@ private:
     Derived & castToDerived() { return *static_cast<Derived *>(this); }
     const Derived & castToDerived() const { return *static_cast<const Derived *>(this); }
 
-    using IsChangedFunction = bool (*)(const Derived &);
     using GetStringFunction = String (*)(const Derived &);
     using GetFieldFunction = Field (*)(const Derived &);
     using SetStringFunction = void (*)(Derived &, const String &);
@@ -397,7 +318,7 @@ private:
 
     struct MemberInfo
     {
-        IsChangedFunction is_changed;
+        size_t offset_of_changed;
         StringRef name;
         StringRef description;
         /// Can be updated after first load for config/definition.
@@ -412,7 +333,7 @@ private:
         DeserializeFunction deserialize;
         CastValueWithoutApplyingFunction cast_value_without_applying;
 
-        bool isChanged(const Derived & collection) const { return is_changed(collection); }
+        bool isChanged(const Derived & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
     };
 
     class MemberInfos
@@ -772,7 +693,8 @@ public:
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    add({[](const Derived & d) { return d.NAME.isChanged(); },         \
+    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
+    add({offsetof(Derived, NAME.changed), \
          StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
@@ -780,7 +702,8 @@ public:
          &Functions::NAME##_castValueWithoutApplying });
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    add({[](const Derived & d) { return d.NAME.isChanged(); },          \
+    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
+    add({offsetof(Derived, NAME.changed),                               \
         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
         &Functions::NAME##_getString, &Functions::NAME##_getField, \
         &Functions::NAME##_setString, &Functions::NAME##_setField, \
