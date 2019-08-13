@@ -20,7 +20,7 @@ class PerformanceTest
 public:
     PerformanceTest(
         const XMLConfigurationPtr & config_,
-        Connection & connection_,
+        Connections & connection_,
         const ConnectionTimeouts & timeouts_,
         InterruptListener & interrupt_listener_,
         const PerformanceTestInfo & test_info_,
@@ -29,7 +29,7 @@ public:
 
     bool checkPreconditions() const;
     void prepare() const;
-    std::vector<TestStats> execute();
+    std::vector<TestStatsPtrs> execute();
     void finish() const;
 
     bool checkSIGINT() const
@@ -40,13 +40,13 @@ public:
 private:
     void runQueries(
         const QueriesWithIndexes & queries_with_indexes,
-        std::vector<TestStats> & statistics_by_run);
+        std::vector<TestStatsPtrs> & statistics_by_run);
 
     UInt64 calculateMaxExecTime() const;
 
 private:
     XMLConfigurationPtr config;
-    Connection & connection;
+    Connections & connections;
     const ConnectionTimeouts & timeouts;
     InterruptListener & interrupt_listener;
 

@@ -86,5 +86,7 @@ struct TestStats
 
     void startWatches();
 };
+using TestStatsPtr = std::shared_ptr<TestStats>;
+using TestStatsPtrs = std::vector<TestStatsPtr>;
 
 }

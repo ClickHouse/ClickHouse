@@ -41,6 +41,9 @@ namespace po = boost::program_options;
 
 namespace DB
 {
+
+using Ports = std::vector<UInt16>;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -55,8 +58,9 @@ class PerformanceTestSuite
 {
 public:
 
-    PerformanceTestSuite(const std::string & host_,
-        const UInt16 port_,
+    PerformanceTestSuite(
+        Strings && hosts_,
+        Ports && ports_,
         const bool secure_,
         const std::string & default_database_,
         const std::string & user_,
@@ -71,12 +75,9 @@ public:
         Strings && skip_names_,
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
-        const std::unordered_map<std::string, std::vector<size_t>> query_indexes_,
+        std::unordered_map<std::string, std::vector<size_t>> && query_indexes_,
         const ConnectionTimeouts & timeouts_)
-        : connection(host_, port_, default_database_, user_,
-            password_, "performance-test", Protocol::Compression::Enable,
-            secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable)
-        , timeouts(timeouts_)
+        : timeouts(timeouts_)
         , tests_tags(std::move(tests_tags_))
         , tests_names(std::move(tests_names_))
         , tests_names_regexp(std::move(tests_names_regexp_))
@@ -91,21 +92,44 @@ public:
     {
         global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
-        if (input_files.size() < 1)
+        if (input_files.empty())
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
+
+        size_t connections_cnt = std::max(ports_.size(), hosts_.size());
+        connections.reserve(connections_cnt);
+
+        for (size_t i = 0; i < connections_cnt; ++i)
+        {
+            UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
+            std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
+            connections.emplace_back(std::make_shared<Connection>(cur_host, cur_port, default_database_, user_, password_, "performance-test-" + toString(i + 1), Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable));
+        }
     }
 
     int run()
     {
-        std::string name;
-        UInt64 version_major;
-        UInt64 version_minor;
-        UInt64 version_patch;
-        UInt64 version_revision;
-        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
+        using Versions = std::vector<UInt64>;
+
+        Strings names(connections.size());
+        Versions versions_major(connections.size());
+        Versions versions_minor(connections.size());
+        Versions versions_patch(connections.size());
+        Versions versions_revision(connections.size());
+
+//        std::string name;
+//        UInt64 version_major;
+//        UInt64 version_minor;
+//        UInt64 version_patch;
+//        UInt64 version_revision;
+//        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
+
+        for (size_t i = 0; i != connections.size(); ++i)
+        {
+            connections[i]->getServerVersion(timeouts, names[i], versions_major[i], versions_minor[i], versions_patch[i], versions_revision[i]);
+        }
 
         std::stringstream ss;
-        ss << version_major << "." << version_minor << "." << version_patch;
+//        ss << version_major << "." << version_minor << "." << version_patch;
         server_version = ss.str();
 
         report_builder = std::make_shared<ReportBuilder>(server_version);
@@ -116,7 +140,7 @@ public:
     }
 
 private:
-    Connection connection;
+    Connections connections;
     const ConnectionTimeouts & timeouts;
 
     const Strings & tests_tags;
@@ -164,19 +188,23 @@ private:
 
             for (auto & test_config : tests_configurations)
             {
-                auto [output, signal] = runTest(test_config);
-                if (!output.empty())
+                auto [output_by_servers, signal] = runTest(test_config);
+
+                for (auto & output : output_by_servers)
                 {
-                    if (lite_output)
-                        std::cout << output;
-                    else
-                        outputs.push_back(output);
+                    if (!output.empty())
+                    {
+                        if (lite_output)
+                            std::cout << output;
+                        else
+                            outputs.push_back(output);
+                    }
+                    if (signal)
+                        break;
                 }
-                if (signal)
-                    break;
             }
 
-            if (!lite_output && outputs.size())
+            if (!lite_output && !outputs.empty())
             {
                 std::cout << "[" << std::endl;
 
@@ -194,11 +222,11 @@ private:
         }
     }
 
-    std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
+    std::pair<DB::Strings, bool> runTest(XMLConfigurationPtr & test_config)
     {
         PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
+        PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
 
         if (current.checkPreconditions())
         {
@@ -209,21 +237,41 @@ private:
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
-            auto result = current.execute();
+            auto result_by_servers = current.execute();
             LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
             LOG_INFO(log, "Running post run queries");
             current.finish();
             LOG_INFO(log, "Postqueries finished");
+
+            DB::Strings reports_by_servers;
             if (lite_output)
-                return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            {
+                std::cerr << " lul " << '\n';
+                for (auto & result : result_by_servers)
+                {
+                    std::cerr << " kuk " << '\n';
+                    String cur_report = report_builder->buildCompactReport(info, result, query_indexes[info.path]);
+                    reports_by_servers.push_back(cur_report);
+                }
+            }
             else
-                return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            {
+                std::cerr << " lel " << '\n';
+                for (auto & result : result_by_servers)
+                {
+                    String cur_report = report_builder->buildFullReport(info, result, query_indexes[info.path]);
+                    std::cerr << " kek " << '\n';
+                    reports_by_servers.push_back(cur_report);
+                }
+            }
+
+            return {reports_by_servers, current.checkSIGINT()};
         }
         else
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
-        return {"", current.checkSIGINT()};
+        return {{""}, current.checkSIGINT()};
     }
 };
 
@@ -323,15 +371,15 @@ try
 {
     using po::value;
     using Strings = DB::Strings;
-
+    using Ports = DB::Ports;
 
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")
         ("profiles-file", value<std::string>()->default_value(""), "Specify a file with global profiles")
-        ("host,h", value<std::string>()->default_value("localhost"), "")
-        ("port", value<UInt16>()->default_value(9000), "")
+        ("host,h", value<Strings>()->multitoken(), "")
+        ("port,p", value<Ports>()->multitoken(), "")
         ("secure,s", "Use TLS connection")
         ("database", value<std::string>()->default_value("default"), "")
         ("user", value<std::string>()->default_value("default"), "")
@@ -378,6 +426,9 @@ try
 
     Strings input_files = getInputFiles(options, log);
 
+    Ports ports = options.count("port") ? options["port"].as<Ports>() : Ports({9000});
+    Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+
     Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
     Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
     Strings tests_names = options.count("names") ? options["names"].as<Strings>() : Strings({});
@@ -390,8 +441,8 @@ try
     DB::UseSSL use_ssl;
 
     DB::PerformanceTestSuite performance_test_suite(
-        options["host"].as<std::string>(),
-        options["port"].as<UInt16>(),
+        std::move(hosts),
+        std::move(ports),
         options.count("secure"),
         options["database"].as<std::string>(),
         options["user"].as<std::string>(),
@@ -406,7 +457,7 @@ try
         std::move(skip_names),
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
-        queries_with_indexes,
+        std::move(queries_with_indexes),
         timeouts);
     return performance_test_suite.run();
 }

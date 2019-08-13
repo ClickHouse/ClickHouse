@@ -12,13 +12,13 @@ public:
     ReportBuilder(const std::string & server_version_);
     std::string buildFullReport(
         const PerformanceTestInfo & test_info,
-        std::vector<TestStats> & stats,
+        TestStatsPtrs & stats,
         const std::vector<std::size_t> & queries_to_run) const;
 
 
     std::string buildCompactReport(
         const PerformanceTestInfo & test_info,
-        std::vector<TestStats> & stats,
+        TestStatsPtrs & stats,
         const std::vector<std::size_t> & queries_to_run) const;
 
 private:

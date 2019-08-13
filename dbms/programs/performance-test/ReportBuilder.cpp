@@ -52,7 +52,7 @@ std::string ReportBuilder::getCurrentTime() const
 
 std::string ReportBuilder::buildFullReport(
     const PerformanceTestInfo & test_info,
-    std::vector<TestStats> & stats,
+    TestStatsPtrs & stats,
     const std::vector<std::size_t> & queries_to_run) const
 {
     JSONString json_output;
@@ -103,9 +103,9 @@ std::string ReportBuilder::buildFullReport(
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             size_t stat_index = number_of_launch * test_info.queries.size() + query_index;
-            TestStats & statistics = stats[stat_index];
+            TestStatsPtr & statistics = stats[stat_index];
 
-            if (!statistics.ready)
+            if (!statistics->ready)
                 continue;
 
             JSONString runJSON;
@@ -113,10 +113,10 @@ std::string ReportBuilder::buildFullReport(
             auto query = std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\"");
             runJSON.set("query", query);
             runJSON.set("query_index", query_index);
-            if (!statistics.exception.empty())
+            if (!statistics->exception.empty())
             {
-                if (isASCIIString(statistics.exception))
-                    runJSON.set("exception", std::regex_replace(statistics.exception, QUOTE_REGEX, "\\\""));
+                if (isASCIIString(statistics->exception))
+                    runJSON.set("exception", std::regex_replace(statistics->exception, QUOTE_REGEX, "\\\""));
                 else
                     runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
@@ -124,9 +124,9 @@ std::string ReportBuilder::buildFullReport(
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 /// in seconds
-                runJSON.set("min_time", statistics.min_time / double(1000));
+                runJSON.set("min_time", statistics->min_time / double(1000));
 
-                if (statistics.sampler.size() != 0)
+                if (statistics->sampler.size() != 0)
                 {
                     JSONString quantiles(4); /// here, 4 is the size of \t padding
                     for (double percent = 10; percent <= 90; percent += 10)
@@ -136,38 +136,38 @@ std::string ReportBuilder::buildFullReport(
                             quantile_key.pop_back();
 
                         quantiles.set(quantile_key,
-                            statistics.sampler.quantileInterpolated(percent / 100.0));
+                            statistics->sampler.quantileInterpolated(percent / 100.0));
                     }
                     quantiles.set("0.95",
-                        statistics.sampler.quantileInterpolated(95 / 100.0));
+                        statistics->sampler.quantileInterpolated(95 / 100.0));
                     quantiles.set("0.99",
-                        statistics.sampler.quantileInterpolated(99 / 100.0));
+                        statistics->sampler.quantileInterpolated(99 / 100.0));
                     quantiles.set("0.999",
-                        statistics.sampler.quantileInterpolated(99.9 / 100.0));
+                        statistics->sampler.quantileInterpolated(99.9 / 100.0));
                     quantiles.set("0.9999",
-                        statistics.sampler.quantileInterpolated(99.99 / 100.0));
+                        statistics->sampler.quantileInterpolated(99.99 / 100.0));
 
                     runJSON.set("quantiles", quantiles.asString());
                 }
 
-                runJSON.set("total_time", statistics.total_time);
+                runJSON.set("total_time", statistics->total_time);
 
-                if (statistics.total_time != 0)
+                if (statistics->total_time != 0)
                 {
-                    runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
-                    runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
-                    runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
+                    runJSON.set("queries_per_second", static_cast<double>(statistics->queries) / statistics->total_time);
+                    runJSON.set("rows_per_second", static_cast<double>(statistics->total_rows_read) / statistics->total_time);
+                    runJSON.set("bytes_per_second", static_cast<double>(statistics->total_bytes_read) / statistics->total_time);
                 }
             }
             else
             {
-                runJSON.set("max_rows_per_second", statistics.max_rows_speed);
-                runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
-                runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
-                runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
+                runJSON.set("max_rows_per_second", statistics->max_rows_speed);
+                runJSON.set("max_bytes_per_second", statistics->max_bytes_speed);
+                runJSON.set("avg_rows_per_second", statistics->avg_rows_speed_value);
+                runJSON.set("avg_bytes_per_second", statistics->avg_bytes_speed_value);
             }
 
-            runJSON.set("memory_usage", statistics.memory_usage);
+            runJSON.set("memory_usage", statistics->memory_usage);
 
             run_infos.push_back(runJSON);
         }
@@ -180,7 +180,7 @@ std::string ReportBuilder::buildFullReport(
 
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
-    std::vector<TestStats> & stats,
+    TestStatsPtrs & stats,
     const std::vector<std::size_t> & queries_to_run) const
 {
 
@@ -202,7 +202,7 @@ std::string ReportBuilder::buildCompactReport(
 
             output << main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;
-            output << stats[index].getStatisticByName(main_metric);
+            output << stats[index]->getStatisticByName(main_metric);
             output << "\n";
         }
     }

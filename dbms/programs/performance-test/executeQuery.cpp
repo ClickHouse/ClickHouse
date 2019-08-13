@@ -41,42 +41,43 @@ void checkFulfilledConditionsAndUpdate(
 } // anonymous namespace
 
 void executeQuery(
-    Connection & connection,
+    Connections & connections,
     const std::string & query,
-    TestStats & statistics,
+    TestStatsPtrs & statistics,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
     Context & context,
-    const Settings & settings)
+    const Settings & settings,
+    size_t connection_index)
 {
-    static const std::string query_id_prefix
-        = Poco::UUIDGenerator::defaultGenerator().create().toString() + "-";
+    static const std::string query_id_prefix = Poco::UUIDGenerator::defaultGenerator().create().toString() + "-";
     static int next_query_id = 1;
 
-    statistics.watch_per_query.restart();
-    statistics.last_query_was_cancelled = false;
-    statistics.last_query_rows_read = 0;
-    statistics.last_query_bytes_read = 0;
-    statistics.query_id = query_id_prefix + std::to_string(next_query_id++);
+    statistics[connection_index]->watch_per_query.restart();
+    statistics[connection_index]->last_query_was_cancelled = false;
+    statistics[connection_index]->last_query_rows_read = 0;
+    statistics[connection_index]->last_query_bytes_read = 0;
+    statistics[connection_index]->query_id = query_id_prefix + std::to_string(next_query_id++);
 
-    RemoteBlockInputStream stream(connection, query, {}, context, &settings);
-    stream.setQueryId(statistics.query_id);
+    RemoteBlockInputStream stream(*connections[connection_index], query, {}, context, &settings);
+    stream.setQueryId(statistics[connection_index]->query_id);
 
     stream.setProgressCallback(
         [&](const Progress & value)
         {
             checkFulfilledConditionsAndUpdate(
-                value, stream, statistics,
+                value, stream, *statistics[connection_index],
                 stop_conditions, interrupt_listener);
         });
     stream.readPrefix();
     while (Block block = stream.read());
     stream.readSuffix();
 
-    if (!statistics.last_query_was_cancelled)
-        statistics.updateQueryInfo();
+    if (!statistics[connection_index]->last_query_was_cancelled)
+        statistics[connection_index]->updateQueryInfo();
 
-    statistics.setTotalTime();
+//    statistics.setTotalTime();
+    statistics[connection_index]->total_time += statistics[connection_index]->watch_per_query.elapsedSeconds();
 }
 
 }
