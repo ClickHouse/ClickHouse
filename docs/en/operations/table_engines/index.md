@@ -11,59 +11,59 @@ The table engine (type of table) determines:
 
 ## Engine families
 
-- `*MergeTree`
+### *MergeTree
 
-    The most universal and functional table engines for high-load tasks. The common property of these engines is quick data insertion with subsequent data processing in the background. The `*MergeTree` engines support data replication, partitioning and other features not supported in other engines.
+The most universal and functional table engines for high-load tasks. The common property of these engines is quick data insertion with subsequent data processing in the background. The `*MergeTree` engines support data replication (with [Replicated*](replication.md) versions of engines), partitioning and other features not supported in other engines.
 
-    Engines of the family:
+Engines of the family:
 
-    - [MergTree](mergetree.md)
-    - [ReplacingMergeTree](replacingmergetree.md)
-    - [SummingMergeTree](summingmergetree.md)
-    - [AggregatingMergeTree](aggregatingmergetree.md)
-    - [CollapsingMergeTree](collapsingmergetree.md)
-    - [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
-    - [GraphiteMergeTree](graphitemergetree.md)
+- [MergTree](mergetree.md)
+- [ReplacingMergeTree](replacingmergetree.md)
+- [SummingMergeTree](summingmergetree.md)
+- [AggregatingMergeTree](aggregatingmergetree.md)
+- [CollapsingMergeTree](collapsingmergetree.md)
+- [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
+- [GraphiteMergeTree](graphitemergetree.md)
 
-- `*Log`
+### *Log
 
-    Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to 1 million rows) and read them later as a whole.
+Lightweight [engines](log_family.md) with minimum functionality. They are the most effective in scenarios when you need to quickly write many small tables (up to 1 million rows) and read them later as a whole.
 
-    Engines of the family:
+Engines of the family:
 
-    - [TinyLog](tinylog.md)
-    - [StripeLog](stripelog.md)
-    - [Log](log.md)
+- [TinyLog](tinylog.md)
+- [StripeLog](stripelog.md)
+- [Log](log.md)
 
-- Intergation engines
+### Intergation engines
 
-    Engines for communicating with other data systems.
+Engines for communicating with other data systems.
 
-    Engines of the family:
+Engines of the family:
 
-    - [Kafka](kafka.md)
-    - [MySQL](mysql.md)
+- [Kafka](kafka.md)
+- [MySQL](mysql.md)
 
-- Special engines
+### Special engines
 
-    Engines solving special tasks.
+Engines solving special tasks.
 
-    Engines of the family:
+Engines of the family:
 
-    - [Distributed](distributed.md)
-    - [MaterializedView](materializedview.md)
-    - [Dictionary](dictionary.md)
-    - [Merge](merge.md)
-    - [File](file.md)
-    - [Null](null.md)
-    - [Set](set.md)
-    - [Join](join.md)
-    - [URL](url.md)
-    - [View](view.md)
-    - [Memory](memory.md)
-    - [Buffer](buffer.md)
-    - [ODBC](odbc.md)
-    - [JDBC](jdbc.md)
+- [Distributed](distributed.md)
+- [MaterializedView](materializedview.md)
+- [Dictionary](dictionary.md)
+- [Merge](merge.md)
+- [File](file.md)
+- [Null](null.md)
+- [Set](set.md)
+- [Join](join.md)
+- [URL](url.md)
+- [View](view.md)
+- [Memory](memory.md)
+- [Buffer](buffer.md)
+- [ODBC](odbc.md)
+- [JDBC](jdbc.md)
 
 ## Virtual columns {#table_engines-virtual_columns}
 
