@@ -23,7 +23,7 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     const MarkRanges & mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    bool check_columns,
+    bool check_columns_,
     size_t min_bytes_to_use_direct_io_,
     size_t max_read_buffer_size_,
     bool save_marks_in_cache_,
@@ -39,7 +39,7 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
     part_index_in_query(part_index_in_query_),
-    check_columns(check_columns),
+    check_columns(check_columns_),
     path(data_part->getFullPath())
 {
     /// Let's estimate total number of rows for progress bar.

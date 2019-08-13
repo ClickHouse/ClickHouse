@@ -30,9 +30,9 @@ public:
     static const size_t DEFAULT_SIZE;
 
     WriteBufferValidUTF8(
-        WriteBuffer & output_buffer,
-        bool group_replacements = true,
-        const char * replacement = "\xEF\xBF\xBD",
+        WriteBuffer & output_buffer_,
+        bool group_replacements_ = true,
+        const char * replacement_ = "\xEF\xBF\xBD",
         size_t size = DEFAULT_SIZE);
 
     virtual ~WriteBufferValidUTF8() override

@@ -14,7 +14,7 @@ namespace DB
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id);
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_);
 
     void run() final;
 

@@ -19,7 +19,7 @@ public:
     /** with_names - in the first line the header with column names
       * with_types - on the next line header with type names
       */
-    CSVRowInputFormat(ReadBuffer & in_, Block header, Params params, bool with_names, const FormatSettings & format_settings);
+    CSVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
 

@@ -479,6 +479,7 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
+    void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
@@ -589,7 +590,9 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
-    bool canUseAdaptiveGranularity() const
+    /// Returns true if table can create new parts with adaptive granularity
+    /// Has additional constraint in replicated version
+    virtual bool canUseAdaptiveGranularity() const
     {
         auto settings_ptr = getImmutableSettings();
         return settings_ptr->index_granularity_bytes != 0 &&
