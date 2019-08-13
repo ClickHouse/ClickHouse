@@ -9,6 +9,8 @@ using Poco::Message;
 
 struct MetricLogElement
 {
+    time_t event_time{};
+
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
     void appendToBlock(Block & block) const;

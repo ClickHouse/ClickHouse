@@ -79,7 +79,9 @@ struct SystemLogs
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
 
-    void threadFunction();
+    ThreadFromGlobalPool metric_flush_thread;
+    void metricThreadFunction();
+    std::atomic<bool> is_shutdown_metric_thread{false};
 
     String part_log_database;
 };
@@ -118,6 +120,8 @@ public:
 
     /// Stop the background flush thread before destructor. No more data will be written.
     void shutdown();
+
+    size_t getFlushInterval() { return flush_interval_milliseconds; }
 
 protected:
     Context & context;
