@@ -11,8 +11,8 @@ Block MetricLogElement::createBlock()
 {
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    columns_with_type_and_name.emplace_back(DataTypeDate(),       "event_date");
-    columns_with_type_and_name.emplace_back(DataTypeDateTime(),   "event_time");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),       "event_date");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(),   "event_time");
 
     //ProfileEvents
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
@@ -20,7 +20,7 @@ Block MetricLogElement::createBlock()
         std::string name;
         name += "ProfileEvent_";
         name += ProfileEvents::getName(ProfileEvents::Event(i));
-        columns_with_type_and_name.emplace_back(DataTypeUInt64(), name);
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), std::move(name));
     }
 
     //CurrentMetrics
@@ -29,7 +29,7 @@ Block MetricLogElement::createBlock()
         std::string name;
         name += "CurrentMetric_";
         name += CurrentMetrics::getName(ProfileEvents::Event(i));
-        columns_with_type_and_name.emplace_back(DataTypeInt64(), name);
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeInt64>(), std::move(name));
     }
 
     return Block(columns_with_type_and_name);
