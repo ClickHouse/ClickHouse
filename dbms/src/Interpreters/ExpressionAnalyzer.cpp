@@ -325,26 +325,6 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
 }
 
 
-void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions)
-{
-    bool only_consts = false;
-
-    LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
-                                   sourceColumns(), actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, !isRemoteStorage(), log.stream());
-
-    if (table_join.using_expression_list)
-        actions_visitor.visit(table_join.using_expression_list);
-    else if (table_join.on_expression)
-    {
-        for (const auto & ast : analyzedJoin().key_asts_left)
-            actions_visitor.visit(ast);
-    }
-
-    actions = actions_visitor.popActionsLevel();
-}
-
 bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & actions)
 {
     for (const ASTFunction * node : aggregates())
@@ -479,9 +459,18 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
-    const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
+    if (join_params.using_expression_list)
+    {
+        getRootActions(join_params.using_expression_list, only_types, step.actions);
+    }
+    else if (join_params.on_expression)
+    {
+        auto list = std::make_shared<ASTExpressionList>();
+        list->children = analyzedJoin().key_asts_left;
+        getRootActions(list, only_types, step.actions);
+    }
 
-    getActionsFromJoinKeys(join_params, only_types, step.actions);
+    const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
 
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
