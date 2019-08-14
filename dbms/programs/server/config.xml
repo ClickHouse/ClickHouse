@@ -329,6 +329,7 @@
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </text_log>
+    -->
 
     <!-- Uncomment to write metric log into table.
          Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
