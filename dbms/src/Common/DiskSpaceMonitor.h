@@ -144,7 +144,7 @@ public:
         return keep_free_space_bytes;
     }
 
-    auto getSpaceInformation() const
+    Stat getSpaceInformation() const
     {
         return Stat(*this);
     }
@@ -329,9 +329,9 @@ public:
     /// Do not use this function when it is possible to predict size!!!
     ReservationPtr reserveOnMaxDiskWithoutReservation() const;
 
-    const auto & getVolumes() const { return volumes; }
+    const Volumes & getVolumes() const { return volumes; }
 
-    auto getMoveFactor() const { return move_factor; }
+    double getMoveFactor() const { return move_factor; }
 
     VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
 
@@ -360,7 +360,7 @@ public:
 
     const StoragePolicyPtr & operator[](const String & name) const;
 
-    const auto & getPoliciesMap() const { return policies; }
+    const std::map<String, StoragePolicyPtr> & getPoliciesMap() const { return policies; }
 
 private:
     std::map<String, StoragePolicyPtr> policies;
