@@ -1,14 +1,13 @@
-#include "config_formats.h"
-#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
+#include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <capnp/serialize.h> // Y_IGNORE
-#include <capnp/dynamic.h> // Y_IGNORE
-#include <capnp/common.h> // Y_IGNORE
+#include <capnp/serialize.h>
+#include <capnp/dynamic.h>
+#include <capnp/common.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
