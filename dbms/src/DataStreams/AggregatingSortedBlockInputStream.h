@@ -50,8 +50,8 @@ private:
     std::vector<ColumnAggregateFunction *> columns_to_aggregate;
     std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
 
-    RowRef current_key;        /// The current primary key.
-    RowRef next_key;           /// The primary key of the next row.
+    SharedBlockRowRef current_key;        /// The current primary key.
+    SharedBlockRowRef next_key;           /// The primary key of the next row.
 
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
