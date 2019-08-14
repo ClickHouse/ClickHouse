@@ -24,6 +24,7 @@
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
+#include <DataStreams/FillingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -100,6 +101,8 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int FILL_STEP_ZERO_VALUE;
 }
 
 namespace
@@ -1004,6 +1007,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     executeLimitBy(pipeline);
                 }
 
+                executeWithFill(pipeline);
+
                 if (query.limitLength())
                     executePreLimit(pipeline);
             }
@@ -1094,7 +1099,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limitLength() && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
+            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -1135,6 +1140,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
+            executeWithFill(pipeline);
+
             executeLimit(pipeline);
         }
     }
@@ -1143,6 +1150,74 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
 
+
+static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+
+    Field converted = convertFieldToType(field, DataTypeUInt64());
+    if (converted.isNull())
+        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of LIMIT expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+
+    return converted.safeGet<UInt64>();
+}
+
+static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const Context & context)
+{
+    UInt64 length = 0;
+    UInt64 offset = 0;
+
+    if (query.limitLength())
+    {
+        length = getLimitUIntValue(query.limitLength(), context);
+        if (query.limitOffset())
+            offset = getLimitUIntValue(query.limitOffset(), context);
+    }
+
+    return {length, offset};
+}
+
+static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
+{
+    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY or WITH TIES.
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
+    {
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        return limit_length + limit_offset;
+    }
+    return 0;
+}
+
+static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    return field;
+}
+
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement &node, const Context &context)
+{
+    FillColumnDescription descr;
+    if (node.fill_from)
+        descr.fill_from = getWithFillFieldValue(node.fill_from, context);
+    if (node.fill_to)
+        descr.fill_to = getWithFillFieldValue(node.fill_to, context);
+    if (node.fill_step)
+        descr.fill_step = getWithFillFieldValue(node.fill_step, context);
+    else
+        descr.fill_step = 1;
+
+    if (descr.fill_step == 0)
+        throw Exception("STEP value can not be zero", ErrorCodes::FILL_STEP_ZERO_VALUE);
+
+    return descr;
+}
 
 template <typename TPipeline>
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1341,11 +1416,12 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY, WITH TIES but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
     if (!query.distinct
+        && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
         && !query.groupBy()
@@ -1925,7 +2001,11 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
     });
 }
 
+<<<<<<< HEAD
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info)
+=======
+SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery & query)
+>>>>>>> a2c3fd2057483396a936ceb0db8082e92ced0a01
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
@@ -1958,11 +2038,36 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
                 stream = std::make_shared<AsynchronousBlockInputStream>(stream);
             });
 
+<<<<<<< HEAD
             pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
                 pipeline.streams, order_descr,
                 settings.max_block_size, limit);
             pipeline.streams.resize(1);
         }
+=======
+        if (order_by_elem.with_fill)
+        {
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+
+            if (order_by_elem.direction == -1)
+            {
+                /// if DESC, then STEP < 0, FROM > TO
+                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from < fill_desc.fill_to)
+                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
+            }
+            else
+            {
+                /// if ASC, then STEP > 0, FROM < TO
+                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from > fill_desc.fill_to)
+                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
+            }
+
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
+                true, fill_desc);
+        }
+        else
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+>>>>>>> a2c3fd2057483396a936ceb0db8082e92ced0a01
     }
     else
     {
@@ -2106,7 +2211,7 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
         UInt64 limit_for_distinct = 0;
 
         /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
-        if (!query.orderBy() || !before_order)
+        if ((!query.orderBy() || !before_order) && !query.limit_with_ties)
             limit_for_distinct = limit_length + limit_offset;
 
         pipeline.transform([&](auto & stream)
@@ -2172,9 +2277,10 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        SortDescription sort_descr  = getSortDescription(query);
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, false, query.limit_with_ties, sort_descr);
         });
     }
 }
@@ -2286,13 +2392,39 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
+        SortDescription order_descr = getSortDescription(query);
+
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
         pipeline.transform([&](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
+        });
+    }
+}
+
+
+void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    if (query.orderBy())
+    {
+        SortDescription order_descr = getSortDescription(query);
+        SortDescription fill_descr;
+        for (auto & desc : order_descr)
+        {
+            if (desc.with_fill)
+                fill_descr.push_back(desc);
+        }
+
+        if (fill_descr.empty())
+            return;
+
+        pipeline.transform([&](auto & stream)
+        {
+            stream = std::make_shared<FillingBlockInputStream>(stream, fill_descr);
         });
     }
 }

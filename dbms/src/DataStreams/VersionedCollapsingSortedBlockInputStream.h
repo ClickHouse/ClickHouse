@@ -197,7 +197,7 @@ private:
     Int8 sign_in_queue = 0;
     const size_t max_rows_in_queue;
     /// Rows with the same primary key and sign.
-    FixedSizeDequeWithGaps<RowRef> current_keys;
+    FixedSizeDequeWithGaps<SharedBlockRowRef> current_keys;
 
     size_t blocks_written = 0;
 
@@ -207,7 +207,7 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Output to result row for the current primary key.
-    void insertRow(size_t skip_rows, const RowRef & row, MutableColumns & merged_columns);
+    void insertRow(size_t skip_rows, const SharedBlockRowRef & row, MutableColumns & merged_columns);
 
     void insertGap(size_t gap_size);
 };
