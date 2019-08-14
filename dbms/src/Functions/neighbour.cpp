@@ -54,12 +54,13 @@ public:
                     + ", should be from 2 to 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        // second argument must be a positive integer
+        // second argument must be an integer
         if (!isInteger(arguments[1]))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                    + " - should be positive integer",
+                    + " - should be an integer",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
@@ -116,7 +117,13 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto offset_structure = block.getByPosition(arguments[1]);
+
         ColumnPtr & offset_column = offset_structure.column;
+        if (isColumnNullable(*offset_column))
+            throw Exception(
+                    "Illegal type " + offset_structure.type->getName() + " of second argument of function " + getName()
+                    + " - can not be Nullable",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto is_constant_offset = isColumnConst(*offset_structure.column);
         ColumnPtr default_values_column = nullptr;
@@ -145,6 +152,7 @@ public:
             default_values_column = castColumn(block.getByPosition(arguments[2]), result_type, context);
         }
 
+        // since we are working with both signed and unsigned - we'll try to use Int64 for handling all of them
         const DataTypePtr desired_type = std::make_shared<DataTypeInt64>();
         if (!block.getByPosition(arguments[1]).type->equals(*desired_type))
         {
@@ -165,26 +173,26 @@ public:
             {
                 Int64 offset_value = offset_column->getInt(0);
 
+                auto offset_value_casted = static_cast<size_t>(std::abs(offset_value));
+                size_t default_value_count = std::min(offset_value_casted, input_rows_count);
                 if (offset_value > 0)
                 {
                     // insert shifted value
-                    if ((size_t)offset_value <= input_rows_count)
+                    if (offset_value_casted <= input_rows_count)
                     {
-                        column->insertRangeFrom(*source_column, offset_value, input_rows_count - offset_value);
+                        column->insertRangeFrom(*source_column, offset_value_casted, input_rows_count - offset_value_casted);
                     }
-                    size_t row_count = (size_t)offset_value > input_rows_count ? input_rows_count : offset_value;
-                    insertDefaults(column, row_count, default_values_column, input_rows_count - row_count);
+                    insertDefaults(column, default_value_count, default_values_column, input_rows_count - default_value_count);
                 }
                 else if (offset_value < 0)
                 {
-                    size_t row_count = (size_t)std::abs(offset_value) > input_rows_count ? input_rows_count : std::abs(offset_value);
                     // insert defaults up to offset_value
-                    insertDefaults(column, row_count, default_values_column, 0);
-                    column->insertRangeFrom(*source_column, 0, input_rows_count - row_count);
+                    insertDefaults(column, default_value_count, default_values_column, 0);
+                    column->insertRangeFrom(*source_column, 0, input_rows_count - default_value_count);
                 }
                 else
                 {
-                    // populate column with source values
+                    // populate column with source values, when offset is equal to zero
                     column->insertRangeFrom(*source_column, 0, input_rows_count);
                 }
             }
@@ -246,7 +254,7 @@ private:
     const Context & context;
 };
 
-void registerFunctionNextInBlock(FunctionFactory & factory)
+void registerFunctionNeighbour(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNeighbour>();
 }
