@@ -195,12 +195,8 @@ private:
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-<<<<<<< HEAD
     void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
-=======
-    void executeOrder(Pipeline & pipeline);
     void executeWithFill(Pipeline & pipeline);
->>>>>>> a2c3fd2057483396a936ceb0db8082e92ced0a01
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
     void executeUnion(Pipeline & pipeline);
@@ -218,6 +214,7 @@ private:
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
     void executeLimitBy(QueryPipeline & pipeline);
@@ -247,9 +244,6 @@ private:
       * But the use of this section is justified if you need to set the settings for one subquery.
       */
     void initSettings();
-
-    /// gets ORDER BY description
-    SortDescription getSortDescription(const ASTSelectQuery & query);
 
     const SelectQueryOptions options;
     ASTPtr query_ptr;
