@@ -44,6 +44,8 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();
@@ -57,8 +59,11 @@ public:
         // second argument must be an integer
         if (!isInteger(arguments[1]))
             throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                    + " - should be an integer",
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - should be an integer",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        else if (arguments[1]->isNullable())
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - can not be Nullable",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 
@@ -119,11 +124,6 @@ public:
         auto offset_structure = block.getByPosition(arguments[1]);
 
         ColumnPtr & offset_column = offset_structure.column;
-        if (isColumnNullable(*offset_column))
-            throw Exception(
-                    "Illegal type " + offset_structure.type->getName() + " of second argument of function " + getName()
-                    + " - can not be Nullable",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto is_constant_offset = isColumnConst(*offset_structure.column);
         ColumnPtr default_values_column = nullptr;
@@ -222,13 +222,14 @@ public:
                         }
                         else
                         {
-                            column->insertFrom(*column, real_offset);
+                            column->insertFrom(*source_column, real_offset);
                         }
                     }
                     else
                     {
                         // out of range
-                        if ((size_t)std::abs(offset_value) > row)
+                        auto offset_value_casted = static_cast<size_t>(std::abs(offset_value));
+                        if (offset_value_casted > row)
                         {
                             if (default_values_column)
                             {
@@ -241,7 +242,7 @@ public:
                         }
                         else
                         {
-                            column->insertFrom(*column, row - std::abs(offset_value));
+                            column->insertFrom(*column, row - offset_value_casted);
                         }
                     }
                 }

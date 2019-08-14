@@ -12,6 +12,8 @@ select number, neighbour(number, 1, -10) from numbers(3); -- { serverError 43 }
 select number, if(number > 1, number, null) as offset, neighbour(number, offset) from numbers(3); -- { serverError 43 }
 select 'Zero offset';
 select number, neighbour(number, 0) from numbers(3);
+select 'Nullable values';
+select  if(number > 1, number, null) as value, number as offset, neighbour(value, offset) as neighbour from numbers(3);
 select 'Result with different type';
 select toInt32(number) as n, neighbour(n, 1, -10) from numbers(3);
 select 'Offset > block';
