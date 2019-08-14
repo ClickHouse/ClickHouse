@@ -1,3 +1,11 @@
+Zero offset
+0	0
+1	1
+2	2
+Nullable values
+\N	0	\N
+\N	1	2
+2	2	\N
 Result with different type
 0	1
 1	2
