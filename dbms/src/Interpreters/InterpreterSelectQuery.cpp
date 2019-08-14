@@ -680,7 +680,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
 
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        if (syntax_result->array_join_alias_to_name.count(order_descr[i].column_name))
+        if (syntax_result->array_join_result_to_source.count(order_descr[i].column_name))
             break;
 
         /// Optimize in case of exact match with order key element
