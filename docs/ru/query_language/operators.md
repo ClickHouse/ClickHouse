@@ -65,13 +65,13 @@
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
 
-## Оператор для работы с датами и временем
+## Оператор для работы с датами и временем {#operators-datetime}
 
 ``` sql
 EXTRACT(part FROM date);
 ```
 
-Позволяет извлечь отдельные части из переданной даты. Например, можно получить месяц из даты, или минуты из времени. 
+Позволяет извлечь отдельные части из переданной даты. Например, можно получить месяц из даты, или минуты из времени.
 
 В параметре `part` указывается, какой фрагмент даты нужно получить. Доступные значения:
 
@@ -99,8 +99,8 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 ``` sql
 CREATE TABLE test.Orders
 (
-    OrderId UInt64, 
-    OrderName String, 
+    OrderId UInt64,
+    OrderName String,
     OrderDate DateTime
 )
 ENGINE = Log;
@@ -110,11 +110,11 @@ ENGINE = Log;
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
 ``` sql
-SELECT 
-    toYear(OrderDate) AS OrderYear, 
-    toMonth(OrderDate) AS OrderMonth, 
-    toDayOfMonth(OrderDate) AS OrderDay, 
-    toHour(OrderDate) AS OrderHour, 
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
     toMinute(OrderDate) AS OrderMinute,
     toSecond(OrderDate) AS OrderSecond
 FROM test.Orders;
