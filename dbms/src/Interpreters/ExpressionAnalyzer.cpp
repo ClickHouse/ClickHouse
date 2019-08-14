@@ -24,6 +24,7 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -320,8 +321,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
-    actions_visitor.visit(ast);
-    actions = actions_visitor.popActionsLevel();
+    actions_visitor.visit(ast, actions);
 }
 
 
