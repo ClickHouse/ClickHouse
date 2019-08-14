@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CONSTRAINTS_ARE_NOT_SATISFIED;
+    extern const int VIOLATED_CONSTRAINT;
 }
 
 class CheckConstraintsBlockOutputStream : public IBlockOutputStream

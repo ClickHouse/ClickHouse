@@ -3144,6 +3144,10 @@ void StorageReplicatedMergeTree::alter(
         if (new_indices_str != getIndices().toString())
             new_metadata.skip_indices = new_indices_str;
 
+        String new_constraints_str = new_constraints.toString();
+        if (new_constraints_str != getConstraints().toString())
+            new_metadata.constraints = new_constraints_str;
+
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);

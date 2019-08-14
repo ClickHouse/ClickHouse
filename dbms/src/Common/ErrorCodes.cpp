@@ -443,6 +443,7 @@ namespace ErrorCodes
     extern const int INSECURE_PATH = 466;
     extern const int CANNOT_PARSE_BOOL = 467;
     extern const int CANNOT_PTHREAD_ATTR = 468;
+    extern const int VIOLATED_CONSTRAINT = 469;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
