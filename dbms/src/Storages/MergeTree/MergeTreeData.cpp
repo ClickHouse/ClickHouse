@@ -785,10 +785,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (size_t i = 0; i < part_names_with_disks.size(); ++i)
     {
-        const auto & part_name = part_names_with_disks[i].first;
-        const auto part_disk_ptr = part_names_with_disks[i].second;
-        pool.schedule([&]
+        pool.schedule([&, i]
         {
+            const auto & part_name = part_names_with_disks[i].first;
+            const auto part_disk_ptr = part_names_with_disks[i].second;
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
@@ -2601,8 +2601,6 @@ void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSp
     copied_part->renameTo(part->name);
 
     auto old_active_part = swapActivePart(copied_part);
-
-    std::cerr << old_active_part.use_count() << std::endl;
 
     old_active_part->deleteOnDestroy();
 }
