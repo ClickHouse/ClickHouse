@@ -67,7 +67,7 @@ The command-line client allows passing external data (external temporary tables)
 
 ### Formatted Queries {#cli-formatted-queries}
 
-You can create a format string for the query, and provide arguments for the format string with the parameters of client app. For example:
+You can create a format string for the query, and provide arguments for the format string with the parameters of the client app. For example:
 
 ```bash
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
@@ -75,14 +75,14 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 
 #### Syntax of a Format String {#cli-formatted-queries-syntax}
 
-The query formatted by the standard method. Values that you want to put into the query from the app parameters place in parenthessis and format as follows:
+Format a query by the standard method. Values that you want to put into the query from the app parameters place in braces and format as follows:
 
 ```
 {<name>:<structure>}
 ```
 
-- `name` — Identifier of a placeholder, that should be used in app parameters as `--param_name = value`.
-- `structure` — A way of treating app parameter value. For example, a structure like `(integer, ('string', integer))` can be formated as `Tuple(UInt8, Tuple(String, UInt8))` (or using other [integer](../data_types/int_uint.md) types).
+- `name` — Identifier of a placeholder that should be used in app parameter as `--param_name = value`.
+- `structure` — A way of treating app parameter value. For example, a structure like `(integer, ('string', integer))` can be formatted as `Tuple(UInt8, Tuple(String, UInt8))` (or using other [integer](../data_types/int_uint.md) types).
 
 #### Example
 

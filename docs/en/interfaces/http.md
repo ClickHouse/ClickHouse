@@ -246,7 +246,7 @@ Use buffering to avoid situations where a query processing error occurred after 
 
 ## Formatted Queries {#http-formatted-queries}
 
-You can create a format string for the query, and provide arguments for the format string with the parameters of client app. For more information, see [CLI Formatted Queries](cli.md#cli-formatted-queries).
+You can create a format string for the query, and provide arguments for the format string with the parameters of the HTTP request. For more information, see [CLI Formatted Queries](cli.md#cli-formatted-queries).
 
 ### Example
 
