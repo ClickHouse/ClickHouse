@@ -244,9 +244,9 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
 
-## Formatted Queries {#http-formatted-queries}
+### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a format string for the query, and provide arguments for the format string with the parameters of the HTTP request. For more information, see [CLI Formatted Queries](cli.md#cli-formatted-queries).
+You can create a query with parameters, and pass values for these parameters with the parameters of the HTTP request. For more information, see [CLI Formatted Queries](cli.md#cli-queries-with-parameters).
 
 ### Example
 

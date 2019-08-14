@@ -65,24 +65,24 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-### Formatted Queries {#cli-formatted-queries}
+### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a format string for the query, and provide arguments for the format string with the parameters of the client app. For example:
+You can create a query with parameters, and pass values for these parameters with the parameters of the client app. For example:
 
 ```bash
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Syntax of a Format String {#cli-formatted-queries-syntax}
+#### Syntax of a Query {#cli-queries-with-parameters-syntax}
 
 Format a query by the standard method. Values that you want to put into the query from the app parameters place in braces and format as follows:
 
 ```
-{<name>:<structure>}
+{<name>:<data type>}
 ```
 
 - `name` — Identifier of a placeholder that should be used in app parameter as `--param_name = value`.
-- `structure` — A way of treating app parameter value. For example, a structure like `(integer, ('string', integer))` can be formatted as `Tuple(UInt8, Tuple(String, UInt8))` (or using other [integer](../data_types/int_uint.md) types).
+- `data type` — A data type of app parameter value. For example, data structure like `(integer, ('string', integer))` can have a data type `Tuple(UInt8, Tuple(String, UInt8))` (also you can use another [integer](../data_types/int_uint.md) types).
 
 #### Example
 
