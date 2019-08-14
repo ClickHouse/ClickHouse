@@ -46,7 +46,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 
 ## -Resample
 
-Allows to aggregate data, separating them into intervals.
+Allows to divide data by groups, and then separately aggregates the data in those groups. Groups are created by splitting the values of one of the columns into intervals.
 
 ```
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
@@ -54,9 +54,9 @@ Allows to aggregate data, separating them into intervals.
 
 **Parameters**
 
-- `start` — Starting value of the whole required interval for the values of `resampling_key`.
-- `stop` — End value of the whole required interval for the values of `resampling_key`.
-- `step` — Step for separating the whole interval by subintervals. The `aggFunction` is executed over these subintervals.
+- `start` — Starting value of the whole required interval for the values of `resampling_key`. 
+- `stop` — Ending value of the whole required interval for the values of `resampling_key`. The whole interval doesn't include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval by subintervals. The `aggFunction` is executed over each of those subintervals independently.
 - `resampling_key` — Column, which values are used for separating data by intervals.
 - `aggFunction_params` — Parameters of `aggFunction`.
 
@@ -93,11 +93,11 @@ SELECT groupArrayResample(30, 75, 30)(name, age) from people
 └───────────────────────────────────────────────┘
 ```
 
-What do we see in the result?
+Consider the results.
 
-`Jonh` is out of the sample because he is too young. Other persons are distributed according to the specified age intervals.
+`Jonh` is out of the sample because he is too young. Other people are distributed according to the specified age intervals.
 
-Now, let's count the total number of persons and their average wage in the specified age intervals.
+Now, let's count the total number of people and their average wage in the specified age intervals.
 
 ```sql
 SELECT
