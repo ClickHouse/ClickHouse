@@ -312,16 +312,16 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. If `TTL` is set for the whole table, individual `TTL` for columns are ignored.
+The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which exires before.
 
-
-The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval of time that starts from the date column value.
+The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define lifetime of data, use operations on this time column, for example:
 
 ```
-TTL date_time + interval
+TTL time_column
+TTL time_column + interval
 ```
 
-You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use [time interval](../../query_language/operators.md#operators-datetime) operators.
+To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
 ```
 TTL date_time + INTERVAL 1 MONTH
