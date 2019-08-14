@@ -67,7 +67,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Пример:
 `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — выражение, устанавливающее время хранения строк.
+- `TTL` — выражение, определяющее длительность хранения строк.
 
     Должно зависеть от столбца `Date` или `DateTime` и возвращать столбец `Date` или `DateTime`. Пример:`TTL date + INTERVAL 1 DAY`
 
