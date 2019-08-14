@@ -774,7 +774,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
 
-        query_analyzer->makeSetsForIndex();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {

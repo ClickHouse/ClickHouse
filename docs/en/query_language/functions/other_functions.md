@@ -102,6 +102,9 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
+## currentUser()
+Returns the login of authorized user (initiator of query execution).
+
 ## isFinite(x)
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
