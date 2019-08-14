@@ -48,7 +48,7 @@ public:
 void registerFunctionCurrentUser(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCurrentUser>();
-    factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::CaseSensitive);
+    factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::CaseInsensitive);
 }
 
 }
