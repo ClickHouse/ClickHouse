@@ -8,6 +8,10 @@ select neighbour(1,2,3,4); -- { serverError 42 }
 select neighbour(dummy, 1, 'hello'); -- { serverError 43 }
 -- types without common supertype (UInt64 and Int8)
 select number, neighbour(number, 1, -10) from numbers(3); -- { serverError 43 }
+-- nullable offset is not allowed
+select number, if(number > 1, number, null) as offset, neighbour(number, offset) from numbers(3); -- { serverError 43 }
+select 'Zero offset';
+select number, neighbour(number, 0) from numbers(3);
 select 'Result with different type';
 select toInt32(number) as n, neighbour(n, 1, -10) from numbers(3);
 select 'Offset > block';
