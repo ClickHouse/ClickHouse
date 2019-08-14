@@ -418,8 +418,8 @@ ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_sh
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
-TestKeeper::TestKeeper(const String & root_path_, Poco::Timespan operation_timeout)
-    : root_path(root_path_), operation_timeout(operation_timeout)
+TestKeeper::TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_)
+    : root_path(root_path_), operation_timeout(operation_timeout_)
 {
     container.emplace("/", Node());
 

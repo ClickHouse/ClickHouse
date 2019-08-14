@@ -31,8 +31,8 @@ public:
         SelectQueryInfo & query_info,
         const Context & context,
         const MergeTreeData & data,
-        const Names & queried_column_names,
-        Poco::Logger * log);
+        const Names & queried_column_names_,
+        Poco::Logger * log_);
 
 private:
     void optimize(ASTSelectQuery & select) const;

@@ -142,9 +142,9 @@ template <typename T, typename Data, typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_)
         : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
-        , pattern(pattern)
+        , pattern(pattern_)
     {
         arg_count = arguments.size();
         parsePattern();
@@ -199,7 +199,7 @@ private:
         std::uint64_t extra;
 
         PatternAction() = default;
-        PatternAction(const PatternActionType type, const std::uint64_t extra = 0) : type{type}, extra{extra} {}
+        PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
     };
 
     using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
@@ -520,8 +520,8 @@ private:
 
     struct DFAState
     {
-        DFAState(bool has_kleene = false)
-            : has_kleene{has_kleene}, event{0}, transition{DFATransition::None}
+        DFAState(bool has_kleene_ = false)
+            : has_kleene{has_kleene_}, event{0}, transition{DFATransition::None}
         {}
 
         ///   .-------.
@@ -554,8 +554,8 @@ template <typename T, typename Data>
 class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>
 {
 public:
-    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern) {}
+    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
@@ -582,8 +582,8 @@ template <typename T, typename Data>
 class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>
 {
 public:
-    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern) {}
+    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 

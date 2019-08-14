@@ -12,7 +12,6 @@ class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class InterpreterSelectWithUnionQuery;
-struct AnalyzedJoin;
 
 
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.

@@ -29,13 +29,8 @@ struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
-/// If you are not writing a test you probably don't need it. Use ExpressionAnalyzer itself.
 struct ExpressionAnalyzerData
 {
-    /// Original columns.
-    /// First, all available columns of the table are placed here. Then (when analyzing the query), unused columns are deleted.
-    NamesAndTypesList source_columns;
-
     /// If non-empty, ignore all expressions in  not from this list.
     NameSet required_result_columns;
 
@@ -55,19 +50,9 @@ struct ExpressionAnalyzerData
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
-    /// Predicate optimizer overrides the sub queries
-    bool rewrite_subqueries = false;
-
-    /// Columns will be added to block by join.
-    NamesAndTypesList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
-
 protected:
-    ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
-                           const NameSet & required_result_columns_,
-                           const SubqueriesForSets & subqueries_for_sets_)
-    :   source_columns(source_columns_),
-        required_result_columns(required_result_columns_),
-        subqueries_for_sets(subqueries_for_sets_)
+    ExpressionAnalyzerData(const NameSet & required_result_columns_)
+    :   required_result_columns(required_result_columns_)
     {}
 };
 
@@ -88,12 +73,12 @@ private:
         const SizeLimits size_limits_for_join;
         const String join_default_strictness;
 
-        ExtractedSettings(const Settings & settings)
-        :   use_index_for_in_with_subqueries(settings.use_index_for_in_with_subqueries),
-            join_use_nulls(settings.join_use_nulls),
-            size_limits_for_set(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode),
-            size_limits_for_join(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
-            join_default_strictness(settings.join_default_strictness.toString())
+        ExtractedSettings(const Settings & settings_)
+        :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
+            join_use_nulls(settings_.join_use_nulls),
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
+            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode),
+            join_default_strictness(settings_.join_default_strictness.toString())
         {}
     };
 
@@ -102,22 +87,15 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
-        const NamesAndTypesList & additional_source_columns = {},
         const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
-        bool do_global_ = false,
-        const SubqueriesForSets & subqueries_for_set_ = {});
+        bool do_global_ = false);
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
 
     /// Get a list of aggregation keys and descriptions of aggregate functions if the query contains GROUP BY.
     void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const;
-
-    /** Get a set of columns that are enough to read from the table to evaluate the expression.
-      * Columns added from another table by JOIN are not counted.
-      */
-    Names getRequiredSourceColumns() const { return source_columns.getNames(); }
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -180,9 +158,7 @@ public:
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
     /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex();
-
-    bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
+    void makeSetsForIndex(const ASTPtr & node);
 
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
@@ -190,20 +166,18 @@ private:
     ASTPtr query;
     const Context & context;
     const ExtractedSettings settings;
-    StoragePtr storage; /// The main table in FROM clause, if exists.
     size_t subquery_depth;
-    bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
     SyntaxAnalyzerResultPtr syntax;
-    const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
-    /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
-      */
-    void collectUsedColumns();
+    const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
+    const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
+    const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
+    const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
+    const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables();
+    void initGlobalSubqueriesAndExternalTables(bool do_global);
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
@@ -214,30 +188,25 @@ private:
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
-    void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
-
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
-    void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
-    void assertNoAggregates(const ASTPtr & ast, const char * description);
+    bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
-    void assertSelect() const;
-    void assertAggregation() const;
+    const ASTSelectQuery * getSelectQuery() const;
+    const ASTSelectQuery * getAggregatingQuery() const;
 
     /**
       * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

@@ -121,7 +121,7 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
 class Join
 {
 public:
-    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
          ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }

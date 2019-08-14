@@ -33,6 +33,9 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
+    /// Return true in case of successful initializaiton
+    static bool isInitialized();
+
     /// Handler to current thread
     static ThreadStatus & get();
 

@@ -13,6 +13,9 @@
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -43,6 +46,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -538,6 +543,215 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     }
 }
 
+void checkJoin(const ASTTablesInSelectQueryElement * join)
+{
+    if (!join->table_join)
+        return;
+
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Any)
+        if (table_join.kind != ASTTableJoin::Kind::Left)
+            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed. "
+                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys. "
+                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN. "
+                            "It would be equal to apply distinct for keys to right, left and both tables respectively. "
+                            "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
+                            ErrorCodes::NOT_IMPLEMENTED);
+}
+
+std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
+{
+    if (const auto * select_query = query->as<ASTSelectQuery>())
+    {
+        /// There can not be aggregate functions inside the WHERE and PREWHERE.
+        if (select_query->where())
+            assertNoAggregates(select_query->where(), "in WHERE");
+        if (select_query->prewhere())
+            assertNoAggregates(select_query->prewhere(), "in PREWHERE");
+
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        /// There can not be other aggregate functions within the aggregate functions.
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
+        return data.aggregates;
+    }
+    else
+        assertNoAggregates(query, "in wrong place");
+    return {};
+}
+
+}
+
+/// Calculate which columns are required to execute the expression.
+/// Then, delete all other columns from the list of available columns.
+/// After execution, columns will only contain the list of columns needed to read from the table.
+void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns)
+{
+    /// We caclulate required_source_columns with source_columns modifications and swap them on exit
+    required_source_columns = source_columns;
+
+    if (!additional_source_columns.empty())
+    {
+        source_columns.insert(source_columns.end(), additional_source_columns.begin(), additional_source_columns.end());
+        removeDuplicateColumns(source_columns);
+    }
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(query);
+
+    NameSet source_column_names;
+    for (const auto & column : source_columns)
+        source_column_names.insert(column.name);
+
+    NameSet required = columns_context.requiredColumns();
+
+    if (columns_context.has_table_join)
+    {
+        NameSet avaliable_columns;
+        for (const auto & name : source_columns)
+            avaliable_columns.insert(name.name);
+
+        /// Add columns obtained by JOIN (if needed).
+        columns_added_by_join.clear();
+        for (const auto & joined_column : analyzed_join.available_joined_columns)
+        {
+            auto & name = joined_column.name;
+            if (avaliable_columns.count(name))
+                continue;
+
+            if (required.count(name))
+            {
+                /// Optimisation: do not add columns needed only in JOIN ON section.
+                if (columns_context.nameInclusion(name) > analyzed_join.rightKeyInclusion(name))
+                    columns_added_by_join.push_back(joined_column);
+                required.erase(name);
+            }
+        }
+    }
+
+    NameSet array_join_sources;
+    if (columns_context.has_array_join)
+    {
+        /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
+        for (const auto & result_source : array_join_result_to_source)
+            array_join_sources.insert(result_source.second);
+
+        for (const auto & column_name_type : source_columns)
+            if (array_join_sources.count(column_name_type.name))
+                required.insert(column_name_type.name);
+    }
+
+    const auto * select_query = query->as<ASTSelectQuery>();
+
+    /// You need to read at least one column to find the number of rows.
+    if (select_query && required.empty())
+    {
+        /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
+        /// Because it is the column that is cheapest to read.
+        struct ColumnSizeTuple
+        {
+            size_t compressed_size;
+            size_t type_size;
+            size_t uncompressed_size;
+            String name;
+            bool operator<(const ColumnSizeTuple & that) const
+            {
+                return std::tie(compressed_size, type_size, uncompressed_size)
+                    < std::tie(that.compressed_size, that.type_size, that.uncompressed_size);
+            }
+        };
+        std::vector<ColumnSizeTuple> columns;
+        if (storage)
+        {
+            auto column_sizes = storage->getColumnSizes();
+            for (auto & source_column : source_columns)
+            {
+                auto c = column_sizes.find(source_column.name);
+                if (c == column_sizes.end())
+                    continue;
+                size_t type_size = source_column.type->haveMaximumSizeOfValue() ? source_column.type->getMaximumSizeOfValueInMemory() : 100;
+                columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
+            }
+        }
+        if (columns.size())
+            required.insert(std::min_element(columns.begin(), columns.end())->name);
+        else
+            /// If we have no information about columns sizes, choose a column of minimum size of its data type.
+            required.insert(ExpressionActions::getSmallestColumn(source_columns));
+    }
+
+    NameSet unknown_required_source_columns = required;
+
+    for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
+    {
+        const String & column_name = it->name;
+        unknown_required_source_columns.erase(column_name);
+
+        if (!required.count(column_name))
+            source_columns.erase(it++);
+        else
+            ++it;
+    }
+
+    /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
+    /// in columns list, so that when further processing they are also considered.
+    if (storage)
+    {
+        for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
+        {
+            if (storage->hasColumn(*it))
+            {
+                source_columns.push_back(storage->getColumn(*it));
+                unknown_required_source_columns.erase(it++);
+            }
+            else
+                ++it;
+        }
+    }
+
+    if (!unknown_required_source_columns.empty())
+    {
+        std::stringstream ss;
+        ss << "Missing columns:";
+        for (const auto & name : unknown_required_source_columns)
+            ss << " '" << name << "'";
+        ss << " while processing query: '" << queryToString(query) << "'";
+
+        ss << ", required columns:";
+        for (const auto & name : columns_context.requiredColumns())
+            ss << " '" << name << "'";
+
+        if (!source_column_names.empty())
+        {
+            ss << ", source columns:";
+            for (const auto & name : source_column_names)
+                ss << " '" << name << "'";
+        }
+        else
+            ss << ", no source columns";
+
+        if (columns_context.has_table_join)
+        {
+            ss << ", joined columns:";
+            for (const auto & column : analyzed_join.available_joined_columns)
+                ss << " '" << column.name << "'";
+        }
+
+        if (!array_join_sources.empty())
+        {
+            ss << ", arrayJoin columns:";
+            for (const auto & name : array_join_sources)
+                ss << " '" << name << "'";
+        }
+
+        throw Exception(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    }
+
+    required_source_columns.swap(source_columns);
 }
 
 
@@ -545,7 +759,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     ASTPtr & query,
     const NamesAndTypesList & source_columns_,
     const Names & required_result_columns,
-    StoragePtr storage) const
+    StoragePtr storage,
+    const NamesAndTypesList & additional_source_columns) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!storage && select_query)
@@ -578,6 +793,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
+            if (!settings.any_join_distinct_right_table_keys)
+                checkJoin(node);
+
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
@@ -648,6 +866,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
+    result.aggregates = getAggregates(query);
+    result.collectUsedColumns(query, additional_source_columns);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
