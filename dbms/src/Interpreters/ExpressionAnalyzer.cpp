@@ -77,11 +77,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
-    const NameSet & required_result_columns_,
     size_t subquery_depth_,
     bool do_global)
-    : ExpressionAnalyzerData(required_result_columns_)
-    , query(query_), context(context_), settings(context.getSettings())
+    : query(query_), context(context_), settings(context.getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
@@ -237,7 +235,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 }
 
 
-void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
+void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
     if (prepared_sets.count(set_key))
@@ -263,7 +261,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
 
 /// Perfomance optimisation for IN() if storage supports it.
-void ExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
+void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())
         return;
@@ -362,7 +360,7 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     return select_query;
 }
 
-const ASTSelectQuery * ExpressionAnalyzer::getAggregatingQuery() const
+const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
         throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
@@ -394,7 +392,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
     actions->add(ExpressionAction::arrayJoin(result_columns, array_join_is_left, context));
 }
 
-bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -436,7 +434,7 @@ static void appendRequiredColumns(
             required_columns.insert(column.name);
 }
 
-bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -553,7 +551,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(
+bool SelectQueryExpressionAnalyzer::appendPrewhere(
     ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
     const auto * select_query = getSelectQuery();
@@ -627,7 +625,7 @@ bool ExpressionAnalyzer::appendPrewhere(
     return true;
 }
 
-bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -645,7 +643,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
     return true;
 }
 
-bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -665,7 +663,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only
     return true;
 }
 
-void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
+void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -698,7 +696,7 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
             getRootActions(argument, only_types, step.actions);
 }
 
-bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
 
@@ -714,7 +712,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_
     return true;
 }
 
-void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_types)
+void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -727,7 +725,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
         step.required_output.push_back(child->getColumnName());
 }
 
-bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -751,7 +749,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
     return true;
 }
 
-bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
 
@@ -780,7 +778,7 @@ bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only
     return true;
 }
 
-void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
+void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     const auto * select_query = getSelectQuery();
 
@@ -868,7 +866,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
     return actions;
 }
 
-void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const
+void SelectQueryExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const
 {
     for (const auto & name_and_type : aggregation_keys)
         key_names.emplace_back(name_and_type.name);
