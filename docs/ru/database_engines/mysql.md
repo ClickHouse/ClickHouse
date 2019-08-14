@@ -74,7 +74,7 @@ mysql> select * from mysql_table;
 1 row in set (0,00 sec)
 ```
 
-База данных в ClickHouse, обменивающаяся данными с сервером MySQL:
+База данных в ClickHouse, позволяющая обмениваться данными с сервером MySQL:
 
 ```sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
