@@ -665,7 +665,8 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
+static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
+    const Context & context, const SyntaxAnalyzerResultPtr & syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -677,20 +678,12 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
-    auto order_by_expr = query.orderBy();
-    SyntaxAnalyzerResultPtr syntax_result;
-    try
-    {
-        syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
-    }
-    catch (const Exception &)
-    {
-        return {};
-    }
-
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        /// Read in pk order in case of exact match with order key element
+        if (syntax_result->array_join_alias_to_name.count(order_descr[i].column_name))
+            break;
+
+        /// Optimize in case of exact match with order key element
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
         if (order_descr[i].column_name == sorting_key_columns[i] && current_direction == read_direction)
@@ -699,16 +692,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
         {
             const auto & ast = query.orderBy()->children[i];
             ExpressionActionsPtr actions;
-            try
-            {
-                actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
-            }
-            catch (const Exception &)
-            {
-                /// Can't analyze order expression at this stage.
-                /// May be some actions required for order will be executed later.
-                break;
-            }
+            actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(true);
 
             const auto & input_columns = actions->getRequiredColumnsWithTypes();
             if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
@@ -820,10 +804,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final() && !query.join())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
+            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
     if (dry_run)
