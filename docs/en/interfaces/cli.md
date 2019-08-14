@@ -65,6 +65,31 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
+### Formatted Queries {#cli-formatted-queries}
+
+You can create a format string for the query, and provide arguments for the format string with the parameters of client app. For example:
+
+```bash
+clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+```
+
+#### Syntax of a Format String {#cli-formatted-queries-syntax}
+
+The query formatted by the standard method. Values that you want to put into the query from the app parameters place in parenthessis and format as follows:
+
+```
+{<name>:<structure>}
+```
+
+- `name` — Identifier of a placeholder, that should be used in app parameters as `--param_name = value`.
+- `structure` — A way of treating app parameter value. For example, a structure like `(integer, ('string', integer))` can be formated as `Tuple(UInt8, Tuple(String, UInt8))` (or using other [integer](../data_types/int_uint.md) types).
+
+#### Example
+
+```bash
+clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+```
+
 ## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
