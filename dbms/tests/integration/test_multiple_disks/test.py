@@ -20,7 +20,7 @@ node2 = cluster.add_instance('node2',
 
 
 @pytest.fixture(scope="module")
-def test_cluster():
+def start_cluster():
     try:
         cluster.start()
 
@@ -42,7 +42,7 @@ def test_cluster():
 
 
 # Check that configuration is valid
-def test_config(test_cluster):
+def test_config(start_cluster):
     assert node1.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
     assert node2.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
     assert node1.query("select * from system.storage_policies") == "" \
@@ -59,7 +59,7 @@ def test_config(test_cluster):
                "jbod_with_external\texternal\t1\t['external']\t18446744073709551615\n"
 
 
-def test_write_on_second_volume(test_cluster):
+def test_write_on_second_volume(start_cluster):
     assert node1.query("create table node1_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='jbod_with_external'") == ""
     n = 1000
     flag = True
@@ -80,14 +80,14 @@ def test_write_on_second_volume(test_cluster):
     assert node1.query("select distinct disk_name from system.parts where table == 'node1_mt'").strip().split("\n") == ['']
 
 
-def test_default(test_cluster):
+def test_default(start_cluster):
     assert node1.query("create table node1_default_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d") == ""
     assert node1.query("select storage_policy from system.tables where name == 'node1_default_mt'") == "default\n"
     assert node1.query("insert into node1_default_mt values (1)") == ""
     assert node1.query("select disk_name from system.parts where table == 'node1_default_mt'") == "default\n"
 
 
-def test_move(test_cluster):
+def test_move(start_cluster):
     assert node2.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'") == ""
     assert node2.query("insert into node1_move_mt values (1)") == ""
     assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
@@ -111,7 +111,7 @@ def test_move(test_cluster):
     assert node2.query("select disk_name from system.parts where table == 'node1_move_mt'") == "default\n"
 
 
-def test_no_policy(test_cluster):
+def test_no_policy(start_cluster):
     try:
         node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
     except Exception as e:

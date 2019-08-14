@@ -109,7 +109,6 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
         columns_[i++]->insert(info.engine);
-        columns_[i++]->insert(part->getFullPath());
         columns_[i++]->insert(part->disk->getName());
         columns_[i++]->insert(part->getFullPath());
 
