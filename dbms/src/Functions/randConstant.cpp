@@ -45,7 +45,7 @@ public:
             value = vec_to[0];
         }
 
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, toField(value));
+        block.getByPosition(result).column = ColumnVector<ToType>::create(input_rows_count, value);
     }
 };
 

@@ -207,7 +207,7 @@ private:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
+    void addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, bool only_types) const;
 
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
     void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);

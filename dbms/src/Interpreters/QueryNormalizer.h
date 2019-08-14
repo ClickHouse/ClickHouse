@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/Aliases.h>
+#include "DatabaseAndTableWithAlias.h"
 
 namespace DB
 {

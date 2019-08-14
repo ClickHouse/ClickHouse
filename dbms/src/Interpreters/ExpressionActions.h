@@ -10,6 +10,7 @@
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -104,7 +105,10 @@ public:
 
     /// For JOIN
     std::shared_ptr<const Join> join;
+    ASTTableJoin::Kind join_kind;
+    // ASTTableJoin::Strictness join_strictness;
     Names join_key_names_left;
+    Names join_key_names_right;
     NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
@@ -121,7 +125,8 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
+    static ExpressionAction ordinaryJoin(const ASTTableJoin & join_params, std::shared_ptr<const Join> join_,
+                                         const Names & join_key_names_left, const Names & join_key_names_right,
                                          const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
