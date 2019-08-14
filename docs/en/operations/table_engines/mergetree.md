@@ -28,7 +28,7 @@ Main features:
 
 ## Creating a Table  {#table_engine-mergetree-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For descriptions of request parameters, see the [request description](../../query_language/create.md).
 
-**Query Clauses**
+### Query Clauses
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
@@ -315,7 +315,7 @@ Determines the lifetime of values.
 The `TTL` clause can be set for the whole table and for each individual column. If `TTL` is set for the whole table, individual `TTL` for columns are ignored.
 
 
-The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval from the date column value.
+The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval of time that starts from the date column value.
 
 ```
 TTL date_time + interval

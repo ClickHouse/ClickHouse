@@ -46,7 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md).
 
-**Секции запроса**
+### Секции запроса
 
 - `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. `MergeTree` не имеет параметров.
 
@@ -82,7 +82,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Пример задания секций**
 
-```
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
@@ -307,7 +307,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 
 Секция `TTL` может быть установлена как для всей таблицы, так и для каждого отдельного столбца. Если `TTL` установлен на таблицу, то индивидуальный `TTL` для столбцов игнорируются.
 
-Таблица должна иметь столбец типа [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md). Столбец с датой следует использовать в поле `TTL`. Вы можете установить время жизни данных только как интервал от значения столбца даты.
+Таблица должна иметь столбец типа [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md). Столбец с датой следует использовать в поле `TTL`. Вы можете установить время жизни данных только как интервал времени, отсчитываемый от значения столбца с датой.
 
 ```
 TTL date_time + interval
