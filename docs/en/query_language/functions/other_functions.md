@@ -103,7 +103,7 @@ Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
 ## currentUser()
-Returns the login of authorized user.
+Returns the login of authorized user (initiator of query execution).
 
 ## isFinite(x)
 
