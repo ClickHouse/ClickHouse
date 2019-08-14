@@ -160,7 +160,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                 for (const auto & key_ast : analyzedJoin().key_asts_left)
                     getRootActions(key_ast, true, temp_actions);
 
-            addJoinAction(temp_actions, true);
+            addJoinAction(table_join, temp_actions, true);
         }
     }
 
@@ -504,14 +504,16 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
     return true;
 }
 
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types) const
+void ExpressionAnalyzer::addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, bool only_types) const
 {
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join));
+        actions->add(ExpressionAction::ordinaryJoin(join_params, nullptr,
+                analyzedJoin().key_names_left, analyzedJoin().key_names_right, columns_added_by_join));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
-                actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
+                actions->add(ExpressionAction::ordinaryJoin(join_params, subquery_for_set.second.join,
+                                                            analyzedJoin().key_names_left, analyzedJoin().key_names_right,
                                                             columns_added_by_join));
 }
 
@@ -632,7 +634,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         subquery_for_set.joined_block_actions = joined_block_actions;
     }
 
-    addJoinAction(step.actions, false);
+    addJoinAction(join_params, step.actions, false);
 
     return true;
 }

@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <set>
 #include <optional>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace ProfileEvents
@@ -159,14 +160,19 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
 }
 
 ExpressionAction ExpressionAction::ordinaryJoin(
+    const ASTTableJoin & join_params,
     std::shared_ptr<const Join> join_,
     const Names & join_key_names_left,
+    const Names & join_key_names_right,
     const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
     a.join = std::move(join_);
+    a.join_kind = join_params.kind;
+    // a.join_strictness = join_params.strictness;
     a.join_key_names_left = join_key_names_left;
+    a.join_key_names_right = join_key_names_right;
     a.columns_added_by_join = columns_added_by_join_;
     return a;
 }
@@ -252,10 +258,46 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
         case JOIN:
         {
-            /// TODO join_use_nulls setting
+            bool is_null_used_as_default = settings.join_use_nulls;
+            bool right_or_full_join = join_kind == ASTTableJoin::Kind::Right || join_kind == ASTTableJoin::Kind::Full;
+            bool left_or_full_join = join_kind == ASTTableJoin::Kind::Left || join_kind == ASTTableJoin::Kind::Full;
+//            bool inner_or_right_join = join_kind == ASTTableJoin::Kind::Inner || join_kind == ASTTableJoin::Kind::Right;
+//            bool all_join = join_strictness == ASTTableJoin::Strictness::All;
+
+            for (auto & col : sample_block)
+            {
+                /// Materialize column.
+                if (col.column)
+                    col.column = nullptr;
+
+                bool make_nullable = is_null_used_as_default && right_or_full_join;
+
+                if (make_nullable && !col.type->isNullable())
+                    col.type = std::make_shared<DataTypeNullable>(col.type);
+            }
 
             for (const auto & col : columns_added_by_join)
-                sample_block.insert(ColumnWithTypeAndName(nullptr, col.type, col.name));
+            {
+                auto res_type = col.type;
+
+                bool make_nullable = is_null_used_as_default && left_or_full_join;
+
+                if (!make_nullable) // && (all_join || !inner_or_right_join))
+                {
+                    auto it = std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name);
+                    if (it != join_key_names_right.end())
+                    {
+                        auto pos = it - join_key_names_right.begin();
+                        const auto & left_key_name = join_key_names_left[pos];
+                        make_nullable = sample_block.getByName(left_key_name).type->isNullable();
+                    }
+                }
+
+                if (make_nullable && !res_type->isNullable())
+                    res_type = std::make_shared<DataTypeNullable>(res_type);
+
+                sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
+            }
 
             break;
         }

@@ -126,6 +126,8 @@ public:
 
     bool empty() { return type == Type::EMPTY; }
 
+    bool isNullUsedAsDefault() const { return use_nulls; }
+
     /** Set information about structure of right hand of JOIN (joined data).
       * You must call this method before subsequent calls to insertFromBlock.
       */
@@ -168,6 +170,7 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
