@@ -35,6 +35,7 @@ private:
     friend class SyntaxAnalyzer;
     friend struct SyntaxAnalyzerResult;
     friend class ExpressionAnalyzer;
+    friend class SelectQueryExpressionAnalyzer;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
