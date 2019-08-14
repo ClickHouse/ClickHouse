@@ -19,6 +19,7 @@ struct PartitionCommand
     enum Type
     {
         ATTACH_PARTITION,
+        MOVE_PARTITION,
         CLEAR_COLUMN,
         DROP_PARTITION,
         FETCH_PARTITION,
@@ -48,6 +49,17 @@ struct PartitionCommand
 
     /// For FREEZE PARTITION
     String with_name;
+
+    enum MoveDestinationType
+    {
+        DISK,
+        VOLUME,
+        NONE,
+    };
+
+    MoveDestinationType move_destination_type = MoveDestinationType::NONE;
+
+    String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
 };

@@ -189,7 +189,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & zookeeper_path_,
     const String & replica_name_,
     bool attach,
-    const String & path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
@@ -205,7 +204,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
-            path_ + escapeForFileName(table_name_) + '/',
             columns_, indices_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
@@ -216,9 +214,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool()), queue(*this), fetcher(*this),
         cleanup_thread(*this), alter_thread(*this), part_check_thread(*this), restarting_thread(*this)
 {
-    if (path_.empty())
-        throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
-
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
@@ -1060,7 +1055,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
+    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_merge);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1191,7 +1186,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_result);
+    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_result);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1217,7 +1212,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get());
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1761,9 +1756,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Filter covered parts
     PartDescriptions final_parts;
     {
-        Strings final_part_names = adding_parts_active_set.getParts();
+        auto final_part_names = adding_parts_active_set.getParts();
 
-        for (const String & final_part_name : final_part_names)
+        for (const auto & final_part_name : final_part_names)
         {
             auto part_desc = part_name_to_desc[final_part_name];
             if (!part_desc)
@@ -1808,7 +1803,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             String interserver_scheme = global_context.getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
@@ -1945,8 +1940,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings parts = zookeeper->getChildren(source_path + "/parts");
     ActiveDataPartSet active_parts_set(format_version, parts);
 
-    Strings active_parts = active_parts_set.getParts();
-    for (const String & name : active_parts)
+    auto active_parts = active_parts_set.getParts();
+    for (const auto & name : active_parts)
     {
         LogEntry log_entry;
         log_entry.type = LogEntry::GET_PART;
@@ -2767,7 +2762,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         get_part = [&, address, timeouts, user_password, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemes are different: '" + interserver_scheme
+                throw Exception("Interserver schemas are different: '" + interserver_scheme
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::LOGICAL_ERROR);
 
@@ -3018,7 +3013,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             for (const DataPartPtr & part : data_parts)
                 partition_ids.emplace(part->info.partition_id);
 
-            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
             for (const String & partition_id : partition_ids)
             {
@@ -3045,7 +3040,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
             else
             {
-                UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+                UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
                 String partition_id = getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
@@ -3368,6 +3363,25 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 attachPartition(command.partition, command.part, query_context);
                 break;
 
+            case PartitionCommand::MOVE_PARTITION:
+            {
+                switch (command.move_destination_type)
+                {
+                    case PartitionCommand::MoveDestinationType::DISK:
+                        movePartitionToDisk(command.partition, command.move_destination_name, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::VOLUME:
+                        movePartitionToVolume(command.partition, command.move_destination_name, query_context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::NONE:
+                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
+                }
+
+            }
+            break;
+
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
@@ -3562,6 +3576,8 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
     String source_dir = "detached/";
 
+    std::map<String, DiskSpace::DiskPtr> name_to_disk;
+
     /// Let's compose a list of parts that should be added.
     Strings parts;
     if (attach_part)
@@ -3574,27 +3590,39 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         ActiveDataPartSet active_parts(format_version);
 
         std::set<String> part_names;
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+        const auto disks = storage_policy->getDisks();
+        for (const DiskSpace::DiskPtr & disk : disks)
         {
-            String name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
-                continue;
-            if (part_info.partition_id != partition_id)
-                continue;
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-            part_names.insert(name);
+            const auto full_path = getFullPathOnDisk(disk);
+            for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir);
+                 it != Poco::DirectoryIterator(); ++it)
+            {
+                String name = it.name();
+                MergeTreePartInfo part_info;
+                if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
+                    continue;
+                if (part_info.partition_id != partition_id)
+                    continue;
+                LOG_DEBUG(log, "Found part " << name);
+                active_parts.add(name);
+                part_names.insert(name);
+                name_to_disk[name] = disk;
+            }
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
+        auto tmp_parts = active_parts.getParts();
+        for (const auto & name : tmp_parts)
+            parts.push_back(name);
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)
         {
             String containing_part = active_parts.getContainingPart(name);
             if (!containing_part.empty() && containing_part != name)
+            {
+                const auto full_path = getFullPathOnDisk(name_to_disk[name]);
                 Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+            }
         }
     }
 
@@ -3604,7 +3632,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     for (const String & part : parts)
     {
         LOG_DEBUG(log, "Checking part " << part);
-        loaded_parts.push_back(loadPartAndFixMetadata(source_dir + part));
+        loaded_parts.push_back(loadPartAndFixMetadata(name_to_disk[part], source_dir + part));
     }
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
@@ -3671,15 +3699,13 @@ void StorageReplicatedMergeTree::drop()
 }
 
 
-void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name,
+                                        const String & new_table_name)
 {
-    std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
-
-    setPath(new_full_path);
+    MergeTreeData::rename(new_path_to_db, new_database_name, new_table_name);
 
     database_name = new_database_name;
     table_name = new_table_name;
-    full_path = new_full_path;
 
     /// Update table name in zookeeper
     auto zookeeper = getZooKeeper();
@@ -4174,12 +4200,16 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it{getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
+    for (const std::string & path : getDataPaths())
     {
-        MergeTreePartInfo part_info;
-        if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
-              && part_info.partition_id == partition_id)
-            throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            MergeTreePartInfo part_info;
+            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
+                && part_info.partition_id == partition_id)
+                throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+        }
+
     }
 
     zkutil::Strings replicas;
@@ -4263,7 +4293,9 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
         if (missing_parts.empty())
         {
-            parts_to_fetch = active_parts_set.getParts();
+            auto tmp = active_parts_set.getParts();
+            for (auto elem : tmp)
+                parts_to_fetch.push_back(elem);
 
             /// Leaving only the parts of the desired partition.
             Strings parts_to_fetch_partition;

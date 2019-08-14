@@ -68,13 +68,9 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
-    String getDataPath() const override { return full_path; }
-
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
-    String path;
-
     BackgroundProcessingPool & background_pool;
 
     MergeTreeDataSelectExecutor reader;
@@ -107,6 +103,8 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
+    bool move_parts();
+
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
@@ -127,6 +125,7 @@ private:
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
+    friend struct CurrentlyMovingPartsTagger;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -136,7 +135,6 @@ protected:
       * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
-        const String & path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,

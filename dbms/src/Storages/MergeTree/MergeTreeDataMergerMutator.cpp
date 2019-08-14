@@ -151,13 +151,13 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
             data.settings.max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(data.storage_policy->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
 {
-    return static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+    return static_cast<UInt64>(data.storage_policy->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 
@@ -263,6 +263,116 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 }
 
 
+/// Contains minimal number of greatest elems, which sum is greater then required
+/// If there are not enough elems contains all.
+template <class Elem>
+class MinSumMinElems
+{
+    std::set<std::pair<UInt64, Elem>> elems;
+    UInt64 min_sum;
+    UInt64 cur_sum = 0;
+
+public:
+    MinSumMinElems(UInt64 min_sum_) : min_sum(min_sum_) { }
+
+    void add(Elem elem, UInt64 size)
+    {
+        if (cur_sum < min_sum)
+        {
+            elems.emplace(size, elem);
+            cur_sum += size;
+            return;
+        }
+        if (!elems.empty())
+            if (elems.begin()->first >= size)
+                return;
+        elems.emplace(size, elem);
+        cur_sum += size;
+        while (!elems.empty() && (cur_sum - elems.begin()->first >= min_sum))
+        {
+            cur_sum -= elems.begin()->first;
+            elems.erase(elems.begin());
+        }
+    }
+
+    /// Returns elems ordered by size
+    auto getElems()
+    {
+        std::vector<Elem> res;
+        for (const auto & elem : elems)
+        {
+            res.push_back(elem.second);
+        }
+        return res;
+    }
+};
+
+
+bool MergeTreeDataMergerMutator::selectPartsToMove(
+    MergeTreeMovingParts & parts_to_move,
+    const AllowedMovingPredicate & can_move)
+{
+    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+
+    if (data_parts.empty())
+    {
+        return false;
+    }
+
+    std::unordered_map<DiskSpace::DiskPtr, MinSumMinElems<MergeTreeData::DataPartPtr>> need_to_move;
+    const auto & policy = data.getStoragePolicy();
+    const auto & volumes = policy->getVolumes();
+
+    /// Do not check if policy has one volume
+    if (volumes.size() == 1)
+    {
+        return false;
+    }
+
+    /// Do not check last volume
+    for (size_t i = 0; i != volumes.size() - 1; ++i) {
+        for (const auto & disk : volumes[i]->disks)
+        {
+            auto space_information = disk->getSpaceInformation();
+
+            /// Do not take into account reserved space
+            if (space_information.getTotalSpace() * policy->getMoveFactor() > space_information.getAvailableSpace())
+            {
+                need_to_move.emplace(disk, space_information.getTotalSpace() * policy->getMoveFactor() - space_information.getAvailableSpace());
+            }
+        }
+    }
+
+    for (const auto & part : data_parts)
+    {
+        if (!can_move(part, nullptr))
+            continue;
+        auto to_insert = need_to_move.find(part->disk);
+        if (to_insert != need_to_move.end())
+            to_insert->second.add(part, part->bytes_on_disk);
+    }
+
+    for (auto && move : need_to_move)
+    {
+        auto min_volume_priority = policy->getVolumePriorityByDisk(move.first) + 1;
+        for (auto && part : move.second.getElems())
+        {
+            auto reservation = policy->reserve(part->bytes_on_disk, min_volume_priority);
+            if (!reservation)
+            {
+                /// Next parts to move from this disk has greater size and same min volume priority
+                /// There are no space for them
+                /// But it can be possible to move data from other disks
+                break;
+            }
+            parts_to_move.emplace_back(part, std::move(reservation));
+        }
+    }
+
+    return !parts_to_move.empty();
+}
+
+
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FutureMergedMutatedPart & future_part,
     UInt64 & available_disk_space,
@@ -311,9 +421,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
             disk_space_warning_time = now;
             LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
                 << " because not enough free space: "
-                << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
-                << "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace()) << " reserved in "
-                << DiskSpaceMonitor::getReservationCount() << " chunks), "
+                << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, "
                 << formatReadableSizeWithBinarySuffix(sum_bytes)
                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
                 << "% on overhead); suppressing similar warnings for the next hour");
@@ -522,7 +630,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry,
-    time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate, bool force_ttl)
+    time_t time_of_merge, DiskSpace::Reservation * disk_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -535,7 +643,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
               << parts.front()->name << " to " << parts.back()->name
               << " into " << TMP_PREFIX + future_part.name);
 
-    String new_part_tmp_path = data.getFullPath() + TMP_PREFIX + future_part.name + "/";
+    String part_path = data.getFullPathOnDisk(disk_reservation->getDisk());
+    String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
     if (Poco::File(new_part_tmp_path).exists())
         throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
@@ -553,7 +662,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, future_part.name, future_part.part_info);
+            data, disk_reservation->getDisk(), future_part.name, future_part.part_info);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
@@ -882,7 +991,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const FutureMergedMutatedPart & future_part,
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
-    const Context & context)
+    const Context & context,
+    DiskSpace::Reservation * disk_reservation)
 {
     auto check_not_cancelled = [&]()
     {
@@ -918,7 +1028,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-        data, future_part.name, future_part.part_info);
+        data, disk_reservation->getDisk(), future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -1167,6 +1277,25 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 
     LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
     return new_data_part;
+}
+
+MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::cloneParts(const MergeTreeMovingParts & parts)
+{
+    MergeTreeData::DataPartsVector res;
+    for (auto && move : parts)
+    {
+        move.part->makeCloneOnDiskDetached(move.reserved_space);
+
+        MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(data,
+                                                                                                  move.reserved_space->getDisk(),
+                                                                                                  move.part->name);
+        copied_part->relative_path = "detached/" + move.part->name;
+
+        copied_part->loadColumnsChecksumsIndexes(true, true);
+
+        res.push_back(copied_part);
+    }
+    return res;
 }
 
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
