@@ -12,7 +12,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

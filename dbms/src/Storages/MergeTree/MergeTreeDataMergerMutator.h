@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <Storages/MutationCommands.h>
 #include <atomic>
 #include <functional>
