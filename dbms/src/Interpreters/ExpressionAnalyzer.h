@@ -2,9 +2,9 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
