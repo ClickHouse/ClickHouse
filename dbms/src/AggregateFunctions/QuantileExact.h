@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Calculates quantile by collecting all values into array
@@ -64,7 +65,7 @@ struct QuantileExact
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    virtual Value get(Float64 level)
+    Value get(Float64 level)
     {
         if (!array.empty())
         {
@@ -81,7 +82,7 @@ struct QuantileExact
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    virtual void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         if (!array.empty())
         {
@@ -121,13 +122,18 @@ struct QuantileExact
     virtual ~QuantileExact() = default;
 };
 
+/// QuantileExactInclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
-    /// Get the value of the `level` quantile. The level must be between 0 and 1.
+
+    /// Get the value of the `level` quantile. The level must be between 0 and 1 excluding bounds.
     Float64 getFloat(Float64 level) override
     {
+        if (level == 0. || level == 1.)
+            throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+
         if (!array.empty())
         {
             Float64 h = level * (array.size() + 1);
@@ -139,9 +145,73 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 return array[0];
 
             std::nth_element(array.begin(), array.begin() + n - 1, array.end());
-            std::nth_element(array.begin() + n, array.begin() + n, array.end());
+            auto nth_element = std::min_element(array.begin() + n, array.end());
 
-            return array[n - 1] + (h - n) * (array[n] - array[n - 1]);
+            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
+        }
+
+        return std::numeric_limits<Float64>::quiet_NaN();
+    }
+
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result) override
+    {
+        if (!array.empty())
+        {
+            size_t prev_n = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto level = levels[indices[i]];
+                if (level == 0. || level == 1.)
+                    throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+
+                Float64 h = level * (array.size() + 1);
+                auto n = static_cast<size_t>(h);
+
+                if (n >= array.size())
+                    result[indices[i]] = array[array.size() - 1];
+                else if (n < 1)
+                    result[indices[i]] = array[0];
+                else
+                {
+                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    auto nth_element = std::min_element(array.begin() + n, array.end());
+
+                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
+                    prev_n = n - 1;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                result[i] = std::numeric_limits<Float64>::quiet_NaN();
+        }
+    }
+};
+
+/// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7,  SciPy-(1,1)
+template <typename Value>
+struct QuantileExactInclusive : public QuantileExact<Value>
+{
+    using QuantileExact<Value>::array;
+
+    /// Get the value of the `level` quantile. The level must be between 0 and 1 including bounds.
+    Float64 getFloat(Float64 level) override
+    {
+        if (!array.empty())
+        {
+            Float64 h = level * (array.size() - 1) + 1;
+            auto n = static_cast<size_t>(h);
+
+            if (n >= array.size())
+                return array[array.size() - 1];
+            else if (n < 1)
+                return array[0];
+
+            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+            auto nth_element = std::min_element(array.begin() + n, array.end());
+
+            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -156,7 +226,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             {
                 auto level = levels[indices[i]];
 
-                Float64 h = level * (array.size() + 1);
+                Float64 h = level * (array.size() - 1) + 1;
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
@@ -166,10 +236,10 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 else
                 {
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    std::nth_element(array.begin() + n, array.begin() + n, array.end());
+                    auto nth_element = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = array[n - 1] + (h - n) * (array[n] - array[n - 1]);
-                    prev_n = n;
+                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
+                    prev_n = n - 1;
                 }
             }
         }
