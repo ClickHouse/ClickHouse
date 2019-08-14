@@ -218,9 +218,7 @@
          See https://clickhouse.yandex/docs/en/table_engines/replication/
       -->
 
-    <zookeeper>
-        <implementation>testkeeper</implementation>
-    </zookeeper>
+    <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
