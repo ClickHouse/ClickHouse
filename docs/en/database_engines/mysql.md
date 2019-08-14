@@ -1,10 +1,10 @@
 # MySQL
 
-Allows to connect to some database on remote MySQL server and perform `INSERT` and `SELECT` queries with tables to exchange data between ClickHouse and MySQL.
+Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries with tables to exchange data between ClickHouse and MySQL.
 
-The `MySQL` database engine translate queries to the MySQL server, so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
+The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
 
-You cannot perform with tables the following queries:
+You cannot perform the following queries:
 
 - `ATTACH`/`DETACH`
 - `DROP`
@@ -48,7 +48,7 @@ BINARY | [FixedString](../data_types/fixedstring.md)
 
 All other MySQL data types are converted into [String](../data_types/string.md).
 
-[Nullable](../data_types/nullable.md) data type is supported.
+[Nullable](../data_types/nullable.md) is supported.
 
 
 ## Examples of Use
@@ -120,3 +120,5 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/database_engines/mysql/) <!--hide-->
