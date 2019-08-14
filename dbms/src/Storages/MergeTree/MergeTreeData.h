@@ -16,6 +16,7 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -285,7 +286,7 @@ public:
         String getModeName() const;
     };
 
-    /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
+    /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
@@ -302,7 +303,6 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   Context & context_,
@@ -329,6 +329,8 @@ public:
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getSortingKeyColumns() const override { return sorting_key_columns; }
+
+    DiskSpace::StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -373,7 +375,6 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    String getFullPath() const { return full_path; }
     String getLogName() const { return log_name; }
 
     Int64 getMaxBlockNumber() const;
@@ -398,6 +399,8 @@ public:
     DataPartPtr getActiveContainingPart(const String & part_name);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
+
+    DataPartPtr swapActivePart(MergeTreeData::DataPartPtr part);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
@@ -491,7 +494,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void setPath(const String & full_path);
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -535,13 +538,24 @@ public:
     bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
+
+private:
+    /// Moves part to specified space
+    void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space);
+
+public:
+    /// Moves partition to specified Disk
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & context);
+
+    /// Moves partition to specified Volume
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, const Context & context);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -572,8 +586,8 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
-                                                           const MergeTreePartInfo & dst_part_info);
 
+                                                   const MergeTreePartInfo & dst_part_info);
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity
@@ -584,6 +598,18 @@ public:
             (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+
+    String getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const;
+
+    Strings getDataPaths() const override;
+
+    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
+
+    DiskSpace::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
+
+    /// Choose disk with max available free space
+    /// Reserves 0 bytes
+    DiskSpace::ReservationPtr reserveOnMaxDiskWithoutReservation() { return storage_policy->reserveOnMaxDiskWithoutReservation(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -661,7 +687,8 @@ protected:
 
     String database_name;
     String table_name;
-    String full_path;
+
+    DiskSpace::StoragePolicyPtr storage_policy;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

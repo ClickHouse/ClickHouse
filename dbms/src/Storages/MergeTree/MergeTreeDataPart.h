@@ -32,9 +32,9 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_);
+    MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -73,6 +73,7 @@ struct MergeTreeDataPart
 
     const MergeTreeData & storage;
 
+    DiskSpace::DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 
@@ -90,6 +91,8 @@ struct MergeTreeDataPart
 
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
+
+    mutable bool remove_on_destroy = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
@@ -145,6 +148,8 @@ struct MergeTreeDataPart
         }
         return false;
     }
+
+    void deleteOnDestroy() const { remove_on_destroy = true; }
 
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<State> & affordable_states) const;
@@ -255,6 +260,9 @@ struct MergeTreeDataPart
 
     /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
+
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

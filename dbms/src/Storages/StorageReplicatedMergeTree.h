@@ -168,8 +168,6 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
-    String getDataPath() const override { return full_path; }
-
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     /// Checks ability to use granularity
@@ -523,7 +521,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & path_, const String & database_name_, const String & name_,
+        const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         Context & context_,

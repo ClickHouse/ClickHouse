@@ -46,7 +46,6 @@ namespace ActionLocks
 
 
 StorageMergeTree::StorageMergeTree(
-    const String & path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
@@ -63,18 +62,13 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
-            path_ + escapeForFileName(table_name_) + '/',
             columns_, indices_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, false, attach),
-        path(path_),
         background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool())
 {
-    if (path.empty())
-        throw Exception("MergeTree require data path", ErrorCodes::INCORRECT_FILE_NAME);
-
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataParts().empty())
@@ -180,14 +174,10 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
 
 void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+    MergeTreeData::rename(new_path_to_db, new_database_name, new_table_name);
 
-    setPath(new_full_path);
-
-    path = new_path_to_db;
-    table_name = new_table_name;
     database_name = new_database_name;
-    full_path = new_full_path;
+    table_name = new_table_name;
 
     /// NOTE: Logger names are not updated.
 }
@@ -306,7 +296,7 @@ void StorageMergeTree::alter(
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
-    DiskSpaceMonitor::ReservationPtr reserved_space;
+    DiskSpace::ReservationPtr reserved_space;
 
     bool is_successful = false;
     String exception_message;
@@ -318,12 +308,14 @@ public:
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
-        reserved_space = DiskSpaceMonitor::reserve(storage.full_path, total_size); /// May throw.
+        reserved_space = storage.reserveSpaceForPart(total_size);
+        if (!reserved_space)
+            throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
 
         for (const auto & part : future_part.parts)
         {
             if (storage.currently_merging.count(part))
-                throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         storage.currently_merging.insert(future_part.parts.begin(), future_part.parts.end());
     }
@@ -376,9 +368,49 @@ public:
 };
 
 
+/// While exists, marks parts as 'currently_moving' and kwpp reservations.
+struct CurrentlyMovingPartsTagger
+{
+    MergeTreeMovingParts parts;
+
+    bool is_successful = false;
+    String exception_message;
+
+    StorageMergeTree & storage;
+
+public:
+    CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, StorageMergeTree & storage_)
+            : parts(std::move(parts_)), storage(storage_)
+    {
+        /// Assume mutex is already locked, because this method is called from mergeTask.
+        for (const auto & part : parts)
+        {
+            if (storage.currently_merging.count(part.part))
+                throw Exception("Tagging already tagged part " + part.part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+            storage.currently_merging.insert(part.part);
+        }
+    }
+
+    ~CurrentlyMovingPartsTagger()
+    {
+        std::lock_guard lock(storage.currently_merging_mutex);
+
+        for (const auto & part : parts)
+        {
+            if (!storage.currently_merging.count(part.part))
+                std::terminate();
+            storage.currently_merging.erase(part.part);
+        }
+    }
+};
+
+
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
-    MergeTreeMutationEntry entry(commands, full_path, insert_increment.get());
+    /// Choose any disk.
+    auto disk = storage_policy->getAnyDisk();
+    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);
@@ -471,18 +503,22 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 void StorageMergeTree::loadMutations()
 {
     Poco::DirectoryIterator end;
-    for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
+    const auto full_paths = getDataPaths();
+    for (const String & full_path : full_paths)
     {
-        if (startsWith(it.name(), "mutation_"))
+        for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
         {
-            MergeTreeMutationEntry entry(full_path, it.name());
-            Int64 block_number = entry.block_number;
-            auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
-            current_mutations_by_version.emplace(block_number, insertion.first->second);
-        }
-        else if (startsWith(it.name(), "tmp_mutation_"))
-        {
-            it->remove();
+            if (startsWith(it.name(), "mutation_"))
+            {
+                MergeTreeMutationEntry entry(full_path, it.name());
+                Int64 block_number = entry.block_number;
+                auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+                current_mutations_by_version.emplace(block_number, insertion.first->second);
+            }
+            else if (startsWith(it.name(), "tmp_mutation_"))
+            {
+                it->remove();
+            }
         }
     }
 
@@ -526,7 +562,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -615,6 +651,52 @@ bool StorageMergeTree::merge(
 }
 
 
+bool StorageMergeTree::move_parts()
+{
+    /// You must call destructor with unlocked `currently_merging_mutex`.
+    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    {
+        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
+        MergeTreeMovingParts parts_to_move;
+
+        {
+            std::lock_guard lock(currently_merging_mutex);
+
+            auto can_move = [this](const DataPartPtr & part, String *)
+            {
+                return !currently_merging.count(part);
+            };
+
+            if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
+                return false;
+
+            moving_tagger.emplace(std::move(parts_to_move), *this);
+        }
+    }
+
+    auto copied_parts = merger_mutator.cloneParts(moving_tagger->parts);
+
+    for (auto && copied_part : copied_parts)
+    {
+        auto part = getActiveContainingPart(copied_part->name);
+        if (!part || part->name != copied_part->name)
+        {
+            /// Original part doies not exists after move. It is bug. It probably was merged
+            continue;
+        }
+
+        copied_part->renameTo(part->name);
+
+        auto old_active_part = swapActivePart(copied_part);
+
+        old_active_part->deleteOnDestroy();
+    }
+
+    return true;
+}
+
+
 bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
@@ -624,7 +706,8 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+        /// DataPArt can be store only at one disk. Get Max of free space at all disks
+        UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
         std::lock_guard lock(currently_merging_mutex);
 
@@ -714,7 +797,8 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
+                                                            tagger->reserved_space.get());
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});
@@ -754,6 +838,9 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+
+        if (move_parts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())
@@ -949,6 +1036,25 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 attachPartition(command.partition, command.part, context);
                 break;
 
+            case PartitionCommand::MOVE_PARTITION:
+            {
+                switch (command.move_destination_type)
+                {
+                    case PartitionCommand::MoveDestinationType::DISK:
+                        movePartitionToDisk(command.partition, command.move_destination_name, context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::VOLUME:
+                        movePartitionToVolume(command.partition, command.move_destination_name, context);
+                        break;
+
+                    case PartitionCommand::MoveDestinationType::NONE:
+                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
+                }
+
+            }
+            break;
+
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
@@ -1027,6 +1133,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     String source_dir = "detached/";
 
+    std::map<String, DiskSpace::DiskPtr> name_to_disk;
+
     /// Let's make a list of parts to add.
     Strings parts;
     if (attach_part)
@@ -1037,17 +1145,23 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+        const auto disks = storage_policy->getDisks();
+        for (const DiskSpace::DiskPtr & disk : disks)
         {
-            const String & name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-                || part_info.partition_id != partition_id)
+            const auto full_path = getFullPathOnDisk(disk);
+            for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
             {
-                continue;
+                const String & name = it.name();
+                MergeTreePartInfo part_info;
+                if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
+                    || part_info.partition_id != partition_id)
+                {
+                    continue;
+                }
+                LOG_DEBUG(log, "Found part " << name);
+                active_parts.add(name);
+                name_to_disk[name] = disk;
             }
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         parts = active_parts.getParts();
@@ -1055,12 +1169,12 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     for (const auto & source_part_name : parts)
     {
-        String source_path = source_dir + source_part_name;
+        const auto & source_part_disk = name_to_disk[source_part_name];
 
         LOG_DEBUG(log, "Checking data");
-        MutableDataPartPtr part = loadPartAndFixMetadata(source_path);
+        MergeTreeData::MutableDataPartPtr part = loadPartAndFixMetadata(source_part_disk, source_dir + source_part_name);
 
-        LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
+        LOG_INFO(log, "Attaching part " << source_part_name << " from " << getFullPathOnDisk(source_part_disk));
         renameTempPartAndAdd(part, &increment);
 
         LOG_INFO(log, "Finished attaching part");
