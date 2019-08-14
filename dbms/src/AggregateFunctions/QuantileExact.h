@@ -122,7 +122,7 @@ struct QuantileExact
     virtual ~QuantileExact() = default;
 };
 
-/// QuantileExactInclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
+/// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
@@ -131,11 +131,11 @@ struct QuantileExactExclusive : public QuantileExact<Value>
     /// Get the value of the `level` quantile. The level must be between 0 and 1 excluding bounds.
     Float64 getFloat(Float64 level) override
     {
-        if (level == 0. || level == 1.)
-            throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
-
         if (!array.empty())
         {
+            if (level == 0. || level == 1.)
+                throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+
             Float64 h = level * (array.size() + 1);
             auto n = static_cast<size_t>(h);
 
