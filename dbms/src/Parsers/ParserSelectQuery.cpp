@@ -186,11 +186,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-<<<<<<< HEAD
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
-=======
-    /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES] | LIMIT count BY expr-list
->>>>>>> a2c3fd2057483396a936ceb0db8082e92ced0a01
     if (s_limit.ignore(pos, expected))
     {
         if (limit_length)
