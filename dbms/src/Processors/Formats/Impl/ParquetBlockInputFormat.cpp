@@ -1,7 +1,5 @@
-#include "config_formats.h"
-
-#if USE_PARQUET
 #include "ParquetBlockInputFormat.h"
+#if USE_PARQUET
 
 #include <algorithm>
 #include <iterator>
