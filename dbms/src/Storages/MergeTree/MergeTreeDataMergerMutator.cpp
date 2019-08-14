@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
@@ -315,9 +315,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
 
     if (data_parts.empty())
-    {
         return false;
-    }
 
     std::unordered_map<DiskSpace::DiskPtr, MinSumMinElems<MergeTreeData::DataPartPtr>> need_to_move;
     const auto & policy = data.getStoragePolicy();
@@ -330,7 +328,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
     }
 
     /// Do not check last volume
-    for (size_t i = 0; i != volumes.size() - 1; ++i) {
+    for (size_t i = 0; i != volumes.size() - 1; ++i)
+    {
         for (const auto & disk : volumes[i]->disks)
         {
             auto space_information = disk->getSpaceInformation();

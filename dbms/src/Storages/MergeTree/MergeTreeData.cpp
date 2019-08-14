@@ -2585,19 +2585,16 @@ void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSp
 
     if (Poco::File(path_to_clone + part->name).exists())
         throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
     LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
     part->makeCloneOnDiskDetached(reservation);
 
-    MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(*this,
-                                                                                              reservation->getDisk(),
-                                                                                              part->name);
+    MergeTreeData::MutableDataPartPtr copied_part =
+        std::make_shared<MergeTreeData::DataPart>(*this, reservation->getDisk(), part->name);
+
     copied_part->relative_path = "detached/" + part->name;
 
     copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
 
-    if (Poco::File(path_to_clone + part->name).exists())
-        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
     copied_part->renameTo(part->name);
 
     auto old_active_part = swapActivePart(copied_part);

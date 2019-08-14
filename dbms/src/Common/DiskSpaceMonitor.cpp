@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Common/DiskSpaceMonitor.h>
 
 #include <set>
 
@@ -11,7 +11,63 @@ namespace DB
 namespace DiskSpace
 {
 
+
 std::mutex Disk::mutex;
+
+std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
+{
+    if (absolute_path.is_relative())
+        throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    absolute_path = std::filesystem::canonical(absolute_path);
+
+    const auto get_device_id = [](const std::filesystem::path & p)
+    {
+        struct stat st;
+        if (stat(p.c_str(), &st))
+            throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
+        return st.st_dev;
+    };
+
+    /// If /some/path/to/dir/ and /some/path/to/ have different device id,
+    /// then device which contains /some/path/to/dir/filename is mounted to /some/path/to/dir/
+    auto device_id = get_device_id(absolute_path);
+    while (absolute_path.has_relative_path())
+    {
+        auto parent = absolute_path.parent_path();
+        auto parent_device_id = get_device_id(parent);
+        if (device_id != parent_device_id)
+            return absolute_path;
+        absolute_path = parent;
+        device_id = parent_device_id;
+    }
+
+    return absolute_path;
+}
+
+    /// Returns name of filesystem mounted to mount_point
+#if !defined(__linux__)
+[[noreturn]]
+#endif
+std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
+{
+#if defined(__linux__)
+    auto mounted_filesystems = setmntent("/etc/mtab", "r");
+    if (!mounted_filesystems)
+        throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
+    mntent fs_info;
+    constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
+    char buf[buf_size];
+    while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point)
+        ;
+    endmntent(mounted_filesystems);
+    if (fs_info.mnt_dir != mount_point)
+        throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
+    return fs_info.mnt_fsname;
+#else
+    throw DB::Exception("Supported on linux only", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+}
 
 
 ReservationPtr Disk::reserve(UInt64 bytes) const
@@ -19,6 +75,88 @@ ReservationPtr Disk::reserve(UInt64 bytes) const
     return std::make_unique<Reservation>(bytes, std::static_pointer_cast<const Disk>(shared_from_this()));
 }
 
+bool Disk::tryReserve(UInt64 bytes) const
+{
+    auto available_space = getAvailableSpace();
+    std::lock_guard lock(mutex);
+    if (bytes == 0)
+    {
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserve 0 bytes on disk " << name);
+        ++reservation_count;
+        return true;
+    }
+    available_space -= std::min(available_space, reserved_bytes);
+    LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << available_space << " , to reserve " << bytes << " on disk " << name);
+    if (available_space >= bytes)
+    {
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+    return false;
+}
+
+UInt64 Disk::getUnreservedSpace() const
+{
+    auto available_space = getSpaceInformation().getAvailableSpace();
+    std::lock_guard lock(mutex);
+    available_space -= std::min(available_space, reserved_bytes);
+    return available_space;
+}
+
+UInt64 Disk::Stat::getTotalSpace() const
+{
+    UInt64 total_size = fs.f_blocks * fs.f_bsize;
+    if (total_size < keep_free_space_bytes)
+        return 0;
+    return total_size - keep_free_space_bytes;
+}
+
+UInt64 Disk::Stat::getAvailableSpace() const
+{
+    UInt64 total_size = fs.f_bfree * fs.f_bsize;
+    if (total_size < keep_free_space_bytes)
+        return 0;
+    return total_size - keep_free_space_bytes;
+}
+
+Reservation::~Reservation()
+{
+    try
+    {
+        std::lock_guard lock(Disk::mutex);
+        if (disk_ptr->reserved_bytes < size)
+        {
+            disk_ptr->reserved_bytes = 0;
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
+        }
+        else
+        {
+            disk_ptr->reserved_bytes -= size;
+        }
+
+        if (disk_ptr->reservation_count == 0)
+        {
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
+        }
+        else
+        {
+            --disk_ptr->reservation_count;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException("~DiskSpaceMonitor");
+    }
+}
+
+void Reservation::update(UInt64 new_size)
+{
+    std::lock_guard lock(Disk::mutex);
+    disk_ptr->reserved_bytes -= size;
+    size = new_size;
+    disk_ptr->reserved_bytes += size;
+}
 
 DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, String default_path)
 {
@@ -202,6 +340,24 @@ UInt64 Volume::getMaxUnreservedFreeSpace() const
 }
 
 
+Volume & Volume::operator=(Volume && other) noexcept
+{
+    disks = std::move(other.disks);
+    max_data_part_size = other.max_data_part_size;
+    last_used.store(0, std::memory_order_relaxed);
+    name = std::move(other.name);
+    return *this;
+}
+
+Volume & Volume::operator=(const Volume & other)
+{
+    disks = other.disks;
+    max_data_part_size = other.max_data_part_size;
+    last_used.store(0, std::memory_order_relaxed);
+    name = other.name;
+    return *this;
+}
+
 StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
                const DiskSelector & disks) : name(std::move(name_))
 {
@@ -239,6 +395,23 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
     }
 
     move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
+}
+
+
+StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
+    : volumes(std::move(volumes_)),
+      name(std::move(name_)),
+      move_factor(move_factor_)
+{
+    if (volumes.empty())
+        throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::UNKNOWN_POLICY);
+
+    for (size_t i = 0; i != volumes.size(); ++i)
+    {
+        if (volumes_names.find(volumes[i]->getName()) != volumes_names.end())
+            throw Exception("Volumes names must be unique (" + volumes[i]->getName() + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
+        volumes_names[volumes[i]->getName()] = i;
+    }
 }
 
 
@@ -328,30 +501,51 @@ ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservation() const
 }
 
 
-StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
+size_t StoragePolicy::getVolumePriorityByDisk(const DiskPtr & disk_ptr) const
+{
+    for (size_t i = 0; i != volumes.size(); ++i)
+    {
+        const auto & volume = volumes[i];
+        for (auto && disk : volume->disks)
+        {
+            if (disk->getName() == disk_ptr->getName())
+                return i;
+        }
+    }
+    throw Exception("No disk " + disk_ptr->getName() + " in Policy " + name, ErrorCodes::UNKNOWN_DISK);
+}
+
+
+StoragePolicySelector::StoragePolicySelector(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    const DiskSelector & disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
-    Logger * logger = &Logger::get("StoragePolicySelector");
-
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception("StoragePolicy name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception("StoragePolicy name can contain only alphanumeric and '_' (" + name + ")",
+                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(logger, "Storage policy " << name << " loaded");
+        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << name << " loaded");
     }
 
     constexpr auto default_storage_policy_name = "default";
     constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
     if (policies.find(default_storage_policy_name) == policies.end())
-        policies.emplace(default_storage_policy_name,
-                        std::make_shared<StoragePolicy>(default_storage_policy_name,
-                                                        Volumes{std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]},
-                                                                  std::numeric_limits<UInt64>::max())},
-                                                        0.0));
+    {
+        auto default_volume = std::make_shared<Volume>(
+            default_volume_name,
+            std::vector<DiskPtr>{disks[default_disk_name]},
+            std::numeric_limits<UInt64>::max());
+        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
+        policies.emplace(default_storage_policy_name, default_policy);
+    }
 }
 
 

@@ -22,12 +22,12 @@ public:
     std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
-            const Names & column_names,
-            const SelectQueryInfo & query_info,
-            const Context & context,
-            QueryProcessingStage::Enum processed_stage,
-            size_t max_block_size,
-            unsigned num_streams) override;
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     const std::string name;

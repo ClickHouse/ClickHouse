@@ -10,7 +10,7 @@ namespace ErrorCodes
 
 
 StorageSystemDisks::StorageSystemDisks(const std::string & name_)
-        : name(name_)
+    : name(name_)
 {
     setColumns(ColumnsDescription(
     {
@@ -23,12 +23,12 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
 }
 
 BlockInputStreams StorageSystemDisks::read(
-        const Names & column_names,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
 
@@ -40,9 +40,9 @@ BlockInputStreams StorageSystemDisks::read(
 
     const auto & disk_selector = context.getDiskSelector();
 
-    for (const auto & [name, disk_ptr] : disk_selector.getDisksMap())
+    for (const auto & [disk_name, disk_ptr] : disk_selector.getDisksMap())
     {
-        col_name_mut->insert(name);
+        col_name_mut->insert(disk_name);
         col_path_mut->insert(disk_ptr->getPath());
         col_free_mut->insert(disk_ptr->getAvailableSpace());
         col_total_mut->insert(disk_ptr->getTotalSpace());
