@@ -53,8 +53,7 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
     if (metric_log)
     {
-        constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds", DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 
