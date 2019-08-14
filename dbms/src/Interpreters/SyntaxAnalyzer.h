@@ -10,6 +10,8 @@ namespace DB
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
+class ASTFunction;
+
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
@@ -22,6 +24,7 @@ struct SyntaxAnalyzerResult
     NamesAndTypesList columns_added_by_join;
 
     Aliases aliases;
+    std::vector<const ASTFunction *> aggregates;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
