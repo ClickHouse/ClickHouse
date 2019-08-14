@@ -204,6 +204,9 @@ struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
 struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
 struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };
 
+struct NameQuantileExactInclusive { static constexpr auto name = "quantileExactInclusive"; };
+struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExactInclusive"; };
+
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
