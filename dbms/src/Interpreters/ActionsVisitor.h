@@ -54,7 +54,6 @@ struct ScopeStack
 
 
 /// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
-/// After AST is visited source ExpressionActions should be updated with popActionsLevel() method.
 class ActionsVisitor
 {
 public:
@@ -63,9 +62,11 @@ public:
                    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                    bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr);
 
-    void visit(const ASTPtr & ast);
-
-    ExpressionActionsPtr popActionsLevel() { return actions_stack.popLevel(); }
+    void visit(const ASTPtr & ast, ExpressionActionsPtr & actions)
+    {
+        visit(ast);
+        actions = actions_stack.popLevel();
+    }
 
 private:
     const Context & context;
@@ -81,6 +82,7 @@ private:
     std::ostream * ostr;
     ScopeStack actions_stack;
 
+    void visit(const ASTPtr & ast);
     SetPtr makeSet(const ASTFunction * node, const Block & sample_block);
 };
 
