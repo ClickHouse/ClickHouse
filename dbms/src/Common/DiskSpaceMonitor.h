@@ -98,7 +98,7 @@ public:
 
     class Stat
     {
-        struct statvfs fs = {};
+        struct statvfs fs{};
         UInt64 keep_free_space_bytes;
 
     public:
@@ -119,7 +119,7 @@ public:
           path(std::move(path_)),
           keep_free_space_bytes(keep_free_space_bytes_)
     {
-        if (name.back() != '/')
+        if (path.back() != '/')
             throw Exception("Disk path must ends with '/'", ErrorCodes::LOGICAL_ERROR);
     }
 
