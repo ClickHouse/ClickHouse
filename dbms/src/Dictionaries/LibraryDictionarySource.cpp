@@ -1,5 +1,6 @@
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
+#include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
@@ -134,7 +135,7 @@ LibraryDictionarySource::LibraryDictionarySource(
             ErrorCodes::FILE_DOESNT_EXIST);
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
-#if defined(RTLD_DEEPBIND) // Does not exists in freebsd
+#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
         | RTLD_DEEPBIND
 #endif
     );
