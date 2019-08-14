@@ -14,12 +14,12 @@ public:
     static constexpr auto name = "joinGet";
 
     FunctionJoinGet(
-        TableStructureReadLockHolder table_lock, StoragePtr storage_join, JoinPtr join, const String & attr_name, DataTypePtr return_type)
-        : table_lock(std::move(table_lock))
-        , storage_join(std::move(storage_join))
-        , join(std::move(join))
-        , attr_name(attr_name)
-        , return_type(std::move(return_type))
+        TableStructureReadLockHolder table_lock_, StoragePtr storage_join_, JoinPtr join_, const String & attr_name_, DataTypePtr return_type_)
+        : table_lock(std::move(table_lock_))
+        , storage_join(std::move(storage_join_))
+        , join(std::move(join_))
+        , attr_name(attr_name_)
+        , return_type(std::move(return_type_))
     {
     }
 
@@ -47,7 +47,7 @@ public:
     static constexpr auto name = "joinGet";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderJoinGet>(context); }
 
-    FunctionBuilderJoinGet(const Context & context) : context(context) {}
+    FunctionBuilderJoinGet(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 

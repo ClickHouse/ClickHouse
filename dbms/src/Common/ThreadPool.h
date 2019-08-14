@@ -31,10 +31,10 @@ public:
     using Job = std::function<void()>;
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads);
+    explicit ThreadPoolImpl(size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If an exception in some thread was thrown, method silently returns, and exception will be rethrown only on call to 'wait' function.
@@ -81,8 +81,8 @@ private:
         Job job;
         int priority;
 
-        JobWithPriority(Job job, int priority)
-            : job(job), priority(priority) {}
+        JobWithPriority(Job job_, int priority_)
+            : job(job_), priority(priority_) {}
 
         bool operator< (const JobWithPriority & rhs) const
         {

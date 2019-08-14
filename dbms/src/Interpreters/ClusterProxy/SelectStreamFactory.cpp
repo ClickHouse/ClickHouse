@@ -6,6 +6,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
@@ -58,6 +59,8 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
+    checkStackSize();
+
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
     BlockInputStreamPtr stream = interpreter.execute().in;
 

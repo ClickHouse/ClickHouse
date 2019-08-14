@@ -23,8 +23,8 @@ protected:
 #pragma GCC diagnostic pop
 
 public:
-    IInputFormat(Block header, ReadBuffer & in)
-        : ISource(std::move(header)), in(in)
+    IInputFormat(Block header, ReadBuffer & in_)
+        : ISource(std::move(header)), in(in_)
     {
     }
 

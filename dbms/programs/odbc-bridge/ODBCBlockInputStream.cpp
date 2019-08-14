@@ -18,12 +18,12 @@ namespace ErrorCodes
 
 
 ODBCBlockInputStream::ODBCBlockInputStream(
-    Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size)
-    : session{session}
+    Poco::Data::Session && session_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
+    : session{session_}
     , statement{(this->session << query_str, Poco::Data::Keywords::now)}
     , result{statement}
     , iterator{result.begin()}
-    , max_block_size{max_block_size}
+    , max_block_size{max_block_size_}
     , log(&Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
@@ -43,46 +43,46 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8:
+            case ValueType::vtUInt8:
                 static_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt16:
+            case ValueType::vtUInt16:
                 static_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt32:
+            case ValueType::vtUInt32:
                 static_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt64:
+            case ValueType::vtUInt64:
                 static_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::Int8:
+            case ValueType::vtInt8:
                 static_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int16:
+            case ValueType::vtInt16:
                 static_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int32:
+            case ValueType::vtInt32:
                 static_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int64:
+            case ValueType::vtInt64:
                 static_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Float32:
+            case ValueType::vtFloat32:
                 static_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
                 break;
-            case ValueType::Float64:
+            case ValueType::vtFloat64:
                 static_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
                 break;
-            case ValueType::String:
+            case ValueType::vtString:
                 static_cast<ColumnString &>(column).insert(value.convert<String>());
                 break;
-            case ValueType::Date:
+            case ValueType::vtDate:
                 static_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
                 break;
-            case ValueType::DateTime:
+            case ValueType::vtDateTime:
                 static_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
                 break;
-            case ValueType::UUID:
+            case ValueType::vtUUID:
                 static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
         }

@@ -18,10 +18,10 @@ namespace ErrorCodes
 
 
 CSVRowInputFormat::CSVRowInputFormat(
-    ReadBuffer & in_, Block header, Params params, bool with_names_, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, std::move(params))
+    ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , with_names(with_names_)
-    , format_settings(format_settings)
+    , format_settings(format_settings_)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
@@ -40,7 +40,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         /// If input_format_null_as_default=1 we need ColumnNullable of type DataTypeNullable(nested_type)
         /// to parse value as nullable before inserting it in corresponding column of not-nullable type.
         /// Constructing temporary column for each row is slow, so we prepare it here
-        if (format_settings.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
+        if (format_settings_.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
         {
             column_idx_to_nullable_column_idx[i] = nullable_columns.size();
             nullable_types.emplace_back(std::make_shared<DataTypeNullable>(column_info.type));

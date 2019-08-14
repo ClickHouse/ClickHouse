@@ -5,8 +5,8 @@
 namespace DB
 {
 
-IOutputFormat::IOutputFormat(const Block & header, WriteBuffer & out)
-    : IProcessor({header, header, header}, {}), out(out)
+IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
+    : IProcessor({header_, header_, header_}, {}), out(out_)
 {
 }
 

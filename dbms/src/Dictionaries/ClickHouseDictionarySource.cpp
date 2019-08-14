@@ -51,7 +51,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const Block & sample_block,
+    const Block & sample_block_,
     Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -66,7 +66,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
     , context(context_)
     , is_local{isLocalAddress({host, port}, context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}

@@ -86,7 +86,7 @@ public:
 
         operator bool() const { return parent != nullptr; }
 
-        Lock(AtomicStopwatch * parent) : parent(parent) {}
+        Lock(AtomicStopwatch * parent_) : parent(parent_) {}
 
         Lock(Lock &&) = default;
 
