@@ -24,7 +24,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
         Позволяет получать данные с удаленного сервера MySQL.
 
-    По умолчанию ClickHouse использует собственный[движок баз данных](../database_engines/index.md).
+    По умолчанию ClickHouse использует собственный [движок баз данных](../database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
