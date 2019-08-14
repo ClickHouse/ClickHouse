@@ -12,16 +12,7 @@ if (OS_LINUX)
         set (BUILTINS_LIBRARY "-lgcc")
     endif ()
 
-    # If we don't use built-in libc++abi, then we have to link directly with an exception handling library
-    if (NOT USE_INTERNAL_LIBCXX_LIBRARY)
-        if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-            set (EXCEPTION_HANDLING_LIBRARY ${UNWIND_LIBRARY})
-        else ()
-            set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
-        endif ()
-    endif ()
-
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt")
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 endif ()

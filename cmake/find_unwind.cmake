@@ -16,5 +16,17 @@ if (USE_UNWIND)
         add_subdirectory(contrib/libunwind-cmake)
     endif ()
 
+    # If we don't use built-in libc++abi, then we have to link directly with an exception handling library
+    if (NOT USE_LIBCXX OR NOT USE_INTERNAL_LIBCXX_LIBRARY)
+        if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+            set (EXCEPTION_HANDLING_LIBRARY ${UNWIND_LIBRARY})
+        else ()
+            set (EXCEPTION_HANDLING_LIBRARY -lgcc_eh)
+        endif ()
+    endif ()
+
+    link_libraries(${EXCEPTION_HANDLING_LIBRARY})
+
     message (STATUS "Using libunwind: ${UNWIND_LIBRARY}")
+    message (STATUS "Using exception handler: ${EXCEPTION_HANDLING_LIBRARY}")
 endif ()
