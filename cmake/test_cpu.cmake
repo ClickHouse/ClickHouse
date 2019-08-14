@@ -81,6 +81,17 @@ check_cxx_source_compiles("
     }
 " HAVE_AVX2)
 
+set (TEST_FLAG "-mpclmul")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+check_cxx_source_compiles("
+    #include <wmmintrin.h>
+    int main() {
+        auto a = _mm_clmulepi64_si128(__m128i(), __m128i(), 0);
+        (void)a;
+        return 0;
+    }
+" HAVE_PCLMULQDQ)
+
 # gcc -dM -E -mpopcnt - < /dev/null | sort > gcc-dump-popcnt
 #define __POPCNT__ 1
 
