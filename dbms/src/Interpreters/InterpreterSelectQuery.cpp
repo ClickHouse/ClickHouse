@@ -415,7 +415,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     FilterInfoPtr filter_info;
 
     /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
-    query_analyzer->makeSetsForIndex();
+    query_analyzer->makeSetsForIndex(getSelectQuery().where());
+    query_analyzer->makeSetsForIndex(getSelectQuery().prewhere());
 
     auto analysis_result = analyzeExpressions(
             getSelectQuery(),
