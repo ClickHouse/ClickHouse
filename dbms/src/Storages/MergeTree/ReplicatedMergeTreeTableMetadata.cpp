@@ -82,6 +82,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (index_granularity_bytes != 0)
         out << "granularity bytes: " << index_granularity_bytes << "\n";
+
+    if (!constraints.empty())
+        out << "constraints: " << constraints << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -125,6 +128,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     }
     else
         index_granularity_bytes = 0;
+
+    if (checkString("constraints: ", in))
+        in >> constraints >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
