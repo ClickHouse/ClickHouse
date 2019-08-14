@@ -1,5 +1,4 @@
-#include "config_formats.h"
-#include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
+#include "ProtobufRowInputFormat.h"
 
 #if USE_PROTOBUF
 #include <Core/Block.h>
