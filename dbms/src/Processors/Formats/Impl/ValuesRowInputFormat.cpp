@@ -2,7 +2,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesRowInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -105,7 +104,7 @@ bool ValuesRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
                 Expected expected;
 
                 Tokens tokens(prev_in_position, in.buffer().end());
-                TokenIterator token_iterator(tokens);
+                IParser::Pos token_iterator(tokens);
 
                 ASTPtr ast;
                 if (!parser.parse(token_iterator, ast, expected))
