@@ -144,7 +144,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
     ExpressionActionsChain new_chain(context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
@@ -296,7 +296,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(
+    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()),
         options.subquery_depth, !options.only_analyze);
