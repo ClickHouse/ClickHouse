@@ -315,10 +315,11 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, !isRemoteStorage(), log.stream());
-    actions_visitor.visit(ast, actions);
+                                   no_subqueries, only_consts, !isRemoteStorage());
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    visitor_data.updateActions(actions);
 }
 
 
