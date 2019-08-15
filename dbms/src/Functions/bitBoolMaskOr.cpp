@@ -22,7 +22,7 @@ namespace DB
         static inline Result apply(A left, B right)
         {
             if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
-                throw DB::Exception("Only UInt8 type is supported by __bitBoolMaskOr.", ErrorCodes::BAD_CAST);
+                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskOr.", ErrorCodes::BAD_CAST);
             return static_cast<ResultType>(
                     ((static_cast<ResultType>(left) | static_cast<ResultType>(right)) & 1)
                     | ((((static_cast<ResultType>(left) >> 1) & (static_cast<ResultType>(right) >> 1)) & 1) << 1));
