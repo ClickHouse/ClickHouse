@@ -242,7 +242,7 @@ public:
                         }
                         else
                         {
-                            column->insertFrom(*column, row - offset_value_casted);
+                            column->insertFrom(*source_column, row - offset_value_casted);
                         }
                     }
                 }

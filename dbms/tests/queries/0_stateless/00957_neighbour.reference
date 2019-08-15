@@ -44,6 +44,25 @@ Negative offset with const defaults
 0	1000
 1	0
 2	1
+Dynamic column and offset, out of bounds
+0	0	0
+1	2	3
+2	4	20
+3	6	30
+Dynamic column and offset, negative
+0	0	0
+1	-2	10
+2	-4	20
+3	-6	30
+4	-8	40
+5	-10	50
+Dynamic column and offset, without defaults
+0	4	4
+1	2	3
+2	0	2
+3	-2	1
+4	-4	0
+5	-6	0
 Constant column
 0	1000
 1	1000
