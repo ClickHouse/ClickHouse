@@ -26,7 +26,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
             throw Exception{"Violated constraint " + constraints.constraints[i]->name +
                             " in table " + table + " at indices " + indices_str + ", constraint expression: " +
-                            serializeAST(*(constraints.constraints[i]->expr), true), DB::ErrorCodes::VIOLATED_CONSTRAINT};
+                            serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::VIOLATED_CONSTRAINT};
         }
     }
     output->write(block);
