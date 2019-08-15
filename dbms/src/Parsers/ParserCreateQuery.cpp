@@ -39,7 +39,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto func = std::make_shared<ASTFunction>();
-    getIdentifierName(name, func->name);
+    tryGetIdentifierNameInto(name, func->name);
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -74,7 +74,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
-        getIdentifierName(ident, func->name);
+        tryGetIdentifierNameInto(ident, func->name);
         node = func;
         return true;
     }
@@ -384,8 +384,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->if_not_exists = if_not_exists;
             query->cluster = cluster_str;
 
-            getIdentifierName(database, query->database);
-            getIdentifierName(table, query->table);
+            tryGetIdentifierNameInto(database, query->database);
+            tryGetIdentifierNameInto(table, query->table);
 
             return true;
         }
@@ -542,18 +542,18 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->temporary = is_temporary;
     query->replace_view = replace_view;
 
-    getIdentifierName(database, query->database);
-    getIdentifierName(table, query->table);
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
     query->cluster = cluster_str;
 
-    getIdentifierName(to_database, query->to_database);
-    getIdentifierName(to_table, query->to_table);
+    tryGetIdentifierNameInto(to_database, query->to_database);
+    tryGetIdentifierNameInto(to_table, query->to_table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
-    getIdentifierName(as_database, query->as_database);
-    getIdentifierName(as_table, query->as_table);
+    tryGetIdentifierNameInto(as_database, query->as_database);
+    tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
 
     return true;

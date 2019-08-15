@@ -103,7 +103,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
                 Expected expected;
 
                 Tokens tokens(prev_istr_position, istr.buffer().end());
-                TokenIterator token_iterator(tokens);
+                IParser::Pos token_iterator(tokens);
 
                 ASTPtr ast;
                 if (!parser.parse(token_iterator, ast, expected))
