@@ -3,6 +3,7 @@
 #include "TestStats.h"
 #include "TestStopConditions.h"
 #include <Common/InterruptListener.h>
+#include <Common/T_test.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Client/Connection.h>
@@ -13,6 +14,7 @@ void executeQuery(
     Connections & connections,
     const std::string & query,
     TestStatsPtrs & statistics,
+    T_test & t_test,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
     Context & context,

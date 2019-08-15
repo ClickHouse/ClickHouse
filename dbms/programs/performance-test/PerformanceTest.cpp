@@ -15,7 +15,6 @@
 
 #include "executeQuery.h"
 
-
 namespace DB
 {
 
@@ -60,7 +59,8 @@ PerformanceTest::PerformanceTest(
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
     Context & context_,
-    const std::vector<size_t> & queries_to_run_)
+    const std::vector<size_t> & queries_to_run_,
+    T_test & t_test_)
     : config(config_)
     , connections(connections_)
     , timeouts(timeouts_)
@@ -68,6 +68,7 @@ PerformanceTest::PerformanceTest(
     , test_info(test_info_)
     , context(context_)
     , queries_to_run(queries_to_run_)
+    , t_test(t_test_)
     , log(&Poco::Logger::get("PerformanceTest"))
 {
 }
@@ -343,6 +344,7 @@ void PerformanceTest::runQueries(
         LOG_INFO(log, "[" << run_index<< "] Run query '" << query << "'");
         TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
         TestStatsPtrs & statistics = statistics_by_run[run_index];
+        t_test.clear();
 
         auto gotSIGINT = [&statistics]()
         {
@@ -360,22 +362,26 @@ void PerformanceTest::runQueries(
 
         try
         {
-            executeQuery(connections, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings, connection_index);
-
+            for (size_t i = 0; i < connections.size(); ++i)
+            {
+                executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i);
+            }
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 LOG_INFO(log, "Will run query in loop");
                 for (size_t iteration = 1; !gotSIGINT(); ++iteration)
                 {
-                    connection_index = distribution(generator);
                     stop_conditions.reportIterations(iteration);
                     if (stop_conditions.areFulfilled())
                     {
                         LOG_INFO(log, "Stop conditions fullfilled");
                         break;
                     }
-
-                    executeQuery(connections, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings, connection_index);
+                    for (size_t i = 0; i < connections.size(); ++i)
+                    {
+                        connection_index = distribution(generator);
+                        executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index);
+                    }
                 }
             }
         }
@@ -396,6 +402,7 @@ void PerformanceTest::runQueries(
             LOG_INFO(log, "Got SIGINT, will terminate as soon as possible");
             break;
         }
+        t_test.compareAndReport();
     }
 }
 

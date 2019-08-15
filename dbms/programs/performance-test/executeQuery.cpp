@@ -13,7 +13,7 @@ namespace
 void checkFulfilledConditionsAndUpdate(
     const Progress & progress, RemoteBlockInputStream & stream,
     TestStats & statistics, TestStopConditions & stop_conditions,
-    InterruptListener & interrupt_listener)
+    InterruptListener & interrupt_listener, T_test & t_test)
 {
     statistics.add(progress.read_rows, progress.read_bytes);
 
@@ -23,6 +23,7 @@ void checkFulfilledConditionsAndUpdate(
     stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
     stop_conditions.reportMaxSpeedNotChangingFor(statistics.max_rows_speed_watch.elapsed() / (1000 * 1000));
     stop_conditions.reportAverageSpeedNotChangingFor(statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000));
+    stop_conditions.reportTtest(t_test);
 
     if (stop_conditions.areFulfilled())
     {
@@ -44,6 +45,7 @@ void executeQuery(
     Connections & connections,
     const std::string & query,
     TestStatsPtrs & statistics,
+    T_test & t_test,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
     Context & context,
@@ -67,17 +69,20 @@ void executeQuery(
         {
             checkFulfilledConditionsAndUpdate(
                 value, stream, *statistics[connection_index],
-                stop_conditions, interrupt_listener);
+                stop_conditions, interrupt_listener, t_test);
         });
     stream.readPrefix();
     while (Block block = stream.read());
     stream.readSuffix();
+    double seconds = statistics[connection_index]->watch_per_query.elapsedSeconds();
 
     if (!statistics[connection_index]->last_query_was_cancelled)
         statistics[connection_index]->updateQueryInfo();
 
 //    statistics.setTotalTime();
-    statistics[connection_index]->total_time += statistics[connection_index]->watch_per_query.elapsedSeconds();
+    statistics[connection_index]->total_time += seconds;
+    t_test.add(connection_index, seconds);
+
 }
 
 }
