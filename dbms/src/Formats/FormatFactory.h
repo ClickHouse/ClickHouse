@@ -59,6 +59,7 @@ private:
         WriteBuffer & buf,
         const Block & sample,
         const Context & context,
+        WriteCallback callback,
         const FormatSettings & settings)>;
 
     using InputProcessorCreator = std::function<InputFormatPtr(
