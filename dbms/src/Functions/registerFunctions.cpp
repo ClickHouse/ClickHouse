@@ -83,12 +83,8 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
-    registerFunctionTransform(factory);
     registerFunctionsZOrder(factory);
 
-#if USE_ICU
-    registerFunctionConvertCharset(factory);
-#endif
 }
 
 }
