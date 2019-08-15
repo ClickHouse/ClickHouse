@@ -2389,11 +2389,11 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part)
+void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part)
 {
     auto data_parts_lock = lockParts();
 
-    for (auto && active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->name == active_part->name)
         {
@@ -2401,12 +2401,13 @@ MergeTreeData::DataPartPtr MergeTreeData::swapActivePart(MergeTreeData::DataPart
             if (it == data_parts_by_info.end())
                 throw Exception("No such active part by info. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
 
+            active_part->deleteOnDestroy();
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             data_parts_indexes.erase(it);
 
             auto part_it = data_parts_indexes.insert(part).first;
             modifyPartState(part_it, DataPartState::Committed);
-            return active_part;
+            return;
         }
     }
     throw Exception("No such active part. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
@@ -2597,9 +2598,7 @@ void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSp
 
     copied_part->renameTo(part->name);
 
-    auto old_active_part = swapActivePart(copied_part);
-
-    old_active_part->deleteOnDestroy();
+    swapActivePart(copied_part);
 }
 
 

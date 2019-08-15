@@ -400,7 +400,7 @@ public:
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
-    DataPartPtr swapActivePart(MergeTreeData::DataPartPtr part);
+    void swapActivePart(MergeTreeData::DataPartPtr part);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);

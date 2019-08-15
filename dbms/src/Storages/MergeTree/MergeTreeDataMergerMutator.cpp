@@ -1285,9 +1285,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::cloneParts(const Merg
     {
         move.part->makeCloneOnDiskDetached(move.reserved_space);
 
-        MergeTreeData::MutableDataPartPtr copied_part = std::make_shared<MergeTreeData::DataPart>(data,
-                                                                                                  move.reserved_space->getDisk(),
-                                                                                                  move.part->name);
+        MergeTreeData::MutableDataPartPtr copied_part =
+            std::make_shared<MergeTreeData::DataPart>(data, move.reserved_space->getDisk(), move.part->name);
         copied_part->relative_path = "detached/" + move.part->name;
 
         copied_part->loadColumnsChecksumsIndexes(true, true);

@@ -83,8 +83,8 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
-    mutable std::mutex currently_merging_mutex;
-    DataParts currently_merging;
+    mutable std::mutex currently_processing_in_background_mutex;
+    DataParts currently_processing_in_background;
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
@@ -103,7 +103,7 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
-    bool move_parts();
+    bool moveParts();
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
@@ -112,7 +112,7 @@ private:
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
-        std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
+        std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     void clearOldMutations();
 
