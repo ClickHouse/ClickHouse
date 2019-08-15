@@ -2479,15 +2479,14 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
     {
         /// Unify streams in case they have different headers.
 
-        size_t start = 0;
-
         if (!header)
-        {
             header = pipeline.streams.at(0)->getHeader();
-            start = 1;
-        }
 
-        for (size_t i = start; i < pipeline.streams.size(); ++i)
+        /// TODO: remove _dummy column
+        if (header.columns() > 1 && header.has("_dummy"))
+            header.erase("_dummy");
+
+        for (size_t i = 0; i < pipeline.streams.size(); ++i)
         {
             auto & stream = pipeline.streams[i];
             auto stream_header = stream->getHeader();
