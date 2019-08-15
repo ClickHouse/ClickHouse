@@ -261,8 +261,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             bool is_null_used_as_default = settings.join_use_nulls;
             bool right_or_full_join = join_kind == ASTTableJoin::Kind::Right || join_kind == ASTTableJoin::Kind::Full;
             bool left_or_full_join = join_kind == ASTTableJoin::Kind::Left || join_kind == ASTTableJoin::Kind::Full;
-//            bool inner_or_right_join = join_kind == ASTTableJoin::Kind::Inner || join_kind == ASTTableJoin::Kind::Right;
-//            bool all_join = join_strictness == ASTTableJoin::Strictness::All;
 
             for (auto & col : sample_block)
             {
@@ -282,8 +280,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
                 bool make_nullable = is_null_used_as_default && left_or_full_join;
 
-                if (!make_nullable) // && (all_join || !inner_or_right_join))
+                if (!make_nullable)
                 {
+                    /// Keys from right table are usually not stored in Join, but copied from the left one.
+                    /// So, if left key is nullable, let's make right key nullable too.
+                    /// Note: for some join types it's not needed and, probably, may be removed.
+                    /// Note: changing this code, take into account the implementation in Join.cpp.
                     auto it = std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name);
                     if (it != join_key_names_right.end())
                     {
@@ -1304,6 +1306,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && array_join_is_left == other.array_join_is_left
         && join == other.join
         && join_key_names_left == other.join_key_names_left
+        && join_key_names_right == other.join_key_names_right
         && columns_added_by_join == other.columns_added_by_join
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
