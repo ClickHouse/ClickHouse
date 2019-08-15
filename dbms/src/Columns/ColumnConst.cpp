@@ -113,21 +113,11 @@ ColumnPtr recursiveMaterializeConstants(const ColumnPtr & column)
     if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
         auto & data = column_array->getDataPtr();
-        auto data_no_lc = recursiveMaterializeConstants(data);
-        if (data.get() == data_no_lc.get())
+        auto data_no_const = recursiveMaterializeConstants(data);
+        if (data.get() == data_no_const.get())
             return column;
 
-        return ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
-    }
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-    {
-        auto & nested = column_const->getDataColumnPtr();
-        auto nested_no_lc = recursiveMaterializeConstants(nested);
-        if (nested.get() == nested_no_lc.get())
-            return column;
-
-        return ColumnConst::create(nested_no_lc, column_const->size());
+        return ColumnArray::create(data_no_const, column_array->getOffsetsPtr());
     }
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
