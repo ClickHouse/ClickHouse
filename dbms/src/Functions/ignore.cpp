@@ -42,6 +42,8 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }
+
+    bool alwaysReturnsConstant() const override { return true; }
 };
 
 
