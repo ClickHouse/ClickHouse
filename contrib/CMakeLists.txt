@@ -330,3 +330,7 @@ endif()
 if (USE_MIMALLOC)
     add_subdirectory (mimalloc)
 endif()
+
+if (USE_FASTOPS)
+    add_subdirectory (fastops-cmake)
+endif()

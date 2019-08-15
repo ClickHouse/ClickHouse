@@ -1,8 +1,8 @@
 # Функции для битмапов
 
-## bitmapBuild
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
-Создаёт битмап из массива целочисленных значений.
+Создаёт битовый массив из массива целочисленных значений.
 
 ```
 bitmapBuild(array)
@@ -26,7 +26,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 
 ## bitmapToArray
 
-Преобразует битмап в массив целочисленных значений.
+Преобразует битовый массив в массив целочисленных значений.
 
 ```
 bitmapToArray(bitmap)
@@ -34,7 +34,7 @@ bitmapToArray(bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -48,13 +48,46 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapContains {#bitmap_functions-bitmapcontains}
+
+Проверяет вхождение элемента в битовый массив.
+
+```
+bitmapContains(haystack, needle)
+```
+
+**Параметры**
+
+- `haystack` – [объект Bitmap](#bitmap_functions-bitmapbuild), в котором функция ищет значение.
+- `needle` – значение, которое функция ищет. Тип — [UInt32](../../data_types/int_uint.md).
+
+**Возвращаемые значения**
+
+- 0 — если в `haystack` нет `needle`.
+- 1 — если в `haystack` есть `needle`.
+
+Тип — `UInt8`.
+
+**Пример**
+
+``` sql
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+```
+```text
+┌─res─┐
+│  1  │
+└─────┘
+```
+
 ## bitmapHasAny
 
-Проверяет, имеют ли два битмапа хотя бы один общий элемент.
+Проверяет, имеют ли два битовых массива хотя бы один общий элемент.
 
 ```
 bitmapHasAny(bitmap1, bitmap2)
 ```
+
+Если вы уверены, что `bitmap2` содержит строго один элемент, используйте функцию [bitmapContains](#bitmap_functions-bitmapcontains). Она работает эффективнее.
 
 **Параметры**
 
@@ -79,8 +112,8 @@ SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 
 ## bitmapHasAll
 
-Аналогично функции `hasAll(array, array)` возвращает 1 если первый битмап содержит все элементы второго, 0 в противном случае.
-Если второй аргумент является пустым битмапом, то возвращает 1.
+Аналогично функции `hasAll(array, array)` возвращает 1 если первый битовый массив содержит все элементы второго, 0 в противном случае.
+Если второй аргумент является пустым битовым массивом, то возвращает 1.
 
 ```
 bitmapHasAll(bitmap,bitmap)
@@ -88,7 +121,7 @@ bitmapHasAll(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -104,7 +137,7 @@ SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 
 ## bitmapAnd
 
-Логическое И для двух битмапов. Результат — новый битмап.
+Логическое И для двух битовых массивов. Результат — новый битовый массив.
 
 ```
 bitmapAnd(bitmap,bitmap)
@@ -112,7 +145,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -128,7 +161,7 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 
 ## bitmapOr
 
-Логическое ИЛИ для двух битмапов. Результат — новый битмап.
+Логическое ИЛИ для двух битовых массивов. Результат — новый битовый массив.
 
 ```
 bitmapOr(bitmap,bitmap)
@@ -136,7 +169,7 @@ bitmapOr(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -152,7 +185,7 @@ SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 
 ## bitmapXor
 
-Логическое исключающее ИЛИ для двух битмапов. Результат — новый битмап.
+Логическое исключающее ИЛИ для двух битовых массивов. Результат — новый битовый массив.
 
 ```
 bitmapXor(bitmap,bitmap)
@@ -160,7 +193,7 @@ bitmapXor(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -176,7 +209,7 @@ SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 
 ## bitmapAndnot
 
-Логическое отрицание И для двух битмапов. Результат — новый битмап.
+Логическое отрицание И для двух битовых массивов. Результат — новый битовый массив.
 
 ```
 bitmapAndnot(bitmap,bitmap)
@@ -184,7 +217,7 @@ bitmapAndnot(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -200,7 +233,7 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 
 ## bitmapCardinality
 
-Возвращает кардинальность битмапа в виде значения типа `UInt64`.
+Возвращает кардинальность битового массива в виде значения типа `UInt64`.
 
 ```
 bitmapCardinality(bitmap)
@@ -208,7 +241,7 @@ bitmapCardinality(bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -224,7 +257,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapAndCardinality
 
-Выполняет логическое И и возвращает кардинальность (`UInt64`) результирующего битмапа.
+Выполняет логическое И и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
 ```
 bitmapAndCardinality(bitmap,bitmap)
@@ -232,7 +265,7 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -248,7 +281,7 @@ SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## bitmapOrCardinality
 
-Выполняет логическое ИЛИ и возвращает кардинальность (`UInt64`) результирующего битмапа.
+Выполняет логическое ИЛИ и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
 ```
 bitmapOrCardinality(bitmap,bitmap)
@@ -256,7 +289,7 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -272,7 +305,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## bitmapXorCardinality
 
-Выполняет логическое исключающее ИЛИ и возвращает кардинальность (`UInt64`) результирующего битмапа.
+Выполняет логическое исключающее ИЛИ и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
 ```
 bitmapXorCardinality(bitmap,bitmap)
@@ -280,7 +313,7 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 
@@ -296,7 +329,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## bitmapAndnotCardinality
 
-Выполняет логическое отрицание И и возвращает кардинальность (`UInt64`) результирующего битмапа.
+Выполняет логическое отрицание И и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
 ```
 bitmapAndnotCardinality(bitmap,bitmap)
@@ -304,7 +337,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Параметры**
 
-- `bitmap` – битмап.
+- `bitmap` – битовый массив.
 
 **Пример**
 

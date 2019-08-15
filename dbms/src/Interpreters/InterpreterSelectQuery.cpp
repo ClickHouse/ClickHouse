@@ -45,9 +45,10 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageValues.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -57,6 +58,7 @@
 #include <Core/Types.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
 #include <memory>
@@ -155,9 +157,9 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const SelectQueryOptions & options,
-    const Names & required_result_column_names)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options, required_result_column_names)
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options_, required_result_column_names_)
 {
 }
 
@@ -165,16 +167,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -210,6 +212,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input_)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
+    checkStackSize();
+
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
@@ -264,13 +268,26 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else
         {
-            /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
             String database_name;
             String table_name;
 
             getDatabaseAndTableNames(database_name, table_name);
 
-            storage = context.getTable(database_name, table_name);
+            if (auto view_source = context.getViewSource())
+            {
+                auto & storage_values = static_cast<const StorageValues &>(*view_source);
+                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                {
+                    /// Read from view source.
+                    storage = context.getViewSource();
+                }
+            }
+
+            if (!storage)
+            {
+                /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
+                storage = context.getTable(database_name, table_name);
+            }
         }
     }
 
@@ -278,9 +295,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
 
     syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
-        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
+        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
+        query_ptr, syntax_analyzer_result, context,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()),
         options.subquery_depth, !options.only_analyze);
 
@@ -303,7 +320,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (!options.only_analyze || options.modify_inplace)
     {
-        if (query_analyzer->isRewriteSubqueriesPredicate())
+        if (syntax_analyzer_result->rewrite_subqueries)
         {
             /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
             if (is_subquery)
@@ -322,7 +339,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             interpreter_subquery->ignoreWithTotals();
     }
 
-    required_columns = query_analyzer->getRequiredSourceColumns();
+    required_columns = syntax_analyzer_result->requiredSourceColumns();
 
     if (storage)
         source_header = storage->getSampleBlockForColumns(required_columns);
@@ -648,7 +665,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
+static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -661,7 +678,16 @@ static SortingInfoPtr optimizeSortingWithPK(const MergeTreeData & merge_tree, co
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
     auto order_by_expr = query.orderBy();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
+    SyntaxAnalyzerResultPtr syntax_result;
+    try
+    {
+        syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
+
     for (size_t i = 0; i < prefix_size; ++i)
     {
         /// Read in pk order in case of exact match with order key element
@@ -764,7 +790,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
 
-        query_analyzer->makeSetsForIndex();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {
@@ -775,7 +802,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{current_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, context, merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
         };
 
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
@@ -794,10 +821,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_pk_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeSortingWithPK(*merge_tree_data, query, context);
+            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
     }
 
     if (dry_run)

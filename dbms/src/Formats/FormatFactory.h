@@ -70,11 +70,15 @@ private:
             const Context & context,
             const FormatSettings & settings)>;
 
-    using Creators = std::pair<InputCreator, OutputCreator>;
-    using ProcessorCreators = std::pair<InputProcessorCreator, OutputProcessorCreator>;
+    struct Creators
+    {
+        InputCreator inout_creator;
+        OutputCreator output_creator;
+        InputProcessorCreator input_processor_creator;
+        OutputProcessorCreator output_processor_creator;
+    };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
-    using FormatProcessorsDictionary = std::unordered_map<String, ProcessorCreators>;
 
 public:
     BlockInputStreamPtr getInput(
@@ -89,8 +93,14 @@ public:
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;
 
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;
@@ -108,14 +118,13 @@ public:
     }
 
 private:
+    /// FormatsDictionary dict;
     FormatsDictionary dict;
-    FormatProcessorsDictionary processors_dict;
 
     FormatFactory();
     friend class ext::singleton<FormatFactory>;
 
     const Creators & getCreators(const String & name) const;
-    const ProcessorCreators & getProcessorCreators(const String & name) const;
 };
 
 }

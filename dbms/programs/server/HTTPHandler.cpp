@@ -61,6 +61,9 @@ namespace ErrorCodes
 
     extern const int SYNTAX_ERROR;
 
+    extern const int INCORRECT_DATA;
+    extern const int TYPE_MISMATCH;
+
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_IDENTIFIER;
@@ -99,15 +102,18 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
+             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
+
+             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
+             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
+
+             exception_code == ErrorCodes::SYNTAX_ERROR ||
+
+             exception_code == ErrorCodes::INCORRECT_DATA ||
+             exception_code == ErrorCodes::TYPE_MISMATCH)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
@@ -119,9 +125,9 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE)
-        return HTTPResponse::HTTP_NOT_FOUND;
-    else if (exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
+
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
         return HTTPResponse::HTTP_NOT_FOUND;
     else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
         return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;

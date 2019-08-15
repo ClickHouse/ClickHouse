@@ -111,8 +111,6 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
     std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-    size_t rows = input_rows_count;
-
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
     std::vector<ColumnPtr> materialized_columns;
 
@@ -124,6 +122,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
+
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
@@ -159,7 +158,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
                         + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     ColumnArray::Offset current_offset = 0;
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = 0; i < input_rows_count; ++i)
     {
         agg_func.create(place);
         ColumnArray::Offset next_offset = (*offsets)[i];

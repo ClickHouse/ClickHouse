@@ -232,10 +232,9 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
-            if (column.column->empty())
-                temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
-            else
-                temporary_block.insert(column);
+        {
+            temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
+        }
         else
         {
             have_converted_columns = true;

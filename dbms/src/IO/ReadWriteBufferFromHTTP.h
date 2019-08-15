@@ -43,14 +43,14 @@ namespace detail
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
         explicit ReadWriteBufferFromHTTPBase(SessionPtr session_,
-            Poco::URI uri,
-            const std::string & method = {},
+            Poco::URI uri_,
+            const std::string & method_ = {},
             OutStreamCallback out_stream_callback = {},
             const Poco::Net::HTTPBasicCredentials & credentials = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
             : ReadBuffer(nullptr, 0)
-            , uri {uri}
-            , method {!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
+            , uri {uri_}
+            , method {!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.

@@ -12,6 +12,41 @@ namespace DB
 
 struct Null {};
 
+enum class TypeIndex
+{
+    Nothing = 0,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    Float32,
+    Float64,
+    Date,
+    DateTime,
+    String,
+    FixedString,
+    Enum8,
+    Enum16,
+    Decimal32,
+    Decimal64,
+    Decimal128,
+    UUID,
+    Array,
+    Tuple,
+    Set,
+    Interval,
+    Nullable,
+    Function,
+    AggregateFunction,
+    LowCardinality,
+};
+
 using UInt8 = uint8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
@@ -56,41 +91,6 @@ template <> struct TypeName<Int64>   { static const char * get() { return "Int64
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
-
-enum class TypeIndex
-{
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Float32,
-    Float64,
-    Date,
-    DateTime,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
-};
 
 template <typename T> struct TypeId;
 template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };

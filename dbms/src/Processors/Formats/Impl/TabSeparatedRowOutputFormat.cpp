@@ -8,8 +8,8 @@ namespace DB
 {
 
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
-    WriteBuffer & out_, const Block & header, bool with_names, bool with_types, const FormatSettings & format_settings)
-    : IRowOutputFormat(header, out_), with_names(with_names), with_types(with_types), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
 

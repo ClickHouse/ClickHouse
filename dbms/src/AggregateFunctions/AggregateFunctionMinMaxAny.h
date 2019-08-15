@@ -679,8 +679,8 @@ private:
     DataTypePtr & type;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>({type}, {})
+    AggregateFunctionsSingleValue(const DataTypePtr & type_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>({type_}, {})
         , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")

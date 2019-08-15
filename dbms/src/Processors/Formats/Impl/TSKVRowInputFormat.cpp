@@ -15,16 +15,17 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, params), format_settings(format_settings), name_map(header.columns())
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
     skipBOMIfExists(in);
 
-    size_t num_columns = header.columns();
+    const auto & sample_block = getPort().getHeader();
+    size_t num_columns = sample_block.columns();
     for (size_t i = 0; i < num_columns; ++i)
-        name_map[header.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+        name_map[sample_block.getByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
 }
 
 
@@ -200,7 +201,7 @@ void registerInputFormatProcessorTSKV(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowInputFormat>(buf, sample, params, settings);
+        return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
     });
 }
 

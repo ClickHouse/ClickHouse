@@ -542,7 +542,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         columns = setColumns(create, as_select_sample, as_storage);
 
         /// Check low cardinality types in creating table if it was not allowed in setting
-        if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
+        if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
         {
             for (const auto & name_and_type_pair : columns.getAllPhysical())
             {

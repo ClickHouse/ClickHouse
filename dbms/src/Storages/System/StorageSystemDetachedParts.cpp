@@ -52,27 +52,27 @@ protected:
 
         /// Create the result.
         Block block = getSampleBlock();
-        MutableColumns columns = block.cloneEmptyColumns();
+        MutableColumns new_columns = block.cloneEmptyColumns();
 
         while (StoragesInfo info = stream.next())
         {
             const auto parts = info.data->getDetachedParts();
             for (auto & p : parts)
             {
-                int i = 0;
-                columns[i++]->insert(info.database);
-                columns[i++]->insert(info.table);
-                columns[i++]->insert(p.partition_id);
-                columns[i++]->insert(p.getPartName());
-                columns[i++]->insert(p.prefix);
-                columns[i++]->insert(p.min_block);
-                columns[i++]->insert(p.max_block);
-                columns[i++]->insert(p.level);
+                size_t i = 0;
+                new_columns[i++]->insert(info.database);
+                new_columns[i++]->insert(info.table);
+                new_columns[i++]->insert(p.partition_id);
+                new_columns[i++]->insert(p.getPartName());
+                new_columns[i++]->insert(p.prefix);
+                new_columns[i++]->insert(p.min_block);
+                new_columns[i++]->insert(p.max_block);
+                new_columns[i++]->insert(p.level);
             }
         }
 
         return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
-             block.cloneWithColumns(std::move(columns))));
+             block.cloneWithColumns(std::move(new_columns))));
     }
 };
 

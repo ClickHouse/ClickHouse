@@ -13,7 +13,7 @@ void ComplexKeyCacheDictionary::get@NAME@(const std::string & attribute_name, co
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::@NAME@);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut@NAME@);
 
     const auto null_value = std::get<TYPE>(attribute.null_values);
 

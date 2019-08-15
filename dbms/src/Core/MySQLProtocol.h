@@ -142,9 +142,10 @@ public:
 class PacketPayloadReadBuffer : public ReadBuffer
 {
 public:
-    PacketPayloadReadBuffer(ReadBuffer & in, uint8_t & sequence_id)
-        : ReadBuffer(in.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
-        , in(in), sequence_id(sequence_id)
+    PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
+        : ReadBuffer(in_.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
+        , in(in_)
+        , sequence_id(sequence_id_)
     {
     }
 
@@ -252,25 +253,18 @@ public:
 class PacketPayloadWriteBuffer : public WriteBuffer
 {
 public:
-    PacketPayloadWriteBuffer(WriteBuffer & out, size_t payload_length, uint8_t & sequence_id)
-        : WriteBuffer(out.position(), 0), out(out), sequence_id(sequence_id), total_left(payload_length)
+    PacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_)
+        : WriteBuffer(out_.position(), 0), out(out_), sequence_id(sequence_id_), total_left(payload_length_)
     {
-        startPacket();
+        startNewPacket();
+        setWorkingBuffer();
+        pos = out.position();
     }
 
-    void checkPayloadSize()
+    bool remainingPayloadSize()
     {
-        if (bytes_written + offset() < payload_length)
-        {
-            std::stringstream ss;
-            ss << "Incomplete payload. Written " << bytes << " bytes, expected " << payload_length << " bytes.";
-            throw Exception(ss.str(), 0);
-
-        }
+        return total_left;
     }
-
-    ~PacketPayloadWriteBuffer() override
-    { next(); }
 
 private:
     WriteBuffer & out;
@@ -279,8 +273,9 @@ private:
     size_t total_left = 0;
     size_t payload_length = 0;
     size_t bytes_written = 0;
+    bool eof = false;
 
-    void startPacket()
+    void startNewPacket()
     {
         payload_length = std::min(total_left, MAX_PACKET_LENGTH);
         bytes_written = 0;
@@ -288,34 +283,38 @@ private:
 
         out.write(reinterpret_cast<char *>(&payload_length), 3);
         out.write(sequence_id++);
+        bytes += 4;
+    }
 
+    /// Sets working buffer to the rest of current packet payload.
+    void setWorkingBuffer()
+    {
+        out.nextIfAtEnd();
         working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        pos = working_buffer.begin();
+
+        if (payload_length - bytes_written == 0)
+        {
+            /// Finished writing packet. Due to an implementation of WriteBuffer, working_buffer cannot be empty. Further write attempts will throw Exception.
+            eof = true;
+            working_buffer.resize(1);
+        }
     }
 
 protected:
     void nextImpl() override
     {
-        int written = pos - working_buffer.begin();
+        const int written = pos - working_buffer.begin();
+        if (eof)
+            throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+
         out.position() += written;
         bytes_written += written;
 
-        if (bytes_written < payload_length)
-        {
-            out.nextIfAtEnd();
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        }
-        else if (total_left > 0 || payload_length == MAX_PACKET_LENGTH)
-        {
-            // Starting new packet, since packets of size greater than MAX_PACKET_LENGTH should be split.
-            startPacket();
-        }
-        else
-        {
-            // Finished writing packet. Buffer is set to empty to prevent rewriting (pos will be set to the beginning of a working buffer in next()).
-            // Further attempts to write will stall in the infinite loop.
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position());
-        }
+        /// Packets of size greater than MAX_PACKET_LENGTH are split into few packets of size MAX_PACKET_LENGTH and las packet of size < MAX_PACKET_LENGTH.
+        if (bytes_written == payload_length && (total_left > 0 || payload_length == MAX_PACKET_LENGTH))
+            startNewPacket();
+
+        setWorkingBuffer();
     }
 };
 
@@ -327,7 +326,13 @@ public:
     {
         PacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
         writePayloadImpl(buf);
-        buf.checkPayloadSize();
+        buf.next();
+        if (buf.remainingPayloadSize())
+        {
+            std::stringstream ss;
+            ss << "Incomplete payload. Written " << getPayloadSize() - buf.remainingPayloadSize() << " bytes, expected " << getPayloadSize() << " bytes.";
+            throw Exception(ss.str(), 0);
+        }
     }
 
     virtual ~WritePacket() = default;
@@ -351,14 +356,18 @@ public:
     size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For reading and writing.
-    PacketSender(ReadBuffer & in, WriteBuffer & out, uint8_t & sequence_id)
-        : sequence_id(sequence_id), in(&in), out(&out)
+    PacketSender(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_)
+        : sequence_id(sequence_id_)
+        , in(&in_)
+        , out(&out_)
     {
     }
 
     /// For writing.
-    PacketSender(WriteBuffer & out, uint8_t & sequence_id)
-        : sequence_id(sequence_id), in(nullptr), out(&out)
+    PacketSender(WriteBuffer & out_, uint8_t & sequence_id_)
+        : sequence_id(sequence_id_)
+        , in(nullptr)
+        , out(&out_)
     {
     }
 
@@ -421,9 +430,15 @@ class Handshake : public WritePacket
     String auth_plugin_name;
     String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t capability_flags, uint32_t connection_id, String server_version, String auth_plugin_name, String auth_plugin_data)
-        : protocol_version(0xa), server_version(std::move(server_version)), connection_id(connection_id), capability_flags(capability_flags), character_set(CharacterSet::utf8_general_ci),
-          status_flags(0), auth_plugin_name(std::move(auth_plugin_name)), auth_plugin_data(std::move(auth_plugin_data))
+    explicit Handshake(uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
+        : protocol_version(0xa)
+        , server_version(std::move(server_version_))
+        , connection_id(connection_id_)
+        , capability_flags(capability_flags_)
+        , character_set(CharacterSet::utf8_general_ci)
+        , status_flags(0)
+        , auth_plugin_name(std::move(auth_plugin_name_))
+        , auth_plugin_data(std::move(auth_plugin_data_))
     {
     }
 
@@ -523,8 +538,8 @@ class AuthSwitchRequest : public WritePacket
     String plugin_name;
     String auth_plugin_data;
 public:
-    AuthSwitchRequest(String plugin_name, String auth_plugin_data)
-        : plugin_name(std::move(plugin_name)), auth_plugin_data(std::move(auth_plugin_data))
+    AuthSwitchRequest(String plugin_name_, String auth_plugin_data_)
+        : plugin_name(std::move(plugin_name_)), auth_plugin_data(std::move(auth_plugin_data_))
     {
     }
 
@@ -557,8 +572,7 @@ class AuthMoreData : public WritePacket
 {
     String data;
 public:
-    explicit AuthMoreData(String data) : data(std::move(data))
-    {}
+    explicit AuthMoreData(String data_): data(std::move(data_)) {}
 
 protected:
     size_t getPayloadSize() const override
@@ -584,15 +598,20 @@ class OK_Packet : public WritePacket
     String session_state_changes;
     String info;
 public:
-    OK_Packet(uint8_t header,
-              uint32_t capabilities,
-              uint64_t affected_rows,
-              uint32_t status_flags,
-              int16_t warnings,
-              String session_state_changes = "",
-              String info = "")
-        : header(header), capabilities(capabilities), affected_rows(affected_rows), warnings(warnings), status_flags(status_flags), session_state_changes(std::move(session_state_changes)),
-          info(std::move(info))
+    OK_Packet(uint8_t header_,
+        uint32_t capabilities_,
+        uint64_t affected_rows_,
+        uint32_t status_flags_,
+        int16_t warnings_,
+        String session_state_changes_ = "",
+        String info_ = "")
+        : header(header_)
+        , capabilities(capabilities_)
+        , affected_rows(affected_rows_)
+        , warnings(warnings_)
+        , status_flags(status_flags_)
+        , session_state_changes(std::move(session_state_changes_))
+        , info(std::move(info_))
     {
     }
 
@@ -658,7 +677,7 @@ class EOF_Packet : public WritePacket
     int warnings;
     int status_flags;
 public:
-    EOF_Packet(int warnings, int status_flags) : warnings(warnings), status_flags(status_flags)
+    EOF_Packet(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_)
     {}
 
 protected:
@@ -681,8 +700,8 @@ class ERR_Packet : public WritePacket
     String sql_state;
     String error_message;
 public:
-    ERR_Packet(int error_code, String sql_state, String error_message)
-        : error_code(error_code), sql_state(std::move(sql_state)), error_message(std::move(error_message))
+    ERR_Packet(int error_code_, String sql_state_, String error_message_)
+        : error_code(error_code_), sql_state(std::move(sql_state_)), error_message(std::move(error_message_))
     {
     }
 
@@ -717,32 +736,32 @@ class ColumnDefinition : public WritePacket
     uint8_t decimals = 0x00;
 public:
     ColumnDefinition(
-        String schema,
-        String table,
-        String org_table,
-        String name,
-        String org_name,
-        uint16_t character_set,
-        uint32_t column_length,
-        ColumnType column_type,
-        uint16_t flags,
-        uint8_t decimals)
+        String schema_,
+        String table_,
+        String org_table_,
+        String name_,
+        String org_name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_)
 
-        : schema(std::move(schema)), table(std::move(table)), org_table(std::move(org_table)), name(std::move(name)),
-          org_name(std::move(org_name)), character_set(character_set), column_length(column_length), column_type(column_type), flags(flags),
-          decimals(decimals)
+        : schema(std::move(schema_)), table(std::move(table_)), org_table(std::move(org_table_)), name(std::move(name_)),
+          org_name(std::move(org_name_)), character_set(character_set_), column_length(column_length_), column_type(column_type_), flags(flags_),
+          decimals(decimals_)
     {
     }
 
     /// Should be used when column metadata (original name, table, original table, database) is unknown.
     ColumnDefinition(
-        String name,
-        uint16_t character_set,
-        uint32_t column_length,
-        ColumnType column_type,
-        uint16_t flags,
-        uint8_t decimals)
-        : ColumnDefinition("", "", "", std::move(name), "", character_set, column_length, column_type, flags, decimals)
+        String name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_)
+        : ColumnDefinition("", "", "", std::move(name_), "", character_set_, column_length_, column_type_, flags_, decimals_)
     {
     }
 
@@ -788,7 +807,7 @@ class LengthEncodedNumber : public WritePacket
 {
     uint64_t value;
 public:
-    explicit LengthEncodedNumber(uint64_t value) : value(value)
+    explicit LengthEncodedNumber(uint64_t value_): value(value_)
     {
     }
 

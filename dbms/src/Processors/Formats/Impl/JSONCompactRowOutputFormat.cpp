@@ -34,8 +34,6 @@ void JSONCompactRowOutputFormat::writeTotalsFieldDelimiter()
 
 void JSONCompactRowOutputFormat::writeRowStartDelimiter()
 {
-    if (row_count > 0)
-        writeCString(",\n", *ostr);
     writeCString("\t\t[", *ostr);
 }
 
