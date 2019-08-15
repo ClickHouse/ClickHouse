@@ -666,7 +666,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 
 static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
-    const Context & context, const SyntaxAnalyzerResultPtr & syntax_result)
+    const Context & context, const SyntaxAnalyzerResultPtr & global_syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -680,7 +680,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
 
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        if (syntax_result->array_join_result_to_source.count(order_descr[i].column_name))
+        if (global_syntax_result->array_join_result_to_source.count(order_descr[i].column_name))
             break;
 
         /// Optimize in case of exact match with order key element
@@ -690,9 +690,9 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
             prefix_order_descr.push_back(order_descr[i]);
         else
         {
-            const auto & ast = query.orderBy()->children[i];
-            ExpressionActionsPtr actions;
-            actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(true);
+            auto ast = query.orderBy()->children[i]->children.at(0);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(ast, global_syntax_result->required_source_columns);
+            auto actions = ExpressionAnalyzer(ast, syntax_result, context).getActions(true);
 
             const auto & input_columns = actions->getRequiredColumnsWithTypes();
             if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
