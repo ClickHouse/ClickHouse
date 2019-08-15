@@ -7,7 +7,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
