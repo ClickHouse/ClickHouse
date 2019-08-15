@@ -159,6 +159,8 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
+    virtual bool alwaysReturnsConstant() const { return false; }
+
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
       *
@@ -456,6 +458,7 @@ public:
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
+    bool alwaysReturnsConstant() const override { return function->alwaysReturnsConstant(); }
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 

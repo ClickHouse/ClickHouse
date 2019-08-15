@@ -97,6 +97,7 @@ public:
     PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
+    bool is_suitable_for_constant_folding = false;
 
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
