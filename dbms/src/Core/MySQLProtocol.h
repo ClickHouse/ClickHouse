@@ -23,7 +23,6 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include <Poco/SHA2Engine.h>
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.
@@ -943,7 +942,10 @@ private:
 class Sha256Password : public IPlugin
 {
 public:
-    Sha256Password(RSA & public_key, RSA & private_key, Logger * log) : public_key(public_key), private_key(private_key), log(log)
+    Sha256Password(RSA & public_key_, RSA & private_key_, Logger * log_)
+        : public_key(public_key_)
+        , private_key(private_key_)
+        , log(log_)
     {
         /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
          *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin. [1]

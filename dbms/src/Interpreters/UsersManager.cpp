@@ -8,9 +8,11 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/SHA1Engine.h>
-#include <Poco/SHA2Engine.h>
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#if USE_SSL
+#   include <openssl/sha.h>
+#endif
 
 
 namespace DB
@@ -69,10 +71,28 @@ UserPtr UsersManager::authorizeAndGetUser(
 
     if (!it->second->password_sha256_hex.empty())
     {
-        Poco::SHA2Engine engine;
-        engine.update(password);
-        if (Poco::SHA2Engine::digestToHex(engine.digest()) != it->second->password_sha256_hex)
+#if USE_SSL
+        unsigned char hash[32];
+
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(password.data()), password.size());
+        SHA256_Final(hash, &ctx);
+
+        String hash_hex;
+        {
+            WriteBufferFromString buf(hash_hex);
+            HexWriteBuffer hex_buf(buf);
+            hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
+        }
+
+        Poco::toLowerInPlace(hash_hex);
+
+        if (hash_hex != it->second->password_sha256_hex)
             on_wrong_password();
+#else
+        throw DB::Exception("SHA256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
     }
     else if (!it->second->password_double_sha1_hex.empty())
     {
