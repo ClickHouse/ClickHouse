@@ -43,12 +43,12 @@ BlockInputStreams StorageSystemStoragePolicies::read(
 
     const auto & policy_selector = context.getStoragePolicySelector();
 
-    for (const auto & [name, policy_ptr] : policy_selector.getPoliciesMap())
+    for (const auto & [policy_name, policy_ptr] : policy_selector.getPoliciesMap())
     {
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)
         {
-            col_policy_name_mut->insert(name);
+            col_policy_name_mut->insert(policy_name);
             col_volume_name_mut->insert(volumes[i]->getName());
             col_priority_mut->insert(i);
             Array disks;

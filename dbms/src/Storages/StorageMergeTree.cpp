@@ -292,7 +292,7 @@ void StorageMergeTree::alter(
 }
 
 
-/// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
+/// While exists, marks parts as 'currently_processing_in_background' and reserves free space on filesystem.
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
@@ -314,21 +314,21 @@ public:
 
         for (const auto & part : future_part.parts)
         {
-            if (storage.currently_merging.count(part))
+            if (storage.currently_processing_in_background.count(part))
                 throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
-        storage.currently_merging.insert(future_part.parts.begin(), future_part.parts.end());
+        storage.currently_processing_in_background.insert(future_part.parts.begin(), future_part.parts.end());
     }
 
     ~CurrentlyMergingPartsTagger()
     {
-        std::lock_guard lock(storage.currently_merging_mutex);
+        std::lock_guard lock(storage.currently_processing_in_background_mutex);
 
         for (const auto & part : future_part.parts)
         {
-            if (!storage.currently_merging.count(part))
+            if (!storage.currently_processing_in_background.count(part))
                 std::terminate();
-            storage.currently_merging.erase(part);
+            storage.currently_processing_in_background.erase(part);
         }
 
         /// Update the information about failed parts in the system.mutations table.
@@ -368,7 +368,7 @@ public:
 };
 
 
-/// While exists, marks parts as 'currently_moving' and kwpp reservations.
+/// While exists, marks parts as 'currently_moving' and keep reservations.
 struct CurrentlyMovingPartsTagger
 {
     MergeTreeMovingParts parts;
@@ -385,22 +385,22 @@ public:
         /// Assume mutex is already locked, because this method is called from mergeTask.
         for (const auto & part : parts)
         {
-            if (storage.currently_merging.count(part.part))
+            if (storage.currently_processing_in_background.count(part.part))
                 throw Exception("Tagging already tagged part " + part.part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-            storage.currently_merging.insert(part.part);
+            storage.currently_processing_in_background.insert(part.part);
         }
     }
 
     ~CurrentlyMovingPartsTagger()
     {
-        std::lock_guard lock(storage.currently_merging_mutex);
+        std::lock_guard lock(storage.currently_processing_in_background_mutex);
 
         for (const auto & part : parts)
         {
-            if (!storage.currently_merging.count(part.part))
+            if (!storage.currently_processing_in_background.count(part.part))
                 std::terminate();
-            storage.currently_merging.erase(part.part);
+            storage.currently_processing_in_background.erase(part.part);
         }
     }
 };
@@ -413,7 +413,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
     {
-        std::lock_guard lock(currently_merging_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         Int64 version = increment.get();
         entry.commit(version);
@@ -428,7 +428,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
-    std::lock_guard lock(currently_merging_mutex);
+    std::lock_guard lock(currently_processing_in_background_mutex);
 
     std::vector<Int64> part_data_versions;
     auto data_parts = getDataPartsVector();
@@ -476,7 +476,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
-        std::lock_guard lock(currently_merging_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
         auto it = current_mutations_by_id.find(mutation_id);
         if (it != current_mutations_by_id.end())
         {
@@ -538,15 +538,15 @@ bool StorageMergeTree::merge(
 
     FutureMergedMutatedPart future_part;
 
-    /// You must call destructor with unlocked `currently_merging_mutex`.
+    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard lock(currently_merging_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *)
         {
-            return !currently_merging.count(left) && !currently_merging.count(right)
+            return !currently_processing_in_background.count(left) && !currently_processing_in_background.count(right)
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };
 
@@ -651,9 +651,9 @@ bool StorageMergeTree::merge(
 }
 
 
-bool StorageMergeTree::move_parts()
+bool StorageMergeTree::moveParts()
 {
-    /// You must call destructor with unlocked `currently_merging_mutex`.
+    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
@@ -661,11 +661,11 @@ bool StorageMergeTree::move_parts()
         MergeTreeMovingParts parts_to_move;
 
         {
-            std::lock_guard lock(currently_merging_mutex);
+            std::lock_guard lock(currently_processing_in_background_mutex);
 
             auto can_move = [this](const DataPartPtr & part, String *)
             {
-                return !currently_merging.count(part);
+                return !currently_processing_in_background.count(part);
             };
 
             if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
@@ -688,9 +688,7 @@ bool StorageMergeTree::move_parts()
 
         copied_part->renameTo(part->name);
 
-        auto old_active_part = swapActivePart(copied_part);
-
-        old_active_part->deleteOnDestroy();
+        swapActivePart(copied_part);
     }
 
     return true;
@@ -703,13 +701,13 @@ bool StorageMergeTree::tryMutatePart()
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
-    /// You must call destructor with unlocked `currently_merging_mutex`.
+    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
         /// DataPArt can be store only at one disk. Get Max of free space at all disks
         UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
-        std::lock_guard lock(currently_merging_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.empty())
             return false;
@@ -717,7 +715,7 @@ bool StorageMergeTree::tryMutatePart()
         auto mutations_end_it = current_mutations_by_version.end();
         for (const auto & part : getDataPartsVector())
         {
-            if (currently_merging.count(part))
+            if (currently_processing_in_background.count(part))
                 continue;
 
             auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
@@ -840,7 +838,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        if (move_parts())
+        if (moveParts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())
@@ -862,7 +860,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
-    std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const
+    std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
@@ -878,7 +876,7 @@ void StorageMergeTree::clearOldMutations()
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
-        std::lock_guard lock(currently_merging_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.size() <= settings.finished_mutations_to_keep)
             return;

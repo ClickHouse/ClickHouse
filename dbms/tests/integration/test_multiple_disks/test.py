@@ -8,12 +8,14 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1',
             config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
 node2 = cluster.add_instance('node2',
             config_dir='configs',
+            main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
