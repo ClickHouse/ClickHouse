@@ -2,9 +2,9 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -51,10 +51,8 @@ struct ExpressionAnalyzerData
     Tables external_tables;
 
 protected:
-    ExpressionAnalyzerData(const NameSet & required_result_columns_,
-                           const SubqueriesForSets & subqueries_for_sets_)
-    :   required_result_columns(required_result_columns_),
-        subqueries_for_sets(subqueries_for_sets_)
+    ExpressionAnalyzerData(const NameSet & required_result_columns_)
+    :   required_result_columns(required_result_columns_)
     {}
 };
 
@@ -91,8 +89,7 @@ public:
         const Context & context_,
         const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
-        bool do_global_ = false,
-        const SubqueriesForSets & subqueries_for_set_ = {});
+        bool do_global_ = false);
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
@@ -161,7 +158,7 @@ public:
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
 
     /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex();
+    void makeSetsForIndex(const ASTPtr & node);
 
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
@@ -170,7 +167,6 @@ private:
     const Context & context;
     const ExtractedSettings settings;
     size_t subquery_depth;
-    bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
     SyntaxAnalyzerResultPtr syntax;
 
@@ -178,20 +174,16 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
+    const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
-    void initGlobalSubqueriesAndExternalTables();
+    void initGlobalSubqueriesAndExternalTables(bool do_global);
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
-    /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
-    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
-
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
-
-    void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -199,22 +191,19 @@ private:
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
-    void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
-    void assertNoAggregates(const ASTPtr & ast, const char * description);
+    bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
-    void assertSelect() const;
-    void assertAggregation() const;
+    const ASTSelectQuery * getSelectQuery() const;
+    const ASTSelectQuery * getAggregatingQuery() const;
 
     /**
       * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

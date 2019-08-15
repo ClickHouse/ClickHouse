@@ -650,7 +650,7 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 - [uniqHLL12](#agg_function-uniqhll12)
 
 
-## groupArray(x), groupArray(max_size)(x)
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
