@@ -89,29 +89,28 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
 void MetricLog::metricThreadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
-    while (true)
+    while (!is_shutdown_metric_thread)
     {
         try
         {
-            if (is_shutdown_metric_thread)
-                break;
-
             MetricLogElement elem;
-            const auto prev_timepoint = std::chrono::system_clock::now();
-            elem.event_time = std::chrono::system_clock::to_time_t(prev_timepoint);
-            elem.milliseconds = time_in_milliseconds(prev_timepoint) - time_in_seconds(prev_timepoint) * 1000;
+            const auto current_time = std::chrono::system_clock::now();
+            elem.event_time = std::chrono::system_clock::to_time_t(current_time);
+            elem.milliseconds = time_in_milliseconds(current_time) - time_in_seconds(current_time) * 1000;
 
             this->add(elem);
 
-            while (desired_timepoint <= std::chrono::system_clock::now())
+            /// We will record current time into table but align it to regular time intervals to avoid time drift.
+            /// We may drop some time points if the server is overloaded and recording took too much time.
+            while (desired_timepoint <= current_time)
                 desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
+
             std::this_thread::sleep_until(desired_timepoint);
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
     }
 }
 
