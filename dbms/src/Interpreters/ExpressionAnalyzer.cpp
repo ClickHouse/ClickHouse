@@ -24,7 +24,6 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -55,6 +54,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/ActionsVisitor.h>
 
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
