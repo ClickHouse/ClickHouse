@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Common/FieldVisitors.h>
-
-#include <Functions/GatherUtils/Sources.h>
-#include <Functions/GatherUtils/Sinks.h>
+#include "Sources.h"
+#include "Sinks.h"
 #include <Core/AccurateComparison.h>
-
 #include <ext/range.h>
 
 
@@ -520,7 +518,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
     while (!sink.isEnd())
     {
         size_t row_num = array_source.rowNum();
-        bool has_size = !size_null_map || (size_null_map && (*size_null_map)[row_num]);
+        bool has_size = !size_null_map || (*size_null_map)[row_num];
 
         if (has_size)
         {

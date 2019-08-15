@@ -7,7 +7,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XDBCBridgeHelper.h>
@@ -84,7 +83,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
-    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())}
+    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
     , global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();
@@ -128,8 +127,7 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        std::string str_time("0000-00-00 00:00:00"); ///for initial load
-        return query_builder.composeUpdateQuery(update_field, str_time);
+        return query_builder.composeLoadAllQuery();
     }
 }
 

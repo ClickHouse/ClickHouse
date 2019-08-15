@@ -164,9 +164,8 @@ public:
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
-    static constexpr size_t bytes_on_stack = 64;
     using Element = std::pair<T, UInt32>;
-    using Array = DB::PODArray<Element, bytes_on_stack / sizeof(Element), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using Array = DB::PODArray<Element, 64>;
 
     size_t sample_count;
     size_t total_values{};

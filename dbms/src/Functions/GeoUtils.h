@@ -224,8 +224,15 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
 
+#pragma GCC diagnostic push
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
+
+#pragma GCC diagnostic pop
 
     if (cell_width == 0 || cell_height == 0)
     {
@@ -698,6 +705,10 @@ std::string serialize(Polygon && polygon)
 
     return result;
 }
+
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out);
+
+void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
 
 
 } /// GeoUtils

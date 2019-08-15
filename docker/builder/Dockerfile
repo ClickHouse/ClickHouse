@@ -14,6 +14,7 @@ RUN apt-get update -y \
             libicu-dev \
             liblld-6.0-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
@@ -22,7 +23,8 @@ RUN apt-get update -y \
             python-requests \
             python-termcolor \
             sudo \
-            tzdata
+            tzdata \
+            gperf
 
 COPY build.sh /
 

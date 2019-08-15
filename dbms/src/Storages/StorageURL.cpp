@@ -26,10 +26,11 @@ namespace ErrorCodes
 
 IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
     const Context & context_,
+    const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_)
-    : IStorage(columns_), uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_)
+    : IStorage(columns_), uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
 }
 
@@ -173,7 +174,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+        ConnectionTimeouts::getHTTPTimeouts(context));
 
 
     auto column_defaults = getColumns().getDefaults();
@@ -182,12 +183,16 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
+void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+}
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
+        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -209,7 +214,7 @@ void registerStorageURL(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
+        return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.context);
     });
 }
 }

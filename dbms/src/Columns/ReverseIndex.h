@@ -375,7 +375,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
     for (auto row : ext::range(0, size))
         hash->getElement(row) = getHash(column->getDataAt(row));
 
-    return std::move(hash);
+    return hash;
 }
 
 template <typename IndexType, typename ColumnType>

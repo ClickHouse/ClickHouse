@@ -73,11 +73,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool useDefaultImplementationForNulls() const override
-    {
-        return false;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// Second argument must be ColumnSet.
@@ -89,7 +84,7 @@ public:
 
         Block block_of_key_columns;
 
-        /// First argument may be tuple or single column.
+        /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = block.getByPosition(arguments[0]);
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
@@ -106,7 +101,7 @@ public:
         auto set_types = set->getDataTypes();
         if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)

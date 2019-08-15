@@ -71,8 +71,6 @@ protected:
     using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
-
-    UInt64 max_block_size_marks;
 };
 
 }

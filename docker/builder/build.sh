@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #ccache -s
 mkdir -p /server/build_docker

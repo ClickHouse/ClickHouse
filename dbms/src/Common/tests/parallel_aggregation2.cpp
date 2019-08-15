@@ -34,7 +34,7 @@ struct AggregateIndependent
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            results.emplace_back(new Map);
+            results.emplace_back(std::make_unique<Map>());
 
         for (size_t i = 0; i < num_threads; ++i)
         {
@@ -77,7 +77,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
     {
         results.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            results.emplace_back(new Map);
+            results.emplace_back(std::make_unique<Map>());
 
         for (size_t i = 0; i < num_threads; ++i)
         {

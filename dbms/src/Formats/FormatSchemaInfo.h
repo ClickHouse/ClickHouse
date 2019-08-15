@@ -10,10 +10,7 @@ class Context;
 class FormatSchemaInfo
 {
 public:
-    FormatSchemaInfo() = default;
-    FormatSchemaInfo(const Context & context, const String & schema_file_extension = String(), bool schema_required = true);
-
-    bool isNull() const { return is_null; }
+    FormatSchemaInfo(const Context & context, const String & format);
 
     /// Returns path to the schema file.
     const String & schemaPath() const { return schema_path; }
@@ -26,7 +23,6 @@ public:
     const String & messageName() const { return message_name; }
 
 private:
-    bool is_null = true;
     String schema_path;
     String schema_directory;
     String message_name;

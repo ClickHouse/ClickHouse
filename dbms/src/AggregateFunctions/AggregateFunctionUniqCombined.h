@@ -63,7 +63,7 @@ namespace detail
         }
     };
 
-} // namespace detail
+}
 
 
 template <typename Key, UInt8 K>
@@ -231,4 +231,4 @@ public:
     }
 };
 
-} // namespace DB
+}

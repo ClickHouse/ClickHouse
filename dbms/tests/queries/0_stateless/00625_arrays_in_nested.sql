@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS nested;
 CREATE TABLE nested
 (

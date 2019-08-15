@@ -44,7 +44,7 @@ macro(clickhouse_program_add_library name)
     set(CLICKHOUSE_${name_uc}_INCLUDE ${CLICKHOUSE_${name_uc}_INCLUDE} PARENT_SCOPE)
 
     if(NOT CLICKHOUSE_ONE_SHARED)
-        add_library(clickhouse-${name}-lib ${LINK_MODE} ${CLICKHOUSE_${name_uc}_SOURCES})
+        add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
 
         set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
         if(_link)
@@ -93,6 +93,7 @@ if (CLICKHOUSE_ONE_SHARED)
     target_link_libraries(clickhouse-lib ${CLICKHOUSE_SERVER_LINK} ${CLICKHOUSE_CLIENT_LINK} ${CLICKHOUSE_LOCAL_LINK} ${CLICKHOUSE_BENCHMARK_LINK} ${CLICKHOUSE_PERFORMANCE_TEST_LINK} ${CLICKHOUSE_COPIER_LINK} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK} ${CLICKHOUSE_COMPRESSOR_LINK} ${CLICKHOUSE_FORMAT_LINK} ${CLICKHOUSE_OBFUSCATOR_LINK} ${CLICKHOUSE_COMPILER_LINK}  ${CLICKHOUSE_ODBC_BRIDGE_LINK})
     target_include_directories(clickhouse-lib ${CLICKHOUSE_SERVER_INCLUDE} ${CLICKHOUSE_CLIENT_INCLUDE} ${CLICKHOUSE_LOCAL_INCLUDE} ${CLICKHOUSE_BENCHMARK_INCLUDE} ${CLICKHOUSE_PERFORMANCE_TEST_INCLUDE} ${CLICKHOUSE_COPIER_INCLUDE} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE} ${CLICKHOUSE_COMPRESSOR_INCLUDE} ${CLICKHOUSE_FORMAT_INCLUDE} ${CLICKHOUSE_OBFUSCATOR_INCLUDE} ${CLICKHOUSE_COMPILER_INCLUDE} ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE})
     set_target_properties(clickhouse-lib PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse DEBUG_POSTFIX "")
+    install (TARGETS clickhouse-lib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif()
 
 if (CLICKHOUSE_SPLIT_BINARY)
@@ -208,11 +209,9 @@ else ()
         install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-obfuscator DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-obfuscator)
     endif ()
-    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-        # just to be able to run integration tests
-        add_custom_target (clickhouse-odbc-bridge-copy ALL COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_BINARY_DIR}/odbc-bridge/clickhouse-odbc-bridge clickhouse-odbc-bridge DEPENDS clickhouse-odbc-bridge)
-    endif ()
-
+    if(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-odbc-bridge)
+    endif()
 
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)

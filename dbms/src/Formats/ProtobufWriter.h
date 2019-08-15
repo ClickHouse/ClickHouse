@@ -4,7 +4,7 @@
 #include <Common/UInt128.h>
 #include <common/DayNum.h>
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <Formats/ProtobufColumnMatcher.h>

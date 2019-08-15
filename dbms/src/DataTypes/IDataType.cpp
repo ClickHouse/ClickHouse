@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/IDataTypeDomain.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -23,8 +23,7 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
 }
 
-IDataType::IDataType()
-    : domain(nullptr)
+IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr)
 {
 }
 
@@ -34,9 +33,9 @@ IDataType::~IDataType()
 
 String IDataType::getName() const
 {
-    if (domain)
+    if (custom_name)
     {
-        return domain->getName();
+        return custom_name->getName();
     }
     else
     {
@@ -142,131 +141,100 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextEscaped(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeTextEscaped(column, row_num, ostr, settings);
     else
-    {
         serializeTextEscaped(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->deserializeTextEscaped(column, istr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeTextEscaped(column, istr, settings);
     else
-    {
         deserializeTextEscaped(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextQuoted(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeTextQuoted(column, row_num, ostr, settings);
     else
-    {
         serializeTextQuoted(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->deserializeTextQuoted(column, istr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeTextQuoted(column, istr, settings);
     else
-    {
         deserializeTextQuoted(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextCSV(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeTextCSV(column, row_num, ostr, settings);
     else
-    {
         serializeTextCSV(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->deserializeTextCSV(column, istr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeTextCSV(column, istr, settings);
     else
-    {
         deserializeTextCSV(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeText(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeText(column, row_num, ostr, settings);
     else
-    {
         serializeText(column, row_num, ostr, settings);
-    }
+}
+
+void IDataType::deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeWholeText(column, istr, settings);
+    else
+        deserializeWholeText(column, istr, settings);
 }
 
 void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextJSON(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeTextJSON(column, row_num, ostr, settings);
     else
-    {
         serializeTextJSON(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->deserializeTextJSON(column, istr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeTextJSON(column, istr, settings);
     else
-    {
         deserializeTextJSON(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextXML(column, row_num, ostr, settings);
-    }
+    if (custom_text_serialization)
+        custom_text_serialization->serializeTextXML(column, row_num, ostr, settings);
     else
-    {
         serializeTextXML(column, row_num, ostr, settings);
-    }
 }
 
-void IDataType::setDomain(const IDataTypeDomain* const new_domain) const
+void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 {
-    if (domain != nullptr)
-    {
-        throw Exception("Type " + getName() + " already has a domain.", ErrorCodes::LOGICAL_ERROR);
-    }
-    domain = new_domain;
+    /// replace only if not null
+    if (custom_desc_->name)
+        custom_name = std::move(custom_desc_->name);
+
+    if (custom_desc_->text_serialization)
+        custom_text_serialization = std::move(custom_desc_->text_serialization);
 }
 
 }

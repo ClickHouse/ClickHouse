@@ -47,6 +47,16 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 包含过滤和元数据的表列表。
  - 带有过滤和排序的表格预览。
  - 只读查询执行。
+ 
+### DBeaver
+
+[DBeaver](https://dbeaver.io/) 具有ClickHouse支持的通用桌面数据库客户端。
+
+特征：
+
+ - 使用语法高亮显示查询开发。
+ - 表格预览。
+ - 自动完成。
 
 ### clickhouse-cli
 
@@ -59,16 +69,6 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 自定义PostgreSQL类命令。
 
 ## 商业
-
-### DBeaver
-
-[DBeaver](https://dbeaver.io/) 具有ClickHouse支持的通用桌面数据库客户端。
-
-特征：
-
- - 使用语法高亮显示查询开发。
- - 表格预览。
- - 自动完成。
 
 ### DataGrip
 

@@ -275,7 +275,7 @@ toNullable(x)
 
 **Returned value**
 
-- The input value with a non-`Nullable` type.
+- The input value with a `Nullable` type.
 
 **Example**
 

@@ -21,16 +21,22 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->default_expression);
     }
 
+    if (comment)
+    {
+        res->comment = comment->clone();
+        res->children.push_back(res->comment);
+    }
+
     if (codec)
     {
         res->codec = codec->clone();
         res->children.push_back(res->codec);
     }
 
-    if (comment)
+    if (ttl)
     {
-        res->comment = comment->clone();
-        res->children.push_back(res->comment);
+        res->ttl = ttl->clone();
+        res->children.push_back(res->ttl);
     }
 
     return res;
@@ -39,9 +45,13 @@ ASTPtr ASTColumnDeclaration::clone() const
 void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name);
+    if (!settings.one_line)
+        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
+
+    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
+    settings.ostr << backQuote(name);
+
     if (type)
     {
         settings.ostr << ' ';
@@ -64,6 +74,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
+    }
+
+    if (ttl)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
+        ttl->formatImpl(settings, state, frame);
     }
 }
 

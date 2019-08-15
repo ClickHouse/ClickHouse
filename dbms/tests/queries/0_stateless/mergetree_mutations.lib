@@ -4,11 +4,13 @@ function wait_for_mutation()
 {
     local table=$1
     local mutation_id=$2
+    local database=$3
+    database=${database:="${CLICKHOUSE_DATABASE}"}
 
     for i in {1..100}
     do
         sleep 0.1
-        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
+        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
             break
         fi
 

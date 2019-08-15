@@ -27,10 +27,11 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
+    const String & database_name_,
     const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_)
+    : IStorage{columns_}, table_name(table_name_), database_name(database_name_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -63,7 +64,7 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, column_names).executeWithMultipleStreams();
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -75,7 +76,7 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    auto * select_element = select_query->tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -101,7 +102,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_name, args.query, args.columns);
+        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
     });
 }
 

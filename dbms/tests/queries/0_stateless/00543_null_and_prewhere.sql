@@ -1,4 +1,4 @@
-CREATE TABLE test.test
+CREATE TABLE test
 (
     dt Date,
     id UInt32,
@@ -6,12 +6,12 @@ CREATE TABLE test.test
 )
 ENGINE = MergeTree(dt, id, 8192);
 
-insert into test.test (dt, id, val) values ('2017-01-01', 1, 10);
-insert into test.test (dt, id, val) values ('2017-01-01', 1, null);
-insert into test.test (dt, id, val) values ('2017-01-01', 1, 0);
+insert into test (dt, id, val) values ('2017-01-01', 1, 10);
+insert into test (dt, id, val) values ('2017-01-01', 1, null);
+insert into test (dt, id, val) values ('2017-01-01', 1, 0);
 
 SELECT count()
-FROM test.test
+FROM test
 WHERE val = 0;
 
-DROP TABLE IF EXISTS test.test;
+DROP TABLE IF EXISTS test;

@@ -55,13 +55,13 @@ private:
 
 /// A ColumnVector for Decimals
 template <typename T>
-class ColumnDecimal final : public COWPtrHelper<ColumnVectorHelper, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
     static_assert(IsDecimalNumber<T>);
 
 private:
     using Self = ColumnDecimal;
-    friend class COWPtrHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<ColumnVectorHelper, Self>;
 
 public:
     using Container = DecimalPaddedPODArray<T>;
@@ -187,7 +187,7 @@ ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[indexes[i]];
 
-    return std::move(res);
+    return res;
 }
 
 }

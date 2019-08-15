@@ -10,12 +10,12 @@
 #if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
 #include <common/config_common.h>
 #endif
-#if __has_include(<Common/config.h>)
-#include <Common/config.h>
+#if __has_include("config_core.h")
+#include "config_core.h"
 #endif
 
 #if USE_TCMALLOC
-#include <gperftools/malloc_extension.h> // Y_IGNORE
+#include <gperftools/malloc_extension.h>
 #endif
 
 #include <Common/StringUtils/StringUtils.h>

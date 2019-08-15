@@ -9,8 +9,8 @@ The partition is specified in the `PARTITION BY expr` clause when [creating a ta
 ``` sql
 CREATE TABLE visits
 (
-    VisitDate Date, 
-    Hour UInt8, 
+    VisitDate Date,
+    Hour UInt8,
     ClientID UUID
 )
 ENGINE = MergeTree()
@@ -36,11 +36,11 @@ When inserting new data to a table, this data is stored as a separate part (chun
 Use the [system.parts](../system_tables.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
 ``` sql
-SELECT 
+SELECT
     partition,
-    name, 
+    name,
     active
-FROM system.parts 
+FROM system.parts
 WHERE table = 'visits'
 ```
 
@@ -59,7 +59,7 @@ WHERE table = 'visits'
 The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER ... PARTITION](#alter_manipulations-with-partitions) queries.
 
 The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](#alter_attach-partition) query.
- 
+
 Let's break down the name of the first part: `201901_1_3_1`:
 
 - `201901` is the partition name.
@@ -91,9 +91,9 @@ OPTIMIZE TABLE visits PARTITION 201902;
 └───────────┴────────────────┴────────┘
 ```
 
-Inactive parts will be deleted approximately 10 minutes after merging. 
- 
-Another way to view a set of parts and partitions is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example: 
+Inactive parts will be deleted approximately 10 minutes after merging.
+
+Another way to view a set of parts and partitions is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example:
 
 ```bash
 dev:/var/lib/clickhouse/data/default/visits$ ls -l
@@ -114,7 +114,7 @@ The folders '201901_1_1_0', '201901_1_7_1' and so on are the directories of the 
 The `detached` directory contains parts that were detached from the table using the [DETACH](#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../query_language/alter.md#alter_attach-partition) query.
 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but it isn't recommended. For replicated tables, the set of parts cannot be changed in any case.
-    
-ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../query_language/alter.md#alter_manipulations-with-partitions). 
+
+ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../query_language/alter.md#alter_manipulations-with-partitions).
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

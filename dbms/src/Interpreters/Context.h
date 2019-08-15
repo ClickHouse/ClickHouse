@@ -2,15 +2,16 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/Types.h>
-#include <Interpreters/ClientInfo.h>
 #include <Core/Settings.h>
+#include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
-
+#include "config_core.h"
+#include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -65,19 +66,16 @@ struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
 class DDLWorker;
-class IStorage;
 class ITableFunction;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
-class IBlockInputStream;
-class IBlockOutputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class SettingsConstraints;
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -125,6 +123,7 @@ private:
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
+    std::shared_ptr<const SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -136,7 +135,7 @@ private:
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -146,6 +145,9 @@ private:
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -161,8 +163,8 @@ public:
     static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
-    Context(const Context &) = default;
-    Context & operator=(const Context &) = default;
+    Context(const Context &);
+    Context & operator=(const Context &);
     ~Context();
 
     String getPath() const;
@@ -188,6 +190,10 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
+    bool hasUserProperty(const String & database, const String & table, const String & name) const;
+    const String & getUserProperty(const String & database, const String & table, const String & name) const;
+
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
     /// Compute and set actual user settings, client_info.current_user should be set
@@ -207,6 +213,10 @@ public:
     void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
+
+    /// Functions where we can lock the context manually
+    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
@@ -259,11 +269,15 @@ public:
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
-    /// Set a setting by name.
+    /// Set settings by name.
+    void setSetting(const String & name, const String & value);
     void setSetting(const String & name, const Field & value);
+    void applySettingChange(const SettingChange & change);
+    void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
-    void setSetting(const String & name, const std::string & value);
+    /// Checks the constraints.
+    void checkSettingsConstraints(const SettingChange & change);
+    void checkSettingsConstraints(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
@@ -272,12 +286,12 @@ public:
     ExternalDictionaries & getExternalDictionaries();
     ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
-    void tryCreateExternalDictionaries() const;
-    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+
+    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -334,7 +348,10 @@ public:
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
-    void setGlobalContext(Context & context_) { global_context = &context_; }
+
+    void makeQueryContext() { query_context = this; }
+    void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
@@ -363,6 +380,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
@@ -457,6 +476,11 @@ public:
 
     SampleBlockCache & getSampleBlockCache() const;
 
+    /// Query parameters for prepared statements.
+    bool hasQueryParameters() const;
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
+
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
     void setCompiledExpressionCache(size_t cache_size);
@@ -469,6 +493,10 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
+    /// MySQL wire protocol state.
+    size_t sequence_id = 0;
+    uint32_t client_capabilities = 0;
+    size_t max_packet_size = 0;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
@@ -476,9 +504,9 @@ private:
       */
     void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
 
+    void setProfile(const String & profile);
+
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
-    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

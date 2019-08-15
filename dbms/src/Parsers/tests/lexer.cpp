@@ -28,6 +28,8 @@ std::map<TokenType, const char *> hilite =
     {TokenType::ClosingRoundBracket, "\033[1;33m"},
     {TokenType::OpeningSquareBracket, "\033[1;33m"},
     {TokenType::ClosingSquareBracket, "\033[1;33m"},
+    {TokenType::OpeningCurlyBrace, "\033[1;33m"},
+    {TokenType::ClosingCurlyBrace, "\033[1;33m"},
 
     {TokenType::Comma, "\033[1;33m"},
     {TokenType::Semicolon, "\033[1;33m"},

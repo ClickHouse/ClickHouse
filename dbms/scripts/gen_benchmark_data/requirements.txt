@@ -1,3 +1,0 @@
-Keras==2.0.6
-numpy
-tensorflow-gpu==1.4.0

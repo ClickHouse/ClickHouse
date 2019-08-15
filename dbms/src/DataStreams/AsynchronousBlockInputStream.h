@@ -5,8 +5,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
-#include <Common/MemoryTracker.h>
-#include <Poco/Ext/ThreadNumber.h>
 
 
 namespace CurrentMetrics

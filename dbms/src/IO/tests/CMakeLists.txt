@@ -26,7 +26,7 @@ add_executable (read_escaped_string read_escaped_string.cpp)
 target_link_libraries (read_escaped_string PRIVATE clickhouse_common_io)
 
 add_executable (async_write async_write.cpp)
-target_link_libraries (async_write PRIVATE clickhouse_compression clickhouse_common_io)
+target_link_libraries (async_write PRIVATE dbms)
 
 add_executable (parse_int_perf parse_int_perf.cpp)
 target_link_libraries (parse_int_perf PRIVATE clickhouse_common_io)
@@ -79,3 +79,6 @@ target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io)
 
 add_executable (zlib_ng_bug zlib_ng_bug.cpp)
 target_link_libraries (zlib_ng_bug PRIVATE ${Poco_Foundation_LIBRARY})
+if(NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories(zlib_ng_bug SYSTEM BEFORE PRIVATE ${Poco_INCLUDE_DIRS})
+endif()

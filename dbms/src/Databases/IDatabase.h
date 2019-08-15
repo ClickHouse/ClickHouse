@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Poco/File.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -19,9 +20,6 @@ namespace DB
 {
 
 class Context;
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 struct Settings;
 
@@ -58,11 +56,10 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Load a set of existing tables. If thread_pool is specified, use it.
+    /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
     /// Check the existence of the table.
@@ -75,9 +72,11 @@ public:
         const Context & context,
         const String & name) const = 0;
 
+    using FilterByNameFunction = std::function<bool(const String &)>;
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;
+    virtual DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;

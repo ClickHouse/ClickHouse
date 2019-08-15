@@ -336,6 +336,7 @@ MutableColumns Block::mutateColumns()
 
 void Block::setColumns(MutableColumns && columns)
 {
+    /// TODO: assert if |columns| doesn't match |data|!
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = std::move(columns[i]);
@@ -344,6 +345,7 @@ void Block::setColumns(MutableColumns && columns)
 
 void Block::setColumns(const Columns & columns)
 {
+    /// TODO: assert if |columns| doesn't match |data|!
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = columns[i];
@@ -368,6 +370,11 @@ Block Block::cloneWithColumns(const Columns & columns) const
     Block res;
 
     size_t num_columns = data.size();
+
+    if (num_columns != columns.size())
+        throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
+                        "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
 
@@ -472,7 +479,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
-        if (actual.column->isColumnConst() && expected.column->isColumnConst())
+        if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
         {
             Field actual_value = static_cast<const ColumnConst &>(*actual.column).getField();
             Field expected_value = static_cast<const ColumnConst &>(*expected.column).getField();

@@ -1,8 +1,6 @@
 -- https://stackoverflow.com/questions/53416531/clickhouse-moving-average
 
-DROP TABLE IF EXISTS test.bm;
-
-USE test;
+DROP TABLE IF EXISTS bm;
 
 CREATE TABLE bm (amount float, business_dttm DateTime) engine Log;
 
@@ -34,4 +32,4 @@ FROM
     ORDER BY business_dttm
 );
 
-DROP TABLE test.bm;
+DROP TABLE bm;

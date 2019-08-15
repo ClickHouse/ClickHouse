@@ -41,6 +41,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).subquery();
+
     ASTPtr query;
     if (table || function)
     {
@@ -53,9 +55,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_query = std::make_shared<ASTSelectQuery>();
         select_with_union_query->list_of_selects->children.push_back(select_query);
 
-        const auto select_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->select_expression_list = select_expression_list;
-        select_query->children.emplace_back(select_query->select_expression_list);
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
 
@@ -83,48 +84,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     else
     {
         query = subquery->children.at(0);
-
-        /** Columns with the same name can be specified in a subquery. For example, SELECT x, x FROM t
-          * This is bad, because the result of such a query can not be saved to the table, because the table can not have the same name columns.
-          * Saving to the table is required for GLOBAL subqueries.
-          *
-          * To avoid this situation, we will rename the same columns.
-          */
-
-        std::set<std::string> all_column_names;
-        std::set<std::string> assigned_column_names;
-
-        if (const auto * select_with_union = query->as<ASTSelectWithUnionQuery>())
-        {
-            if (const auto * select = select_with_union->list_of_selects->children.at(0)->as<ASTSelectQuery>())
-            {
-                for (auto & expr : select->select_expression_list->children)
-                    all_column_names.insert(expr->getAliasOrColumnName());
-
-                for (auto & expr : select->select_expression_list->children)
-                {
-                    auto name = expr->getAliasOrColumnName();
-
-                    if (!assigned_column_names.insert(name).second)
-                    {
-                        size_t i = 1;
-                        while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
-                            ++i;
-
-                        name = name + "_" + toString(i);
-                        expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
-                        expr->setAlias(name);
-
-                        all_column_names.insert(name);
-                        assigned_column_names.insert(name);
-                    }
-                }
-            }
-        }
+        subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(
-        query, subquery_context, required_source_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
 }
 
 }

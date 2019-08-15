@@ -281,9 +281,9 @@ void reorder(DB::IAST * ast)
     if (select_query == nullptr)
         return;
 
-    reorderImpl(select_query->where_expression.get());
-    reorderImpl(select_query->prewhere_expression.get());
-    reorderImpl(select_query->having_expression.get());
+    reorderImpl(select_query->where().get());
+    reorderImpl(select_query->prewhere().get());
+    reorderImpl(select_query->having().get());
 }
 
 }

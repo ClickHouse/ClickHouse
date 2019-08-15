@@ -167,6 +167,16 @@ public:
         }
 
         auto min = counter_list.back();
+        // The key doesn't exist and cannot fit in the current top K, but
+        // the new key has a bigger weight and is virtually more present
+        // compared to the element who is less present on the set. This part
+        // of the code is useful for the function topKWeighted
+        if (increment > min->count)
+        {
+            destroyLastElement();
+            push(new Counter(arena.emplace(key), increment, error, hash));
+            return;
+        }
         const size_t alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
         if (alpha + increment < min->count)
@@ -331,6 +341,17 @@ private:
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
+    }
+
+    void destroyLastElement()
+    {
+        auto last_element = counter_list.back();
+        auto cell = counter_map.find(last_element->key, last_element->hash);
+        cell->setZero();
+        counter_map.reinsert(cell, last_element->hash);
+        counter_list.pop_back();
+        arena.free(last_element->key);
+        delete last_element;
     }
 
     HashMap<TKey, Counter *, Hash, Grower, Allocator> counter_map;

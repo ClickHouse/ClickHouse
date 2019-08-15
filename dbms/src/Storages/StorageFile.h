@@ -21,15 +21,9 @@ class StorageFileBlockOutputStream;
 class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
 public:
-    std::string getName() const override
-    {
-        return "File";
-    }
-
-    std::string getTableName() const override
-    {
-        return table_name;
-    }
+    std::string getName() const override { return "File"; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -62,14 +56,15 @@ protected:
         const std::string & table_path_,
         int table_fd_,
         const std::string & db_dir_path,
+        const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         Context & context_);
 
 private:
-
     std::string table_name;
+    std::string database_name;
     std::string format_name;
     Context & context_global;
 

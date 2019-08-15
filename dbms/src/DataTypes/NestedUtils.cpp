@@ -91,7 +91,7 @@ Block flatten(const Block & block)
                 const Strings & names = type_tuple->getElementNames();
                 size_t tuple_size = element_types.size();
 
-                bool is_const = elem.column->isColumnConst();
+                bool is_const = isColumnConst(*elem.column);
                 const ColumnArray * column_array;
                 if (is_const)
                     column_array = typeid_cast<const ColumnArray *>(&static_cast<const ColumnConst &>(*elem.column).getDataColumn());
@@ -101,7 +101,7 @@ Block flatten(const Block & block)
                 const ColumnPtr & column_offsets = column_array->getOffsetsPtr();
 
                 const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(column_array->getData());
-                const Columns & element_columns = column_tuple.getColumns();
+                const auto & element_columns = column_tuple.getColumns();
 
                 for (size_t i = 0; i < tuple_size; ++i)
                 {

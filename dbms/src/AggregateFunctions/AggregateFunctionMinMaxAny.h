@@ -672,15 +672,15 @@ struct AggregateFunctionAnyHeavyData : Data
 };
 
 
-template <typename Data>
-class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
+template <typename Data, bool AllocatesMemoryInArena>
+class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>
 {
 private:
     DataTypePtr & type;
 
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>({type}, {})
         , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")
@@ -717,6 +717,11 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).read(buf, *type.get(), arena);
+    }
+
+    bool allocatesMemoryInArena() const override
+    {
+        return AllocatesMemoryInArena;
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

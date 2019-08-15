@@ -43,10 +43,13 @@ private:
 public:
     using ExceptionCallback = std::function<void()>;
 
-    UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
-        ExceptionCallback exception_callback_ = ExceptionCallback()) :
-        output_queue(std::min(inputs.size(), max_threads)),
-        handler(*this),
+    UnionBlockInputStream(
+        BlockInputStreams inputs,
+        BlockInputStreamPtr additional_input_at_end,
+        size_t max_threads,
+        ExceptionCallback exception_callback_ = ExceptionCallback()
+    ) :
+        output_queue(std::min(inputs.size(), max_threads)), handler(*this),
         processor(inputs, additional_input_at_end, max_threads, handler),
         exception_callback(exception_callback_)
     {

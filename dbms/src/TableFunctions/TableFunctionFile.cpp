@@ -10,6 +10,7 @@ StoragePtr TableFunctionFile::getStorage(
     return StorageFile::create(source,
         -1,
         global_context.getUserFilesPath(),
+        getDatabaseName(),
         getName(),
         format,
         ColumnsDescription{sample_block.getNamesAndTypesList()},

@@ -6,12 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --multiquery << EOF
-DROP TABLE IF EXISTS test.mutations_r1;
-DROP TABLE IF EXISTS test.for_subquery;
+DROP TABLE IF EXISTS mutations_r1;
+DROP TABLE IF EXISTS for_subquery;
 
-USE test;
-
-CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/mutations', 'r1') ORDER BY x;
+CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}/mutations', 'r1') ORDER BY x;
 INSERT INTO mutations_r1 VALUES (123, 1), (234, 2), (345, 3);
 
 CREATE TABLE for_subquery(x UInt32) ENGINE TinyLog;
@@ -23,7 +21,7 @@ EOF
 
 wait_for_mutation "mutations_r1" "0000000001"
 
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.mutations_r1"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM mutations_r1"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations_r1"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.for_subquery"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_r1"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE for_subquery"

@@ -179,7 +179,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    void throwReadAfterEOF()
+    [[noreturn]] void throwReadAfterEOF()
     {
         throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }

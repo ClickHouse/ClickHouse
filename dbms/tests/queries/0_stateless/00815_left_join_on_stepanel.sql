@@ -1,4 +1,5 @@
-USE test;
+CREATE DATABASE IF NOT EXISTS test_00815;
+USE test_00815;
 
 DROP TABLE IF EXISTS fact_cpc_clicks;
 DROP TABLE IF EXISTS dim_model;
@@ -13,7 +14,6 @@ select f.model_id from fact_cpc_clicks as f left join dim_model as d on f.model_
 
 USE default;
 
-select f.model_id from test.fact_cpc_clicks as f left join test.dim_model as d on f.model_id=d.model_id limit 10;
+select f.model_id from test_00815.fact_cpc_clicks as f left join test_00815.dim_model as d on f.model_id=d.model_id limit 10;
 
-DROP TABLE test.fact_cpc_clicks;
-DROP TABLE test.dim_model;
+DROP DATABASE test_00815;

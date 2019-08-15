@@ -163,7 +163,7 @@ private:
     struct Cursor
     {
         MergingBlockPtr block;
-        size_t pos;
+        size_t pos = 0;
 
         Cursor() {}
         explicit Cursor(const MergingBlockPtr & block_, size_t pos_ = 0) : block(block_), pos(pos_) {}

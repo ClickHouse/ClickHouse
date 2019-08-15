@@ -1,14 +1,14 @@
-DROP TABLE IF EXISTS test.mergetree;
-CREATE TABLE test.mergetree (x UInt8, s String) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE IF EXISTS mergetree_00712;
+CREATE TABLE mergetree_00712 (x UInt8, s String) ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO test.mergetree VALUES (1, 'Hello, world!');
-SELECT * FROM test.mergetree;
+INSERT INTO mergetree_00712 VALUES (1, 'Hello, world!');
+SELECT * FROM mergetree_00712;
 
-ALTER TABLE test.mergetree ADD COLUMN y UInt8 DEFAULT 0;
-INSERT INTO test.mergetree VALUES (2, 'Goodbye.', 3);
-SELECT * FROM test.mergetree ORDER BY x;
+ALTER TABLE mergetree_00712 ADD COLUMN y UInt8 DEFAULT 0;
+INSERT INTO mergetree_00712 VALUES (2, 'Goodbye.', 3);
+SELECT * FROM mergetree_00712 ORDER BY x;
 
-SELECT s FROM test.mergetree PREWHERE x AND y ORDER BY s;
-SELECT s, y FROM test.mergetree PREWHERE x AND y ORDER BY s;
+SELECT s FROM mergetree_00712 PREWHERE x AND y ORDER BY s;
+SELECT s, y FROM mergetree_00712 PREWHERE x AND y ORDER BY s;
 
-DROP TABLE test.mergetree;
+DROP TABLE mergetree_00712;

@@ -18,12 +18,12 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
+class ColumnConst final : public COWHelper<IColumn, ColumnConst>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnConst>;
+    friend class COWHelper<IColumn, ColumnConst>;
 
-    ColumnPtr data;
+    WrappedPtr data;
     size_t s;
 
     ColumnConst(const ColumnPtr & data, size_t s);
@@ -99,6 +99,11 @@ public:
         return data->getBool(0);
     }
 
+    Float64 getFloat64(size_t) const override
+    {
+        return data->getFloat64(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -141,9 +146,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        auto & mutable_data = data->assumeMutableRef();
-        auto res = mutable_data.deserializeAndInsertFromArena(pos);
-        mutable_data.popBack(1);
+        auto res = data->deserializeAndInsertFromArena(pos);
+        data->popBack(1);
         ++s;
         return res;
     }
@@ -198,8 +202,8 @@ public:
         return false;
     }
 
+    bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
-    bool isColumnConst() const override { return true; }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
@@ -208,11 +212,9 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return data->assumeMutableRef(); }
+    IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
-    //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
-    //ColumnPtr & getDataColumnPtr() { return data; }
 
     Field getField() const { return getDataColumn()[0]; }
 

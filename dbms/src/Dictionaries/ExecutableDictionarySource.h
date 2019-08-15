@@ -2,12 +2,10 @@
 
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+#include <Core/Block.h>
 
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -25,6 +23,7 @@ public:
         const Context & context);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
+    ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

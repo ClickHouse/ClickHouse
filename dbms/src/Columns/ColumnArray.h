@@ -13,10 +13,10 @@ namespace DB
   * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
   *  and as an array of offsets in it, which allows you to get each element.
   */
-class ColumnArray final : public COWPtrHelper<IColumn, ColumnArray>
+class ColumnArray final : public COWHelper<IColumn, ColumnArray>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnArray>;
+    friend class COWHelper<IColumn, ColumnArray>;
 
     /** Create an array column with specified values and offsets. */
     ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
@@ -30,7 +30,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWPtrHelper<IColumn, ColumnArray>;
+    using Base = COWHelper<IColumn, ColumnArray>;
 
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
@@ -81,15 +81,15 @@ public:
     bool hasEqualOffsets(const ColumnArray & other) const;
 
     /** More efficient methods of manipulation */
-    IColumn & getData() { return data->assumeMutableRef(); }
+    IColumn & getData() { return *data; }
     const IColumn & getData() const { return *data; }
 
-    IColumn & getOffsetsColumn() { return offsets->assumeMutableRef(); }
+    IColumn & getOffsetsColumn() { return *offsets; }
     const IColumn & getOffsetsColumn() const { return *offsets; }
 
     Offsets & ALWAYS_INLINE getOffsets()
     {
-        return static_cast<ColumnOffsets &>(offsets->assumeMutableRef()).getData();
+        return static_cast<ColumnOffsets &>(*offsets).getData();
     }
 
     const Offsets & ALWAYS_INLINE getOffsets() const
@@ -124,8 +124,8 @@ public:
     }
 
 private:
-    ColumnPtr data;
-    ColumnPtr offsets;
+    WrappedPtr data;
+    WrappedPtr offsets;
 
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }

@@ -51,9 +51,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     AIOContext ctx;
 
-    std::vector<Memory> buffers(buffers_count);
+    std::vector<Memory<>> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
-        buffers[i] = Memory(block_size, sysconf(_SC_PAGESIZE));
+        buffers[i] = Memory<>(block_size, sysconf(_SC_PAGESIZE));
 
     drand48_data rand_data;
     timespec times;

@@ -1430,6 +1430,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
+            if (info.request->xid == close_xid)
+                throw Exception("xid equal to close_xid", ZSESSIONEXPIRED);
             if (info.request->xid < 0)
                 throw Exception("XID overflow", ZSESSIONEXPIRED);
         }

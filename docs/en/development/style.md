@@ -307,15 +307,15 @@ size_t max_block_size;
 
 **2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
 
-    ```cpp
-    std::string getName() const override { return "Memory"; }
-    ```
+```cpp
+std::string getName() const override { return "Memory"; }
+```
 
 **3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
 
-    ```cpp
-    class StorageMemory : public IStorage
-    ```
+```cpp
+class StorageMemory : public IStorage
+```
 
 **4.** `using` are named the same way as classes, or with `_t` on the end.
 

@@ -20,7 +20,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
         const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name))
+        if (part->hasColumnFiles(column_name, *storage.getColumn(column_name).type))
         {
             all_column_files_missing = false;
             continue;
@@ -119,7 +119,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            MergeTreeDataPart::ColumnSize column_size = data_part->getColumnSize(
+            ColumnSize column_size = data_part->getColumnSize(
                 column_name, *column_with_type_and_name.type);
 
             info.bytes_per_row_global = column_size.data_uncompressed

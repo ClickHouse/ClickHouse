@@ -1,14 +1,14 @@
-DROP TABLE IF EXISTS test.test;
+DROP TABLE IF EXISTS test_00681;
 
-CREATE TABLE test.test(x Int32) ENGINE = Log;
-INSERT INTO test.test VALUES (123);
+CREATE TABLE test_00681(x Int32) ENGINE = Log;
+INSERT INTO test_00681 VALUES (123);
 
 SELECT a1 
 FROM
 (
-    SELECT x AS a1, x AS a2 FROM test.test
+    SELECT x AS a1, x AS a2 FROM test_00681
     UNION ALL
-    SELECT x, x FROM test.test
+    SELECT x, x FROM test_00681
 );
 
-DROP TABLE test.test;
+DROP TABLE test_00681;

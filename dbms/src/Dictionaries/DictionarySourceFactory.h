@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IDictionarySource.h"
+#include <Core/Block.h>
 
 #include <unordered_map>
 #include <ext/singleton.h>

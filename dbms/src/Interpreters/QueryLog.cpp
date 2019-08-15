@@ -1,4 +1,6 @@
 #include <Common/ProfileEvents.h>
+#include <Common/IPv6ToBinary.h>
+#include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -7,11 +9,10 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
 #include <array>
 
@@ -44,11 +45,11 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
         {std::make_shared<DataTypeString>(),                                  "user"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
-        {std::make_shared<DataTypeFixedString>(16),                           "address"},
+        {DataTypeFactory::instance().get("IPv6"),                             "address"},
         {std::make_shared<DataTypeUInt16>(),                                  "port"},
         {std::make_shared<DataTypeString>(),                                  "initial_user"},
         {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
-        {std::make_shared<DataTypeFixedString>(16),                           "initial_address"},
+        {DataTypeFactory::instance().get("IPv6"),                             "initial_address"},
         {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
         {std::make_shared<DataTypeUInt8>(),                                   "interface"},
         {std::make_shared<DataTypeString>(),                                  "os_user"},
@@ -70,29 +71,6 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
     };
-}
-
-
-static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
-{
-    std::array<char, 16> res;
-
-    if (Poco::Net::IPAddress::IPv6 == address.family())
-    {
-        memcpy(res.data(), address.addr(), 16);
-    }
-    else if (Poco::Net::IPAddress::IPv4 == address.family())
-    {
-        /// Convert to IPv6-mapped address.
-        memset(res.data(), 0, 10);
-        res[10] = '\xFF';
-        res[11] = '\xFF';
-        memcpy(&res[12], address.addr(), 4);
-    }
-    else
-        memset(res.data(), 0, 16);
-
-    return res;
 }
 
 

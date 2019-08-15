@@ -1,7 +1,10 @@
 #include "PerformanceTest.h"
 
 #include <Core/Types.h>
+#include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -23,6 +26,7 @@ namespace
 void waitQuery(Connection & connection)
 {
     bool finished = false;
+
     while (true)
     {
         if (!connection.poll(1000000))
@@ -49,12 +53,14 @@ namespace fs = boost::filesystem;
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
     Connection & connection_,
+    const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
     Context & context_,
     const std::vector<size_t> & queries_to_run_)
     : config(config_)
     , connection(connection_)
+    , timeouts(timeouts_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
     , context(context_)
@@ -71,6 +77,7 @@ bool PerformanceTest::checkPreconditions() const
     Strings preconditions;
     config->keys("preconditions", preconditions);
     size_t table_precondition_index = 0;
+    size_t cpu_precondition_index = 0;
 
     for (const std::string & precondition : preconditions)
     {
@@ -106,7 +113,7 @@ bool PerformanceTest::checkPreconditions() const
 
             size_t exist = 0;
 
-            connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
 
             while (true)
             {
@@ -136,6 +143,30 @@ bool PerformanceTest::checkPreconditions() const
                 return false;
             }
         }
+
+        if (precondition == "cpu")
+        {
+            std::string precondition_key = "preconditions.cpu[" + std::to_string(cpu_precondition_index++) + "]";
+            std::string flag_to_check = config->getString(precondition_key);
+
+            #define CHECK_CPU_PRECONDITION(OP) \
+            if (flag_to_check == #OP) \
+            { \
+                if (!Cpu::CpuFlagsCache::have_##OP) \
+                { \
+                    LOG_WARNING(log, "CPU doesn't support " << #OP); \
+                    return false; \
+                } \
+            } else
+
+            CPU_ID_ENUMERATE(CHECK_CPU_PRECONDITION)
+            {
+                LOG_WARNING(log, "CPU doesn't support " << flag_to_check);
+                return false;
+            }
+
+            #undef CHECK_CPU_PRECONDITION
+        }
     }
 
     return true;
@@ -159,18 +190,10 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
 
 void PerformanceTest::prepare() const
 {
-    for (const auto & query : test_info.create_queries)
+    for (const auto & query : test_info.create_and_fill_queries)
     {
-        LOG_INFO(log, "Executing create query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
-        LOG_INFO(log, "Query finished");
-    }
-
-    for (const auto & query : test_info.fill_queries)
-    {
-        LOG_INFO(log, "Executing fill query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }
@@ -182,7 +205,7 @@ void PerformanceTest::finish() const
     for (const auto & query : test_info.drop_queries)
     {
         LOG_INFO(log, "Executing drop query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }
@@ -273,6 +296,47 @@ void PerformanceTest::runQueries(
             LOG_INFO(log, "Got SIGINT, will terminate as soon as possible");
             break;
         }
+    }
+
+    if (got_SIGINT)
+    {
+        return;
+    }
+
+    // Pull memory usage data from query log. The log is normally filled in
+    // background, so we have to flush it synchronously here to see all the
+    // previous queries.
+    {
+        RemoteBlockInputStream flush_log(connection, "system flush logs",
+            {} /* header */, context);
+        flush_log.readPrefix();
+        while (flush_log.read());
+        flush_log.readSuffix();
+    }
+
+    for (auto & statistics : statistics_by_run)
+    {
+        RemoteBlockInputStream log_reader(connection,
+            "select memory_usage from system.query_log where type = 2 and query_id = '"
+                                   + statistics.query_id + "'",
+            {} /* header */, context);
+
+        log_reader.readPrefix();
+        Block block = log_reader.read();
+        if (block.columns() == 0)
+        {
+            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+            continue;
+        }
+
+        assert(block.columns() == 1);
+        assert(block.getDataTypes()[0]->getName() == "UInt64");
+        ColumnPtr column = block.getByPosition(0).column;
+        assert(column->size() == 1);
+        StringRef ref = column->getDataAt(0);
+        assert(ref.size == sizeof(UInt64));
+        statistics.memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
+        log_reader.readSuffix();
     }
 }
 

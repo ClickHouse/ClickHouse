@@ -6,111 +6,111 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/mergetree_mutations.lib
 
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.ordinary"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.ordinary(k UInt32) ENGINE MergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS ordinary_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE ordinary_00682(k UInt32) ENGINE MergeTree ORDER BY k"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.ordinary(k) VALUES (1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.ordinary(k) VALUES (1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO ordinary_00682(k) VALUES (1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO ordinary_00682(k) VALUES (1)"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.ordinary DELETE WHERE k = 1"
-wait_for_mutation "ordinary" "mutation_3.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE ordinary_00682 DELETE WHERE k = 1"
+wait_for_mutation "ordinary_00682" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.ordinary PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.ordinary"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE ordinary_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM ordinary_00682"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.ordinary"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE ordinary_00682"
 
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Vertical merge ***'"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.vertical"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.vertical(k UInt32, v UInt32) ENGINE MergeTree ORDER BY k \
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS vertical_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE vertical_00682(k UInt32, v UInt32) ENGINE MergeTree ORDER BY k \
     SETTINGS enable_vertical_merge_algorithm=1, \
              vertical_merge_algorithm_min_rows_to_activate=0, \
              vertical_merge_algorithm_min_columns_to_activate=0"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.vertical(k, v) VALUES (1, 1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.vertical(k, v) VALUES (2, 2)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO vertical_00682(k, v) VALUES (1, 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO vertical_00682(k, v) VALUES (2, 2)"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.vertical DELETE WHERE k = 1"
-wait_for_mutation "vertical" "mutation_3.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE vertical_00682 DELETE WHERE k = 1"
+wait_for_mutation "vertical_00682" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.vertical PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.vertical"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE vertical_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM vertical_00682"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.vertical"
-
-
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.summing"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.summing(k UInt32, v UInt32) ENGINE SummingMergeTree ORDER BY k"
-
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.summing(k, v) VALUES (1, 1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.summing(k, v) VALUES (1, 2)"
-
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.summing DELETE WHERE k = 1"
-wait_for_mutation "summing" "mutation_3.txt"
-
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.summing PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.summing"
-
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.summing"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE vertical_00682"
 
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.aggregating"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.aggregating(k UInt32, v AggregateFunction(count)) ENGINE AggregatingMergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS summing_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE summing_00682(k UInt32, v UInt32) ENGINE SummingMergeTree ORDER BY k"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.aggregating(k) VALUES (1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.aggregating(k) VALUES (1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO summing_00682(k, v) VALUES (1, 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO summing_00682(k, v) VALUES (1, 2)"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.aggregating DELETE WHERE k = 1"
-wait_for_mutation "aggregating" "mutation_3.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE summing_00682 DELETE WHERE k = 1"
+wait_for_mutation "summing_00682" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.aggregating PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.aggregating"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE summing_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM summing_00682"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.aggregating"
-
-
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.replacing"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.replacing(k UInt32, v String) ENGINE ReplacingMergeTree ORDER BY k"
-
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.replacing(k, v) VALUES (1, 'a')"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.replacing(k, v) VALUES (1, 'b')"
-
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.replacing DELETE WHERE k = 1"
-wait_for_mutation "replacing" "mutation_3.txt"
-
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.replacing PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.replacing"
-
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.replacing"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE summing_00682"
 
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.collapsing"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.collapsing(k UInt32, v String, s Int8) ENGINE CollapsingMergeTree(s) ORDER BY k"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS aggregating_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE aggregating_00682(k UInt32, v AggregateFunction(count)) ENGINE AggregatingMergeTree ORDER BY k"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.collapsing(k, v, s) VALUES (1, 'a', 1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.collapsing(k, v, s) VALUES (2, 'b', 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO aggregating_00682(k) VALUES (1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO aggregating_00682(k) VALUES (1)"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.collapsing DELETE WHERE k IN (1, 2)"
-wait_for_mutation "collapsing" "mutation_3.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE aggregating_00682 DELETE WHERE k = 1"
+wait_for_mutation "aggregating_00682" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.collapsing PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.collapsing"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE aggregating_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM aggregating_00682"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.collapsing"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE aggregating_00682"
 
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.versioned_collapsing"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.versioned_collapsing(k UInt32, val String, ver UInt32, s Int8) ENGINE VersionedCollapsingMergeTree(s, ver) ORDER BY k"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS replacing_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE replacing_00682(k UInt32, v String) ENGINE ReplacingMergeTree ORDER BY k"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.versioned_collapsing(k, val, ver, s) VALUES (1, 'a', 0, 1)"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.versioned_collapsing(k, val, ver, s) VALUES (2, 'b', 0, 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO replacing_00682(k, v) VALUES (1, 'a')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO replacing_00682(k, v) VALUES (1, 'b')"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.versioned_collapsing DELETE WHERE k IN (1, 2)"
-wait_for_mutation "versioned_collapsing" "mutation_3.txt"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE replacing_00682 DELETE WHERE k = 1"
+wait_for_mutation "replacing_00682" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.versioned_collapsing PARTITION tuple() FINAL"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.versioned_collapsing"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE replacing_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM replacing_00682"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.versioned_collapsing"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE replacing_00682"
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS collapsing_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE collapsing_00682(k UInt32, v String, s Int8) ENGINE CollapsingMergeTree(s) ORDER BY k"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO collapsing_00682(k, v, s) VALUES (1, 'a', 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO collapsing_00682(k, v, s) VALUES (2, 'b', 1)"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE collapsing_00682 DELETE WHERE k IN (1, 2)"
+wait_for_mutation "collapsing_00682" "mutation_3.txt"
+
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE collapsing_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM collapsing_00682"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE collapsing_00682"
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS versioned_collapsing_00682"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE versioned_collapsing_00682(k UInt32, val String, ver UInt32, s Int8) ENGINE VersionedCollapsingMergeTree(s, ver) ORDER BY k"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO versioned_collapsing_00682(k, val, ver, s) VALUES (1, 'a', 0, 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO versioned_collapsing_00682(k, val, ver, s) VALUES (2, 'b', 0, 1)"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE versioned_collapsing_00682 DELETE WHERE k IN (1, 2)"
+wait_for_mutation "versioned_collapsing_00682" "mutation_3.txt"
+
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE versioned_collapsing_00682 PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM versioned_collapsing_00682"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE versioned_collapsing_00682"

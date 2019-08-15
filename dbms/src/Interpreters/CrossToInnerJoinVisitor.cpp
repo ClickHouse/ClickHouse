@@ -4,6 +4,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/QueryNormalizer.h> // for functionIsInOperator
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -120,6 +121,12 @@ public:
         {
             /// leave other comparisons as is
         }
+        else if (functionIsInOperator(node.name)) /// IN, NOT IN
+        {
+            if (auto ident = node.arguments->children.at(0)->as<ASTIdentifier>())
+                if (size_t min_table = checkIdentifier(*ident))
+                    asts_to_join_on[min_table].push_back(ast);
+        }
         else
         {
             ands_only = false;
@@ -173,7 +180,7 @@ private:
     /// @return table position to attach expression to or 0.
     size_t checkIdentifiers(const ASTIdentifier & left, const ASTIdentifier & right)
     {
-        /// {best_match, berst_table_pos}
+        /// {best_match, best_table_pos}
         std::pair<size_t, size_t> left_best{0, 0};
         std::pair<size_t, size_t> right_best{0, 0};
 
@@ -202,6 +209,26 @@ private:
         }
         return 0;
     }
+
+    size_t checkIdentifier(const ASTIdentifier & identifier)
+    {
+        size_t best_match = 0;
+        size_t best_table_pos = 0;
+
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            size_t match = IdentifierSemantic::canReferColumnToTable(identifier, tables[i].table);
+            if (match > best_match)
+            {
+                best_match = match;
+                best_table_pos = i;
+            }
+        }
+
+        if (best_match && tables[best_table_pos].canAttachOnExpression())
+            return best_table_pos;
+        return 0;
+    }
 };
 
 using CheckExpressionMatcher = OneTypeMatcher<CheckExpressionVisitorData, false>;
@@ -210,10 +237,10 @@ using CheckExpressionVisitor = InDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables, size_t & num_comma)
 {
-    if (!select.tables)
+    if (!select.tables())
         return false;
 
-    const auto * tables = select.tables->as<ASTTablesInSelectQuery>();
+    const auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -222,20 +249,38 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
         return false;
 
     joined_tables.reserve(num_tables);
+    size_t num_array_join = 0;
+    size_t num_using = 0;
+
     for (auto & child : tables->children)
     {
         joined_tables.emplace_back(JoinedTable(child));
         JoinedTable & t = joined_tables.back();
         if (t.array_join)
-            return false;
+        {
+            ++num_array_join;
+            continue;
+        }
 
-        if (num_tables > 2 && t.has_using)
-            throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+        if (t.has_using)
+        {
+            ++num_using;
+            continue;
+        }
 
         if (auto * join = t.join)
             if (join->kind == ASTTableJoin::Kind::Comma)
                 ++num_comma;
     }
+
+    if (num_using && (num_tables - num_array_join) > 2)
+        throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (num_comma && (num_comma != (joined_tables.size() - 1)))
+        throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (num_array_join || num_using)
+        return false;
     return true;
 }
 
@@ -259,20 +304,17 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
 
     if (num_comma)
     {
-        if (num_comma != (joined_tables.size() - 1))
-            throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
         for (auto & table : joined_tables)
             table.rewriteCommaToCross();
     }
 
     /// CROSS to INNER
 
-    if (!select.where_expression)
+    if (!select.where())
         return;
 
     CheckExpressionVisitor::Data visitor_data{joined_tables};
-    CheckExpressionVisitor(visitor_data).visit(select.where_expression);
+    CheckExpressionVisitor(visitor_data).visit(select.refWhere());
 
     if (visitor_data.complex())
         return;

@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -32,7 +33,13 @@ TableFunctionPtr TableFunctionFactory::get(
 
     auto it = functions.find(name);
     if (it == functions.end())
-        throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+    {
+        auto hints = getHints(name);
+        if (!hints.empty())
+            throw Exception("Unknown table function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_FUNCTION);
+        else
+            throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+    }
 
     return it->second();
 }

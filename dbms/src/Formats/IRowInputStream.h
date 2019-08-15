@@ -15,6 +15,7 @@ struct RowReadExtension
 {
     /// IRowInputStream.read() output. It contains non zero for columns that actually read from the source and zero otherwise.
     /// It's used to attach defaults for partially filled rows.
+    /// Can be empty, this means that all columns are read.
     std::vector<UInt8> read_columns;
 };
 

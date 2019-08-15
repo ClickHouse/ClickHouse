@@ -37,44 +37,6 @@ namespace
         return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
     }
 
-} // namespace
-
-
-bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to)
-{
-    if (from == to)
-        return true;
-
-    /** This enum can be somewhat incomplete and the meaning may not coincide with NumberTraits.h.
-      * (for example, because integers can not be converted to floats)
-      * This is normal for a limited usage scope.
-      */
-    if ((from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt16)
-        || (from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt32)
-        || (from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::UInt64)
-        || (from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::UInt32)
-        || (from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::UInt64)
-        || (from == AttributeUnderlyingType::UInt32 && to == AttributeUnderlyingType::UInt64)
-        || (from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int16)
-        || (from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int32)
-        || (from == AttributeUnderlyingType::UInt8 && to == AttributeUnderlyingType::Int64)
-        || (from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::Int32)
-        || (from == AttributeUnderlyingType::UInt16 && to == AttributeUnderlyingType::Int64)
-        || (from == AttributeUnderlyingType::UInt32 && to == AttributeUnderlyingType::Int64)
-
-        || (from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int16)
-        || (from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int32)
-        || (from == AttributeUnderlyingType::Int8 && to == AttributeUnderlyingType::Int64)
-        || (from == AttributeUnderlyingType::Int16 && to == AttributeUnderlyingType::Int32)
-        || (from == AttributeUnderlyingType::Int16 && to == AttributeUnderlyingType::Int64)
-        || (from == AttributeUnderlyingType::Int32 && to == AttributeUnderlyingType::Int64)
-
-        || (from == AttributeUnderlyingType::Float32 && to == AttributeUnderlyingType::Float64))
-    {
-        return true;
-    }
-
-    return false;
 }
 
 

@@ -7,6 +7,7 @@
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/joinDispatch.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -24,10 +25,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 StorageJoin::StorageJoin(
     const String & path_,
-    const String & name_,
+    const String & database_name_,
+    const String & table_name_,
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
@@ -35,7 +36,7 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     bool overwrite)
-    : StorageSetOrJoinBase{path_, name_, columns_}
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -139,7 +140,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         if (args.storage_def && args.storage_def->settings)
         {
-            for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
+            for (const auto & setting : args.storage_def->settings->changes)
             {
                 if (setting.name == "join_use_nulls")
                     join_use_nulls.set(setting.value);
@@ -160,6 +161,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         return StorageJoin::create(
             args.data_path,
+            args.database_name,
             args.table_name,
             key_names,
             join_use_nulls.value,
@@ -230,9 +232,8 @@ protected:
             return Block();
 
         Block block;
-        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
-            ;
-        else
+        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
+                [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
         return block;
     }
@@ -295,7 +296,7 @@ private:
             if (column_with_null[i])
             {
                 if (key_pos == i)
-                    res.getByPosition(i).column = makeNullable(std::move(columns[i]))->assumeMutable();
+                    res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
                     const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
@@ -333,15 +334,18 @@ private:
                         columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
             }
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            {
+                throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+            }
             else
-                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->getSecond()); current != nullptr;
-                     current = current->next)
+                for (auto ref_it = it->getSecond().begin(); ref_it.ok(); ++ref_it)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
                             columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
                         else
-                            columns[j]->insertFrom(*current->block->getByPosition(column_indices[j]).column.get(), current->row_num);
+                            columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
                     ++rows_added;
                 }
 

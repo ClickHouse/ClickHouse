@@ -57,6 +57,7 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
            <database>test</database>
         </allow_databases>
     </web>
+</users>
 ```
 
 You can see a declaration from two users: `default`and`web`. We added the `web` user separately.

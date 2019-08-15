@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/MutationCommands.h>
 
 

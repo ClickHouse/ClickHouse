@@ -13,7 +13,7 @@ class ReadBuffer;
 
 
 /** A stream for reading data in JSON format, where each row is represented by a separate JSON object.
-  * Objects can be separated by feed return, other whitespace characters in any number and possibly a comma.
+  * Objects can be separated by line feed, other whitespace characters in any number and possibly a comma.
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */

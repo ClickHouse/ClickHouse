@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Common/config.h>
+#include "config_core.h"
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Core/Block.h>

@@ -7,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function stress()
 {
     while true; do
-        ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS test.table (x UInt8) ENGINE = MergeTree ORDER BY tuple()" 2>/dev/null
-        ${CLICKHOUSE_CLIENT} --query "DROP TABLE test.table" 2>/dev/null
+        ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS table (x UInt8) ENGINE = MergeTree ORDER BY tuple()" 2>/dev/null
+        ${CLICKHOUSE_CLIENT} --query "DROP TABLE table" 2>/dev/null
     done
 }
 
@@ -23,4 +23,4 @@ done
 wait
 echo
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.table";
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS table";

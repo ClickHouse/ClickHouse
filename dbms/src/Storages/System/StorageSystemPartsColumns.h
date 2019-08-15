@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 

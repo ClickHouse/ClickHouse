@@ -35,6 +35,7 @@ public:
         Block & sample_block);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
+    LibraryDictionarySource & operator=(const LibraryDictionarySource &) = delete;
 
     ~LibraryDictionarySource() override;
 

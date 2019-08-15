@@ -256,6 +256,17 @@
             feedback_email[i].setAttribute('href', 'mailto:' + feedback_address);
             feedback_email[i].innerHTML = feedback_address;
           }
+
+          document.getElementById("releases-selector").addEventListener(
+            "change",
+            function() {
+              var target = window.location.href.split('docs')[0] + 'docs/';
+              if (this.value) {
+                target = target + this.value + '/';
+              }
+              window.location = target + '{{ config.theme.language }}';
+            }
+          )
       });
     </script>
     <!-- Yandex.Metrika counter -->

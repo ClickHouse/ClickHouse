@@ -6,11 +6,14 @@ certifi==2017.11.5
 chardet==3.0.4
 click==6.7
 CommonMark==0.5.4
+cssmin==0.2.0
 docutils==0.14
-futures==3.2.0
+futures==3.1.1
+htmlmin==0.1.12
 idna==2.6
 imagesize==0.7.1
 Jinja2==2.10
+jsmin==2.2.2
 livereload==2.5.1
 Markdown==2.6.11
 MarkupSafe==1.0
@@ -18,7 +21,7 @@ mkdocs==1.0.4
 Pygments==2.2.0
 python-slugify==1.2.6
 pytz==2017.3
-PyYAML==4.2b1
+PyYAML==3.12
 recommonmark==0.4.0
 requests==2.21.0
 singledispatch==3.4.0.3

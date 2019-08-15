@@ -124,7 +124,7 @@ if __name__ == "__main__":
             args.dataset_name, 'partitions', os.path.basename(file_path))
     elif args.s3_path is not None:
         s3_path = os.path.join(
-            args.dataset_name, s3_path, os.path.base_name(file_path))
+            args.dataset_name, args.s3_path, os.path.basename(file_path))
     else:
         raise Exception("Don't know s3-path to upload")
 

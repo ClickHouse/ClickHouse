@@ -1,4 +1,5 @@
 #include "TestStats.h"
+#include <algorithm>
 namespace DB
 {
 
@@ -92,11 +93,10 @@ void TestStats::update_average_speed(
     avg_speed_value /= number_of_info_batches;
 
     if (avg_speed_first == 0)
-    {
         avg_speed_first = avg_speed_value;
-    }
 
-    if (std::abs(avg_speed_value - avg_speed_first) >= precision)
+    auto [min, max] = std::minmax(avg_speed_value, avg_speed_first);
+    if (1 - min / max >= precision)
     {
         avg_speed_first = avg_speed_value;
         avg_speed_watch.restart();

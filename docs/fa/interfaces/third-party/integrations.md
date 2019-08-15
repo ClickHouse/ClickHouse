@@ -11,8 +11,11 @@
     - [MySQL](https://www.mysql.com)
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         - [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
+        - [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     - [PostgreSQL](https://www.postgresql.org)
+        - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (استفاده می کند [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        - [pg2ch](https://github.com/mkabilov/pg2ch)
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
 - صف پیام
@@ -21,6 +24,9 @@
 - فروشگاه شی
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- ارکستراسیون کانتینر
+    - [Kubernetes](https://kubernetes.io)
+        - [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 - مدیریت تنظیمات
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
@@ -36,11 +42,20 @@
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Zabbix](https://www.zabbix.com)
+        - [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
+    - [Sematext](https://sematext.com/)
+        - [clickhouse ادغام](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - ثبت نام
     - [rsyslog](https://www.rsyslog.com/)
         - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
+    - [logagent](https://www.sematext.com/logagent)
+        - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+- جغرافیایی
+    - [MaxMind](https://dev.maxmind.com/geoip/)
+        - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
 ## اکوسیستم زبان برنامه نویسی
 

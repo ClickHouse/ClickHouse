@@ -69,5 +69,5 @@ IRegionsHierarchyDataSourcePtr RegionsHierarchiesDataProvider::getHierarchySourc
         return std::make_shared<RegionsHierarchyDataSource>(hierarchy_file_path);
     }
 
-    throw Poco::Exception("Regions hierarchy `" + name + "` not found");
+    throw Poco::Exception("Regions hierarchy '" + name + "' not found");
 }

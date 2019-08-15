@@ -1,5 +1,7 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufWriter.h"
 
 #include <cassert>
 #include <optional>
@@ -7,11 +9,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <boost/numeric/conversion/cast.hpp>
-#include <google/protobuf/descriptor.h> // Y_IGNORE
-#include <google/protobuf/descriptor.pb.h> // Y_IGNORE
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "ProtobufWriter.h"
 
 
 namespace DB
@@ -334,14 +335,14 @@ public:
     virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             "Could not convert data type '" + type_name + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value)
+    [[noreturn]] void cannotConvertValue(const String & value)
     {
         throw Exception(
             "Could not convert value '" + value + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",

@@ -7,9 +7,9 @@ WHAT=$1
 
 [[ $EUID -ne 0 ]] && SUDO=sudo
 
-command -v apt-get && PACKAGE_MANAGER=apt
 command -v yum && PACKAGE_MANAGER=yum
 command -v pkg && PACKAGE_MANAGER=pkg
+command -v apt-get && PACKAGE_MANAGER=apt
 
 
 case $PACKAGE_MANAGER in

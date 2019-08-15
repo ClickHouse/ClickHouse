@@ -20,6 +20,7 @@ class StorageSystemOne : public ext::shared_ptr_helper<StorageSystemOne>, public
 public:
     std::string getName() const override { return "SystemOne"; }
     std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
         const Names & column_names,

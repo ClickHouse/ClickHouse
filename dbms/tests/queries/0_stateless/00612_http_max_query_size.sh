@@ -11,11 +11,11 @@ echo "select '1'" | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL}/?max_query_size=10
 echo -
 echo "select '11'" | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL}/?max_query_size=10 -d @- 2>&1 | grep -o "Max query size exceeded"
 
-echo 'drop table if exists test.tab' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
-echo 'create table test.tab (key UInt64, val UInt64) engine = MergeTree order by key' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
-echo 'into test.tab values (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}/?max_query_size=30&query=insert" -d @-
-echo 'select val from test.tab order by val' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
-echo 'drop table test.tab' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-
+echo 'drop table if exists tab_00612_1' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL_PARAMS} -d @-
+echo 'create table tab_00612_1 (key UInt64, val UInt64) engine = MergeTree order by key' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL_PARAMS} -d @-
+echo 'into tab_00612_1 values (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL_PARAMS}&max_query_size=30&query=insert" -d @-
+echo 'select val from tab_00612_1 order by val' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL_PARAMS} -d @-
+echo 'drop table tab_00612_1' | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL_PARAMS} -d @-
 
 echo "
 import requests

@@ -1,27 +1,28 @@
 #include <iomanip>
 
-#include <Poco/Event.h>
-#include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
-
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabasesCommon.h>
-#include <Common/typeid_cast.h>
-#include <Common/escapeForFileName.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
+
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Event.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
+#include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 
 
@@ -118,7 +119,6 @@ DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, 
 
 void DatabaseOrdinary::loadTables(
     Context & context,
-    ThreadPool * thread_pool,
     bool has_force_restore_data_flag)
 {
     using FileNames = std::vector<std::string>;
@@ -160,96 +160,68 @@ void DatabaseOrdinary::loadTables(
       */
     std::sort(file_names.begin(), file_names.end());
 
-    size_t total_tables = file_names.size();
+    const size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
 
-    auto task_function = [&](const String & table)
+    auto loadOneTable = [&](const String & table)
     {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
     };
 
-    for (const auto & filename : file_names)
-    {
-        auto task = createExceptionHandledJob(std::bind(task_function, filename), exception_handler);
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
 
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+    for (const auto & file_name : file_names)
+    {
+        pool.schedule([&]() { loadOneTable(file_name); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    pool.wait();
 
     /// After all tables was basically initialized, startup them.
-    startupTables(thread_pool);
+    startupTables(pool);
 }
 
 
-void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed {0};
-    size_t total_tables = tables.size();
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
-
+    const size_t total_tables = tables.size();
     if (!total_tables)
         return;
 
-    auto task_function = [&](const StoragePtr & table)
-    {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+    AtomicStopwatch watch;
+    std::atomic<size_t> tables_processed {0};
 
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+    auto startupOneTable = [&](const StoragePtr & table)
+    {
+        table->startup();
+
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        table->startup();
     };
 
-    for (const auto & name_storage : tables)
+    for (const auto & table : tables)
     {
-        auto task = createExceptionHandledJob(std::bind(task_function, name_storage.second), exception_handler);
-
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+        thread_pool.schedule([&]() { startupOneTable(table.second); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    thread_pool.wait();
 }
 
 

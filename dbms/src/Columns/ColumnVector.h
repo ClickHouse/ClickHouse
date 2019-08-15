@@ -90,13 +90,13 @@ template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWPtrHelper<ColumnVectorHelper, ColumnVector<T>>
+class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
     static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWPtrHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<ColumnVectorHelper, Self>;
 
     struct less;
     struct greater;
@@ -201,6 +201,8 @@ public:
     }
 
     UInt64 get64(size_t n) const override;
+
+    Float64 getFloat64(size_t n) const override;
 
     UInt64 getUInt(size_t n) const override
     {

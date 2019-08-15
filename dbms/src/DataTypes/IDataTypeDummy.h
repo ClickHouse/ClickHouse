@@ -14,7 +14,7 @@ namespace DB
 class IDataTypeDummy : public DataTypeWithSimpleSerialization
 {
 private:
-    void throwNoSerialization() const
+    [[noreturn]] void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

@@ -26,6 +26,7 @@ public:
         const Context & context);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
+    HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

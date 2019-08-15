@@ -65,6 +65,10 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType DistributedSend;
+}
 
 namespace
 {
@@ -84,7 +88,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->database = database;
@@ -93,7 +97,7 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
-    for (const auto & col : sample_block)
+    for (const auto & col : sample_block_non_materialized)
         columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
@@ -185,7 +189,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : IStorage{columns_}, table_name(table_name),
+    : IStorage{columns_}, table_name(table_name), database_name(database_name),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
@@ -286,7 +290,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
@@ -332,20 +337,21 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlock()), cluster, settings, insert_sync, timeout);
+        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
+        insert_sync, timeout);
 }
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & database_name, const String & current_table_name,
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
     const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 
@@ -425,7 +431,7 @@ void StorageDistributed::createDirectoryMonitors()
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
     std::lock_guard lock(cluster_nodes_mutex);
-    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this, monitors_blocker);
 }
 
 ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
@@ -452,11 +458,17 @@ void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::strin
         conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
 }
 
-void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(
+    const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker)
 {
     requireConnectionPool(name, storage);
     if (!directory_monitor)
-        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool, monitor_blocker);
+}
+
+void StorageDistributed::ClusterNodeData::flushAllData()
+{
+    directory_monitor->flushAllData();
 }
 
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
@@ -470,12 +482,10 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where_expression)
-    {
+    if (!select.where())
         return nullptr;
-    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where_expression, sharding_key_expr);
+    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)
@@ -497,6 +507,22 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
     }
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
+}
+
+ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
+{
+    if (type == ActionLocks::DistributedSend)
+        return monitors_blocker.cancel();
+    return {};
+}
+
+void StorageDistributed::flushClusterNodesAllData()
+{
+    std::lock_guard lock(cluster_nodes_mutex);
+
+    /// TODO: Maybe it should be executed in parallel
+    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
+        it->second.flushAllData();
 }
 
 

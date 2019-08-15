@@ -1,16 +1,17 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Core/Field.h>
+#include <Core/Types.h>
 #include <Parsers/IAST.h>
-#include <vector>
+#include <Storages/IStorage_fwd.h>
+
 #include <optional>
+#include <vector>
 
 
 namespace DB
 {
 
-class IStorage;
 class ASTAlterCommand;
 
 struct PartitionCommand

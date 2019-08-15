@@ -23,6 +23,9 @@ namespace DB
     M(OpeningSquareBracket) \
     M(ClosingSquareBracket) \
     \
+    M(OpeningCurlyBrace) \
+    M(ClosingCurlyBrace) \
+    \
     M(Comma) \
     M(Semicolon) \
     M(Dot)                    /** Compound identifiers, like a.b or tuple access operator a.1, (x, y).2. */ \

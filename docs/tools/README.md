@@ -2,7 +2,7 @@
 
 ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it's dependencies to separately build all version of documentations (all languages in either single and multi page mode) as static HTMLs. The results are then put in correct directory structure. It can also generate PDF version.
 
-Finally [the infrustructure](../website) that builds ClickHouse [official website](https://clickhouse.yandex) just puts that directory structure into the same Docker container together with rest of website and deploys it to Yandex private cloud.
+[release.sh](release.sh) also pulls static files needed for [official ClickHouse website](https://clickhouse.yandex) from [../../website](../../website) folder, packs them alongside docs into Docker container and tries to deploy it (possible only from Yandex private network).
 
 ## How to check if the documentation will look fine?
 

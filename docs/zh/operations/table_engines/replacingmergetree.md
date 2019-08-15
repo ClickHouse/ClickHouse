@@ -1,12 +1,12 @@
 # ReplacingMergeTree
 
-The engine differs from [MergeTree](mergetree.md) in that it removes duplicate entries with the same primary key value.
+该引擎和[MergeTree](mergetree.md)的不同之处在于它会删除具有相同主键的重复项。
 
-Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, don't count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
+数据的去重只会在合并的过程中出现。合并会在未知的时间在后台进行，因此你无法预先作出计划。有一些数据可能仍未被处理。尽管你可以调用 `OPTIMIZE` 语句发起计划外的合并，但请不要指望使用它，因为 `OPTIMIZE` 语句会引发对大量数据的读和写。
 
-Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it doesn't guarantee the absence of duplicates.
+因此，`ReplacingMergeTree` 适用于在后台清除重复的数据以节省空间，但是它不保证没有重复的数据出现。
 
-## Creating a Table
+## 建表
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -21,24 +21,24 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+请求参数的描述，参考[请求参数](../../query_language/create.md)。
 
 **ReplacingMergeTree Parameters**
 
-- `ver` — column with version. Type `UInt*`, `Date` or `DateTime`. Optional parameter.
+- `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 
-    When merging, `ReplacingMergeTree` from all the rows with the same primary key leaves only one:
-    - Last in the selection, if `ver` not set.
-    - With the maximum version, if `ver` specified.
+    合并的时候，`ReplacingMergeTree` 从所有具有相同主键的行中选择一行留下：
+    - 如果 `ver` 列未指定，选择最后一条。
+    - 如果 `ver` 列已指定，选择 `ver` 值最大的版本。
 
-**Query clauses**
+**子句**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+创建 `ReplacingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的[子句](mergetree.md)。
 
-<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
+<details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention "注意"
+    不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -49,10 +49,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
 ```
 
-All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
+除了 `ver` 的所有参数都与 `MergeTree` 中的含义相同。
 
 
-- `ver` - column with the version. Optional parameter. For a description, see the text above.
+- `ver` - 版本列。可选参数，有关说明，请参阅上文。
 </details>
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

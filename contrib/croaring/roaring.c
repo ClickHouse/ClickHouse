@@ -1,5 +1,5 @@
 /* auto-generated on Tue Dec 18 09:42:59 CST 2018. Do not edit! */
-#include "roaring.h"
+#include "roaring/roaring.h"
 
 /* used for http://dmalloc.com/ Dmalloc - Debug Malloc Library */
 #ifdef DMALLOC

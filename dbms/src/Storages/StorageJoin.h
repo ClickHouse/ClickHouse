@@ -43,7 +43,7 @@ public:
 
 private:
     Block sample_block;
-    const Names & key_names;
+    const Names key_names;
     bool use_nulls;
     SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
@@ -57,7 +57,8 @@ private:
 protected:
     StorageJoin(
         const String & path_,
-        const String & name_,
+        const String & database_name_,
+        const String & table_name_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,

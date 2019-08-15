@@ -23,15 +23,13 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 
 void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const Settings & settings = context.getSettingsRef();
-
-#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)      \
-    res_columns[0]->insert(#NAME);                 \
-    res_columns[1]->insert(settings.NAME.toString());      \
-    res_columns[2]->insert(settings.NAME.changed); \
-    res_columns[3]->insert(DESCRIPTION);
-    APPLY_FOR_SETTINGS(ADD_SETTING)
-#undef ADD_SETTING
+    for (const auto & setting : context.getSettingsRef())
+    {
+        res_columns[0]->insert(setting.getName().toString());
+        res_columns[1]->insert(setting.getValueAsString());
+        res_columns[2]->insert(setting.isChanged());
+        res_columns[3]->insert(setting.getDescription().toString());
+    }
 }
 
 }

@@ -16,7 +16,7 @@ void NO_INLINE sort1(Key * data, size_t size)
 
 void NO_INLINE sort2(Key * data, size_t size)
 {
-    radixSort(data, size);
+    radixSortLSD(data, size);
 }
 
 void NO_INLINE sort3(Key * data, size_t size)

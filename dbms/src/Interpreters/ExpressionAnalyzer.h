@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Core/Settings.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Core/Settings.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -18,13 +20,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct ASTTableJoin;
-
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
 
 class ASTFunction;
 class ASTExpressionList;
@@ -254,7 +249,7 @@ private:
     void assertAggregation() const;
 
     /**
-      * Create Set from a subuquery or a table expression in the query. The created set is suitable for using the index.
+      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);

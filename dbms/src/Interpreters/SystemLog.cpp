@@ -51,6 +51,12 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
 SystemLogs::~SystemLogs()
 {
+    shutdown();
+}
+
+
+void SystemLogs::shutdown()
+{
     if (query_log)
         query_log->shutdown();
     if (query_thread_log)

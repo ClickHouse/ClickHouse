@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Common/FieldVisitors.h>
+#include <Common/SettingsChanges.h>
 #include <Parsers/IAST.h>
 
 
@@ -16,14 +16,7 @@ class ASTSetQuery : public IAST
 public:
     bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
 
-    struct Change
-    {
-        String name;
-        Field value;
-    };
-
-    using Changes = std::vector<Change>;
-    Changes changes;
+    SettingsChanges changes;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Set"; }
@@ -35,7 +28,7 @@ public:
         if (is_standalone)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");
 
-        for (ASTSetQuery::Changes::const_iterator it = changes.begin(); it != changes.end(); ++it)
+        for (auto it = changes.begin(); it != changes.end(); ++it)
         {
             if (it != changes.begin())
                 settings.ostr << ", ";

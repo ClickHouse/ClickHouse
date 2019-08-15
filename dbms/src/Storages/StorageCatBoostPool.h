@@ -11,8 +11,8 @@ class StorageCatBoostPool : public ext::shared_ptr_helper<StorageCatBoostPool>, 
 {
 public:
     std::string getName() const override { return "CatBoostPool"; }
-
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(const Names & column_names,
                            const SelectQueryInfo & query_info,
@@ -23,6 +23,7 @@ public:
 
 private:
     String table_name;
+    String database_name;
 
     String column_description_file_name;
     String data_description_file_name;
@@ -75,7 +76,7 @@ private:
     void createSampleBlockAndColumns();
 
 protected:
-    StorageCatBoostPool(const Context & context, String column_description_file_name, String data_description_file_name);
+    StorageCatBoostPool(const String & database_name_, const String & table_name_, const Context & context, String column_description_file_name, String data_description_file_name);
 };
 
 }

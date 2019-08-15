@@ -1,1 +1,1 @@
-add_library (memcpy memcpy.c)
+add_library(memcpy memcpy.c)

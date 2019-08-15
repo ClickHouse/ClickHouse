@@ -24,6 +24,6 @@
             return nullptr;
         return strdup(s.data());
     }
-    #define add_history(...) do {} while (0);
-    #define rl_bind_key(...) do {} while (0);
+    #define add_history(...) do {} while (0)
+    #define rl_bind_key(...) do {} while (0)
 #endif

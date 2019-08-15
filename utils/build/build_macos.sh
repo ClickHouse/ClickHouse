@@ -14,6 +14,10 @@ fi
 
 brew install cmake ninja gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline librdkafka
 
+# If you want to run tests
+brew install python
+sudo pip install lxml termcolor requests
+
 ## Checkout ClickHouse sources
 
 #  To get the latest stable version:

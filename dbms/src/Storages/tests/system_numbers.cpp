@@ -26,9 +26,10 @@ try
 
     WriteBufferFromOStream out_buf(std::cout);
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
-
     auto context = Context::createGlobal();
+    context.makeGlobalContext();
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
+
     LimitBlockInputStream input(table->read(column_names, {}, context, stage, 10, 1)[0], 10, 96);
     BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
 

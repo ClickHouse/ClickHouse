@@ -33,9 +33,9 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, bool deduplicate_)
-    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), deduplicate(deduplicate_),
-    log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)"))
+    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block, bool deduplicate_)
+    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block), deduplicate(deduplicate_),
+    log(&Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -109,7 +109,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     last_block_is_duplicate = false;
 
     /// TODO Is it possible to not lock the table structure here?
-    storage.data.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -122,7 +122,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     if (quorum)
         checkQuorumPrecondition(zookeeper);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
 
     for (auto & current_block : part_blocks)
     {
@@ -297,8 +297,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 quorum_info.host_node_version));
     }
 
-    MergeTreeData::Transaction transaction(storage.data); /// If you can not add a part to ZK, we'll remove it back from the working set.
-    storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
+    MergeTreeData::Transaction transaction(storage); /// If you can not add a part to ZK, we'll remove it back from the working set.
+    storage.renameTempPartAndAdd(part, nullptr, &transaction);
 
     Coordination::Responses responses;
     int32_t multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -414,7 +414,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
 void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 {
-    storage.data.throwInsertIfNeeded();
+    storage.throwInsertIfNeeded();
 }
 
 

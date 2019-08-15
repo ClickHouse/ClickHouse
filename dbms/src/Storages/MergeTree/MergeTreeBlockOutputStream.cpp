@@ -14,15 +14,15 @@ Block MergeTreeBlockOutputStream::getHeader() const
 
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    storage.data.delayInsertOrThrowIfNeeded();
+    storage.delayInsertOrThrowIfNeeded();
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
-        storage.data.renameTempPartAndAdd(part, &storage.increment);
+        storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 

@@ -37,7 +37,7 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
 

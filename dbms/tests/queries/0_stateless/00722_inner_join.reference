@@ -19,10 +19,21 @@
 ┌─database─┬─name─┐
 │ system   │ one  │
 └──────────┴──────┘
-one
-system	one
-system	one
-test	one
+┌─db.x───┬─name─┐
+│ system │ one  │
+└────────┴──────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─db.name─┬─name─┐
+│ system  │ one  │
+└─────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
+┌─database─┬─name─┐
+│ system   │ one  │
+└──────────┴──────┘
 2
 2
 2

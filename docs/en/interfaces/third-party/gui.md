@@ -48,6 +48,17 @@ Features:
 - Table preview with filtering and sorting.
 - Read-only queries execution.
 
+### DBeaver
+
+[DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
+
+Features:
+
+- Query development with syntax highlight and autocompletion.
+- Table list with filters and metadata search.
+- Table data preview.
+- Full text search.
+
 ### clickhouse-cli
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command line client for ClickHouse, written in Python 3.
@@ -59,16 +70,6 @@ Features:
 - Custom PostgreSQL-like commands.
 
 ## Commercial
-
-### DBeaver
-
-[DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
-
-Features:
-
-- Query development with syntax highlight.
-- Table preview.
-- Autocompletion.
 
 ### DataGrip
 

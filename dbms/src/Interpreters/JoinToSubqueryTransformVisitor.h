@@ -6,6 +6,7 @@ namespace DB
 {
 
 class ASTSelectQuery;
+class Context;
 
 /// AST transformer. It replaces multiple joins to (subselect + join) track.
 /// 'select * from t1 join t2 on ... join t3 on ... join t4 on ...' would be rewriten with
@@ -15,6 +16,7 @@ class JoinToSubqueryTransformMatcher
 public:
     struct Data
     {
+        const Context & context;
         bool done = false;
     };
 

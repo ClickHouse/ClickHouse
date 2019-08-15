@@ -24,10 +24,7 @@ public:
     using AtomFromASTFunc = std::function<
             bool(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)>;
 
-    RPNBuilder(
-        const SelectQueryInfo & query_info,
-        const Context & context_,
-        const AtomFromASTFunc & atomFromAST_)
+    RPNBuilder(const SelectQueryInfo & query_info, const Context & context_, const AtomFromASTFunc & atomFromAST_)
         : context(context_), atomFromAST(atomFromAST_)
     {
         /** Evaluation of expressions that depend only on constants.
@@ -37,19 +34,19 @@ public:
 
         /// Trasform WHERE section to Reverse Polish notation
         const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
-        if (select.where_expression)
+        if (select.where())
         {
-            traverseAST(select.where_expression);
+            traverseAST(select.where());
 
-            if (select.prewhere_expression)
+            if (select.prewhere())
             {
-                traverseAST(select.prewhere_expression);
+                traverseAST(select.prewhere());
                 rpn.emplace_back(RPNElement::FUNCTION_AND);
             }
         }
-        else if (select.prewhere_expression)
+        else if (select.prewhere())
         {
-            traverseAST(select.prewhere_expression);
+            traverseAST(select.prewhere());
         }
         else
         {

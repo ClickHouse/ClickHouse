@@ -1,4 +1,4 @@
-set(CPPKAFKA_DIR ${CMAKE_SOURCE_DIR}/contrib/cppkafka)
+set(CPPKAFKA_DIR ${ClickHouse_SOURCE_DIR}/contrib/cppkafka)
 
 set(SRCS
   ${CPPKAFKA_DIR}/src/configuration.cpp
@@ -23,7 +23,7 @@ set(SRCS
   ${CPPKAFKA_DIR}/src/consumer.cpp
 )
 
-add_library(cppkafka ${LINK_MODE} ${SRCS})
+add_library(cppkafka ${SRCS})
 
 target_link_libraries(cppkafka PRIVATE ${RDKAFKA_LIBRARY})
 target_include_directories(cppkafka PRIVATE ${CPPKAFKA_DIR}/include/cppkafka)

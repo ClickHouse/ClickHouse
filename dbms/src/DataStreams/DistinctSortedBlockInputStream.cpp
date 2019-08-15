@@ -131,7 +131,7 @@ ColumnRawPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block & block)
             : block.getByName(columns_names[i]).column;
 
         /// Ignore all constant columns.
-        if (!column->isColumnConst())
+        if (!isColumnConst(*column))
             column_ptrs.emplace_back(column.get());
     }
 

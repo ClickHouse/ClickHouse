@@ -104,7 +104,6 @@ public:
             if (event)
             {
                 this->data(place).add(i);
-                break;
             }
         }
     }

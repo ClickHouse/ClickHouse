@@ -1,30 +1,30 @@
 # Merge
 
-The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
-Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
-The `Merge` engine accepts parameters: the database name and a regular expression for tables.
+`Merge` 引擎 (不要跟 `MergeTree` 引擎混淆) 本身不存储数据，但可用于同时从任意多个其他的表中读取数据。
+读是自动并行的，不支持写入。读取时，那些被真正读取到数据的表的索引（如果有的话）会被使用。
+`Merge` 引擎的参数：一个数据库名和一个用于匹配表名的正则表达式。
 
-Example:
+示例：
 
 ```
 Merge(hits, '^WatchLog')
 ```
 
-Data will be read from the tables in the `hits` database that have names that match the regular expression '`^WatchLog`'.
+数据会从 `hits` 数据库中表名匹配正则 '`^WatchLog`' 的表中读取。
 
-Instead of the database name, you can use a constant expression that returns a string. For example, `currentDatabase()`.
+除了数据库名，你也可以用一个返回字符串的常量表达式。例如， `currentDatabase()` 。
 
-Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
-See the notes about escaping symbols in regular expressions in the "match" section.
+正则表达式 — [re2](https://github.com/google/re2) (支持 PCRE 一个子集的功能)，大小写敏感。
+了解关于正则表达式中转义字符的说明可参看 "match" 一节。
 
-When selecting tables to read, the `Merge` table itself will not be selected, even if it matches the regex. This is to avoid loops.
-It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
+当选择需要读的表时，`Merge` 表本身会被排除，即使它匹配上了该正则。这样设计为了避免循环。
+当然，是能够创建两个相互无限递归读取对方数据的 `Merge` 表的，但这并没有什么意义。
 
-The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
+`Merge` 引擎的一个典型应用是可以像使用一张表一样使用大量的 `TinyLog` 表。
 
-Example 2:
+示例 2 ：
 
-Let's say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables.
+我们假定你有一个旧表（WatchLog_old），你想改变数据分区了，但又不想把旧数据转移到新表（WatchLog_new）里，并且你需要同时能看到这两个表的数据。
 
 ```
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
@@ -49,21 +49,21 @@ FROM WatchLog
 
 ```
 
-## Virtual Columns
+## 虚拟列
 
-Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in `CREATE TABLE`, but they are accessible for `SELECT`.
+虚拟列是一种由表引擎提供而不是在表定义中的列。换种说法就是，这些列并没有在 `CREATE TABLE` 中指定，但可以在 `SELECT` 中使用。
 
-Virtual columns differ from normal columns in the following ways:
+下面列出虚拟列跟普通列的不同点：
 
-- They are not specified in table definitions.
-- Data can't be added to them with `INSERT`.
-- When using `INSERT` without specifying the list of columns, virtual columns are ignored.
-- They are not selected when using the asterisk (`SELECT *`).
-- Virtual columns are not shown in `SHOW CREATE TABLE` and `DESC TABLE` queries.
+- 虚拟列不在表结构定义里指定。
+- 不能用 `INSERT` 向虚拟列写数据。
+- 使用不指定列名的 `INSERT` 语句时，虚拟列要会被忽略掉。
+- 使用星号通配符（ `SELECT *` ）时虚拟列不会包含在里面。
+- 虚拟列不会出现在 `SHOW CREATE TABLE` 和 `DESC TABLE` 的查询结果里。
 
-The `Merge` type table contains a virtual `_table` column of the `String` type. (If the table already has a `_table` column, the virtual column is called `_table1`; if you already have `_table1`, it's called `_table2`, and so on.) It contains the name of the table that data was read from.
+`Merge` 类型的表包括一个 `String` 类型的 `_table` 虚拟列。（如果该表本来已有了一个 `_table` 的列，那这个虚拟列会命名为 `_table1` ；如果 `_table1` 也本就存在了，那这个虚拟列会被命名为 `_table2` ，依此类推）该列包含被读数据的表名。
 
-If the `WHERE/PREWHERE` clause contains conditions for the `_table` column that do not depend on other table columns (as one of the conjunction elements, or as an entire expression), these conditions are used as an index. The conditions are performed on a data set of table names to read data from, and the read operation will be performed from only those tables that the condition was triggered on.
+如果 `WHERE/PREWHERE` 子句包含了带 `_table` 的条件，并且没有依赖其他的列（如作为表达式谓词链接的一个子项或作为整个的表达式），这些条件的作用会像索引一样。这些条件会在那些可能被读数据的表的表名上执行，并且读操作只会在那些满足了该条件的表上去执行。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/merge/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/merge/) <!--hide-->

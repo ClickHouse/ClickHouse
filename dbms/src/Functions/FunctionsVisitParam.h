@@ -91,8 +91,7 @@ struct ExtractBool
 
 struct ExtractRaw
 {
-    static constexpr size_t bytes_on_stack = 64;
-    using ExpectChars = PODArray<char, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using ExpectChars = PODArrayWithStackMemory<char, 64>;
 
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
     {
@@ -101,7 +100,7 @@ struct ExtractRaw
 
         for (auto extract_begin = pos; pos != end; ++pos)
         {
-            if (*pos == current_expect_end)
+            if (current_expect_end && *pos == current_expect_end)
             {
                 expects_end.pop_back();
                 current_expect_end = expects_end.empty() ? 0 : expects_end.back();
@@ -193,7 +192,7 @@ struct ExtractParamImpl
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
-                res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i]);
+                res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i] - 1);  /// don't include terminating zero
             else
                 res[i] = 0;
 

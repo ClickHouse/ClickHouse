@@ -40,6 +40,7 @@ try
     std::cerr << std::endl;
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);

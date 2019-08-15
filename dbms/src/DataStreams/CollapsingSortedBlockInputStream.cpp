@@ -40,7 +40,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 }
 
 
-void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_columns, size_t & merged_rows)
+void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_columns, size_t block_size, MergeStopCondition & condition)
 {
     if (count_positive == 0 && count_negative == 0)
     {
@@ -52,7 +52,7 @@ void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_column
     {
         if (count_positive <= count_negative)
         {
-            ++merged_rows;
+            condition.addRowWithGranularity(block_size);
             for (size_t i = 0; i < num_columns; ++i)
                 merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
 
@@ -62,7 +62,7 @@ void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_column
 
         if (count_positive >= count_negative)
         {
-            ++merged_rows;
+            condition.addRowWithGranularity(block_size);
             for (size_t i = 0; i < num_columns; ++i)
                 merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
 
@@ -106,12 +106,14 @@ Block CollapsingSortedBlockInputStream::readImpl()
 
 void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
-    size_t merged_rows = 0;
 
+    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
+    size_t current_block_granularity;
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     for (; !queue.empty(); ++current_pos)
     {
         SortCursor current = queue.top();
+        current_block_granularity = current->rows;
 
         if (current_key.empty())
             setPrimaryKeyRef(current_key, current);
@@ -122,7 +124,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
         bool key_differs = next_key != current_key;
 
         /// if there are enough rows and the last one is calculated completely
-        if (key_differs && merged_rows >= max_block_size)
+        if (key_differs && stop_condition.checkStop())
         {
             ++blocks_written;
             return;
@@ -133,7 +135,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
         if (key_differs)
         {
             /// We write data for the previous primary key.
-            insertRows(merged_columns, merged_rows);
+            insertRows(merged_columns, current_block_granularity, stop_condition);
 
             current_key.swap(next_key);
 
@@ -167,7 +169,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
                 first_negative_pos = current_pos;
             }
 
-            if (!blocks_written && !merged_rows)
+            if (!blocks_written && stop_condition.empty())
             {
                 setRowRef(last_negative, current);
                 last_negative_pos = current_pos;
@@ -193,7 +195,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
     }
 
     /// Write data for last primary key.
-    insertRows(merged_columns, merged_rows);
+    insertRows(merged_columns, /*some_granularity*/ 0, stop_condition);
 
     finished = true;
 }

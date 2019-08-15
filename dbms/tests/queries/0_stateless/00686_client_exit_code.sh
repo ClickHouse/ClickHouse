@@ -5,5 +5,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 . $CURDIR/mergetree_mutations.lib
 
-echo "INSERT INTO test.test FORMAT CSV" | ${CLICKHOUSE_CLIENT} -n 2>/dev/null
+echo "INSERT INTO test FORMAT CSV" | ${CLICKHOUSE_CLIENT} -n 2>/dev/null
 echo $?

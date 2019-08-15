@@ -1,10 +1,11 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufReader.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <boost/numeric/conversion/cast.hpp>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Formats/ProtobufReader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -40,11 +41,12 @@ namespace
     constexpr UInt64 END_OF_GROUP = static_cast<UInt64>(-2);
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
+}
 
-    void unknownFormat()
-    {
-        throw Exception("Protobuf messages are corrupted or doesn't match the provided schema", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
-    }
+
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat()
+{
+    throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }
 
 
@@ -66,7 +68,10 @@ bool ProtobufReader::SimpleReader::startMessage()
         if (unlikely(in.eof()))
             return false;
         size_t size_of_message = readVarint();
+        if (size_of_message == 0)
+            throwUnknownFormat();
         current_message_end = cursor + size_of_message;
+        root_message_end = current_message_end;
     }
     else
     {
@@ -90,7 +95,7 @@ void ProtobufReader::SimpleReader::endMessage()
         else if (unlikely(cursor > current_message_end))
         {
             if (!parent_message_ends.empty())
-                unknownFormat();
+                throwUnknownFormat();
             moveCursorBackward(cursor - current_message_end);
         }
         current_message_end = REACHED_END;
@@ -140,7 +145,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
 
     UInt64 varint = readVarint();
     if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
-        unknownFormat();
+        throwUnknownFormat();
     UInt32 key = static_cast<UInt32>(varint);
     field_number = (key >> 3);
     WireType wire_type = static_cast<WireType>(key & 0x07);
@@ -170,7 +175,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
         case GROUP_END:
         {
             if (current_message_end != END_OF_GROUP)
-                unknownFormat();
+                throwUnknownFormat();
             current_message_end = REACHED_END;
             return false;
         }
@@ -180,7 +185,7 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
             return true;
         }
     }
-    unknownFormat();
+    throwUnknownFormat();
     __builtin_unreachable();
 }
 
@@ -256,7 +261,7 @@ void ProtobufReader::SimpleReader::ignore(UInt64 num_bytes)
 void ProtobufReader::SimpleReader::moveCursorBackward(UInt64 num_bytes)
 {
     if (in.offset() < num_bytes)
-        unknownFormat();
+        throwUnknownFormat();
     in.position() -= num_bytes;
     cursor -= num_bytes;
 }
@@ -293,7 +298,7 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     PROTOBUF_READER_READ_VARINT_BYTE(10)
 #undef PROTOBUF_READER_READ_VARINT_BYTE
 
-    unknownFormat();
+    throwUnknownFormat();
     __builtin_unreachable();
 }
 
@@ -326,7 +331,7 @@ void ProtobufReader::SimpleReader::ignoreVarint()
     PROTOBUF_READER_IGNORE_VARINT_BYTE(10)
 #undef PROTOBUF_READER_IGNORE_VARINT_BYTE
 
-    unknownFormat();
+    throwUnknownFormat();
 }
 
 void ProtobufReader::SimpleReader::ignoreGroup()
@@ -370,10 +375,9 @@ void ProtobufReader::SimpleReader::ignoreGroup()
                 break;
             }
         }
-        unknownFormat();
+        throwUnknownFormat();
     }
 }
-
 
 // Implementation for a converter from any protobuf field type to any DB data type.
 class ProtobufReader::ConverterBaseImpl : public ProtobufReader::IConverter
@@ -385,73 +389,61 @@ public:
     bool readStringInto(PaddedPODArray<UInt8> &) override
     {
         cannotConvertType("String");
-        return false;
     }
 
     bool readInt8(Int8 &) override
     {
         cannotConvertType("Int8");
-        return false;
     }
 
     bool readUInt8(UInt8 &) override
     {
         cannotConvertType("UInt8");
-        return false;
     }
 
     bool readInt16(Int16 &) override
     {
         cannotConvertType("Int16");
-        return false;
     }
 
     bool readUInt16(UInt16 &) override
     {
         cannotConvertType("UInt16");
-        return false;
     }
 
     bool readInt32(Int32 &) override
     {
         cannotConvertType("Int32");
-        return false;
     }
 
     bool readUInt32(UInt32 &) override
     {
         cannotConvertType("UInt32");
-        return false;
     }
 
     bool readInt64(Int64 &) override
     {
         cannotConvertType("Int64");
-        return false;
     }
 
     bool readUInt64(UInt64 &) override
     {
         cannotConvertType("UInt64");
-        return false;
     }
 
     bool readUInt128(UInt128 &) override
     {
         cannotConvertType("UInt128");
-        return false;
     }
 
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");
-        return false;
     }
 
     bool readFloat64(Float64 &) override
     {
         cannotConvertType("Float64");
-        return false;
     }
 
     void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
@@ -460,59 +452,50 @@ public:
     bool readEnum8(Int8 &) override
     {
         cannotConvertType("Enum");
-        return false;
     }
 
     bool readEnum16(Int16 &) override
     {
         cannotConvertType("Enum");
-        return false;
     }
 
     bool readUUID(UUID &) override
     {
         cannotConvertType("UUID");
-        return false;
     }
 
     bool readDate(DayNum &) override
     {
         cannotConvertType("Date");
-        return false;
     }
 
     bool readDateTime(time_t &) override
     {
         cannotConvertType("DateTime");
-        return false;
     }
 
     bool readDecimal32(Decimal32 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal32");
-        return false;
     }
 
     bool readDecimal64(Decimal64 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal64");
-        return false;
     }
 
     bool readDecimal128(Decimal128 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal128");
-        return false;
     }
 
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) override
     {
         cannotConvertType("AggregateFunction");
-        return false;
     }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             String("Could not convert type '") + field->type_name() + "' from protobuf field '" + field->name() + "' to data type '"
@@ -520,7 +503,7 @@ protected:
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value, const String & type_name)
+    [[noreturn]] void cannotConvertValue(const String & value, const String & type_name)
     {
         throw Exception(
             "Could not convert value '" + value + "' from protobuf field '" + field->name() + "' to data type '" + type_name + "'",
@@ -557,7 +540,6 @@ protected:
         catch (...)
         {
             cannotConvertValue(StringRef(str.data(), str.size()).toString(), TypeName<To>::get());
-            __builtin_unreachable();
         }
     }
 

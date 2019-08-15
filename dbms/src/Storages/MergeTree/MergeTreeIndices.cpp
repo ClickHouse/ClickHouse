@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creator)
+void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator creator)
 {
     if (!indexes.emplace(name, std::move(creator)).second)
         throw Exception("MergeTreeIndexFactory: the Index creator name '" + name + "' is not unique",
@@ -70,6 +70,11 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context);
 
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context);
+
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
@@ -77,6 +82,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerIndex("set", setIndexCreator);
     registerIndex("ngrambf_v1", bloomFilterIndexCreator);
     registerIndex("tokenbf_v1", bloomFilterIndexCreator);
+    registerIndex("bloom_filter", bloomFilterIndexCreatorNew);
 }
 
 }

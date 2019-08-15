@@ -1,7 +1,6 @@
-CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.decimal;
+DROP TABLE IF EXISTS decimal;
 
-CREATE TABLE IF NOT EXISTS test.decimal
+CREATE TABLE IF NOT EXISTS decimal
 (
     a DEC(9, 2),
     b DEC(18, 5),
@@ -35,27 +34,27 @@ SELECT nullIf(toDecimal128(1, 0), toNullable(toDecimal128(1, 0)));
 SELECT nullIf(toNullable(toDecimal128(1, 0)), toDecimal128(2, 0));
 SELECT nullIf(toDecimal128(1, 0), toNullable(toDecimal128(2, 0)));
 
-INSERT INTO test.decimal (a, b, c, d, e, f) VALUES (1.1, 1.1, 1.1, 1.1, 1.1, 1.1);
-INSERT INTO test.decimal (a, b, c, d) VALUES (2.2, 2.2, 2.2, 2.2);
-INSERT INTO test.decimal (a, b, c, e) VALUES (3.3, 3.3, 3.3, 3.3);
-INSERT INTO test.decimal (a, b, c, f) VALUES (4.4, 4.4, 4.4, 4.4);
-INSERT INTO test.decimal (a, b, c) VALUES (5.5, 5.5, 5.5);
+INSERT INTO decimal (a, b, c, d, e, f) VALUES (1.1, 1.1, 1.1, 1.1, 1.1, 1.1);
+INSERT INTO decimal (a, b, c, d) VALUES (2.2, 2.2, 2.2, 2.2);
+INSERT INTO decimal (a, b, c, e) VALUES (3.3, 3.3, 3.3, 3.3);
+INSERT INTO decimal (a, b, c, f) VALUES (4.4, 4.4, 4.4, 4.4);
+INSERT INTO decimal (a, b, c) VALUES (5.5, 5.5, 5.5);
 
-SELECT * FROM test.decimal ORDER BY d, e, f;
-SELECT isNull(a), isNotNull(a) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT isNull(b), isNotNull(b) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT isNull(c), isNotNull(c) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT isNull(d), isNotNull(d) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT isNull(e), isNotNull(e) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT isNull(f), isNotNull(f) FROM test.decimal WHERE a = toDecimal32(5.5, 1);
-SELECT count() FROM test.decimal WHERE a IS NOT NULL;
-SELECT count() FROM test.decimal WHERE b IS NOT NULL;
-SELECT count() FROM test.decimal WHERE c IS NOT NULL;
-SELECT count() FROM test.decimal WHERE d IS NULL;
-SELECT count() FROM test.decimal WHERE e IS NULL;
-SELECT count() FROM test.decimal WHERE f IS NULL;
-SELECT count() FROM test.decimal WHERE d IS NULL AND e IS NULL;
-SELECT count() FROM test.decimal WHERE d IS NULL AND f IS NULL;
-SELECT count() FROM test.decimal WHERE e IS NULL AND f IS NULL;
+SELECT * FROM decimal ORDER BY d, e, f;
+SELECT isNull(a), isNotNull(a) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT isNull(b), isNotNull(b) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT isNull(c), isNotNull(c) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT isNull(d), isNotNull(d) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT isNull(e), isNotNull(e) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT isNull(f), isNotNull(f) FROM decimal WHERE a = toDecimal32(5.5, 1);
+SELECT count() FROM decimal WHERE a IS NOT NULL;
+SELECT count() FROM decimal WHERE b IS NOT NULL;
+SELECT count() FROM decimal WHERE c IS NOT NULL;
+SELECT count() FROM decimal WHERE d IS NULL;
+SELECT count() FROM decimal WHERE e IS NULL;
+SELECT count() FROM decimal WHERE f IS NULL;
+SELECT count() FROM decimal WHERE d IS NULL AND e IS NULL;
+SELECT count() FROM decimal WHERE d IS NULL AND f IS NULL;
+SELECT count() FROM decimal WHERE e IS NULL AND f IS NULL;
 
-DROP TABLE IF EXISTS test.decimal;
+DROP TABLE IF EXISTS decimal;

@@ -1,0 +1,27 @@
+pkgname=clickhouse
+pkgver=${VERSION_STRING}
+pkgrel=1
+pkgdesc='An open-source column-oriented database management system that allows generating analytical data reports in real time'
+arch=('x86_64')
+url='https://clickhouse.yandex/'
+license=('Apache')
+
+package() {
+    # This code was requisited from kmeaw@ https://aur.archlinux.org/packages/clickhouse/ .
+    SRC=${ClickHouse_SOURCE_DIR}
+    BIN=${ClickHouse_BINARY_DIR}
+    mkdir -p $pkgdir/etc/clickhouse-server/ $pkgdir/etc/clickhouse-client/
+    mkdir -p $pkgdir/usr/bin/
+    mkdir -p $pkgdir/usr/lib/systemd/system
+    ln -s clickhouse-client $pkgdir/usr/bin/clickhouse-server
+    cp $SRC/dbms/programs/server/config.xml $SRC/dbms/programs/server/users.xml $pkgdir/etc/clickhouse-server/
+    cp $BIN/dbms/programs/clickhouse $pkgdir/usr/bin/clickhouse-client
+    patchelf --remove-rpath $pkgdir/usr/bin/clickhouse-client
+    patchelf --replace-needed libz.so.1 libz-ng.so.1 $pkgdir/usr/bin/clickhouse-client
+    cp $SRC/dbms/programs/client/clickhouse-client.xml $pkgdir/etc/clickhouse-client/config.xml
+    compiler="libclickhouse-compiler.so"
+    if ! pacman -Q clang | grep '^clang 7'; then
+        compiler=""
+    fi
+    cp $SRC/debian/clickhouse-server.service $pkgdir/usr/lib/systemd/system
+} 

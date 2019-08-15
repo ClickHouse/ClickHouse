@@ -53,42 +53,49 @@ private:
     {
         AggregateFunctionForEachData & state = data(place);
 
-        /// Ensure we have aggreate states for new_size elements, allocate from arena if needed
-
+        /// Ensure we have aggreate states for new_size elements, allocate
+        /// from arena if needed. When reallocating, we can't copy the
+        /// states to new buffer with memcpy, because they may contain pointers
+        /// to themselves. In particular, this happens when a state contains
+        /// a PODArrayWithStackMemory, which stores small number of elements
+        /// inline. This is why we create new empty states in the new buffer,
+        /// and merge the old states to them.
         size_t old_size = state.dynamic_array_size;
         if (old_size < new_size)
         {
-            state.array_of_aggregate_datas = arena.alignedRealloc(
-                state.array_of_aggregate_datas,
-                old_size * nested_size_of_data,
+            char * old_state = state.array_of_aggregate_datas;
+            char * new_state = arena.alignedAlloc(
                 new_size * nested_size_of_data,
                 nested_func->alignOfData());
 
-            size_t i = old_size;
-            char * nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;
-
+            size_t i;
             try
             {
-                for (; i < new_size; ++i)
+                for (i = 0; i < new_size; ++i)
                 {
-                    nested_func->create(nested_state);
-                    nested_state += nested_size_of_data;
+                    nested_func->create(&new_state[i * nested_size_of_data]);
                 }
             }
             catch (...)
             {
                 size_t cleanup_size = i;
-                nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;
 
                 for (i = 0; i < cleanup_size; ++i)
                 {
-                    nested_func->destroy(nested_state);
-                    nested_state += nested_size_of_data;
+                    nested_func->destroy(&new_state[i * nested_size_of_data]);
                 }
 
                 throw;
             }
 
+            for (i = 0; i < old_size; i++)
+            {
+                nested_func->merge(&new_state[i * nested_size_of_data],
+                        &old_state[i * nested_size_of_data],
+                        &arena);
+            }
+
+            state.array_of_aggregate_datas = new_state;
             state.dynamic_array_size = new_size;
         }
 

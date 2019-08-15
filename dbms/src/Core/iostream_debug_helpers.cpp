@@ -10,9 +10,10 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <Common/FieldVisitors.h>
 
 namespace DB
@@ -70,7 +71,7 @@ std::ostream & operator<<(std::ostream & stream, const Block & what)
 
 std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
-    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
+    stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << *what.type << ", column = ";
     return dumpValue(stream, what.column) << ")";
 }
 
@@ -80,9 +81,9 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     stream << "{";
     for (size_t i = 0; i < what.size(); ++i)
     {
-        stream << applyVisitor(FieldVisitorDump(), what[i]);
         if (i)
             stream << ", ";
+        stream << applyVisitor(FieldVisitorDump(), what[i]);
     }
     stream << "}";
 
@@ -106,6 +107,58 @@ std::ostream & operator<<(std::ostream & stream, const IAST & what)
     stream << "IAST{";
     what.dumpTree(stream);
     stream << "}";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what)
+{
+    stream << "ExpressionAction(" << what.toString() << ")";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what)
+{
+    stream << "ExpressionActions(" << what.dumpActions() << ")";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what)
+{
+    stream << "SyntaxAnalyzerResult{";
+    stream << "storage=" << what.storage << "; ";
+    if (!what.source_columns.empty())
+    {
+        stream << "source_columns=";
+        dumpValue(stream, what.source_columns);
+        stream << "; ";
+    }
+    if (!what.aliases.empty())
+    {
+        stream << "aliases=";
+        dumpValue(stream, what.aliases);
+        stream << "; ";
+    }
+    if (!what.array_join_result_to_source.empty())
+    {
+        stream << "array_join_result_to_source=";
+        dumpValue(stream, what.array_join_result_to_source);
+        stream << "; ";
+    }
+    if (!what.array_join_alias_to_name.empty())
+    {
+        stream << "array_join_alias_to_name=";
+        dumpValue(stream, what.array_join_alias_to_name);
+        stream << "; ";
+    }
+    if (!what.array_join_name_to_alias.empty())
+    {
+        stream << "array_join_name_to_alias=";
+        dumpValue(stream, what.array_join_name_to_alias);
+        stream << "; ";
+    }
+    stream << "rewrite_subqueries=" << what.rewrite_subqueries << "; ";
+    stream << "}";
+
     return stream;
 }
 

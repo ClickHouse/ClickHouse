@@ -240,3 +240,29 @@ SELECT toUInt64('9223372036854775809') AS x, toDecimal64(x, 0); -- { serverError
 SELECT toDecimal32(0, rowNumberInBlock()); -- { serverError 44 }
 SELECT toDecimal64(0, rowNumberInBlock()); -- { serverError 44 }
 SELECT toDecimal128(0, rowNumberInBlock()); -- { serverError 44 }
+
+SELECT toDecimal32(1/0, 0); -- { serverError 407 }
+SELECT toDecimal64(1/0, 1); -- { serverError 407 }
+SELECT toDecimal128(0/0, 2); -- { serverError 407 }
+SELECT CAST(1/0, 'Decimal(9, 0)'); -- { serverError 407 }
+SELECT CAST(1/0, 'Decimal(18, 1)'); -- { serverError 407 }
+SELECT CAST(1/0, 'Decimal(38, 2)'); -- { serverError 407 }
+SELECT CAST(0/0, 'Decimal(9, 3)'); -- { serverError 407 }
+SELECT CAST(0/0, 'Decimal(18, 4)'); -- { serverError 407 }
+SELECT CAST(0/0, 'Decimal(38, 5)'); -- { serverError 407 }
+
+select toDecimal32(10000.1, 6); -- { serverError 407 }
+select toDecimal64(10000.1, 18); -- { serverError 407 }
+select toDecimal128(1000000000000000000000.1, 18); -- { serverError 407 }
+
+select toDecimal32(-10000.1, 6); -- { serverError 407 }
+select toDecimal64(-10000.1, 18); -- { serverError 407 }
+select toDecimal128(-1000000000000000000000.1, 18); -- { serverError 407 }
+
+select toDecimal32(2147483647.0 + 1.0, 0); -- { serverError 407 }
+select toDecimal64(9223372036854775807.0, 0); -- { serverError 407 }
+select toDecimal128(170141183460469231731687303715884105729.0, 0); -- { serverError 407 }
+
+select toDecimal32(-2147483647.0 - 1.0, 0); -- { serverError 407 }
+select toDecimal64(-9223372036854775807.0, 0); -- { serverError 407 }
+select toDecimal128(-170141183460469231731687303715884105729.0, 0); -- { serverError 407 }

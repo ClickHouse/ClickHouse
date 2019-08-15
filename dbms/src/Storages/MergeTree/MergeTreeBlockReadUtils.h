@@ -99,12 +99,6 @@ struct MergeTreeBlockSizePredictor
             : 0;
     }
 
-    /// Predicts what number of marks should be read to exhaust byte quota
-    inline size_t estimateNumMarks(size_t bytes_quota, size_t index_granularity) const
-    {
-        return (estimateNumRows(bytes_quota) + index_granularity / 2) / index_granularity;
-    }
-
     inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = DECAY())
     {
         double alpha = std::pow(1. - decay, rows_was_read);

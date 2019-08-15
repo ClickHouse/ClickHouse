@@ -1,6 +1,6 @@
-DROP TABLE IF EXISTS test.stored_aggregates;
+DROP TABLE IF EXISTS stored_aggregates;
 
-CREATE TABLE test.stored_aggregates
+CREATE TABLE stored_aggregates
 (
 	d	Date,
 	k1 	UInt64,
@@ -15,7 +15,7 @@ CREATE TABLE test.stored_aggregates
 )
 ENGINE = AggregatingMergeTree(d, (d, k1, k2), 8192);
 
-INSERT INTO test.stored_aggregates
+INSERT INTO stored_aggregates
 SELECT
 	toDate('2014-06-01') AS d,
 	intDiv(number, 100) AS k1,
@@ -39,7 +39,7 @@ SELECT d, k1, k2,
 	anyMerge(Any), anyIfMerge(AnyIf),
 	quantilesMerge(0.5, 0.9)(Quantiles),
 	groupArrayMerge(GroupArray)
-FROM test.stored_aggregates
+FROM stored_aggregates
 GROUP BY d, k1, k2
 ORDER BY d, k1, k2;
 
@@ -48,7 +48,7 @@ SELECT d, k1,
 	anyMerge(Any), anyIfMerge(AnyIf),
 	quantilesMerge(0.5, 0.9)(Quantiles),
 	groupArrayMerge(GroupArray)
-FROM test.stored_aggregates
+FROM stored_aggregates
 GROUP BY d, k1
 ORDER BY d, k1;
 
@@ -57,8 +57,8 @@ SELECT d,
 	anyMerge(Any), anyIfMerge(AnyIf),
 	quantilesMerge(0.5, 0.9)(Quantiles),
 	groupArrayMerge(GroupArray)
-FROM test.stored_aggregates
+FROM stored_aggregates
 GROUP BY d
 ORDER BY d;
 
-DROP TABLE test.stored_aggregates;
+DROP TABLE stored_aggregates;

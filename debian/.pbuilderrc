@@ -3,10 +3,13 @@
 #
 # ubuntu:
 # prepare old (trusty or earlier) host system:
+
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/eoan
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/disco
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/cosmic
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
+# sudo ln -s sid /usr/share/debootstrap/scripts/buster
 # build ubuntu:
 # sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
@@ -28,9 +31,11 @@
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# test gcc-9
+# env DEB_CC=gcc-9 DEB_CXX=g++-9 EXTRAPACKAGES="g++-9 gcc-9" DIST=disco pdebuild --configfile debian/.pbuilderrc
 # use only clang:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
 # env DEB_CC=clang-8 DEB_CXX=clang++-8 EXTRAPACKAGES=clang-8 DIST=disco pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+asan:
 # env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+tsan:
@@ -56,7 +61,7 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
     "experimental" "unstable" "testing" "stable")
 
 # List of Ubuntu suites. Update these when needed.
-UBUNTU_SUITES=("disco" "cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
+UBUNTU_SUITES=("eoan" "disco" "cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
@@ -167,12 +172,12 @@ esac
 
 if [ "$ARCH" != arm64 ]; then
     case "$DIST" in
-# TODO: fix llvm-8 and use for "disco"
+# TODO: fix llvm-8 and use for "disco" and "eoan"
     "experimental")
         EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
         export CMAKE_FLAGS="-DLLVM_VERSION=8 $CMAKE_FLAGS"
         ;;
-    "disco" | "cosmic" | "testing" | "unstable")
+    "eoan" | "disco" | "cosmic" | "testing" | "unstable")
         EXTRAPACKAGES+=" liblld-7-dev libclang-7-dev llvm-7-dev liblld-7 "
         export CMAKE_FLAGS="-DLLVM_VERSION=7 $CMAKE_FLAGS"
         ;;

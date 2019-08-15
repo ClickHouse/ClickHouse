@@ -2,9 +2,10 @@
 
 #include <Core/Types.h>
 
-#include <vector>
-#include <unordered_set>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 
 namespace Poco
@@ -64,6 +65,12 @@ struct User
     /// List of allowed databases.
     using DatabaseSet = std::unordered_set<std::string>;
     DatabaseSet databases;
+
+    /// Table properties.
+    using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
+    using TableMap = std::unordered_map<std::string /* table */, PropertyMap /* properties */>;
+    using DatabaseMap = std::unordered_map<std::string /* database */, TableMap /* tables */>;
+    DatabaseMap table_props;
 
     User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };

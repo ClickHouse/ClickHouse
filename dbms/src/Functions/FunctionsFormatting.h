@@ -143,7 +143,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!isNumber(type))
+        if (!isNativeNumber(type))
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

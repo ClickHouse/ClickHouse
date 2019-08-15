@@ -42,17 +42,6 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const std::vector<CodecNameWithLevel> & codecs) const
-{
-    Codecs result;
-    for (const auto & [codec_name, level] : codecs)
-        result.push_back(get(codec_name, level));
-
-    if (result.size() == 1)
-        return result.back();
-
-    return std::make_shared<CompressionCodecMultiple>(result);
-}
 
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type) const
 {
@@ -93,7 +82,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const
 {
     if (family_name == "Multiple")
-        throw Exception("Codec MULTIPLE cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Codec Multiple cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
 
     const auto family_and_creator = family_name_with_codec.find(family_name);
 
@@ -148,6 +137,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
+void registerCodecT64(CompressionCodecFactory & factory);
+void registerCodecDoubleDelta(CompressionCodecFactory & factory);
+void registerCodecGorilla(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -158,6 +150,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecMultiple(*this);
     registerCodecLZ4HC(*this);
     registerCodecDelta(*this);
+    registerCodecT64(*this);
+    registerCodecDoubleDelta(*this);
+    registerCodecGorilla(*this);
 }
 
 }

@@ -1,4 +1,3 @@
-use test;
 drop table if exists X;
 drop table if exists Y;
 

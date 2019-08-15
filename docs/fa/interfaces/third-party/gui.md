@@ -49,6 +49,16 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پیش نمایش جدول با فیلتر کردن و مرتب سازی.
 - اعداد نمایش داده شده فقط خواندنی
 
+### DBeaver
+
+[DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
+
+امکانات:
+
+- توسعه پرس و جو با برجسته نحو
+- پیش نمایش جدول
+- تکمیل خودکار
+
 ### clickhouse-cli
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) یک مشتری خط فرمان برای ClickHouse است که در پایتون 3 نوشته شده است.
@@ -60,16 +70,6 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - دستورات پست سفارشی مانند PostgreSQL.
 
 ## تجاری
-
-### DBeaver
-
-[DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
-
-امکانات:
-
-- توسعه پرس و جو با برجسته نحو
-- پیش نمایش جدول
-- تکمیل خودکار
 
 ### DataGrip
 

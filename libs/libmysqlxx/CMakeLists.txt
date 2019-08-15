@@ -1,4 +1,4 @@
-add_library (mysqlxx ${LINK_MODE}
+add_library (mysqlxx
     src/Connection.cpp
     src/Exception.cpp
     src/Query.cpp
@@ -12,7 +12,6 @@ add_library (mysqlxx ${LINK_MODE}
 
     include/mysqlxx/Connection.h
     include/mysqlxx/Exception.h
-    include/mysqlxx/Manip.h
     include/mysqlxx/mysqlxx.h
     include/mysqlxx/Null.h
     include/mysqlxx/Pool.h
@@ -46,7 +45,7 @@ else ()
     endif ()
 endif ()
 
-target_link_libraries(mysqlxx PUBLIC common ${Poco_Util_LIBRARY} PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
+target_link_libraries(mysqlxx PUBLIC common ${Poco_Util_LIBRARY} ${Poco_Foundation_LIBRARY} PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlxx PRIVATE ${OPENSSL_LIBRARIES})
 endif()

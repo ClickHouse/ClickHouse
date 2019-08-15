@@ -60,12 +60,11 @@ Block ColumnGathererStream::readImpl()
     if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();
 
+    MutableColumnPtr output_column = column.column->cloneEmpty();
     output_block = Block{column.cloneEmpty()};
-    MutableColumnPtr output_column = output_block.getByPosition(0).column->assumeMutable();
     output_column->gather(*this);
     if (!output_column->empty())
         output_block.getByPosition(0).column = std::move(output_column);
-
     return output_block;
 }
 

@@ -30,10 +30,18 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
 {
-    auto on_error = []
+    auto on_error = [&]
     {
         if constexpr (std::is_same_v<ReturnType, void>)
+        {
+            if (first_exception)
+            {
+                std::exception_ptr exception;
+                std::swap(exception, first_exception);
+                std::rethrow_exception(exception);
+            }
             throw DB::Exception("Cannot schedule a task", DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
+        }
         else
             return false;
     };

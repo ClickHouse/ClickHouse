@@ -1,3 +1,5 @@
+#include "StorageSystemPartsColumns.h"
+
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,8 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/System/StorageSystemPartsColumns.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -46,13 +46,13 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"column",                                     std::make_shared<DataTypeString>()},
-        {"type",                                       std::make_shared<DataTypeString>() },
-        {"default_kind",                               std::make_shared<DataTypeString>() },
-        {"default_expression",                         std::make_shared<DataTypeString>() },
-        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>() },
-        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>() },
-        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>() },
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>() },
+        {"type",                                       std::make_shared<DataTypeString>()},
+        {"default_kind",                               std::make_shared<DataTypeString>()},
+        {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
     }
     )
 {
@@ -81,10 +81,13 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
     }
 
     /// Go through the list of parts.
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
+    all_parts = info.getParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
@@ -97,6 +100,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         using State = MergeTreeDataPart::State;
 
         for (const auto & column : part->columns)
+
         {
             size_t j = 0;
             {
@@ -106,7 +110,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             }
             columns[j++]->insert(part->name);
             columns[j++]->insert(part_state == State::Committed);
-            columns[j++]->insert(part->marks_count);
+            columns[j++]->insert(part->getMarksCount());
 
             columns[j++]->insert(part->rows_count);
             columns[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
@@ -147,7 +151,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insertDefault();
             }
 
-            MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
             columns[j++]->insert(column_size.data_compressed + column_size.marks);
             columns[j++]->insert(column_size.data_compressed);
             columns[j++]->insert(column_size.data_uncompressed);

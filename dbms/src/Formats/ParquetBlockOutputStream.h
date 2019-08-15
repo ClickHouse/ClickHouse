@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PARQUET
 #    include <DataStreams/IBlockOutputStream.h>
 #    include <Formats/FormatSettings.h>
