@@ -269,8 +269,10 @@ void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data)
 {
     CachedColumnName column_name;
+    if (data.hasColumn(column_name.get(ast)))
+        return;
 
-    if (!data.only_consts && !data.actions_stack.getSampleBlock().has(column_name.get(ast)))
+    if (!data.only_consts)
     {
         /// The requested column is not in the block.
         /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
@@ -286,14 +288,13 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
         if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
-            data.actions_stack.addAction(ExpressionAction::addAliases({{identifier.name, identifier.alias}}));
+            data.addAction(ExpressionAction::addAliases({{identifier.name, identifier.alias}}));
     }
 }
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
     CachedColumnName column_name;
-
     if (data.hasColumn(column_name.get(ast)))
         return;
 
@@ -311,10 +312,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
         {
             String result_name = column_name.get(ast);
-            data.actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
+            data.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
             NameSet joined_columns;
             joined_columns.insert(result_name);
-            data.actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
+            data.addAction(ExpressionAction::arrayJoin(joined_columns, false, data.context));
         }
 
         return;
@@ -338,7 +339,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not subquery and create sets. We treat "IN" as "ignoreExceptNull" function.
 
-                data.actions_stack.addAction(ExpressionAction::applyFunction(
+                data.addAction(ExpressionAction::applyFunction(
                         FunctionFactory::instance().get("ignoreExceptNull", data.context),
                         { node.arguments->children.at(0)->getColumnName() },
                         column_name.get(ast)));
@@ -351,7 +352,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// (and is used only for index analysis, see KeyCondition).
     if (node.name == "indexHint")
     {
-        data.actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
+        data.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
             ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
                 column_name.get(ast))));
         return;
@@ -415,15 +416,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
             ///  so that sets with the same literal representation do not fuse together (they can have different types).
             if (!prepared_set->empty())
-                column.name = getUniqueName(data.actions_stack.getSampleBlock(), "__set");
+                column.name = getUniqueName(data.getSampleBlock(), "__set");
             else
                 column.name = child_column_name;
 
-            if (!data.actions_stack.getSampleBlock().has(column.name))
+            if (!data.hasColumn(column.name))
             {
                 column.column = ColumnSet::create(1, prepared_set);
 
-                data.actions_stack.addAction(ExpressionAction::addColumn(column));
+                data.addAction(ExpressionAction::addColumn(column));
             }
 
             argument_types.push_back(column.type);
@@ -434,9 +435,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
             std::string name = child_column_name;
-            if (data.actions_stack.getSampleBlock().has(name))
+            if (data.hasColumn(name))
             {
-                argument_types.push_back(data.actions_stack.getSampleBlock().getByName(name).type);
+                argument_types.push_back(data.getSampleBlock().getByName(name).type);
                 argument_names.push_back(name);
             }
             else
@@ -494,11 +495,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 /// We can not name `getColumnName()`,
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
-                String lambda_name = getUniqueName(data.actions_stack.getSampleBlock(), "__lambda");
+                String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
 
                 auto function_capture = std::make_shared<FunctionCapture>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
-                data.actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
+                data.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
 
                 argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                 argument_names[i] = lambda_name;
@@ -510,7 +511,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     {
         for (const auto & argument_name : argument_names)
         {
-            if (!data.actions_stack.getSampleBlock().has(argument_name))
+            if (!data.hasColumn(argument_name))
             {
                 arguments_present = false;
                 break;
@@ -520,15 +521,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
-        data.actions_stack.addAction(
-            ExpressionAction::applyFunction(function_builder, argument_names, column_name.get(ast)));
+        data.addAction(ExpressionAction::applyFunction(function_builder, argument_names, column_name.get(ast)));
     }
 }
 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data)
 {
     CachedColumnName column_name;
-
     if (data.hasColumn(column_name.get(ast)))
         return;
 
@@ -539,7 +538,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data 
     column.type = type;
     column.name = column_name.get(ast);
 
-    data.actions_stack.addAction(ExpressionAction::addColumn(column));
+    data.addAction(ExpressionAction::addColumn(column));
 }
 
 SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
@@ -550,7 +549,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
       */
     const IAST & args = *node.arguments;
     const ASTPtr & arg = args.children.at(1);
-    const Block & sample_block = data.actions_stack.getSampleBlock();
+    const Block & sample_block = data.getSampleBlock();
 
     /// If the subquery or table name for SELECT.
     const auto * identifier = arg->as<ASTIdentifier>();

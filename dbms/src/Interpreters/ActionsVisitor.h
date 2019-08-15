@@ -99,6 +99,16 @@ public:
             actions = actions_stack.popLevel();
         }
 
+        void addAction(const ExpressionAction & action)
+        {
+            actions_stack.addAction(action);
+        }
+
+        const Block & getSampleBlock() const
+        {
+            return actions_stack.getSampleBlock();
+        }
+
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & columnName) const
         {
