@@ -93,19 +93,18 @@ void MetricLog::metricThreadFunction()
     {
         try
         {
-            const auto prev_timepoint = desired_timepoint;
-
             if (is_shutdown_metric_thread)
                 break;
 
             MetricLogElement elem;
+            const auto prev_timepoint = std::chrono::system_clock::now();
             elem.event_time = std::chrono::system_clock::to_time_t(prev_timepoint);
             elem.milliseconds = time_in_milliseconds(prev_timepoint) - time_in_seconds(prev_timepoint) * 1000;
+
             this->add(elem);
 
             while (desired_timepoint <= std::chrono::system_clock::now())
                 desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
-
             std::this_thread::sleep_until(desired_timepoint);
         }
         catch (...)
