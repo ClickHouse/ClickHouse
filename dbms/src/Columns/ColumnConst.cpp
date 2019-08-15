@@ -1,6 +1,8 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 
@@ -100,6 +102,46 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
     res.resize(s);
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
+}
+
+
+ColumnPtr recursiveMaterializeConstants(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        auto & data = column_array->getDataPtr();
+        auto data_no_lc = recursiveMaterializeConstants(data);
+        if (data.get() == data_no_lc.get())
+            return column;
+
+        return ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
+    }
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+    {
+        auto & nested = column_const->getDataColumnPtr();
+        auto nested_no_lc = recursiveMaterializeConstants(nested);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnConst::create(nested_no_lc, column_const->size());
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        auto columns = column_tuple->getColumns();
+        for (auto & element : columns)
+            element = recursiveMaterializeConstants(element);
+        return ColumnTuple::create(columns);
+    }
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return column_const->convertToFullColumn();
+
+    return column;
 }
 
 }
