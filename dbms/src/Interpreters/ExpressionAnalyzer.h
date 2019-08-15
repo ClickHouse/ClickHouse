@@ -2,9 +2,9 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -182,9 +182,6 @@ private:
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
-
-    /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
-    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 

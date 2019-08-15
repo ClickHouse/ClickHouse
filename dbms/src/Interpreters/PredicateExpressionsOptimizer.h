@@ -1,7 +1,6 @@
 #pragma once
 
 #include "DatabaseAndTableWithAlias.h"
-#include "ExpressionAnalyzer.h"
 #include <Parsers/ASTSelectQuery.h>
 #include <map>
 
