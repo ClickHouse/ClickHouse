@@ -55,7 +55,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
 
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 
