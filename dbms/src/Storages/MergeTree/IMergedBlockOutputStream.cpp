@@ -309,20 +309,20 @@ void IMergedBlockOutputStream::writeFinalMark(
 
 IMergedBlockOutputStream::ColumnStream::ColumnStream(
     const String & escaped_column_name_,
-    const String & data_path,
+    const String & data_path_,
     const std::string & data_file_extension_,
-    const std::string & marks_path,
+    const std::string & marks_path_,
     const std::string & marks_file_extension_,
-    const CompressionCodecPtr & compression_codec,
-    size_t max_compress_block_size,
-    size_t estimated_size,
-    size_t aio_threshold) :
+    const CompressionCodecPtr & compression_codec_,
+    size_t max_compress_block_size_,
+    size_t estimated_size_,
+    size_t aio_threshold_) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(createWriteBufferFromFileBase(data_path + data_file_extension, estimated_size, aio_threshold, max_compress_block_size)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec), compressed(compressed_buf),
-    marks_file(marks_path + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
+    plain_file(createWriteBufferFromFileBase(data_path_ + data_file_extension, estimated_size_, aio_threshold_, max_compress_block_size_)),
+    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
+    marks_file(marks_path_ + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
 {
 }
 

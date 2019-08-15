@@ -56,7 +56,8 @@ void WriteBufferFromFileDescriptor::nextImpl()
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
-            throwFromErrno("Cannot write to file " + getFileName(), ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot write to file " + getFileName(), getFileName(),
+                                   ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -111,7 +112,7 @@ void WriteBufferFromFileDescriptor::sync()
     /// Request OS to sync data with storage medium.
     int res = fsync(fd);
     if (-1 == res)
-        throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+        throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }
 
 
@@ -119,7 +120,8 @@ off_t WriteBufferFromFileDescriptor::doSeek(off_t offset, int whence)
 {
     off_t res = lseek(fd, offset, whence);
     if (-1 == res)
-        throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                               ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     return res;
 }
 
@@ -128,7 +130,7 @@ void WriteBufferFromFileDescriptor::doTruncate(off_t length)
 {
     int res = ftruncate(fd, length);
     if (-1 == res)
-        throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+        throwFromErrnoWithPath("Cannot truncate file " + getFileName(), getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 }

@@ -33,18 +33,18 @@ private:
 
 public:
     AggregateFunctionResample(
-        AggregateFunctionPtr nested_function,
-        Key begin,
-        Key end,
-        size_t step,
+        AggregateFunctionPtr nested_function_,
+        Key begin_,
+        Key end_,
+        size_t step_,
         const DataTypes & arguments,
         const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
-        , nested_function{nested_function}
+        , nested_function{nested_function_}
         , last_col{arguments.size() - 1}
-        , begin{begin}
-        , end{end}
-        , step{step}
+        , begin{begin_}
+        , end{end_}
+        , step{step_}
         , total{0}
         , aod{nested_function->alignOfData()}
         , sod{(nested_function->sizeOfData() + aod - 1) / aod * aod}

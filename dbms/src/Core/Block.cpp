@@ -475,6 +475,9 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
+        if (!actual.column || !expected.column)
+            continue;
+
         if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);

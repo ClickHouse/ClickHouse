@@ -16,7 +16,7 @@ class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
-        const Block & header, ExpressionActionsPtr expression, String filter_column_name, bool remove_filter_column);
+        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_);
 
     String getName() const override { return "FilterTransform"; }
 

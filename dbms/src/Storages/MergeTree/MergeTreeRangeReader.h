@@ -20,10 +20,10 @@ class MergeTreeIndexGranularity;
 class MergeTreeRangeReader
 {
 public:
-    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader, MergeTreeRangeReader * prev_reader,
-                         ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
-                         const String * prewhere_column_name, const Names * ordered_names,
-                         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain);
+    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
+                         ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
+                         const String * prewhere_column_name_, const Names * ordered_names_,
+                         bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
 

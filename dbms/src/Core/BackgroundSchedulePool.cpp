@@ -23,7 +23,7 @@ namespace DB
 class TaskNotification final : public Poco::Notification
 {
 public:
-    explicit TaskNotification(const BackgroundSchedulePoolTaskInfoPtr & task) : task(task) {}
+    explicit TaskNotification(const BackgroundSchedulePoolTaskInfoPtr & task_) : task(task_) {}
     void execute() { task->execute(); }
 
 private:
@@ -155,8 +155,8 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
-    : size(size)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_)
+    : size(size_)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 

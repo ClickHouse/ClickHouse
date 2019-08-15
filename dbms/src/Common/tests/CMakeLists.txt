@@ -78,3 +78,6 @@ target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
 
 add_executable (mi_malloc_test mi_malloc_test.cpp)
 target_link_libraries (mi_malloc_test PRIVATE clickhouse_common_io)
+
+add_executable (symbol_index symbol_index.cpp)
+target_link_libraries (symbol_index PRIVATE clickhouse_common_io)

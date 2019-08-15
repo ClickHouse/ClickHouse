@@ -42,11 +42,11 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyCacheDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        const size_t size);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getKeyDescription() const { return key_description; }
 

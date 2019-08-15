@@ -117,8 +117,8 @@ private:
         CompressedReadBuffer compressed_in;
         BlockInputStreamPtr block_in;
 
-        TemporaryFileStream(const std::string & path, const Block & header)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
+        TemporaryFileStream(const std::string & path, const Block & header_)
+            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header_, 0)) {}
     };
 
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;

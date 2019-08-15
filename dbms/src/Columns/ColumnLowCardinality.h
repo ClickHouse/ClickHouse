@@ -201,8 +201,8 @@ public:
     public:
         Index();
         Index(const Index & other) = default;
-        explicit Index(MutableColumnPtr && positions);
-        explicit Index(ColumnPtr positions);
+        explicit Index(MutableColumnPtr && positions_);
+        explicit Index(ColumnPtr positions_);
 
         const ColumnPtr & getPositions() const { return positions; }
         WrappedPtr & getPositionsPtr() { return positions; }

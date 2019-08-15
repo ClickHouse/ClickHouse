@@ -9,13 +9,13 @@ template <class F> class scope_guard {
     const F function;
 
 public:
-    constexpr scope_guard(const F & function) : function{function} {}
-    constexpr scope_guard(F && function) : function{std::move(function)} {}
+    constexpr scope_guard(const F & function_) : function{function_} {}
+    constexpr scope_guard(F && function_) : function{std::move(function_)} {}
     ~scope_guard() { function(); }
 };
 
 template <class F>
-inline scope_guard<F> make_scope_guard(F && function) { return std::forward<F>(function); }
+inline scope_guard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
 
 }
 

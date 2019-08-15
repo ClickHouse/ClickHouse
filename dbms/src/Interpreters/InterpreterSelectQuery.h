@@ -46,7 +46,7 @@ public:
         const ASTPtr & query_ptr_,
         const Context & context_,
         const SelectQueryOptions &,
-        const Names & required_result_column_names = Names{});
+        const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(

@@ -711,7 +711,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        TokenIterator token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;

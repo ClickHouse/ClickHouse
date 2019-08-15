@@ -354,7 +354,7 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!p_expression.parse(pos, assignment->expression, expected))
         return false;
 
-    getIdentifierName(column, assignment->column_name);
+    tryGetIdentifierNameInto(column, assignment->column_name);
     if (assignment->expression)
         assignment->children.push_back(assignment->expression);
 

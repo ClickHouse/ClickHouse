@@ -53,8 +53,8 @@ class ReservoirSamplerDeterministic
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t sample_count = DEFAULT_SAMPLE_COUNT)
-        : sample_count{sample_count}
+    ReservoirSamplerDeterministic(const size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
+        : sample_count{sample_count_}
     {
     }
 

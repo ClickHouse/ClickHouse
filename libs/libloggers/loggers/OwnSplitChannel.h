@@ -3,6 +3,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
+#include <Interpreters/TextLog.h>
 
 
 namespace DB
@@ -19,11 +20,16 @@ public:
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
+    void addTextLog(std::shared_ptr<DB::TextLog> log);
+
 private:
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
+
+    std::mutex text_log_mutex;
+    std::weak_ptr<DB::TextLog> text_log;
 };
 
 }
