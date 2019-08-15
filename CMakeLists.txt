@@ -222,6 +222,7 @@ if (NOT SANITIZE)
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
+include(cmake/dbms_glob_sources.cmake)
 include(cmake/default_libs.cmake)
 
 if (GLIBC_COMPATIBILITY)

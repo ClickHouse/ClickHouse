@@ -97,8 +97,6 @@ add_subdirectory (src)
 set(dbms_headers)
 set(dbms_sources)
 
-include(../cmake/dbms_glob_sources.cmake)
-
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
