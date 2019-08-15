@@ -4,6 +4,8 @@
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -85,7 +87,9 @@ StorageKafka::StorageKafka(
         columns_,
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()}}, true))
+                            {"_offset", std::make_shared<DataTypeUInt64>()},
+                            {"_partition", std::make_shared<DataTypeUInt64>()},
+                            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
     , global_context(context_)

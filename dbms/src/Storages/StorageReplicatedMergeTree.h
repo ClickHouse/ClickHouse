@@ -172,6 +172,9 @@ public:
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
+    /// Checks ability to use granularity
+    bool canUseAdaptiveGranularity() const override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -284,6 +287,9 @@ private:
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
+
+    /// True if replica was created for existing table with fixed granularity
+    bool other_replicas_fixed_granularity = false;
 
     /** Creates the minimum set of nodes in ZooKeeper.
       */
@@ -505,6 +511,10 @@ private:
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
+
+    /// Check granularity of already existing replicated table in zookeeper if it exists
+    /// return true if it's fixed
+    bool checkFixedGranualrityInZookeeper();
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

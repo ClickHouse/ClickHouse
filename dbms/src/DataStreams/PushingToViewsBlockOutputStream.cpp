@@ -193,7 +193,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         /// and two-level aggregation is triggered).
         in = std::make_shared<SquashingBlockInputStream>(
             in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-        in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+        in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
 
         in->readPrefix();
 

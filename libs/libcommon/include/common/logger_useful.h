@@ -47,4 +47,5 @@ using DB::CurrentThread;
 #define LOG_INFO(logger, message)    LOG_SIMPLE(logger, message, LogsLevel::information, Message::PRIO_INFORMATION)
 #define LOG_WARNING(logger, message) LOG_SIMPLE(logger, message, LogsLevel::warning, Message::PRIO_WARNING)
 #define LOG_ERROR(logger, message)   LOG_SIMPLE(logger, message, LogsLevel::error, Message::PRIO_ERROR)
+#define LOG_FATAL(logger, message)   LOG_SIMPLE(logger, message, LogsLevel::error, Message::PRIO_FATAL)
 
