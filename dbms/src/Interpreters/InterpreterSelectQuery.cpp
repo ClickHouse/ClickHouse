@@ -2342,7 +2342,13 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
-        SortDescription order_descr = getSortDescription(query, context);
+        SortDescription order_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            order_descr = getSortDescription(query, context);
+        }
 
         UInt64 limit_length;
         UInt64 limit_offset;
