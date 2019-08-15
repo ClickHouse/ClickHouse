@@ -106,7 +106,7 @@ Block ConvertingBlockInputStream::readImpl()
         if (isColumnConst(*src_elem.column) && !isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();
 
-        res_elem.column = std::move(converted);
+        res_elem.column = recursiveMaterializeConstants(converted);
     }
     return res;
 }
