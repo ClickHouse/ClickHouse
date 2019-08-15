@@ -484,7 +484,7 @@ InterpreterSelectQuery::analyzeExpressions(
     QueryProcessingStage::Enum to_stage,
     const Context & context,
     const StoragePtr & storage,
-    bool dry_run,
+    bool only_types,
     const FilterInfoPtr & filter_info)
 {
     AnalysisResult res;
@@ -597,9 +597,9 @@ InterpreterSelectQuery::analyzeExpressions(
 
         res.need_aggregate = query_analyzer.hasAggregation();
 
-        query_analyzer.appendArrayJoin(chain, dry_run || !res.first_stage);
+        query_analyzer.appendArrayJoin(chain, only_types || !res.first_stage);
 
-        if (query_analyzer.appendJoin(chain, dry_run || !res.first_stage))
+        if (query_analyzer.appendJoin(chain, only_types || !res.first_stage))
         {
             res.before_join = chain.getLastActions();
             if (!res.hasJoin())
@@ -607,7 +607,7 @@ InterpreterSelectQuery::analyzeExpressions(
             chain.addStep();
         }
 
-        if (query_analyzer.appendWhere(chain, dry_run || !res.first_stage))
+        if (query_analyzer.appendWhere(chain, only_types || !res.first_stage))
         {
             where_step_num = chain.steps.size() - 1;
             has_where = res.has_where = true;
@@ -617,13 +617,13 @@ InterpreterSelectQuery::analyzeExpressions(
 
         if (res.need_aggregate)
         {
-            query_analyzer.appendGroupBy(chain, dry_run || !res.first_stage);
-            query_analyzer.appendAggregateFunctionsArguments(chain, dry_run || !res.first_stage);
+            query_analyzer.appendGroupBy(chain, only_types || !res.first_stage);
+            query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !res.first_stage);
             res.before_aggregation = chain.getLastActions();
 
             finalizeChain(chain);
 
-            if (query_analyzer.appendHaving(chain, dry_run || !res.second_stage))
+            if (query_analyzer.appendHaving(chain, only_types || !res.second_stage))
             {
                 res.has_having = true;
                 res.before_having = chain.getLastActions();
@@ -632,13 +632,13 @@ InterpreterSelectQuery::analyzeExpressions(
         }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-        query_analyzer.appendSelect(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
+        query_analyzer.appendSelect(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.selected_columns = chain.getLastStep().required_output;
-        res.has_order_by = query_analyzer.appendOrderBy(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
+        res.has_order_by = query_analyzer.appendOrderBy(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.before_order_and_select = chain.getLastActions();
         chain.addStep();
 
-        if (query_analyzer.appendLimitBy(chain, dry_run || !res.second_stage))
+        if (query_analyzer.appendLimitBy(chain, only_types || !res.second_stage))
         {
             res.has_limit_by = true;
             res.before_limit_by = chain.getLastActions();

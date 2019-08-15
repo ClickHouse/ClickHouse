@@ -180,7 +180,7 @@ private:
         QueryProcessingStage::Enum to_stage,
         const Context & context,
         const StoragePtr & storage,
-        bool dry_run,
+        bool only_types,
         const FilterInfoPtr & filter_info);
 
     /** From which table to read. With JOIN, the "left" table is returned.
