@@ -14,6 +14,8 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -558,6 +560,30 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
                             ErrorCodes::NOT_IMPLEMENTED);
 }
 
+std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
+{
+    if (const auto * select_query = query->as<ASTSelectQuery>())
+    {
+        /// There can not be aggregate functions inside the WHERE and PREWHERE.
+        if (select_query->where())
+            assertNoAggregates(select_query->where(), "in WHERE");
+        if (select_query->prewhere())
+            assertNoAggregates(select_query->prewhere(), "in PREWHERE");
+
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        /// There can not be other aggregate functions within the aggregate functions.
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
+        return data.aggregates;
+    }
+    else
+        assertNoAggregates(query, "in wrong place");
+    return {};
+}
+
 }
 
 /// Calculate which columns are required to execute the expression.
@@ -840,6 +866,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
+    result.aggregates = getAggregates(query);
     result.collectUsedColumns(query, additional_source_columns);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }

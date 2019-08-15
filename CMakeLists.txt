@@ -217,8 +217,6 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-# TODO: only make this extra-checks in CI builds, since a lot of contrib libs won't link -
-#       CI works around this problem by explicitly adding GLIBC_COMPATIBILITY flag.
 if (NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
