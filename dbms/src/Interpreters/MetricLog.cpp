@@ -13,6 +13,7 @@ Block MetricLogElement::createBlock()
 
     columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),       "event_date");
     columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(),   "event_time");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),     "milliseconds");
 
     //ProfileEvents
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
@@ -43,6 +44,7 @@ void MetricLogElement::appendToBlock(Block & block) const
 
     columns[iter++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[iter++]->insert(event_time);
+    columns[iter++]->insert(milliseconds);
 
     //ProfileEvents
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
@@ -74,6 +76,16 @@ void MetricLog::stopCollectMetric()
     metric_flush_thread.join();
 }
 
+inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void MetricLog::metricThreadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
@@ -88,9 +100,12 @@ void MetricLog::metricThreadFunction()
 
             MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(prev_timepoint);
+            elem.milliseconds = time_in_milliseconds(prev_timepoint) - time_in_seconds(prev_timepoint) * 1000;
             this->add(elem);
 
-            desired_timepoint = prev_timepoint + std::chrono::milliseconds(collect_interval_milliseconds);
+            while (desired_timepoint <= std::chrono::system_clock::now())
+                desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
+
             std::this_thread::sleep_until(desired_timepoint);
         }
         catch (...)
