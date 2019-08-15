@@ -19,7 +19,7 @@ namespace DB
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
             if constexpr (!std::is_same_v<A, ResultType>)
-                throw DB::Exception("Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_CAST);
+                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_CAST);
             return static_cast<ResultType>(
                     ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
         }
