@@ -186,8 +186,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 auto query = column.default_desc.expression->clone();
                 auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
-                ExpressionAnalyzer analyzer(query, syntax_result, context);
-                for (const String & dependency : analyzer.getRequiredSourceColumns())
+                for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
