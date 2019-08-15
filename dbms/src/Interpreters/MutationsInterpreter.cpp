@@ -199,8 +199,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             auto query = index->expr->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
-            ExpressionAnalyzer analyzer(query, syntax_result, context);
-            const auto required_columns = analyzer.getRequiredSourceColumns();
+            const auto required_columns = syntax_result->requiredSourceColumns();
 
             for (const String & dependency : required_columns)
             {
@@ -283,8 +282,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             auto query = (*it)->expr->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
-            ExpressionAnalyzer analyzer(query, syntax_result, context);
-            const auto required_columns = analyzer.getRequiredSourceColumns();
+            const auto required_columns = syntax_result->requiredSourceColumns();
             affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
         else
