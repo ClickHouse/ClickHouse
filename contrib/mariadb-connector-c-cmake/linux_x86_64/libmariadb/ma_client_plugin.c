@@ -80,6 +80,7 @@ extern struct st_mysql_client_plugin mysql_native_password_client_plugin;
 extern struct st_mysql_client_plugin mysql_old_password_client_plugin;
 extern struct st_mysql_client_plugin pvio_socket_client_plugin;
 extern struct st_mysql_client_plugin sha256_password_client_plugin;
+extern struct st_mysql_client_plugin caching_sha2_password_client_plugin;
 
 
 struct st_mysql_client_plugin *mysql_client_builtins[]=
@@ -88,6 +89,7 @@ struct st_mysql_client_plugin *mysql_client_builtins[]=
   (struct st_mysql_client_plugin *)&mysql_old_password_client_plugin,
   (struct st_mysql_client_plugin *)&pvio_socket_client_plugin,
   (struct st_mysql_client_plugin *)&sha256_password_client_plugin,
+  (struct st_mysql_client_plugin *)&caching_sha2_password_client_plugin,
   0
 };
 
