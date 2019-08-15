@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Common/T_test.h>
 
 namespace DB
 {
@@ -24,6 +25,8 @@ struct StopConditionsSet
 
     void report(UInt64 value, StopCondition & condition);
 
+    void reportTtestSingle(T_test & t_test, StopCondition & condition);
+
     StopCondition total_time_ms;
     StopCondition rows_read;
     StopCondition bytes_read_uncompressed;
@@ -31,6 +34,7 @@ struct StopConditionsSet
     StopCondition min_time_not_changing_for_ms;
     StopCondition max_speed_not_changing_for_ms;
     StopCondition average_speed_not_changing_for_ms;
+    StopCondition t_test_with_confidence_level;
 
     size_t initialized_count = 0;
     size_t fulfilled_count = 0;

@@ -36,9 +36,8 @@ bool isASCIIString(const std::string & str)
 }
 }
 
-ReportBuilder::ReportBuilder(const std::string & server_version_)
-    : server_version(server_version_)
-    , hostname(getFQDNOrHostName())
+ReportBuilder::ReportBuilder()
+    : hostname(getFQDNOrHostName())
     , num_cores(getNumberOfPhysicalCPUCores())
     , num_threads(std::thread::hardware_concurrency())
     , ram(getMemoryAmount())
@@ -52,30 +51,45 @@ std::string ReportBuilder::getCurrentTime() const
 
 std::string ReportBuilder::buildFullReport(
     const PerformanceTestInfo & test_info,
-    TestStatsPtrs & stats,
+    const std::vector<TestStatsPtrs> & stats,
+    const Connections & connections,
+    const ConnectionTimeouts & timeouts,
+    size_t connection_index,
     const std::vector<std::size_t> & queries_to_run) const
 {
     JSONString json_output;
 
+    const ConnectionPtr & connection = connections[connection_index];
+
+    std::string name;
+    UInt64 version_major;
+    UInt64 version_minor;
+    UInt64 version_patch;
+    UInt64 version_revision;
+
+    connection->getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
+
+    std::stringstream ss;
+    ss << version_major << "." << version_minor << "." << version_patch;
+    std::string connection_server_version = ss.str();
+
+    json_output.set("connection", connection->getDescription());
     json_output.set("hostname", hostname);
     json_output.set("num_cores", num_cores);
     json_output.set("num_threads", num_threads);
     json_output.set("ram", ram);
-    json_output.set("server_version", server_version);
+    json_output.set("server_version", connection_server_version);
     json_output.set("time", getCurrentTime());
     json_output.set("test_name", test_info.test_name);
     json_output.set("path", test_info.path);
     json_output.set("main_metric", getMainMetric(test_info));
 
-    if (test_info.substitutions.size())
+    if (!test_info.substitutions.empty())
     {
         JSONString json_parameters(2); /// here, 2 is the size of \t padding
 
-        for (auto it = test_info.substitutions.begin(); it != test_info.substitutions.end(); ++it)
+        for (auto & [parameter, values] : test_info.substitutions)
         {
-            std::string parameter = it->first;
-            Strings values = it->second;
-
             std::ostringstream array_string;
             array_string << "[";
             for (size_t i = 0; i != values.size(); ++i)
@@ -103,7 +117,7 @@ std::string ReportBuilder::buildFullReport(
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             size_t stat_index = number_of_launch * test_info.queries.size() + query_index;
-            TestStatsPtr & statistics = stats[stat_index];
+            const TestStatsPtr & statistics = stats[stat_index][connection_index];
 
             if (!statistics->ready)
                 continue;
@@ -129,7 +143,7 @@ std::string ReportBuilder::buildFullReport(
                 if (statistics->sampler.size() != 0)
                 {
                     JSONString quantiles(4); /// here, 4 is the size of \t padding
-                    for (double percent = 10; percent <= 90; percent += 10)
+                    for (int percent = 10; percent <= 90; percent += 10)
                     {
                         std::string quantile_key = std::to_string(percent / 100.0);
                         while (quantile_key.back() == '0')
@@ -154,6 +168,7 @@ std::string ReportBuilder::buildFullReport(
 
                 if (statistics->total_time != 0)
                 {
+                    runJSON.set("number_of_queries", static_cast<double>(statistics->queries));
                     runJSON.set("queries_per_second", static_cast<double>(statistics->queries) / statistics->total_time);
                     runJSON.set("rows_per_second", static_cast<double>(statistics->total_rows_read) / statistics->total_time);
                     runJSON.set("bytes_per_second", static_cast<double>(statistics->total_bytes_read) / statistics->total_time);
@@ -180,7 +195,10 @@ std::string ReportBuilder::buildFullReport(
 
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
-    TestStatsPtrs & stats,
+    const std::vector<TestStatsPtrs> & stats,
+    const Connections & /*connections*/,
+    const ConnectionTimeouts & /*timeouts*/,
+    size_t connection_index,
     const std::vector<std::size_t> & queries_to_run) const
 {
 
@@ -202,7 +220,7 @@ std::string ReportBuilder::buildCompactReport(
 
             output << main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;
-            output << stats[index]->getStatisticByName(main_metric);
+            output << stats[connection_index][index]->getStatisticByName(main_metric);
             output << "\n";
         }
     }

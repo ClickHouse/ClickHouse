@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
+#include <Common/T_test.h>
 
 #include "TestStopConditions.h"
 #include "TestStats.h"
@@ -108,31 +109,7 @@ public:
 
     int run()
     {
-        using Versions = std::vector<UInt64>;
-
-        Strings names(connections.size());
-        Versions versions_major(connections.size());
-        Versions versions_minor(connections.size());
-        Versions versions_patch(connections.size());
-        Versions versions_revision(connections.size());
-
-//        std::string name;
-//        UInt64 version_major;
-//        UInt64 version_minor;
-//        UInt64 version_patch;
-//        UInt64 version_revision;
-//        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
-
-        for (size_t i = 0; i != connections.size(); ++i)
-        {
-            connections[i]->getServerVersion(timeouts, names[i], versions_major[i], versions_minor[i], versions_patch[i], versions_revision[i]);
-        }
-
-        std::stringstream ss;
-//        ss << version_major << "." << version_minor << "." << version_patch;
-        server_version = ss.str();
-
-        report_builder = std::make_shared<ReportBuilder>(server_version);
+        report_builder = std::make_shared<ReportBuilder>();
 
         processTestsConfigurations(input_files);
 
@@ -142,7 +119,6 @@ public:
 private:
     Connections connections;
     const ConnectionTimeouts & timeouts;
-
     const Strings & tests_tags;
     const Strings & tests_names;
     const Strings & tests_names_regexp;
@@ -154,9 +130,9 @@ private:
     Context global_context = Context::createGlobal();
     std::shared_ptr<ReportBuilder> report_builder;
 
-    std::string server_version;
-
     InterruptListener interrupt_listener;
+
+    T_test t_test;
 
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
@@ -182,7 +158,7 @@ private:
 
         LOG_INFO(log, "Test configurations prepared");
 
-        if (tests_configurations.size())
+        if (!tests_configurations.empty())
         {
             Strings outputs;
 
@@ -226,14 +202,12 @@ private:
     {
         PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
+        PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path], t_test);
 
         if (current.checkPreconditions())
         {
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
-            LOG_INFO(
-                log,
-                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
+            LOG_INFO(log, "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
@@ -244,29 +218,19 @@ private:
             current.finish();
             LOG_INFO(log, "Postqueries finished");
 
-            DB::Strings reports_by_servers;
+            DB::Strings reports_by_connections;
             if (lite_output)
             {
-                std::cerr << " lul " << '\n';
-                for (auto & result : result_by_servers)
-                {
-                    std::cerr << " kuk " << '\n';
-                    String cur_report = report_builder->buildCompactReport(info, result, query_indexes[info.path]);
-                    reports_by_servers.push_back(cur_report);
-                }
+                for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
+                    reports_by_connections.push_back(report_builder->buildCompactReport(info, result_by_servers, connections, timeouts, connection_index, query_indexes[info.path]));
             }
             else
             {
-                std::cerr << " lel " << '\n';
-                for (auto & result : result_by_servers)
-                {
-                    String cur_report = report_builder->buildFullReport(info, result, query_indexes[info.path]);
-                    std::cerr << " kek " << '\n';
-                    reports_by_servers.push_back(cur_report);
-                }
+                for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
+                    reports_by_connections.push_back(report_builder->buildFullReport(info, result_by_servers, connections, timeouts, connection_index, query_indexes[info.path]));
             }
 
-            return {reports_by_servers, current.checkSIGINT()};
+            return {reports_by_connections, current.checkSIGINT()};
         }
         else
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");

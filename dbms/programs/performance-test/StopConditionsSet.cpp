@@ -30,6 +30,8 @@ void StopConditionsSet::loadFromConfig(const ConfigurationPtr & stop_conditions_
             max_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
         else if (key == "average_speed_not_changing_for_ms")
             average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
+        else if (key == "t_test_with_confidence_level")
+            t_test_with_confidence_level.value = stop_conditions_view->getUInt64(key);
         else
             throw Exception("Met unkown stop condition: " + key, ErrorCodes::LOGICAL_ERROR);
     }
@@ -45,7 +47,7 @@ void StopConditionsSet::reset()
     min_time_not_changing_for_ms.fulfilled = false;
     max_speed_not_changing_for_ms.fulfilled = false;
     average_speed_not_changing_for_ms.fulfilled = false;
-
+    t_test_with_confidence_level.fulfilled = false;
     fulfilled_count = 0;
 }
 
@@ -58,6 +60,13 @@ void StopConditionsSet::report(UInt64 value, StopConditionsSet::StopCondition & 
     }
 }
 
-
+void StopConditionsSet::reportTtestSingle(T_test & t_test, StopConditionsSet::StopCondition & condition)
+{
+    if (condition.value && !condition.fulfilled && !t_test.compareAndReport(false, condition.value))
+    {
+        condition.fulfilled = true;
+        ++fulfilled_count;
+    }
+}
 
 }
