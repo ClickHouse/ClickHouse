@@ -1770,7 +1770,7 @@ DiskSpace::DiskSelector & Context::getDiskSelector() const
 }
 
 
-const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String &name) const
+const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 

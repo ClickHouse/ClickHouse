@@ -474,7 +474,7 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
         }
         else
         {
-            throw Exception("part directory " + to + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            throw Exception("Part directory " + to + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
         }
     }
 

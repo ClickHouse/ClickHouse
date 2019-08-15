@@ -682,7 +682,8 @@ bool StorageMergeTree::moveParts()
         auto part = getActiveContainingPart(copied_part->name);
         if (!part || part->name != copied_part->name)
         {
-            /// Original part doies not exists after move. It is bug. It probably was merged
+            LOG_ERROR(log, "Currently moving '" + part->name + "' doesn't exists. Probably it was merged or deleted by hand. "
+                << "Move will not finish. Copy can be found in '" + copied_part->getFullPath() + "'. It's a bug.");
             continue;
         }
 

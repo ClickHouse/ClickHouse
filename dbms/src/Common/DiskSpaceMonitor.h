@@ -43,6 +43,7 @@ namespace ErrorCodes
 namespace DiskSpace
 {
 
+static constexpr UInt64 UNLIMITED_PARTITION_SIZE = std::numeric_limits<UInt64>::max();
 
 class Reservation;
 using ReservationPtr = std::unique_ptr<Reservation>;
@@ -71,17 +72,11 @@ inline struct statvfs getStatVFS(const std::string & path)
 class Space : public std::enable_shared_from_this<Space>
 {
 public:
-    Space() = default;
-
-    virtual ~Space() = default;
-    Space(const Space &) = default;
-    Space(Space &&) = default;
-    Space& operator=(const Space &) = default;
-    Space& operator=(Space &&) = default;
-
     virtual ReservationPtr reserve(UInt64 bytes) const = 0;
 
     virtual const String & getName() const = 0;
+
+    virtual ~Space() = default;
 };
 
 using SpacePtr = std::shared_ptr<const Space>;
@@ -120,10 +115,8 @@ public:
           keep_free_space_bytes(keep_free_space_bytes_)
     {
         if (path.back() != '/')
-            throw Exception("Disk path must ends with '/'", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Disk path must ends with '/', but '" + path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
-
-    ~Disk() override = default;
 
     ReservationPtr reserve(UInt64 bytes) const override;
 
@@ -178,8 +171,8 @@ using Disks = std::vector<DiskPtr>;
 
 
 /**
- *  Contain information about disk and size of reservation
- *  Unreserve on destroy.
+ * Information about reserved size on concrete disk.
+ * Unreserve on destroy.
  */
 class Reservation final : private boost::noncopyable
 {
@@ -187,8 +180,7 @@ public:
     Reservation(UInt64 size_, DiskPtr disk_ptr_)
         : size(size_)
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
-        , disk_ptr(std::move(disk_ptr_))
-        , valid(disk_ptr->tryReserve(size))
+        , disk_ptr(disk_ptr_)
     {
     }
 
@@ -208,16 +200,14 @@ public:
         return disk_ptr;
     }
 
-    bool isValid() const { return valid; }
-
 private:
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
     DiskPtr disk_ptr;
-    bool valid = false;
 };
 
-
+/// Parse .xml configuration and store information about disks
+/// Mostly used for introspection
 class DiskSelector
 {
 public:
@@ -226,7 +216,7 @@ public:
 
     const DiskPtr & operator[](const String & name) const;
 
-    bool has(const String & name) const;
+    bool hasDisk(const String & name) const;
 
     void add(const DiskPtr & disk);
 
@@ -236,9 +226,11 @@ private:
     std::map<String, DiskPtr> disks;
 };
 
-
-/** Volume.
- *  Contain set of "equivalent" disks
+/**
+ * Disks group by some (user) criteria. For example,
+ * - Volume("slow_disks", [d1, d2], 100)
+ * - Volume("fast_disks", [d3, d4], 200)
+ * Cannot store parts larger than max_data_part_size.
  */
 class Volume : public Space
 {
@@ -255,33 +247,16 @@ public:
     Volume(String name_, const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix, const DiskSelector & disk_selector);
 
-    Volume(const Volume & other)
-        : Space(other)
-        , max_data_part_size(other.max_data_part_size)
-        , disks(other.disks)
-        , name(other.name)
-    {
-    }
-
-    Volume(Volume && other) noexcept
-        : max_data_part_size(other.max_data_part_size)
-        , disks(std::move(other.disks))
-        , name(std::move(other.name))
-    {
-    }
-
-    Volume & operator=(const Volume & other);
-
-    Volume & operator=(Volume && other) noexcept;
-
-    /// Returns valid reservation or null
+    /// Uses Round-robin to choose disk for reservation.
+    /// Returns valid reservation or null.
     ReservationPtr reserve(UInt64 bytes) const override;
 
+    /// Return biggest unreserved space across all disks
     UInt64 getMaxUnreservedFreeSpace() const;
 
     const String & getName() const override { return name; }
 
-    UInt64 max_data_part_size = std::numeric_limits<UInt64>::max();
+    UInt64 max_data_part_size = UNLIMITED_PARTITION_SIZE;
 
     Disks disks;
 
@@ -295,7 +270,8 @@ using Volumes = std::vector<VolumePtr>;
 
 
 /**
- *  Contain ordered set of Volumes
+ * Contains all information about volumes configuration for Storage.
+ * Can determine appropriate Volume and Disk for each reservation.
  */
 class StoragePolicy : public Space
 {
@@ -350,8 +326,13 @@ private:
     double move_factor;
 };
 
+
+
+
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
+/// Parse .xml configuration and store information about policies
+/// Mostly used for introspection
 class StoragePolicySelector
 {
 public:

@@ -2578,7 +2578,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space)
 {
     auto reservation = space->reserve(part->bytes_on_disk);
-    if (!reservation || !reservation->isValid())
+    if (!reservation)
         throw Exception("Move is not possible. Not enough space " + space->getName(), ErrorCodes::NOT_ENOUGH_SPACE);
 
     auto & reserved_disk = reservation->getDisk();
