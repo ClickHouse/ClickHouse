@@ -175,7 +175,7 @@ private:
 
     static AnalysisResult analyzeExpressions(
         const ASTSelectQuery & query,
-        ExpressionAnalyzer & query_analyzer,
+        SelectQueryExpressionAnalyzer & query_analyzer,
         QueryProcessingStage::Enum from_stage,
         QueryProcessingStage::Enum to_stage,
         const Context & context,
