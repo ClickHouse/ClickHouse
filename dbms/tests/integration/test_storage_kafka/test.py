@@ -71,9 +71,14 @@ def kafka_produce(topic, messages, timestamp=None):
 
 
 def kafka_consume(topic):
-    consumer = KafkaConsumer(bootstrap_servers="localhost:9092")
+    consumer = KafkaConsumer(bootstrap_servers="localhost:9092", auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
-    print(consumer.poll())
+    for toppar, messages in consumer.poll(5000).items():
+        if toppar.topic == topic:
+            for message in messages:
+                yield message.value
+    consumer.unsubscribe()
+    consumer.close()
 
 
 def kafka_produce_protobuf_messages(topic, start_index, num_messages):
