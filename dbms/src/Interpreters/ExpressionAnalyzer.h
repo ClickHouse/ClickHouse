@@ -24,6 +24,7 @@ struct ASTTableJoin;
 class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
+struct ASTTablesInSelectQueryElement;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -63,14 +64,12 @@ private:
         const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_join;
-        const String join_default_strictness;
 
         ExtractedSettings(const Settings & settings_)
         :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
             join_use_nulls(settings_.join_use_nulls),
             size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
-            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode),
-            join_default_strictness(settings_.join_default_strictness.toString())
+            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode)
         {}
     };
 
@@ -132,7 +131,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr join = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
@@ -223,6 +222,10 @@ private:
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
+
+    SubqueryForSet & getSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element);
+    ExpressionActionsPtr createJoinedBlockActions() const;
+    void makeHashJoin(const ASTTablesInSelectQueryElement & join_element, SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 };
