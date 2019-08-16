@@ -31,6 +31,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_string.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_time.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_tls.c
+${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/gnutls.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/ma_schannel.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/schannel.c
