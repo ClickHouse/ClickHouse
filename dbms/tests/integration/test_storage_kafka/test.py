@@ -325,6 +325,54 @@ def test_kafka_materialized_view(kafka_cluster):
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
+def test_kafka_many_materialized_views(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view1;
+        DROP TABLE IF EXISTS test.view2;
+        DROP TABLE IF EXISTS test.consumer1;
+        DROP TABLE IF EXISTS test.consumer2;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'mmv',
+                     kafka_group_name = 'mmv',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view1 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
+            SELECT * FROM test.kafka;
+        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    kafka_produce('mmv', messages)
+
+    while True:
+        result1 = instance.query('SELECT * FROM test.view1')
+        result2 = instance.query('SELECT * FROM test.view2')
+        if kafka_check_result(result1) and kafka_check_result(result2):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer1;
+        DROP TABLE test.consumer2;
+        DROP TABLE test.view1;
+        DROP TABLE test.view2;
+    ''')
+
+    kafka_check_result(result1, True)
+    kafka_check_result(result2, True)
+
+
 @pytest.mark.timeout(300)
 def test_kafka_flush_on_big_message(kafka_cluster):
     # Create batchs of messages of size ~100Kb

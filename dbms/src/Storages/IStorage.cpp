@@ -30,9 +30,20 @@ IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : 
     setColumns(std::move(columns_));
 }
 
+IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
+{
+    setColumns(std::move(columns_));
+    setIndices(std::move(indices_));
+}
+
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
+}
+
+const ColumnsDescription & IStorage::getVirtuals() const
+{
+    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
