@@ -204,12 +204,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             }
 
             size_t result_position = sample_block.columns();
-
-            ColumnPtr const_col;
-            if (function_base->alwaysReturnsConstant())
-                const_col = result_type->createColumnConstWithDefaultValue(0);
-
-            sample_block.insert({const_col, result_type, result_name});
+            sample_block.insert({nullptr, result_type, result_name});
             function = function_base->prepare(sample_block, arguments, result_position);
 
             if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
@@ -963,7 +958,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                 /** If the function is a constant expression, then replace the action by adding a column-constant - result.
                   * That is, we perform constant folding.
                   */
-                if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_suitable_for_constant_folding && sample_block.has(out))
+                if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
                 {
                     auto & result = sample_block.getByName(out);
                     if (result.column)
@@ -1088,6 +1083,18 @@ void ExpressionActions::finalize(const Names & output_columns)
     }
 
     actions.swap(new_actions);
+
+    for (auto & action : new_actions)
+    {
+        if (action.type == ExpressionAction::APPLY_FUNCTION
+            && action.function_base->alwaysReturnsConstant()
+            && sample_block.has(action.result_name))
+        {
+            auto & result = sample_block.getByName(action.result_name);
+            if (!result.column)
+                result.column = result.type->createColumnConstWithDefaultValue(0);
+        }
+    }
 
 /*    std::cerr << "\n";
     for (const auto & action : actions)
