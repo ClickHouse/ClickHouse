@@ -34,7 +34,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
