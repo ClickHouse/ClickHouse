@@ -24,8 +24,8 @@ void WriteBufferToKafkaProducer::count_row()
     {
         std::string payload;
         payload.reserve((chunks.size() - 1) * chunk_size + offset());
-        for (const auto & chunk : chunks)
-            payload.append(chunk);
+        for (auto i = chunks.begin(), e = --chunks.end(); i != e; ++i)
+            payload.append(*i);
         payload.append(chunks.back(), 0, offset());
 
         while (true)
@@ -55,13 +55,28 @@ void WriteBufferToKafkaProducer::count_row()
 
 void WriteBufferToKafkaProducer::flush()
 {
-    producer->flush();
+    // For unknown reason we may hit some internal timeout when inserting for the first time.
+    while (true)
+    {
+        try
+        {
+            producer->flush(timeout);
+        }
+        catch (cppkafka::HandleException & e)
+        {
+            if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
+                continue;
+            throw e;
+        }
+
+        break;
+    }
 }
 
 void WriteBufferToKafkaProducer::nextImpl()
 {
     chunks.push_back(std::string());
-    chunks.back().reserve(chunk_size);
+    chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
 }
 

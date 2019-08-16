@@ -41,7 +41,7 @@ void KafkaBlockOutputStream::write(const Block & block)
 
 void KafkaBlockOutputStream::writeSuffix()
 {
-    child.reset();
+    child->writeSuffix();
     flush();
 }
 
