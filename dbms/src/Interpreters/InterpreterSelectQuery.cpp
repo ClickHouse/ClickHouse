@@ -144,7 +144,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
     ExpressionActionsChain new_chain(context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
@@ -296,7 +296,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(
+    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()),
         options.subquery_depth, !options.only_analyze);
@@ -665,7 +665,8 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
+static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
+    const Context & context, const SyntaxAnalyzerResultPtr & global_syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
@@ -677,38 +678,21 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
-    auto order_by_expr = query.orderBy();
-    SyntaxAnalyzerResultPtr syntax_result;
-    try
-    {
-        syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
-    }
-    catch (const Exception &)
-    {
-        return {};
-    }
-
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        /// Read in pk order in case of exact match with order key element
+        if (global_syntax_result->array_join_result_to_source.count(order_descr[i].column_name))
+            break;
+
+        /// Optimize in case of exact match with order key element
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
         if (order_descr[i].column_name == sorting_key_columns[i] && current_direction == read_direction)
             prefix_order_descr.push_back(order_descr[i]);
         else
         {
-            const auto & ast = query.orderBy()->children[i];
-            ExpressionActionsPtr actions;
-            try
-            {
-                actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
-            }
-            catch (const Exception &)
-            {
-                /// Can't analyze order expression at this stage.
-                /// May be some actions required for order will be executed later.
-                break;
-            }
+            auto ast = query.orderBy()->children[i]->children.at(0);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(ast, global_syntax_result->required_source_columns);
+            auto actions = ExpressionAnalyzer(ast, syntax_result, context).getActions(true);
 
             const auto & input_columns = actions->getRequiredColumnsWithTypes();
             if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
@@ -790,7 +774,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
 
-        query_analyzer->makeSetsForIndex();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {
@@ -820,10 +805,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final() && !query.join())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
+            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
     if (dry_run)
@@ -1941,13 +1926,12 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
          * At this stage we merge per-thread streams into one.
          */
 
-        if (sorting_info->prefix_order_descr.size() < order_descr.size())
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        if (need_finish_sorting)
         {
             pipeline.transform([&](auto & stream)
             {
-                stream = std::make_shared<FinishSortingBlockInputStream>(
-                    stream, sorting_info->prefix_order_descr,
-                    order_descr, settings.max_block_size, limit);
+                stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
             });
         }
 
@@ -1958,10 +1942,18 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
                 stream = std::make_shared<AsynchronousBlockInputStream>(stream);
             });
 
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
             pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
-                pipeline.streams, order_descr,
-                settings.max_block_size, limit);
+                pipeline.streams, sorting_info->prefix_order_descr,
+                settings.max_block_size, limit_for_merging);
             pipeline.streams.resize(1);
+        }
+
+        if (need_finish_sorting)
+        {
+            pipeline.firstStream() = std::make_shared<FinishSortingBlockInputStream>(
+                pipeline.firstStream(), sorting_info->prefix_order_descr,
+                order_descr, settings.max_block_size, limit);
         }
     }
     else

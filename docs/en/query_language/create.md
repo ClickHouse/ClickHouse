@@ -10,10 +10,10 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 - `IF NOT EXISTS`
 
-    If the `db_name` database already exists then:
+    If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
 
-    - If clause is specified, ClickHouse doesn't create a new database and doesn't throw an exception.
-    - If clause is not specified, then ClickHouse doesn't create a new database and throw and exception.
+    - Doesn't throw an exception if clause is specified.
+    - Throws an exception if clause isn't specified.
 
 - `ON CLUSTER`
 
@@ -23,7 +23,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
     - [MySQL](../database_engines/mysql.md)
 
-        Allows to retrieve data from the remote MySQL server.
+        Allows you to retrieve data from the remote MySQL server.
 
     By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
