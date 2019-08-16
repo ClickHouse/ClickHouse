@@ -398,6 +398,14 @@ include (cmake/print_flags.cmake)
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
+
+macro (install)
+    _install(${ARGV})
+endmacro ()
+macro (export)
+    _export(${ARGV})
+endmacro ()
+
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
