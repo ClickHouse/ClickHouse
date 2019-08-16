@@ -4822,7 +4822,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         {
             std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-            queue.disableMergesInRange(drop_range_fake_part_name);
+            queue.disableMergesInBlockRange(drop_range_fake_part_name);
         }
     }
 
@@ -5141,7 +5141,7 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
     {
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-        queue.disableMergesInRange(drop_range_fake_part_name);
+        queue.disableMergesInBlockRange(drop_range_fake_part_name);
     }
 
     LOG_DEBUG(log, "Disabled merges covered by range " << drop_range_fake_part_name);

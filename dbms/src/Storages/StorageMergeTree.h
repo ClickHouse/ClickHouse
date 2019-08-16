@@ -103,7 +103,7 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
-    bool moveParts();
+    bool movePartsInBackground();
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
@@ -121,6 +121,7 @@ private:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space) override;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

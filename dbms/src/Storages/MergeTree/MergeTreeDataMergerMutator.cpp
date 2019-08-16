@@ -311,7 +311,7 @@ public:
     }
 
     /// Returns elems ordered by size
-    MergeTreeData::DataPartsVector getElems()
+    MergeTreeData::DataPartsVector getAccumulatedParts()
     {
         MergeTreeData::DataPartsVector res;
         for (const auto & elem : elems)
@@ -367,7 +367,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
     for (auto && move : need_to_move)
     {
         auto min_volume_priority = policy->getVolumePriorityByDisk(move.first) + 1;
-        for (auto && part : move.second.getElems())
+        for (auto && part : move.second.getAccumulatedParts())
         {
             auto reservation = policy->reserve(part->bytes_on_disk, min_volume_priority);
             if (!reservation)
