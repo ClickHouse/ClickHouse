@@ -236,7 +236,7 @@ if (GLIBC_COMPATIBILITY)
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
     add_subdirectory(libs/libglibc-compatibility)
-    link_libraries(PRIVATE glibc-compatibility)
+    link_libraries(glibc-compatibility)
 elseif (YANDEX_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()
