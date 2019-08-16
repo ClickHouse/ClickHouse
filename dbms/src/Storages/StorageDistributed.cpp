@@ -317,13 +317,32 @@ BlockInputStreams StorageDistributed::read(
             auto smaller_cluster = skipUnusedShards(cluster, query_info);
 
             if (smaller_cluster)
+            {
                 cluster = smaller_cluster;
-        }
-        else
-        {
-            LOG_WARNING(log,
-                        "Reading from: " << database_name << "." << table_name << ": "
-                        "Setting \"optimize_skip_unused_shards\" has no effect: table was created with no sharding expression");
+
+                auto makeFormattedListOfShards = [](const ClusterPtr & cluster)
+                {
+                    std::ostringstream os;
+                    os << "[";
+
+                    const auto & shards_info = cluster->getShardsInfo();
+                    std::transform(
+                            shards_info.cbegin(), shards_info.cend(),
+                            std::ostream_iterator<int>(os, ", "), [](const auto & shard_info) { return shard_info.shard_num; });
+
+                    os << "]";
+                    return os.str();
+                };
+
+                LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
+                               "Skipping irrelevant shards - the query will be sent to the following shards (shard indexes) of cluster: "
+                               " " << makeFormattedListOfShards(cluster));
+            }
+            else
+            {
+                LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
+                               "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
+            }
         }
     }
 
@@ -502,14 +521,12 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     if (!has_sharding_key)
     {
-        ///  TODO: Unsure whether to throw with this message or to silently ignore
         throw Exception("Internal error: cannot determine shards of a distributed table if no sharding expression is supplied", ErrorCodes::LOGICAL_ERROR);
-        return nullptr;
     }
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (select.prewhere() == nullptr && select.where() == nullptr)
+    if (!select.prewhere() && !select.where())
     {
         return nullptr;
     }
@@ -527,7 +544,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
-    if (!blocks.has_value())
+    if (!blocks)
     {
         return nullptr;
     }
