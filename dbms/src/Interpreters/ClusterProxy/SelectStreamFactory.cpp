@@ -6,6 +6,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
@@ -58,6 +59,8 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
+    checkStackSize();
+
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
     BlockInputStreamPtr stream = interpreter.execute().in;
 
@@ -99,7 +102,8 @@ void SelectStreamFactory::createForShard(
         if (table_func_ptr)
         {
             const auto * table_function = table_func_ptr->as<ASTFunction>();
-            main_table_storage = TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context);
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
+            main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else
             main_table_storage = context.tryGetTable(main_table.database, main_table.table);

@@ -19,8 +19,8 @@ struct ExternalLoaderUpdateSettings
     UInt64 backoff_max_sec = 10 * 60;
 
     ExternalLoaderUpdateSettings() = default;
-    ExternalLoaderUpdateSettings(UInt64 check_period_sec, UInt64 backoff_initial_sec, UInt64 backoff_max_sec)
-        : check_period_sec(check_period_sec), backoff_initial_sec(backoff_initial_sec), backoff_max_sec(backoff_max_sec) {}
+    ExternalLoaderUpdateSettings(UInt64 check_period_sec_, UInt64 backoff_initial_sec_, UInt64 backoff_max_sec_)
+        : check_period_sec(check_period_sec_), backoff_initial_sec(backoff_initial_sec_), backoff_max_sec(backoff_max_sec_) {}
 };
 
 
@@ -186,10 +186,8 @@ protected:
 
 private:
     struct ObjectConfig;
-    using ObjectWithException = std::pair<LoadablePtr, std::exception_ptr>;
 
-    ObjectWithException
-    createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
     TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
 
     class ConfigFilesReader;

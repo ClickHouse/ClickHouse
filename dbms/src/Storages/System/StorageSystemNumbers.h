@@ -25,6 +25,7 @@ class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>
 public:
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
         const Names & column_names,

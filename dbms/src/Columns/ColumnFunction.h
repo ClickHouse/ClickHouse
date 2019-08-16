@@ -20,7 +20,7 @@ class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 private:
     friend class COWHelper<IColumn, ColumnFunction>;
 
-    ColumnFunction(size_t size, FunctionBasePtr function, const ColumnsWithTypeAndName & columns_to_capture);
+    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture);
 
 public:
     const char * getFamilyName() const override { return "Function"; }

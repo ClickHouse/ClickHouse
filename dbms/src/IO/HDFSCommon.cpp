@@ -16,7 +16,7 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
     auto & host = uri.getHost();
     auto port = uri.getPort();
     auto & path = uri.getPath();
-    if (host.empty() || port == 0 || path.empty())
+    if (host.empty() || path.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     HDFSBuilderPtr builder(hdfsNewBuilder());

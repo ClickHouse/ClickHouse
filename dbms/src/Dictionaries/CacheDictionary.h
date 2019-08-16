@@ -24,13 +24,11 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        const size_t size);
-
-    std::exception_ptr getCreationException() const override { return {}; }
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getName() const override { return name; }
 
@@ -61,8 +59,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -284,8 +280,6 @@ private:
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
-
-    const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

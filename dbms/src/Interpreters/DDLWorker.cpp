@@ -22,6 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
+#include <common/sleep.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -953,7 +954,7 @@ void DDLWorker::runMainThread()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 /// Avoid busy loop when ZooKeeper is not available.
-                ::sleep(1);
+                sleepForSeconds(1);
             }
         }
         catch (...)
@@ -1057,8 +1058,8 @@ class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_)
+        : node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},

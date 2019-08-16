@@ -186,10 +186,10 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
     : column_holder(std::move(holder))
-    , is_nullable(is_nullable)
-    , index(numSpecialValues(is_nullable), 0)
+    , is_nullable(is_nullable_)
+    , index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
@@ -300,19 +300,19 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 {
     if (is_nullable)
     {
-        const UInt8 null_flag = 1;
-        const UInt8 not_null_flag = 0;
+        static constexpr auto s = sizeof(UInt8);
 
-        auto pos = arena.allocContinue(sizeof(null_flag), begin);
-        auto & flag = (n == getNullValueIndex() ? null_flag : not_null_flag);
-        memcpy(pos, &flag, sizeof(flag));
+        auto pos = arena.allocContinue(s, begin);
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(pos, flag);
 
-        size_t nested_size = 0;
+        if (n == getNullValueIndex())
+            return StringRef(pos, s);
 
-        if (n != getNullValueIndex())
-            nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
+        auto nested_ref = column_holder->serializeValueIntoArena(n, arena, begin);
 
-        return StringRef(pos, sizeof(null_flag) + nested_size);
+        /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+        return StringRef(nested_ref.data - s, nested_ref.size + s);
     }
 
     return column_holder->serializeValueIntoArena(n, arena, begin);

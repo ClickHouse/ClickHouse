@@ -3,7 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
-
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -255,13 +255,11 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     if (desired_microseconds > total_elapsed_microseconds)
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
-        ::timespec sleep_ts;
-        sleep_ts.tv_sec = sleep_microseconds / 1000000;
-        sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
 
-        /// NOTE: Returns early in case of a signal. This is considered normal.
-        /// NOTE: It's worth noting that this behavior affects kill of queries.
-        ::nanosleep(&sleep_ts, nullptr);
+        /// Never sleep more than one second (it should be enough to limit speed for a reasonable amount, and otherwise it's too easy to make query hang).
+        sleep_microseconds = std::min(UInt64(1000000), sleep_microseconds);
+
+        sleepForMicroseconds(sleep_microseconds);
 
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
     }
@@ -355,7 +353,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
                         ErrorCodes::TOO_SLOW);
 
                 /// If the predicted execution time is longer than `max_execution_time`.
-                if (limits.max_execution_time != 0 && total_rows)
+                if (limits.max_execution_time != 0 && total_rows && progress.read_rows)
                 {
                     double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows) / progress.read_rows);
 

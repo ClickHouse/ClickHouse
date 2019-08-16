@@ -159,10 +159,14 @@ void AsynchronousMetrics::update()
 
         size_t max_part_count_for_partition = 0;
 
+        size_t number_of_databases = databases.size();
+        size_t total_number_of_tables = 0;
+
         for (const auto & db : databases)
         {
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
+                ++total_number_of_tables;
                 auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
@@ -213,6 +217,9 @@ void AsynchronousMetrics::update()
         set("ReplicasMaxRelativeDelay", max_relative_delay);
 
         set("MaxPartCountForPartition", max_part_count_for_partition);
+
+        set("NumberOfDatabases", number_of_databases);
+        set("NumberOfTables", total_number_of_tables);
     }
 
 #if USE_TCMALLOC

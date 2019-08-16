@@ -76,7 +76,7 @@ private:
     CatBoostWrapperAPI::ModelCalcerHandle * handle;
     const CatBoostWrapperAPI * api;
 public:
-    explicit CatBoostModelHolder(const CatBoostWrapperAPI * api) : api(api) { handle = api->ModelCalcerCreate(); }
+    explicit CatBoostModelHolder(const CatBoostWrapperAPI * api_) : api(api_) { handle = api->ModelCalcerCreate(); }
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
 
     CatBoostWrapperAPI::ModelCalcerHandle * get() { return handle; }
@@ -86,7 +86,7 @@ public:
 class CatBoostModelImpl : public ICatBoostModel
 {
 public:
-    CatBoostModelImpl(const CatBoostWrapperAPI * api, const std::string & model_path) : api(api)
+    CatBoostModelImpl(const CatBoostWrapperAPI * api_, const std::string & model_path) : api(api_)
     {
         auto handle_ = std::make_unique<CatBoostModelHolder>(api);
         if (!handle_)
@@ -502,22 +502,8 @@ std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & 
 
 
 CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::string lib_path_,
-                             const ExternalLoadableLifetime & lifetime)
-    : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime)
-{
-    try
-    {
-        init();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
-}
-
-void CatBoostModel::init()
+                             const ExternalLoadableLifetime & lifetime_)
+    : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime_)
 {
     api_provider = getCatBoostWrapperHolder(lib_path);
     api = &api_provider->getAPI();

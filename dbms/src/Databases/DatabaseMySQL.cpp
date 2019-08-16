@@ -230,7 +230,7 @@ DatabaseMySQL::MySQLStorageInfo DatabaseMySQL::createStorageInfo(
     const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time) const
 {
     const auto & mysql_table = StorageMySQL::create(
-        table_name, std::move(mysql_pool), mysql_database_name, table_name,
+        database_name, table_name, std::move(mysql_pool), mysql_database_name, table_name,
         false, "", ColumnsDescription{columns_name_and_type}, global_context);
 
     const auto & create_table_query = std::make_shared<ASTCreateQuery>();

@@ -123,13 +123,21 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
     if (order >= size || &cursors[order] != current.impl)
         throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
-    source_blocks[order] = new detail::SharedBlock(children[order]->read());
-    if (*source_blocks[order])
+    while (true)
     {
-        cursors[order].reset(*source_blocks[order]);
-        queue.push(TSortCursor(&cursors[order]));
-        source_blocks[order]->all_columns = cursors[order].all_columns;
-        source_blocks[order]->sort_columns = cursors[order].sort_columns;
+        source_blocks[order] = new detail::SharedBlock(children[order]->read());
+
+        if (!*source_blocks[order])
+            break;
+
+        if (source_blocks[order]->rows())
+        {
+            cursors[order].reset(*source_blocks[order]);
+            queue.push(TSortCursor(&cursors[order]));
+            source_blocks[order]->all_columns = cursors[order].all_columns;
+            source_blocks[order]->sort_columns = cursors[order].sort_columns;
+            break;
+        }
     }
 }
 

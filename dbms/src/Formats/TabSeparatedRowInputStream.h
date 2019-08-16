@@ -23,7 +23,7 @@ public:
       * with_types - on the next line header with type names
       */
     TabSeparatedRowInputStream(
-        ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings);
+        ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     bool read(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;

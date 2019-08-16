@@ -194,13 +194,15 @@ public:
 
     ColumnPtr countKeys() const;
 
+    bool containsNull() const;
+
     class Index
     {
     public:
         Index();
         Index(const Index & other) = default;
-        explicit Index(MutableColumnPtr && positions);
-        explicit Index(ColumnPtr positions);
+        explicit Index(MutableColumnPtr && positions_);
+        explicit Index(ColumnPtr positions_);
 
         const ColumnPtr & getPositions() const { return positions; }
         WrappedPtr & getPositionsPtr() { return positions; }
@@ -223,6 +225,8 @@ public:
         void attachPositions(ColumnPtr positions_);
 
         void countKeys(ColumnUInt64::Container & counts) const;
+
+        bool containsDefault() const;
 
     private:
         WrappedPtr positions;

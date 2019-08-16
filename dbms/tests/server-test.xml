@@ -117,4 +117,10 @@
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
     <format_schema_path>/tmp/clickhouse/data/format_schemas/</format_schema_path>
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
 </yandex>

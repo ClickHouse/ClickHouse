@@ -26,6 +26,11 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
+bool CurrentThread::isInitialized()
+{
+    return current_thread;
+}
+
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
@@ -46,6 +51,12 @@ MemoryTracker * CurrentThread::getMemoryTracker()
     return &current_thread->memory_tracker;
 }
 
+Int64 & CurrentThread::getUntrackedMemory()
+{
+    /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
+    return current_thread->untracked_memory;
+}
+
 void CurrentThread::updateProgressIn(const Progress & value)
 {
     if (unlikely(!current_thread))
@@ -60,11 +71,12 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
+void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                                LogsLevel client_logs_level)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachInternalTextLogsQueue(logs_queue);
+    current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()

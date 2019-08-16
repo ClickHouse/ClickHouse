@@ -34,6 +34,7 @@ struct ReplicatedMergeTreeLogEntryData
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
+        CLEAR_INDEX,    /// Drop specific index from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
     };
@@ -46,6 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
             default:
@@ -76,6 +78,11 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     String column_name;
+    String index_name;
+
+    /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+    ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+    bool force_ttl = false;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
@@ -108,7 +115,7 @@ struct ReplicatedMergeTreeLogEntryData
 
         /// Return {} because selection of merges in the partition where the column is cleared
         /// should not be blocked (only execution of merges should be blocked).
-        if (type == CLEAR_COLUMN)
+        if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
             return {};
 
         if (type == REPLACE_RANGE)

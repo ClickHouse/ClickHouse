@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <string>
 #include <memory>
 #include <boost/noncopyable.hpp>
@@ -41,10 +40,6 @@ public:
     virtual bool isModified() const = 0;
     /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
     virtual std::shared_ptr<const IExternalLoadable> clone() const = 0;
-
-    virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
-
-    virtual std::exception_ptr getCreationException() const = 0;
 };
 
 }

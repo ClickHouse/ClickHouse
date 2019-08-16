@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -27,7 +27,8 @@ namespace ErrorCodes
 
 StorageJoin::StorageJoin(
     const String & path_,
-    const String & name_,
+    const String & database_name_,
+    const String & table_name_,
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
@@ -35,7 +36,7 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     bool overwrite)
-    : StorageSetOrJoinBase{path_, name_, columns_}
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -89,7 +90,7 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto opt_strictness_id = getIdentifierName(engine_args[0]);
+        auto opt_strictness_id = tryGetIdentifierName(engine_args[0]);
         if (!opt_strictness_id)
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -102,7 +103,7 @@ void registerStorageJoin(StorageFactory & factory)
         else
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        auto opt_kind_id = getIdentifierName(engine_args[1]);
+        auto opt_kind_id = tryGetIdentifierName(engine_args[1]);
         if (!opt_kind_id)
             throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -123,7 +124,7 @@ void registerStorageJoin(StorageFactory & factory)
         key_names.reserve(engine_args.size() - 2);
         for (size_t i = 2, size = engine_args.size(); i < size; ++i)
         {
-            auto opt_key = getIdentifierName(engine_args[i]);
+            auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -160,6 +161,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         return StorageJoin::create(
             args.data_path,
+            args.database_name,
             args.table_name,
             key_names,
             join_use_nulls.value,
@@ -283,7 +285,8 @@ private:
 #undef M
 
             default:
-                throw Exception("Unknown JOIN keys variant for limited use", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         if (!rows_added)

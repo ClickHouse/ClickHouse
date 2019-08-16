@@ -108,8 +108,8 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
 
             Array parts_to_merge;
             parts_to_merge.reserve(entry.source_parts.size());
-            for (const auto & name : entry.source_parts)
-                parts_to_merge.push_back(name);
+            for (const auto & part_name : entry.source_parts)
+                parts_to_merge.push_back(part_name);
 
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);

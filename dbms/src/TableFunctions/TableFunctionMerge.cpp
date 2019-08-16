@@ -47,7 +47,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -70,7 +70,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     auto res = StorageMerge::create(
-        getName(),
+        getDatabaseName(),
+        table_name,
         ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
         source_database,
         table_name_regexp,

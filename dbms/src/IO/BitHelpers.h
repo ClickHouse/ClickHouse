@@ -150,7 +150,6 @@ public:
 
             const UInt64 mask = maskLowBits<UInt64>(to_write);
             v &= mask;
-//            assert(v <= 255);
 
             bits_buffer <<= to_write;
             bits_buffer |= v;

@@ -20,8 +20,10 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
+        ${FASTOPS_LIBRARY}
 
     PRIVATE
+        ${ZLIB_LIBRARIES}
         ${Boost_FILESYSTEM_LIBRARY}
 )
 
@@ -30,7 +32,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif()
 
 target_include_directories(clickhouse_functions PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
+target_include_directories(clickhouse_functions SYSTEM PRIVATE ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
 if (CONSISTENT_HASHING_INCLUDE_DIR)
     target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
@@ -47,7 +49,11 @@ if (USE_ICU)
 endif ()
 
 if (USE_VECTORCLASS)
-    target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${VECTORCLASS_INCLUDE_DIR})
+endif ()
+
+if (USE_FASTOPS)
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_TESTS)

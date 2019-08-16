@@ -79,7 +79,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             const auto & table_function = table_expression.table_function->as<ASTFunction &>();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function.name, context);
             /// Run the table function and remember the result
-            table = table_function_ptr->execute(table_expression.table_function, context);
+            table = table_function_ptr->execute(table_expression.table_function, context, table_function_ptr->getName());
         }
         else
         {
@@ -101,6 +101,9 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     for (const auto & column : columns)
     {
+        if (column.is_virtual)
+            continue;
+
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 

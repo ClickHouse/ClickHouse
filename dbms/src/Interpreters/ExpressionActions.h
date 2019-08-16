@@ -257,9 +257,13 @@ public:
     };
 
 private:
+    /// These columns have to be in input blocks (arguments of execute* methods)
     NamesAndTypesList input_columns;
+    /// These actions will be executed on input blocks
     Actions actions;
+    /// The example of result (output) block.
     Block sample_block;
+
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;

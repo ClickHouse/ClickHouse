@@ -46,7 +46,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, ThreadPool *, bool) override
+    void loadTables(Context &, bool) override
     {
         /// do nothing
     }

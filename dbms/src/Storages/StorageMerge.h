@@ -16,7 +16,8 @@ class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorag
 {
 public:
     std::string getName() const override { return "Merge"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     bool isRemote() const override;
 
@@ -41,7 +42,7 @@ public:
         unsigned num_streams) override;
 
     void drop() override {}
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
@@ -52,7 +53,8 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
 private:
-    String name;
+    String table_name;
+    String database_name;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
@@ -70,7 +72,8 @@ private:
 
 protected:
     StorageMerge(
-        const std::string & name_,
+        const std::string & database_name_,
+        const std::string & table_name_,
         const ColumnsDescription & columns_,
         const String & source_database_,
         const String & table_name_regexp_,

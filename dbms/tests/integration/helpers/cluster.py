@@ -527,6 +527,10 @@ class ClickHouseInstance:
     def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
         return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
 
+    # The same as query_and_get_error but ignores successful query.
+    def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
+
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None):
         return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
@@ -558,7 +562,7 @@ class ClickHouseInstance:
         with open(local_path, 'r') as fdata:
             data = fdata.read()
             encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
+            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)], user='root')
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])

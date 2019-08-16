@@ -7,8 +7,8 @@
 #else
     #ifdef __clang__
         #pragma clang diagnostic ignored "-Wunused-private-field"
+        #pragma clang diagnostic ignored "-Wmissing-noreturn"
     #endif
-    #pragma clang diagnostic ignored "-Wmissing-noreturn"
 #endif
 
 #include <Common/Exception.h>

@@ -68,12 +68,13 @@ StorageFile::StorageFile(
         const std::string & table_path_,
         int table_fd_,
         const std::string & db_dir_path,
+        const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         Context & context_)
     : IStorage(columns_),
-    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
+    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
     if (table_fd < 0) /// Will use file
     {
@@ -191,8 +192,8 @@ BlockInputStreams StorageFile::read(
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
-    const ColumnsDescription & columns = getColumns();
-    auto column_defaults = columns.getDefaults();
+    const ColumnsDescription & columns_ = getColumns();
+    auto column_defaults = columns_.getDefaults();
     if (column_defaults.empty())
         return {block_input};
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
@@ -265,7 +266,7 @@ void StorageFile::drop()
 }
 
 
-void StorageFile::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -277,6 +278,8 @@ void StorageFile::rename(const String & new_path_to_db, const String & /*new_dat
     Poco::File(path).renameTo(path_new);
 
     path = std::move(path_new);
+    table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 
@@ -300,7 +303,7 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (auto opt_name = getIdentifierName(engine_args[1]))
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
             {
                 if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
@@ -327,7 +330,7 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
-            args.table_name, format_name, args.columns,
+            args.database_name, args.table_name, format_name, args.columns,
             args.context);
     });
 }

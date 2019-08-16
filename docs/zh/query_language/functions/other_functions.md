@@ -637,7 +637,7 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 返回磁盘的容量信息，以字节为单位。使用配置文件中的path配置评估此信息。
 
-## finalizeAggregation
+## finalizeAggregation {#function-finalizeaggregation}
 
 获取聚合函数的状态。返回聚合结果（最终状态）。
 
