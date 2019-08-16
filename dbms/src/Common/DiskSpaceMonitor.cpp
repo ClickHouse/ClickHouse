@@ -381,6 +381,10 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
     }
 
     move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
+    if (move_factor > 1)
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
+            ErrorCodes::LOGICAL_ERROR);
+
 }
 
 
@@ -391,6 +395,10 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
 {
     if (volumes.empty())
         throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::UNKNOWN_POLICY);
+
+    if (move_factor > 1)
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
+            ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < volumes.size(); ++i)
     {

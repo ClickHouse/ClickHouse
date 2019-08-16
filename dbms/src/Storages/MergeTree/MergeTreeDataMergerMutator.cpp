@@ -263,49 +263,63 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 }
 
 
+namespace
+{
 /// Contains minimal number of greatest elems, which sum is greater then required
 /// If there are not enough elems contains all.
-template <class Elem>
-class MinSumMinElems
+class LargestPartsWithRequiredSize
 {
-    std::set<std::pair<UInt64, Elem>> elems;
-    UInt64 min_sum;
-    UInt64 cur_sum = 0;
+    struct PartsSizeOnDiskComparator
+    {
+        bool operator() (const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
+        {
+            return f->bytes_on_disk < s->bytes_on_disk;
+        }
+    };
+
+    std::set<MergeTreeData::DataPartPtr, PartsSizeOnDiskComparator> elems;
+    UInt64 required_size_sum;
+    UInt64 current_size_sum = 0;
 
 public:
-    MinSumMinElems(UInt64 min_sum_) : min_sum(min_sum_) { }
-
-    void add(Elem elem, UInt64 size)
+    LargestPartsWithRequiredSize(UInt64 required_sum_size_)
+        : required_size_sum(required_sum_size_)
     {
-        if (cur_sum < min_sum)
+    }
+
+    void add(MergeTreeData::DataPartPtr part)
+    {
+        if (current_size_sum < required_size_sum)
         {
-            elems.emplace(size, elem);
-            cur_sum += size;
+            elems.emplace(part);
+            current_size_sum += part->bytes_on_disk;
             return;
         }
-        if (!elems.empty())
-            if (elems.begin()->first >= size)
-                return;
-        elems.emplace(size, elem);
-        cur_sum += size;
-        while (!elems.empty() && (cur_sum - elems.begin()->first >= min_sum))
+
+        /// Adding smaller element
+        if (!elems.empty() && (*elems.begin())->bytes_on_disk >= part->bytes_on_disk)
+            return;
+
+        elems.emplace(part);
+        current_size_sum += part->bytes_on_disk;
+
+        while (!elems.empty() && (current_size_sum - (*elems.begin())->bytes_on_disk >= required_size_sum))
         {
-            cur_sum -= elems.begin()->first;
+            current_size_sum -= (*elems.begin())->bytes_on_disk;
             elems.erase(elems.begin());
         }
     }
 
     /// Returns elems ordered by size
-    auto getElems()
+    MergeTreeData::DataPartsVector getElems()
     {
-        std::vector<Elem> res;
+        MergeTreeData::DataPartsVector res;
         for (const auto & elem : elems)
-        {
-            res.push_back(elem.second);
-        }
+            res.push_back(elem);
         return res;
     }
 };
+}
 
 
 bool MergeTreeDataMergerMutator::selectPartsToMove(
@@ -317,7 +331,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
     if (data_parts.empty())
         return false;
 
-    std::unordered_map<DiskSpace::DiskPtr, MinSumMinElems<MergeTreeData::DataPartPtr>> need_to_move;
+    std::unordered_map<DiskSpace::DiskPtr, LargestPartsWithRequiredSize> need_to_move;
     const auto & policy = data.getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
@@ -334,11 +348,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
         {
             auto space_information = disk->getSpaceInformation();
 
+            UInt64 total_space_with_factor = space_information.getTotalSpace() * policy->getMoveFactor();
             /// Do not take into account reserved space
-            if (space_information.getTotalSpace() * policy->getMoveFactor() > space_information.getAvailableSpace())
-            {
-                need_to_move.emplace(disk, space_information.getTotalSpace() * policy->getMoveFactor() - space_information.getAvailableSpace());
-            }
+            if (total_space_with_factor > space_information.getAvailableSpace())
+                need_to_move.emplace(disk, total_space_with_factor - space_information.getAvailableSpace());
         }
     }
 
@@ -348,7 +361,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMove(
             continue;
         auto to_insert = need_to_move.find(part->disk);
         if (to_insert != need_to_move.end())
-            to_insert->second.add(part, part->bytes_on_disk);
+            to_insert->second.add(part);
     }
 
     for (auto && move : need_to_move)
