@@ -12,18 +12,22 @@ namespace ErrorCodes
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+    constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeData & storage_,
+    const String & part_path_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
     CompressionCodecPtr codec_,
     size_t aio_threshold_,
     bool blocks_are_granules_size_,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const MergeTreeIndexGranularity & index_granularity_)
     : storage(storage_)
+    , part_path(part_path_)
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
@@ -32,6 +36,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
+    , skip_indices(indices_to_recalc)
     , with_final_mark(storage.settings.write_final_mark && storage.canUseAdaptiveGranularity())
 {
     if (blocks_are_granules_size && !index_granularity.empty())
@@ -304,6 +309,106 @@ void IMergedBlockOutputStream::writeFinalMark(
     }, path);
 }
 
+void IMergedBlockOutputStream::initSkipIndices()
+{
+    for (const auto & index : skip_indices)
+    {
+        String stream_name = index->getFileName();
+        skip_indices_streams.emplace_back(
+                std::make_unique<ColumnStream>(
+                        stream_name,
+                        part_path + stream_name, INDEX_FILE_EXTENSION,
+                        part_path + stream_name, marks_file_extension,
+                        codec, max_compress_block_size,
+                        0, aio_threshold));
+        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_index_filling.push_back(0);
+    }
+}
+
+void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
+        const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows)
+{
+    /// Creating block for update
+    Block indices_update_block(skip_indexes_columns);
+    size_t skip_index_current_mark = 0;
+
+    /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
+    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    {
+        const auto index = storage.skip_indices[i];
+        auto & stream = *skip_indices_streams[i];
+        size_t prev_pos = 0;
+        skip_index_current_mark = skip_index_mark;
+        while (prev_pos < rows)
+        {
+            UInt64 limit = 0;
+            if (prev_pos == 0 && index_offset != 0)
+            {
+                limit = index_offset;
+            }
+            else
+            {
+                limit = index_granularity.getMarkRows(skip_index_current_mark);
+                if (skip_indices_aggregators[i]->empty())
+                {
+                    skip_indices_aggregators[i] = index->createIndexAggregator();
+                    skip_index_filling[i] = 0;
+
+                    if (stream.compressed.offset() >= min_compress_block_size)
+                        stream.compressed.next();
+
+                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
+                    writeIntBinary(stream.compressed.offset(), stream.marks);
+                    /// Actually this numbers is redundant, but we have to store them
+                    /// to be compatible with normal .mrk2 file format
+                    if (storage.canUseAdaptiveGranularity())
+                        writeIntBinary(1UL, stream.marks);
+
+                    ++skip_index_current_mark;
+                }
+            }
+
+            size_t pos = prev_pos;
+            skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
+
+            if (pos == prev_pos + limit)
+            {
+                ++skip_index_filling[i];
+
+                /// write index if it is filled
+                if (skip_index_filling[i] == index->granularity)
+                {
+                    skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+                    skip_index_filling[i] = 0;
+                }
+            }
+            prev_pos = pos;
+        }
+    }
+    skip_index_mark = skip_index_current_mark;
+}
+
+void IMergedBlockOutputStream::finishSkipIndicesSerialization(
+        MergeTreeData::DataPart::Checksums & checksums)
+{
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+    {
+        auto & stream = *skip_indices_streams[i];
+        if (!skip_indices_aggregators[i]->empty())
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+    }
+
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
+        stream->addToChecksums(checksums);
+    }
+
+    skip_indices_streams.clear();
+    skip_indices_aggregators.clear();
+    skip_index_filling.clear();
+}
 
 /// Implementation of IMergedBlockOutputStream::ColumnStream.
 
