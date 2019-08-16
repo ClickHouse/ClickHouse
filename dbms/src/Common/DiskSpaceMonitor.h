@@ -323,6 +323,10 @@ private:
     Volumes volumes;
     String name;
     std::map<String, size_t> volumes_names;
+
+    /// move_factor from interval [0., 1.]
+    /// We move something if disk from this policy
+    /// filled more than total_size * move_factor
     double move_factor;
 };
 
