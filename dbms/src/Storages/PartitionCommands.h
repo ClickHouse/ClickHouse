@@ -20,17 +20,19 @@ struct PartitionCommand
     {
         ATTACH_PARTITION,
         CLEAR_COLUMN,
+        CLEAR_INDEX,
         DROP_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
-        REPLACE_PARTITION,
+        REPLACE_PARTITION
     };
 
     Type type;
 
     ASTPtr partition;
     Field column_name;
+    Field index_name;
 
     /// true for DETACH PARTITION.
     bool detach = false;

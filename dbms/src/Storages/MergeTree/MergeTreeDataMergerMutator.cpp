@@ -820,6 +820,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 false,
                 compression_codec,
                 false,
+                {},
                 written_offset_columns,
                 to.getIndexGranularity()
             );
@@ -899,7 +900,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
-
     const auto & source_part = future_part.parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
@@ -907,7 +907,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands, context_for_reading);
+    std::vector<MutationCommand> commands_for_part;
+    std::copy_if(
+            std::cbegin(commands), std::cend(commands),
+            std::back_inserter(commands_for_part),
+            [&] (const MutationCommand & command)
+            {
+                return command.partition == nullptr ||
+                    future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
+                            command.partition, context_for_reading);
+            });
+
+
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
 
     if (!mutations_interpreter.isStorageTouchedByMutations())
     {
@@ -937,6 +949,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     Poco::File(new_part_tmp_path).createDirectories();
 
     auto in = mutations_interpreter.execute();
+    const auto & updated_header = mutations_interpreter.getUpdatedHeader();
+
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     Block in_header = in->getHeader();
@@ -945,7 +959,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
     in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
 
-    if (in_header.columns() == all_columns.size())
+    if (updated_header.columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
@@ -980,23 +994,40 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// Checks if columns used in skipping indexes modified/
+        /// Checks if columns used in skipping indexes modified.
+        std::set<MergeTreeIndexPtr> indices_to_recalc;
+        ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & col : in_header.getNames())
         {
-            for (const auto & index : data.skip_indices)
+            for (size_t i = 0; i < data.skip_indices.size(); ++i)
             {
+                const auto & index = data.skip_indices[i];
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
-                if (it != cend(index_cols))
-                    throw Exception("You can not modify columns used in index. Index name: '"
-                                    + index->name
-                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
+                if (it != cend(index_cols) && indices_to_recalc.insert(index).second)
+                {
+                    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(
+                            storage_from_source_part->getIndices().indices[i]->expr->clone());
+                    for (const auto & expr : expr_list->children)
+                        indices_recalc_expr_list->children.push_back(expr->clone());
+                }
             }
+        }
+
+        if (!indices_to_recalc.empty())
+        {
+            auto indices_recalc_syntax = SyntaxAnalyzer(context, {}).analyze(
+                    indices_recalc_expr_list, in_header.getNamesAndTypesList());
+            auto indices_recalc_expr = ExpressionAnalyzer(
+                    indices_recalc_expr_list,
+                    indices_recalc_syntax, context).getActions(false);
+            in = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(in, indices_recalc_expr));
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
         auto mrk_extension = data.settings.index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
-        for (const auto & entry : in_header)
+        for (const auto & entry : updated_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
@@ -1007,6 +1038,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
             IDataType::SubstreamPath stream_path;
             entry.type->enumerateStreams(callback, stream_path);
+        }
+        for (const auto & index : indices_to_recalc)
+        {
+            files_to_skip.insert(index->getFileName() + ".idx");
+            files_to_skip.insert(index->getFileName() + ".mrk");
         }
 
         Poco::DirectoryIterator dir_end;
@@ -1021,16 +1057,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             createHardLink(dir_it.path().toString(), destination.toString());
         }
 
-        merge_entry->columns_written = all_columns.size() - in_header.columns();
+        merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
             data,
-            in_header,
+            updated_header,
             new_part_tmp_path,
             /* sync = */ false,
             compression_codec,
             /* skip_offsets = */ false,
+            std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
             unused_written_offsets,
             source_part->index_granularity
         );
@@ -1064,7 +1101,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
         for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
         {
-            if (source_columns_name_set.count(it->name) || in_header.has(it->name))
+            if (source_columns_name_set.count(it->name) || updated_header.has(it->name))
                 ++it;
             else
                 it = new_data_part->columns.erase(it);
