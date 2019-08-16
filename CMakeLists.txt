@@ -1,15 +1,23 @@
+foreach(policy
+        CMP0023
+        CMP0048 # CMake 3.0
+        CMP0074 # CMake 3.12
+    )
+    if(POLICY ${policy})
+        cmake_policy(SET ${policy} NEW)
+    endif()
+endforeach()
+
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
-foreach(policy
-    CMP0023
-    CMP0048 # CMake 3.0
-    CMP0074 # CMake 3.12
-  )
-  if(POLICY ${policy})
-    cmake_policy(SET ${policy} NEW)
-  endif()
-endforeach()
+# Ignore install() and export() since we don't use them,
+# but they get broken with a global targets via link_libraries()
+macro (install)
+endmacro ()
+macro (export)
+endmacro ()
+
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
