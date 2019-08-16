@@ -555,7 +555,7 @@ public:
         for (const auto & member : members())
         {
             if (member.isChanged(castToDerived()))
-                found_changes.emplace_back(member.name.toString(), member.get_field(castToDerived()));
+                found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
         }
         return found_changes;
     }
