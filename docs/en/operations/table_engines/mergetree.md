@@ -45,14 +45,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-<<<<<<< HEAD
 For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-!!!note "Note"
+!!! note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
-=======
-For descriptions of request parameters, see the [request description](../../query_language/create.md).
->>>>>>> da6925f74fd742f91632ae0531104071a8097cc0
 
 ### Query Clauses
 
