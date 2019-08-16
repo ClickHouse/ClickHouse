@@ -501,11 +501,11 @@ clickhouse-client
             $.each(lines, function(idx) {
                 var line = lines[idx];
                 if (skip) {
-                    if(line.includes('Upcoming Events')) {
+                    if (line.includes('Upcoming Events')) {
                         skip = false;
                     }
                 } else {
-                    if(!line) { return; };
+                    if (!line) { return; };
                     line = line.split('](');
                     var tail = line[1].split(') ');
                     result.push(
