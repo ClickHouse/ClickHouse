@@ -42,6 +42,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/mariadb_cleartext.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/my_auth.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/old_password.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sha256_pw.c
+${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/caching_sha2_pw.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_client.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_errmsg.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/connection/aurora.c
