@@ -208,12 +208,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             }
 
             size_t result_position = sample_block.columns();
-
-            ColumnPtr const_col;
-            if (function_base->alwaysReturnsConstant())
-                const_col = result_type->createColumnConstWithDefaultValue(1);
-
-            sample_block.insert({const_col, result_type, result_name});
+            sample_block.insert({nullptr, result_type, result_name});
             function = function_base->prepare(sample_block, arguments, result_position);
 
             if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
@@ -248,6 +243,13 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                     if (!all_suitable_for_constant_folding || !function_base->isSuitableForConstantFolding())
                         names_not_for_constant_folding.insert(result_name);
                 }
+            }
+
+            auto & res = sample_block.getByPosition(result_position);
+            if (!res.column && function_base->alwaysReturnsConstant())
+            {
+                res.column = result_type->createColumnConstWithDefaultValue(1);
+                names_not_for_constant_folding.insert(result_name);
             }
 
             break;
