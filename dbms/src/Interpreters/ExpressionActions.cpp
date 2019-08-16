@@ -221,7 +221,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             /// But if we compile expressions compiled version of this function maybe placed in cache,
             /// so we don't want to unfold non deterministic functions
-            if (all_const && (!compile_expressions || function_base->isDeterministic()))
+            if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
                 function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
 
@@ -240,13 +240,13 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                     if (col.column->empty())
                         col.column = col.column->cloneResized(1);
 
-                    if (!all_suitable_for_constant_folding || !function_base->isSuitableForConstantFolding())
+                    if (!all_suitable_for_constant_folding)
                         names_not_for_constant_folding.insert(result_name);
                 }
             }
 
             auto & res = sample_block.getByPosition(result_position);
-            if (!res.column && function_base->alwaysReturnsConstant())
+            if (!res.column && function_base->alwaysReturnsConstant() && function_base->isSuitableForConstantFolding())
             {
                 res.column = result_type->createColumnConstWithDefaultValue(1);
                 names_not_for_constant_folding.insert(result_name);
