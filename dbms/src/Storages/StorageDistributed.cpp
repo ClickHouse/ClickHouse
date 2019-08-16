@@ -320,7 +320,7 @@ BlockInputStreams StorageDistributed::read(
             {
                 cluster = smaller_cluster;
 
-                auto makeFormattedListOfShards = [](const ClusterPtr & cluster)
+                auto makeFormattedListOfShards = [](const ClusterPtr & cluster) -> std::string
                 {
                     std::ostringstream os;
                     os << "[";
@@ -335,7 +335,7 @@ BlockInputStreams StorageDistributed::read(
                 };
 
                 LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
-                               "Skipping irrelevant shards - the query will be sent to the following shards (shard indexes) of cluster: "
+                               "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard indexes): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
