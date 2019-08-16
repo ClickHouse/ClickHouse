@@ -46,8 +46,9 @@ struct MargeTreeMoveEntry
 
 using MergeTreeMovingParts = std::vector<MargeTreeMoveEntry>;
 
-/** Can select the parts to merge and merge them.
-  */
+/** Can select parts for background processes and do them.
+ * Currently helps with merges, mutations and moves
+ */
 class MergeTreeDataMergerMutator
 {
 public:

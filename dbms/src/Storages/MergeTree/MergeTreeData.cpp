@@ -2389,28 +2389,50 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
-void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part)
+void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & /* lock */)
 {
-    auto data_parts_lock = lockParts();
-
-    for (const auto & active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
-        if (part->name == active_part->name)
+        if (part_copy->name == original_active_part->name)
         {
-            auto it = data_parts_by_info.find(active_part->info);
-            if (it == data_parts_by_info.end())
-                throw Exception("No such active part by info. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
+            auto active_part_it = data_parts_by_info.find(original_active_part->info);
+            if (active_part_it == data_parts_by_info.end())
+                throw Exception("No such active part by info. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            active_part->deleteOnDestroy();
-            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
-            data_parts_indexes.erase(it);
+            original_active_part->deleteOnDestroy();
+            (*active_part_it)->remove_time.store((*active_part_it)->modification_time, std::memory_order_relaxed);
+            data_parts_indexes.erase(active_part_it);
 
-            auto part_it = data_parts_indexes.insert(part).first;
+            auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
             return;
         }
     }
-    throw Exception("No such active part. It is a bug", ErrorCodes::NO_SUCH_DATA_PART);
+    throw Exception("No such active part. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
+}
+
+
+MergeTreeData::DataPartsVector MergeTreeData::swapActiveParts(const MergeTreeData::DataPartsVector & copied_parts)
+{
+    auto data_parts_lock = lockParts();
+
+    DataPartsVector failed_parts;
+    for (auto && copied_part : copied_parts)
+    {
+        auto part = getActiveContainingPart(copied_part->name);
+        if (!part || part->name != copied_part->name)
+        {
+            LOG_ERROR(log, "Failed to swap " << copied_part->name << ". Active part doesn't exist."
+                << "Copy can be found. Copy path: '" << copied_part->getFullPath() << "'.");
+
+            continue;
+        }
+
+        copied_part->renameTo(part->name);
+
+        swapActivePart(copied_part, data_parts_lock);
+    }
+    return failed_parts;
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
@@ -2572,33 +2594,6 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
         },
         with_name,
         context);
-}
-
-
-void MergeTreeData::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space)
-{
-    auto reservation = space->reserve(part->bytes_on_disk);
-    if (!reservation)
-        throw Exception("Move is not possible. Not enough space " + space->getName(), ErrorCodes::NOT_ENOUGH_SPACE);
-
-    auto & reserved_disk = reservation->getDisk();
-    String path_to_clone = getFullPathOnDisk(reserved_disk);
-
-    if (Poco::File(path_to_clone + part->name).exists())
-        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-    LOG_DEBUG(log, "Cloning part " << part->getFullPath() << " to " << getFullPathOnDisk(reservation->getDisk()));
-    part->makeCloneOnDiskDetached(reservation);
-
-    MergeTreeData::MutableDataPartPtr copied_part =
-        std::make_shared<MergeTreeData::DataPart>(*this, reservation->getDisk(), part->name);
-
-    copied_part->relative_path = "detached/" + part->name;
-
-    copied_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-
-    copied_part->renameTo(part->name);
-
-    swapActivePart(copied_part);
 }
 
 

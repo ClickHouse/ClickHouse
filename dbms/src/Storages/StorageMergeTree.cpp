@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 namespace ActionLocks
@@ -400,6 +401,7 @@ public:
         {
             if (!storage.currently_processing_in_background.count(part.part))
                 std::terminate();
+
             storage.currently_processing_in_background.erase(part.part);
         }
     }
@@ -651,46 +653,65 @@ bool StorageMergeTree::merge(
 }
 
 
-bool StorageMergeTree::moveParts()
+void StorageMergeTree::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space)
+{
+    auto reservation = space->reserve(part->bytes_on_disk);
+    if (!reservation)
+        throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
+
+    auto & reserved_disk = reservation->getDisk();
+    String path_to_clone = getFullPathOnDisk(reserved_disk);
+
+    if (Poco::File(path_to_clone + part->name).exists())
+        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
+            ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+    if (currently_processing_in_background.count(part))
+        throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
+            ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+    MergeTreeMovingParts parts_to_move;
+    parts_to_move.emplace_back(part, std::move(reservation));
+    auto copied_parts = merger_mutator.cloneParts(parts_to_move);
+
+    auto swap_failed_parts = swapActiveParts(copied_parts);
+    if (!swap_failed_parts.empty())
+        throw Exception("Cannot move " + toString(swap_failed_parts.size()) + " parts. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
+bool StorageMergeTree::movePartsInBackground()
 {
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
+        std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
+
+        auto can_move = [this](const DataPartPtr & part, String *)
+        {
+            return !currently_processing_in_background.count(part);
+        };
+
         MergeTreeMovingParts parts_to_move;
 
+        if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
         {
-            std::lock_guard lock(currently_processing_in_background_mutex);
-
-            auto can_move = [this](const DataPartPtr & part, String *)
-            {
-                return !currently_processing_in_background.count(part);
-            };
-
-            if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
-                return false;
-
-            moving_tagger.emplace(std::move(parts_to_move), *this);
+            LOG_INFO(log, "Nothing to move.");
+            return false;
         }
+
+        moving_tagger.emplace(std::move(parts_to_move), *this);
     }
+    LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
 
     auto copied_parts = merger_mutator.cloneParts(moving_tagger->parts);
 
-    for (auto && copied_part : copied_parts)
-    {
-        auto part = getActiveContainingPart(copied_part->name);
-        if (!part || part->name != copied_part->name)
-        {
-            LOG_ERROR(log, "Currently moving '" + part->name + "' doesn't exists. Probably it was merged or deleted by hand. "
-                << "Move will not finish. Copy can be found in '" + copied_part->getFullPath() + "'. It's a bug.");
-            continue;
-        }
-
-        copied_part->renameTo(part->name);
-
-        swapActivePart(copied_part);
-    }
+    auto swap_failed_parts = swapActiveParts(copied_parts);
+    if (!swap_failed_parts.empty())
+        LOG_ERROR(log, "Failed to move " << swap_failed_parts.size() << " parts. Original active parts doesn't exist. "
+            << "Probably they were merged or deleted by hand. Move is not completed. "
+            << "Copy can be found in detached folder. Copies can be found in detached folders. It's a bug.");
 
     return true;
 }
@@ -839,7 +860,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        if (moveParts())
+        if (movePartsInBackground())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())

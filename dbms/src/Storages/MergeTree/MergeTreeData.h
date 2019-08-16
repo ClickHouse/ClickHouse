@@ -398,9 +398,15 @@ public:
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock);
 
-    void swapActivePart(MergeTreeData::DataPartPtr part);
+    /// Swap part with it's identical copy (possible with another path on another disk).
+    /// If original part is not active or doesn't exist exception will be thrown.
+    void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & lock);
+
+    /// Tries to swap several active data parts with their copies.
+    /// Returns vector with failed parts (for example not active).
+    DataPartsVector swapActiveParts(const DataPartsVector & copied_parts);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
@@ -546,9 +552,9 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
-private:
+protected:
     /// Moves part to specified space
-    void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space);
+    virtual void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space) = 0;
 
 public:
     /// Moves partition to specified Disk
@@ -780,7 +786,6 @@ protected:
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
     }
-
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;

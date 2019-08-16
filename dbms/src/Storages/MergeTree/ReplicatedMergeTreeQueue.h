@@ -304,6 +304,7 @@ public:
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
 
+    /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -318,12 +319,14 @@ public:
     /// (because some mutations are probably done but we are not sure yet), returns true.
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
 
-    /// Prohibit merges in the specified range.
-    void disableMergesInRange(const String & part_name);
+    /// Prohibit merges in the specified blocks range.
+    /// Add part to virtual_parts, which means that part must exist
+    /// after processing replication log up to log_pointer.
+    /// part maybe fake (look at ReplicatedMergeTreeMergePredicate)
+    void disableMergesInBlockRange(const String & part_name);
 
-    /** Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
-      * Locks queue's mutex.
-      */
+    /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
+    /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
 
     /// A blocker that stops selects from the queue

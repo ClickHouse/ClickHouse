@@ -263,6 +263,10 @@ private:
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
+    /// A task which move parts to another disks/volumes
+    /// Transparent for replication.
+    BackgroundProcessingPool::TaskHandle move_parts_task;
+
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
@@ -332,6 +336,8 @@ private:
     /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
                                                                const DataPartPtr & part);
+
+    void movePartitionToSpace(MergeTreeData::DataPartPtr /* part */, DiskSpace::SpacePtr /* space */) override {}
 
     void getCommitPartOps(
         Coordination::Requests & ops,

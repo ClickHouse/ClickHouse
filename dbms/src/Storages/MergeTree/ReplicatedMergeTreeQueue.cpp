@@ -763,7 +763,10 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
     return true;
 }
 
-void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current)
+void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
+    zkutil::ZooKeeperPtr zookeeper,
+    const MergeTreePartInfo & part_info,
+    const ReplicatedMergeTreeLogEntryData & current)
 {
     Queue to_wait;
     size_t removed_entries = 0;
@@ -1303,7 +1306,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 }
 
 
-void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
+void ReplicatedMergeTreeQueue::disableMergesInBlockRange(const String & part_name)
 {
     std::lock_guard lock(state_mutex);
     virtual_parts.add(part_name);
@@ -1621,25 +1624,31 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 
     if (left_max_block + 1 < right_min_block)
     {
+        /// Fake part which will appear as merge result
         MergeTreePartInfo gap_part_info(
             left->info.partition_id, left_max_block + 1, right_min_block - 1,
             MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
+        /// We don't select parts if any smaller part covered by our merge must exist after
+        /// processing replication log up to log_pointer.
         Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
         {
             if (out_reason)
                 *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present on this replica between "
-                    + left->name + " and " + right->name;
+                    + " to " + covered.back() + ") that are still not present or beeing processed by "
+                    + " other background process on this replica between " + left->name + " and " + right->name;
             return false;
         }
     }
 
     Int64 left_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, left->info.getDataVersion(), lock);
+
+    /// left->info.partition_id == right->info.partition_id
     Int64 right_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, right->info.getDataVersion(), lock);
+
     if (left_mutation_ver != right_mutation_ver)
     {
         if (out_reason)
