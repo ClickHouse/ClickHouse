@@ -203,6 +203,10 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
+- 'Сценарии использования':
+  - 'Обзор': 'solutions/index.md'
+  - 'Применение модели CatBoost в ClickHouse': 'solutions/apply-catboost-model.md'
+
 - 'F.A.Q.':
   - 'Общие вопросы': 'faq/general.md'
 
