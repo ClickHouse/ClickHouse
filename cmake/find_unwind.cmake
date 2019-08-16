@@ -25,7 +25,7 @@ if (USE_UNWIND)
         endif ()
     endif ()
 
-    link_libraries(${EXCEPTION_HANDLING_LIBRARY})
+    link_libraries(PRIVATE ${EXCEPTION_HANDLING_LIBRARY})
 
     message (STATUS "Using libunwind: ${UNWIND_LIBRARY}")
     message (STATUS "Using exception handler: ${EXCEPTION_HANDLING_LIBRARY}")

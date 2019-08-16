@@ -11,13 +11,10 @@ endforeach()
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
-# Ignore install() and export() since we don't use them,
-# but they get broken with a global targets via link_libraries()
-macro (install)
-endmacro ()
+# Ignore export() since we don't use it,
+# but it gets broken with a global targets via link_libraries()
 macro (export)
 endmacro ()
-
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
@@ -239,7 +236,7 @@ if (GLIBC_COMPATIBILITY)
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
     add_subdirectory(libs/libglibc-compatibility)
-    link_libraries(glibc-compatibility)
+    link_libraries(PRIVATE glibc-compatibility)
 elseif (YANDEX_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()
@@ -395,17 +392,11 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 include (cmake/print_flags.cmake)
 
+install (EXPORT global DESTINATION cmake)
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
-
-macro (install)
-    _install(${ARGV})
-endmacro ()
-macro (export)
-    _export(${ARGV})
-endmacro ()
-
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
