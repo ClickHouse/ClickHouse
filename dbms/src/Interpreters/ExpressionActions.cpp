@@ -178,7 +178,7 @@ ExpressionAction ExpressionAction::ordinaryJoin(
 }
 
 
-void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
+void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
     // std::cerr << "preparing: " << toString() << std::endl;
 
@@ -193,6 +193,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
             bool all_const = true;
+            bool all_suitable_for_constant_folding = true;
 
             ColumnNumbers arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
@@ -201,10 +202,18 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
                 if (!col || !isColumnConst(*col))
                     all_const = false;
+
+                if (names_not_for_constant_folding.count(argument_names[i]))
+                    all_suitable_for_constant_folding = false;
             }
 
             size_t result_position = sample_block.columns();
-            sample_block.insert({nullptr, result_type, result_name});
+
+            ColumnPtr const_col;
+            if (function_base->alwaysReturnsConstant())
+                const_col = result_type->createColumnConstWithDefaultValue(1);
+
+            sample_block.insert({const_col, result_type, result_name});
             function = function_base->prepare(sample_block, arguments, result_position);
 
             if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
@@ -217,7 +226,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             /// But if we compile expressions compiled version of this function maybe placed in cache,
             /// so we don't want to unfold non deterministic functions
-            if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
+            if (all_const && (!compile_expressions || function_base->isDeterministic()))
             {
                 function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
 
@@ -236,7 +245,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                     if (col.column->empty())
                         col.column = col.column->cloneResized(1);
 
-                    is_suitable_for_constant_folding = true;
+                    if (!all_suitable_for_constant_folding || !function_base->isSuitableForConstantFolding())
+                        names_not_for_constant_folding.insert(result_name);
                 }
             }
 
@@ -729,7 +739,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         for (const auto & name_with_alias : action.projection)
             new_names.emplace_back(name_with_alias.second);
 
-    action.prepare(sample_block, settings);
+    action.prepare(sample_block, settings, names_not_for_constant_folding);
     actions.push_back(action);
 }
 
@@ -961,7 +971,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                 if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
                 {
                     auto & result = sample_block.getByName(out);
-                    if (result.column)
+                    if (result.column && names_not_for_constant_folding.count(result.name) == 0)
                     {
                         action.type = ExpressionAction::ADD_COLUMN;
                         action.result_type = result.type;
@@ -1083,18 +1093,6 @@ void ExpressionActions::finalize(const Names & output_columns)
     }
 
     actions.swap(new_actions);
-
-    for (auto & action : new_actions)
-    {
-        if (action.type == ExpressionAction::APPLY_FUNCTION
-            && action.function_base->alwaysReturnsConstant()
-            && sample_block.has(action.result_name))
-        {
-            auto & result = sample_block.getByName(action.result_name);
-            if (!result.column)
-                result.column = result.type->createColumnConstWithDefaultValue(0);
-        }
-    }
 
 /*    std::cerr << "\n";
     for (const auto & action : actions)

@@ -97,7 +97,6 @@ public:
     PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
-    bool is_suitable_for_constant_folding = false;
 
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
@@ -145,7 +144,7 @@ public:
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block, const Settings & settings);
+    void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
     void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
@@ -269,6 +268,8 @@ private:
     Actions actions;
     /// The example of result (output) block.
     Block sample_block;
+    /// Columns which can't be used for constant folding.
+    NameSet names_not_for_constant_folding;
 
     Settings settings;
 #if USE_EMBEDDED_COMPILER
