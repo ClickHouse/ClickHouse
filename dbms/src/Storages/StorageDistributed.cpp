@@ -312,10 +312,19 @@ BlockInputStreams StorageDistributed::read(
 
     if (settings.optimize_skip_unused_shards)
     {
-        auto smaller_cluster = skipUnusedShards(cluster, query_info);
+        if (has_sharding_key)
+        {
+            auto smaller_cluster = skipUnusedShards(cluster, query_info);
 
-        if (smaller_cluster)
-            cluster = smaller_cluster;
+            if (smaller_cluster)
+                cluster = smaller_cluster;
+        }
+        else
+        {
+            LOG_WARNING(log,
+                        "Reading from: " << database_name << "." << table_name << ": "
+                        "Setting \"optimize_skip_unused_shards\" has no effect: table was created with no sharding expression");
+        }
     }
 
     return ClusterProxy::executeQuery(
@@ -488,18 +497,37 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
-/// using constraints from "WHERE" condition, otherwise returns `nullptr`
+/// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
+    if (!has_sharding_key)
+    {
+        ///  TODO: Unsure whether to throw with this message or to silently ignore
+        throw Exception("Internal error: cannot determine shards of a distributed table if no sharding expression is supplied", ErrorCodes::LOGICAL_ERROR);
+        return nullptr;
+    }
+
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where() || !sharding_key_expr)
+    if (select.prewhere() == nullptr && select.where() == nullptr)
+    {
         return nullptr;
+    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
+    ASTPtr condition_ast;
+    if (select.where() && select.prewhere())
+    {
+        condition_ast = makeASTFunction("and", select.where()->clone(), select.prewhere()->clone());
+    }
+    else
+    {
+        condition_ast = select.where() ? select.where()->clone() : select.prewhere()->clone();
+    }
+
+    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
-    if (!blocks)
+    if (!blocks.has_value())
     {
         return nullptr;
     }
