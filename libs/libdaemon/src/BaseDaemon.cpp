@@ -92,16 +92,10 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-thread_local bool already_signal_handled = false;
-
 /** Handler for "fault" signals. Send data about fault to separate thread to write into log.
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (already_signal_handled)
-        return;
-    already_signal_handled = true;
-
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
