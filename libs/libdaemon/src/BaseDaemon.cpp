@@ -188,7 +188,9 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, stack_trace, thread_num);
+                /// This allows to receive more signals if failure happens inside onFault function.
+                /// Example: segfault while symbolizing stack trace.
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
             }
         }
     }
@@ -203,7 +205,7 @@ private:
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
     {
         LOG_FATAL(log, "########################################");
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
