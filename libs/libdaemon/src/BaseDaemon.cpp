@@ -38,7 +38,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -97,7 +97,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
