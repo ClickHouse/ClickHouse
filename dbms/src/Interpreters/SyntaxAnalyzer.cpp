@@ -1,7 +1,9 @@
+#include <Core/Settings.h>
+#include <Core/NamesAndTypes.h>
+
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Core/Settings.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -29,10 +31,8 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Core/NamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
-#include <Common/typeid_cast.h>
 
 #include <functional>
 
@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int EXPECTED_ALL_OR_ANY;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -487,6 +488,27 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness)
+{
+    const ASTTablesInSelectQueryElement * node = select_query.join();
+    if (!node)
+        return;
+
+    auto & table_join = const_cast<ASTTablesInSelectQueryElement *>(node)->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Unspecified &&
+        table_join.kind != ASTTableJoin::Kind::Cross)
+    {
+        if (join_default_strictness == JoinStrictness::ANY)
+            table_join.strictness = ASTTableJoin::Strictness::Any;
+        else if (join_default_strictness == JoinStrictness::ALL)
+            table_join.strictness = ASTTableJoin::Strictness::All;
+        else
+            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
+                            DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
+    }
+}
+
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
                           const Aliases & aliases, bool join_use_nulls)
@@ -863,6 +885,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
+        setJoinStrictness(*select_query, settings.join_default_strictness);
         collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
