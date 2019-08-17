@@ -226,7 +226,8 @@ private:
             LOG_FATAL(log, bare_stacktrace.rdbuf());
         }
 
-        LOG_FATAL(log, stack_trace.toString());
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
     }
 };
 
