@@ -110,10 +110,12 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    /// The time that is usually enough for separate thread to print info into log.
-    ::sleep(10);
-
-    call_default_signal_handler(sig);
+    if (sig != SIGPROF) /// This signal is used for debugging.
+    {
+        /// The time that is usually enough for separate thread to print info into log.
+        ::sleep(10);
+        call_default_signal_handler(sig);
+    }
 }
 
 
@@ -697,7 +699,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE}, faultSignalHandler);
+    /// SIGPROF is added for debugging purposes. To output a stack trace of any running thread at anytime.
+
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGPROF}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
