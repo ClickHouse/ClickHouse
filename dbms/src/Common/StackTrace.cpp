@@ -245,10 +245,10 @@ const StackTrace::Frames & StackTrace::getFrames() const
 }
 
 
-static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
-        return "<Empty trace>";
+        return callback("<Empty trace>");
 
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
@@ -287,10 +287,21 @@ static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset
         else
             out << "?";
 
-        out << "\n";
+        callback(out.str());
+        out.str({});
     }
+}
 
+static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+{
+    std::stringstream out;
+    toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
+}
+
+void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
+{
+    toStringEveryLineImpl(frames, offset, size, std::move(callback));
 }
 
 std::string StackTrace::toString() const

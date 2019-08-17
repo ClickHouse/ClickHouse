@@ -39,6 +39,8 @@ public:
     const Frames & getFrames() const;
     std::string toString() const;
 
+    void toStringEveryLine(std::function<void(const std::string &)> callback) const;
+
 protected:
     void tryCapture();
 
