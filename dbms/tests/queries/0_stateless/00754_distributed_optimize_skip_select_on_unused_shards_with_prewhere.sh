@@ -98,7 +98,3 @@ ${CLICKHOUSE_CLIENT} -n --query="
     SET optimize_skip_unused_shards = 1;
     SELECT count(*) FROM distributed_00754 PREWHERE a = 0 AND b = 0 OR c LIKE '%l%';
 " 2>&1 \ | fgrep -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
-
-
-# Clean up the whole test database
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE};"
