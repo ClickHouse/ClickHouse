@@ -210,6 +210,20 @@ private:
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         LOG_FATAL(log, signalToErrorMessage(sig, info, context));
+
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+            LOG_FATAL(log, bare_stacktrace.rdbuf());
+        }
+
         LOG_FATAL(log, stack_trace.toString());
     }
 };
