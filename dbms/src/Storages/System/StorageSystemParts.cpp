@@ -115,7 +115,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
 
         MinimalisticDataPartChecksums helper;
         {
-            /// TODO MergeTreeDataPart structure is too error-prone.
+            /// TODO: MergeTreeDataPart structure is too error-prone.
             std::shared_lock<std::shared_mutex> lock(part->columns_lock);
             helper.computeTotalChecksums(part->checksums);
         }
