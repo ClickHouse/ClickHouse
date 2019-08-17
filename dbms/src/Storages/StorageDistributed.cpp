@@ -176,6 +176,22 @@ IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeA
     throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
+std::string makeFormattedListOfShards(const ClusterPtr & cluster)
+{
+    std::ostringstream os;
+
+    bool head = true;
+    os << "[";
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
+        (head ? os : os << ", ") << shard_info.shard_num;
+        head = false;
+    }
+    os << "]";
+
+    return os.str();
+}
+
 }
 
 
@@ -319,23 +335,8 @@ BlockInputStreams StorageDistributed::read(
             if (smaller_cluster)
             {
                 cluster = smaller_cluster;
-
-                auto makeFormattedListOfShards = [](const ClusterPtr & cluster) -> std::string
-                {
-                    std::ostringstream os;
-                    os << "[";
-
-                    const auto & shards_info = cluster->getShardsInfo();
-                    std::transform(
-                            shards_info.cbegin(), shards_info.cend(),
-                            std::ostream_iterator<int>(os, ", "), [](const auto & shard_info) { return shard_info.shard_num; });
-
-                    os << "]";
-                    return os.str();
-                };
-
                 LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
-                               "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard indexes): "
+                               "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
@@ -532,13 +533,13 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
     }
 
     ASTPtr condition_ast;
-    if (select.where() && select.prewhere())
+    if (select.prewhere() && select.where())
     {
-        condition_ast = makeASTFunction("and", select.where()->clone(), select.prewhere()->clone());
+        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
     }
     else
     {
-        condition_ast = select.where() ? select.where()->clone() : select.prewhere()->clone();
+        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
