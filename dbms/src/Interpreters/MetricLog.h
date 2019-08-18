@@ -1,21 +1,33 @@
 #pragma once
+
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+
+#include <vector>
+#include <atomic>
+#include <ctime>
+
 
 namespace DB
 {
 
-using Poco::Message;
+/** MetricLog is a log of metric values measured at regular time interval.
+  */
 
 struct MetricLogElement
 {
     time_t event_time{};
     UInt64 milliseconds{};
 
+    std::vector<ProfileEvents::Count> profile_events;
+    std::vector<CurrentMetrics::Metric> current_metrics;
+
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
     void appendToBlock(Block & block) const;
 };
+
 
 class MetricLog : public SystemLog<MetricLogElement>
 {
@@ -34,6 +46,9 @@ private:
     ThreadFromGlobalPool metric_flush_thread;
     size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
+
+    /// For differentiation of ProfileEvents counters.
+    std::vector<ProfileEvents::Count> prev_profile_events;
 };
 
 }
