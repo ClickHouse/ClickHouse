@@ -85,7 +85,9 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
 void MetricLog::metricThreadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
-    prev_profile_events.resize(ProfileEvents::end());
+
+    /// For differentiation of ProfileEvents counters.
+    std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     while (!is_shutdown_metric_thread)
     {
