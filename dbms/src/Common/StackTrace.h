@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <functional>
 #include <signal.h>
 
 #ifdef __APPLE__
