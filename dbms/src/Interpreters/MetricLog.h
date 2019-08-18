@@ -46,9 +46,6 @@ private:
     ThreadFromGlobalPool metric_flush_thread;
     size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
-
-    /// For differentiation of ProfileEvents counters.
-    std::vector<ProfileEvents::Count> prev_profile_events;
 };
 
 }
