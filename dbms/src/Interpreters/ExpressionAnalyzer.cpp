@@ -443,7 +443,7 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    auto & join_params = ast_join->as<ASTTableJoin &>();
+    auto & join_params = ast_join->table_join->as<ASTTableJoin &>();
 
     getRootActions(left_keys_list, only_types, step.actions);
     addJoinAction(join_params, step.actions, subquery_for_set.join);
