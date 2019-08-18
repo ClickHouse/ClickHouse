@@ -1,41 +1,30 @@
 ## ClickHouse release 19.13.2.19, 2019-08-14
 
 ### New Feature
+* Allow to specify a list of columns with `COLUMNS('regexp')` expression that works like a more sophisticated variant of `*` asterisk. [#5951](https://github.com/yandex/ClickHouse/pull/5951)  ([mfridental](https://github.com/mfridental)), ([alexey-milovidov](https://github.com/alexey-milovidov))
+* `CREATE TABLE AS table_function()` is now possible [#6057](https://github.com/yandex/ClickHouse/pull/6057) ([dimarub2000](https://github.com/dimarub2000))
+* Poor man's profiler for each query being executed. It stops query execution thread at random time points to collect current backtrace. After some time a developer can analyze which code points profiler visits most often to find probable efficiency issues. [#4247](https://github.com/yandex/ClickHouse/issues/4247) ([laplab](https://github.com/laplab))
+* Adam optimizer for stochastic gradient descent is used by default in `stochasticLinearRegression()` and `stochasticLogisticRegression()` aggregate functions, because it shows good quality without almost any tuning. [#6000](https://github.com/yandex/ClickHouse/pull/6000) ([Quid37](https://github.com/Quid37))
+
+### Experimental features
 * Added functions for working with the сustom week number [#5212](https://github.com/yandex/ClickHouse/pull/5212) ([Andy Yang](https://github.com/andyyzh))
 * New query processing pipeline. Use `experimental_use_processors=1` option to enable it. [#4914](https://github.com/yandex/ClickHouse/pull/4914) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* It is possible to select several columns by providing a pattern of three dots before or after of a stem. [#5951](https://github.com/yandex/ClickHouse/pull/5951) ([mfridental](https://github.com/mfridental))
-* Allow to specify a list of columns with `COLUMNS('regexp')` expression that works like a more sophisticated variant of `*` asterisk. [#6038](https://github.com/yandex/ClickHouse/pull/6038) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* `CREATE TABLE AS table_function()` is now possible [#6057](https://github.com/yandex/ClickHouse/pull/6057) ([dimarub2000](https://github.com/dimarub2000))
-* Throws an exception if `config.d` file doesn't have the corresponding root element as the config file [#6123](https://github.com/yandex/ClickHouse/pull/6123) ([dimarub2000](https://github.com/dimarub2000))
-* Poor man's profiler for each query being executed [#4247](https://github.com/yandex/ClickHouse/issues/4247) ([laplab](https://github.com/laplab))
-* Adam optimizer for stochastic descent. Made it default (because it shows good quality without almost any tuning). [#6000](https://github.com/yandex/ClickHouse/pull/6000) ([Quid37](https://github.com/Quid37))
 
 ### Bug Fix
-* For row-level security feature it's crucial for all storages to provide proper database name. Now it's implemented. [#5953](https://github.com/yandex/ClickHouse/pull/5953) ([Ivan](https://github.com/abyss7))
-* Now client could receive lags with any desired level. [#5964](https://github.com/yandex/ClickHouse/pull/5964) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
-* Fixed `DoubleDelta` encoding cases for random `Int32` and `Int64`. [#5998](https://github.com/yandex/ClickHouse/pull/5998) ([Vasily Nemkov](https://github.com/Enmk))
-* Fix client version number which is able to read additional progress data from the server. [#6018](https://github.com/yandex/ClickHouse/pull/6018) ([alesapin](https://github.com/alesapin))
+* `RENAME` queries now work with all storages. [#5953](https://github.com/yandex/ClickHouse/pull/5953) ([Ivan](https://github.com/abyss7))
+* Now client could receive logs from server with any desired level by setting `send_logs_level` regardless to the log level specified in server settings. [#5964](https://github.com/yandex/ClickHouse/pull/5964) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+* Fixed `DoubleDelta` encoding of `Int64` for large `DoubleDelta` values, improved `DoubleDelta` encoding for random data for `Int32`. [#5998](https://github.com/yandex/ClickHouse/pull/5998) ([Vasily Nemkov](https://github.com/Enmk))
 * Fixed overestimation of `max_rows_to_read` if the setting `merge_tree_uniform_read_distribution` is set to 0. [#6019](https://github.com/yandex/ClickHouse/pull/6019) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix backward compatibility for `CHECK QUERY`. [#6024](https://github.com/yandex/ClickHouse/pull/6024) ([alesapin](https://github.com/alesapin))
-* After introduction of virtual columns in storages `DESCRIBE TABLE` started to show them too, it was unexpected and now is fixed. [#6040](https://github.com/yandex/ClickHouse/pull/6040) ([Ivan](https://github.com/abyss7))
-* Fix non-deterministic result of `uniq` aggregate function in extreme rare cases. The bug was present in all ClickHouse versions. [#6058](https://github.com/yandex/ClickHouse/pull/6058) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix segfault when we set a little bit too high CIDR on the function `IPv6CIDRToRange`. [#6068](https://github.com/yandex/ClickHouse/pull/6068) ([Guillaume Tassery](https://github.com/YiuRULE))
-* Fix the situation when Kafka consumer got paused before subscription and not resumed afterwards. [#6075](https://github.com/yandex/ClickHouse/pull/6075) ([Ivan](https://github.com/abyss7))
-* Fixed useless and incorrect condition on update field for initial loading of external dictionaries via ODBC, MySQL, ClickHouse and HTTP. This fixes [#6069](https://github.com/yandex/ClickHouse/issues/6069). [#6083](https://github.com/yandex/ClickHouse/pull/6083) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fixed irrelevant exception in cast of `LowCardinality(Nullable)` to not-Nullable column in case if it doesn't contain Nulls (e.g. in query like `SELECT CAST(CAST('Hello' AS LowCardinality(Nullable(String))) AS String)`. This fixes [#6094](https://github.com/yandex/ClickHouse/issues/6094). [#6119](https://github.com/yandex/ClickHouse/pull/6119) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Fix bug with writing secondary indices marks with adaptive granularity. [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alesapin](https://github.com/alesapin))
+* Throws an exception if `config.d` file doesn't have the corresponding root element as the config file [#6123](https://github.com/yandex/ClickHouse/pull/6123) ([dimarub2000](https://github.com/dimarub2000))
 
 ### Improvement
-* The setting `input_format_defaults_for_omitted_fields` is enabled by default. It enables calculation of complex default expressions for ommitted fields in `JSONEachRow` format. It should be the expected behaviour but may lead to neglible performance difference or subtle incompatibilities. [#6043](https://github.com/yandex/ClickHouse/pull/6043) ([Artem Zuikov](https://github.com/4ertus2))
+* The setting `input_format_defaults_for_omitted_fields` is enabled by default. It enables calculation of complex default expressions for omitted fields in `JSONEachRow` and `CSV*` formats. It should be the expected behaviour but may lead to negligible performance difference or subtle incompatibilities. [#6043](https://github.com/yandex/ClickHouse/pull/6043) ([Artem Zuikov](https://github.com/4ertus2)), [#5625](https://github.com/yandex/ClickHouse/pull/5625) ([akuzm](https://github.com/akuzm))
 
 ### Performance Improvement
-* Optimize `count()` [#6028](https://github.com/yandex/ClickHouse/pull/6028) ([Amos Bird](https://github.com/amosbird))
+* Optimize `count()`. Now it uses the smallest column (if possible). [#6028](https://github.com/yandex/ClickHouse/pull/6028) ([Amos Bird](https://github.com/amosbird))
 
 ### Build/Testing/Packaging Improvement
-* Fixed MSan report. [#6144](https://github.com/yandex/ClickHouse/pull/6144) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Report memory usage in performance tests. [#5899](https://github.com/yandex/ClickHouse/pull/5899) ([akuzm](https://github.com/akuzm))
-* Add ability to sign .rpm clickhouse packages. [#5977](https://github.com/yandex/ClickHouse/pull/5977) ([alesapin](https://github.com/alesapin))
-* Add dependencies for RPM packages [#6023](https://github.com/yandex/ClickHouse/pull/6023) ([alesapin](https://github.com/alesapin))
 * Fix build with external `libcxx` [#6010](https://github.com/yandex/ClickHouse/pull/6010) ([Ivan](https://github.com/abyss7))
 * Fix shared build with `rdkafka` library [#6101](https://github.com/yandex/ClickHouse/pull/6101) ([Ivan](https://github.com/abyss7))
 
@@ -53,7 +42,7 @@
 * Fix bug with enabling adaptive granularity when creating new replica for `Replicated*MergeTree` table. [#6452](https://github.com/yandex/ClickHouse/pull/6452) ([alesapin](https://github.com/alesapin))
 * Fix infinite loop when reading Kafka messages. [#6354](https://github.com/yandex/ClickHouse/pull/6354) ([abyss7](https://github.com/abyss7))
 * Fixed the possibility of a fabricated query to cause server crash due to stack overflow in SQL parser and possibility of stack overflow in `Merge` and `Distributed` tables [#6433](https://github.com/yandex/ClickHouse/pull/6433) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fixed Gorilla encoding error on small sequences. [#6344](https://github.com/yandex/ClickHouse/pull/6444) ([Enmk](https://github.com/Enmk))
+* Fixed Gorilla encoding error on small sequences. [#6444](https://github.com/yandex/ClickHouse/pull/6444) ([Enmk](https://github.com/Enmk))
 
 ### Improvement
 * Allow user to override `poll_interval` and `idle_connection_timeout` settings on connection. [#6230](https://github.com/yandex/ClickHouse/pull/6230) ([alexey-milovidov](https://github.com/alexey-milovidov))
