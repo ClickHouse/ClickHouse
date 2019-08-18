@@ -1,9 +1,17 @@
 #pragma once
 
+#include <ext/scope_guard.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <random>
+#include <sstream>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/PODArray.h>
 #include <Core/Types.h>
+#include <Interpreters/Context.h>
 #include <IO/copyData.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -14,9 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
-#include <random>
-#include <sstream>
-#include <IO/LimitReadBuffer.h>
+#include <Poco/SHA1Engine.h>
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.
@@ -27,6 +33,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
+    extern const int OPENSSL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace MySQLProtocol
@@ -39,11 +48,6 @@ const size_t MYSQL_ERRMSG_SIZE = 512;
 const size_t PACKET_HEADER_SIZE = 4;
 const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
-namespace Authentication
-{
-    const String Native = "mysql_native_password";
-    const String SHA256 = "sha256_password"; /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
-}
 
 enum CharacterSet
 {
@@ -149,6 +153,8 @@ private:
     uint8_t & sequence_id;
     const size_t max_packet_size = MAX_PACKET_LENGTH;
 
+    bool has_read_header = false;
+
     // Size of packet which is being read now.
     size_t payload_length = 0;
 
@@ -158,8 +164,9 @@ private:
 protected:
     bool nextImpl() override
     {
-        if (payload_length == 0 || (payload_length == max_packet_size && offset == payload_length))
+        if (!has_read_header || (payload_length == max_packet_size && offset == payload_length))
         {
+            has_read_header = true;
             working_buffer.resize(0);
             offset = 0;
             payload_length = 0;
@@ -171,10 +178,6 @@ protected:
                 tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
-            else if (payload_length == 0)
-            {
-                return false;
-            }
 
             size_t packet_sequence_id = 0;
             in.read(reinterpret_cast<char &>(packet_sequence_id));
@@ -185,6 +188,9 @@ protected:
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
             sequence_id++;
+
+            if (payload_length == 0)
+                return false;
         }
         else if (offset == payload_length)
         {
@@ -208,6 +214,7 @@ class ClientPacket
 {
 public:
     ClientPacket() = default;
+
     ClientPacket(ClientPacket &&) = default;
 
     virtual void read(ReadBuffer & in, uint8_t & sequence_id)
@@ -257,6 +264,7 @@ public:
     {
         return total_left;
     }
+
 private:
     WriteBuffer & out;
     uint8_t & sequence_id;
@@ -452,9 +460,6 @@ protected:
         buffer.write(static_cast<char>(auth_plugin_data.size()));
         writeChar(0x0, 10, buffer);
         writeString(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
-        // A workaround for PHP mysqlnd extension bug which occurs when sha256_password is used as a default authentication plugin.
-        // Instead of using client response for mysql_native_password plugin, the server will always generate authentication method mismatch
-        // and switch to sha256_password to simulate that mysql_native_password is used as a default plugin.
         writeString(auth_plugin_name, buffer);
         writeChar(0x0, 1, buffer);
     }
@@ -842,6 +847,231 @@ protected:
             writeLengthEncodedString(column, buffer);
     }
 };
+
+namespace Authentication
+{
+
+class IPlugin
+{
+public:
+    virtual String getName() = 0;
+
+    virtual String getAuthPluginData() = 0;
+
+    virtual void authenticate(const String & user_name, std::optional<String> auth_response, Context & context, std::shared_ptr<PacketSender> packet_sender, bool is_secure_connection,
+                              const Poco::Net::SocketAddress & address) = 0;
+
+    virtual ~IPlugin() = default;
+};
+
+/// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
+class Native41 : public IPlugin
+{
+public:
+    Native41()
+    {
+        scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+            generator >> scramble[i];
+    }
+
+    String getName() override
+    {
+        return "mysql_native_password";
+    }
+
+    String getAuthPluginData() override
+    {
+        return scramble;
+    }
+
+    void authenticate(
+        const String & user_name,
+        std::optional<String> auth_response,
+        Context & context,
+        std::shared_ptr<PacketSender> packet_sender,
+        bool /* is_secure_connection */,
+        const Poco::Net::SocketAddress & address) override
+    {
+        if (!auth_response)
+        {
+            packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+        }
+
+        if (auth_response->empty())
+        {
+            context.setUser(user_name, "", address, "");
+            return;
+        }
+
+        if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
+            throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
+                            ErrorCodes::UNKNOWN_EXCEPTION);
+
+        auto user = context.getUser(user_name);
+
+        if (user->password_double_sha1_hex.empty())
+            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
+
+        Poco::SHA1Engine::Digest double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
+        assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
+
+        Poco::SHA1Engine engine;
+        engine.update(scramble.data(), SCRAMBLE_LENGTH);
+        engine.update(double_sha1_value.data(), double_sha1_value.size());
+
+        String password_sha1(Poco::SHA1Engine::DIGEST_SIZE, 0x0);
+        const Poco::SHA1Engine::Digest & digest = engine.digest();
+        for (size_t i = 0; i < password_sha1.size(); i++)
+        {
+            password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
+        }
+        context.setUser(user_name, password_sha1, address, "");
+    }
+private:
+    String scramble;
+};
+
+/// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
+/// https://dev.mysql.com/doc/internals/en/sha256.html
+class Sha256Password : public IPlugin
+{
+public:
+    Sha256Password(RSA & public_key_, RSA & private_key_, Logger * log_)
+        : public_key(public_key_)
+        , private_key(private_key_)
+        , log(log_)
+    {
+        /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
+         *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin. [1]
+         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
+         */
+        scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+            generator >> scramble[i];
+    }
+
+    String getName() override
+    {
+        return "sha256_password";
+    }
+
+    String getAuthPluginData() override
+    {
+        return scramble;
+    }
+
+    void authenticate(
+        const String & user_name,
+        std::optional<String> auth_response,
+        Context & context,
+        std::shared_ptr<PacketSender> packet_sender,
+        bool is_secure_connection,
+        const Poco::Net::SocketAddress & address) override
+    {
+        if (!auth_response)
+        {
+            packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+
+            if (packet_sender->in->eof())
+                throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
+                    ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+            LOG_TRACE(log, "Authentication method mismatch.");
+        }
+        else
+        {
+            LOG_TRACE(log, "Authentication method match.");
+        }
+
+        if (auth_response == "\1")
+        {
+            LOG_TRACE(log, "Client requests public key.");
+
+            BIO * mem = BIO_new(BIO_s_mem());
+            SCOPE_EXIT(BIO_free(mem));
+            if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
+            {
+                throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            }
+            char * pem_buf = nullptr;
+            long pem_size = BIO_get_mem_data(mem, &pem_buf);
+            String pem(pem_buf, pem_size);
+
+            LOG_TRACE(log, "Key: " << pem);
+
+            AuthMoreData data(pem);
+            packet_sender->sendPacket(data, true);
+
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+        }
+        else
+        {
+            LOG_TRACE(log, "Client didn't request public key.");
+        }
+
+        String password;
+
+        /** Decrypt password, if it's not empty.
+         *  The original intention was that the password is a string[NUL] but this never got enforced properly so now we have to accept that
+         *  an empty packet is a blank password, thus the check for auth_response.empty() has to be made too.
+         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
+         */
+        if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
+        {
+            LOG_TRACE(log, "Received nonempty password");
+            auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
+
+            unsigned char plaintext[RSA_size(&private_key)];
+            int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
+            if (plaintext_size == -1)
+            {
+                throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            }
+
+            password.resize(plaintext_size);
+            for (int i = 0; i < plaintext_size; i++)
+            {
+                password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
+            }
+        }
+        else if (is_secure_connection)
+        {
+            password = *auth_response;
+        }
+        else
+        {
+            LOG_TRACE(log, "Received empty password");
+        }
+
+        if (!password.empty() && password.back() == 0)
+        {
+            password.pop_back();
+        }
+
+        context.setUser(user_name, password, address, "");
+    }
+
+private:
+    RSA & public_key;
+    RSA & private_key;
+    Logger * log;
+    String scramble;
+};
+
+}
 
 }
 }
