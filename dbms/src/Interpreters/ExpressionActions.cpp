@@ -170,7 +170,6 @@ ExpressionAction ExpressionAction::ordinaryJoin(
     a.type = JOIN;
     a.join = std::move(join_);
     a.join_kind = join_params.kind;
-    // a.join_strictness = join_params.strictness;
     a.join_key_names_left = join_key_names_left;
     a.join_key_names_right = join_key_names_right;
     a.columns_added_by_join = columns_added_by_join_;
@@ -245,6 +244,9 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                 }
             }
 
+            /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+            /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+            /// unnecessary materialization.
             auto & res = sample_block.getByPosition(result_position);
             if (!res.column && function_base->isSuitableForConstantFolding())
             {
@@ -282,6 +284,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             for (auto & col : sample_block)
             {
                 /// Materialize column.
+                /// Column is not empty if it is constant, but after Join all constants will be materialized.
+                /// So, we need remove constants from header.
                 if (col.column)
                     col.column = nullptr;
 

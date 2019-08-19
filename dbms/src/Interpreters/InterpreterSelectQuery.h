@@ -230,8 +230,8 @@ private:
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
-    /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
-    void unifyStreams(Pipeline & pipeline, Block header = {});
+    /// Add ConvertingBlockInputStream to specified header.
+    void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {

@@ -106,7 +106,6 @@ public:
     /// For JOIN
     std::shared_ptr<const Join> join;
     ASTTableJoin::Kind join_kind;
-    // ASTTableJoin::Strictness join_strictness;
     Names join_key_names_left;
     Names join_key_names_right;
     NamesAndTypesList columns_added_by_join;
