@@ -23,7 +23,7 @@ def send_query(query):
 def send_query_in_process_group(query):
     cmd = list(CLICKHOUSE_CLIENT.split())
     cmd += ['--query', query]
-    print(cmd)
+    # print(cmd)
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
 
 
