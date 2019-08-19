@@ -246,10 +246,13 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             }
 
             auto & res = sample_block.getByPosition(result_position);
-            if (!res.column && function_base->alwaysReturnsConstant() && function_base->isSuitableForConstantFolding())
+            if (!res.column && function_base->isSuitableForConstantFolding())
             {
-                res.column = result_type->createColumnConstWithDefaultValue(1);
-                names_not_for_constant_folding.insert(result_name);
+                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+                {
+                    res.column = std::move(col);
+                    names_not_for_constant_folding.insert(result_name);
+                }
             }
 
             break;

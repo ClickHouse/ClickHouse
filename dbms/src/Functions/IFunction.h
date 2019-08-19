@@ -159,7 +159,12 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    virtual bool alwaysReturnsConstant() const { return false; }
+    /** Some functions like ignore(...) or toTypeName(...) always return constant result which doesn't depend on arguments.
+      * In this case we can calculate result and assume that it's constant in stream header.
+      * There is no need to implement function if it has zero arguments.
+      * Must return ColumnConst with single row or nullptr.
+      */
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -458,7 +463,10 @@ public:
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
-    bool alwaysReturnsConstant() const override { return function->alwaysReturnsConstant(); }
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments_) const override
+    {
+        return function->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments_);
+    }
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
