@@ -461,8 +461,8 @@ def test_kafka_insert(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'insert',
-                     kafka_group_name = 'insert',
+                     kafka_topic_list = 'insert1',
+                     kafka_group_name = 'insert1',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
     ''')
@@ -484,7 +484,7 @@ def test_kafka_insert(kafka_cluster):
 
     messages = []
     while True:
-        messages.extend(kafka_consume('insert'))
+        messages.extend(kafka_consume('insert1'))
         if len(messages) == 50:
             break
 
@@ -497,13 +497,13 @@ def test_kafka_produce_consume(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'insert',
-                     kafka_group_name = 'insert',
+                     kafka_topic_list = 'insert2',
+                     kafka_group_name = 'insert2',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
     ''')
 
-    messages_num = 100000
+    messages_num = 10000
     def insert():
         values = []
         for i in range(messages_num):
