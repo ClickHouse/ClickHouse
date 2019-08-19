@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
 {
@@ -30,13 +30,19 @@ public:
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
-    /// The resulting stream will return blocks containing changed columns only.
+    /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     BlockInputStreamPtr execute();
+
+    /// Only changed columns.
+    const Block & getUpdatedHeader() const;
 
 private:
     void prepare(bool dry_run);
 
-    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
+    struct Stage;
+
+    std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run);
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
 private:
     StoragePtr storage;
@@ -78,6 +84,7 @@ private:
     };
 
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+    std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
 };
