@@ -2127,7 +2127,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline);
+        unifyStreams(pipeline, pipeline.streams.at(0)->getHeader());
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -2466,26 +2466,20 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 
 void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
 {
-    if (pipeline.hasMoreThanOneStream() || header)
+    /// Unify streams in case they have different headers.
+
+    /// TODO: remove previos addition of _dummy column.
+    if (header.columns() > 1 && header.has("_dummy"))
+        header.erase("_dummy");
+
+    for (size_t i = 0; i < pipeline.streams.size(); ++i)
     {
-        /// Unify streams in case they have different headers.
+        auto & stream = pipeline.streams[i];
+        auto stream_header = stream->getHeader();
+        auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
-        if (!header)
-            header = pipeline.streams.at(0)->getHeader();
-
-        /// TODO: remove _dummy column
-        if (header.columns() > 1 && header.has("_dummy"))
-            header.erase("_dummy");
-
-        for (size_t i = 0; i < pipeline.streams.size(); ++i)
-        {
-            auto & stream = pipeline.streams[i];
-            auto stream_header = stream->getHeader();
-            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
-
-            if (!blocksHaveEqualStructure(header, stream_header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode);
-        }
+        if (!blocksHaveEqualStructure(header, stream_header))
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode);
     }
 }
 
