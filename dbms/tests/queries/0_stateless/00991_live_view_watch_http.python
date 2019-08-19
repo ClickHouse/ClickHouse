@@ -16,19 +16,16 @@ def send_query(query):
     cmd = list(CLICKHOUSE_CLIENT.split())
     cmd += ['--query', query]
     # print(cmd)
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout
 
 
 def send_http_query(query):
     cmd =  list(CLICKHOUSE_CURL.split()) # list(['curl', '-sSN', '--max-time', '10'])
     cmd += ['-sSN', CLICKHOUSE_URL, '-d', query]
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout
 
 
-def read_lines_and_push_to_queue(p, queue):
-    pipe = p.stdout
-    sys.stdout.flush()
-
+def read_lines_and_push_to_queue(pipe, queue):
     for line in iter(pipe.readline, ''):
         line = line.strip()
         print(line)
@@ -36,14 +33,13 @@ def read_lines_and_push_to_queue(p, queue):
         queue.put(line)
 
     queue.put(None)
-    p.wait()
 
 
 def test():
-    send_query('DROP TABLE IF EXISTS test.lv').stdout.read()
-    send_query('DROP TABLE IF EXISTS test.mt').stdout.read()
-    send_query('CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple()').stdout.read()
-    send_query('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt').stdout.read()
+    send_query('DROP TABLE IF EXISTS test.lv').read()
+    send_query('DROP TABLE IF EXISTS test.mt').read()
+    send_query('CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple()').read()
+    send_query('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt').read()
 
     q = queue.Queue()
     pipe = send_http_query('WATCH test.lv')
@@ -54,19 +50,14 @@ def test():
     print(line)
     assert (line == '0\t1')
 
-    p = send_query('INSERT INTO test.mt VALUES (1),(2),(3)')
-    p.stdout.read()
-    p.wait()
+    send_query('INSERT INTO test.mt VALUES (1),(2),(3)').read()
     line = q.get()
     print(line)
     assert (line == '6\t2')
 
-    p = send_query('DROP TABLE if exitst test.lv')
-    p.stdout.read()
-    p.wait()
-    p = send_query('DROP TABLE if exitst test.mt')
-    p.stdout.read()
-    p.wait()
+    send_query('DROP TABLE if exists test.lv').read()
+    send_query('DROP TABLE if exists test.lv').read()
+
     thread.join()
 
 test()
