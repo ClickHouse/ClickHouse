@@ -19,5 +19,6 @@ void executeQuery(
     InterruptListener & interrupt_listener,
     Context & context,
     const Settings & settings,
-    size_t connection_index);
+    size_t connection_index,
+    Poco::Logger * log);
 }

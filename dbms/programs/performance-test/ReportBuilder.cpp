@@ -168,7 +168,7 @@ std::string ReportBuilder::buildFullReport(
 
                 if (statistics->total_time != 0)
                 {
-                    runJSON.set("number_of_queries", static_cast<double>(statistics->queries));
+                    runJSON.set("queries_number", statistics->queries);
                     runJSON.set("queries_per_second", static_cast<double>(statistics->queries) / statistics->total_time);
                     runJSON.set("rows_per_second", static_cast<double>(statistics->total_rows_read) / statistics->total_time);
                     runJSON.set("bytes_per_second", static_cast<double>(statistics->total_bytes_read) / statistics->total_time);
@@ -196,13 +196,14 @@ std::string ReportBuilder::buildFullReport(
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
     const std::vector<TestStatsPtrs> & stats,
-    const Connections & /*connections*/,
+    const Connections & connections,
     const ConnectionTimeouts & /*timeouts*/,
     size_t connection_index,
     const std::vector<std::size_t> & queries_to_run) const
 {
 
     std::ostringstream output;
+    output << "connection \"" << connections[connection_index]->getDescription() << "\"\n";
 
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
     {
@@ -220,7 +221,7 @@ std::string ReportBuilder::buildCompactReport(
 
             output << main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;
-            output << stats[connection_index][index]->getStatisticByName(main_metric);
+            output << stats[index][connection_index]->getStatisticByName(main_metric);
             output << "\n";
         }
     }

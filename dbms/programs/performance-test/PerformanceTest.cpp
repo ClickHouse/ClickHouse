@@ -18,6 +18,7 @@
 namespace DB
 {
 
+
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
@@ -281,7 +282,7 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
         return statistics_by_run;
     }
 
-    for (auto & connection : connecions)
+    for (auto & connection : connections)
     {
         // Pull memory usage data from query log. The log is normally filled in
         // background, so we have to flush it synchronously here to see all the
@@ -294,14 +295,14 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
         }
     }
 
-    for (auto & statistics : statistics_by_run)
+    for (auto & statistics_by_connections : statistics_by_run)
     {
         for (size_t i = 0; i != statistics_by_connections.size(); ++i)
         {
             auto & connection = *connections[i];
             auto & statistics = statistics_by_connections[i];
 
-            if (statistics.query_id.empty())
+            if (statistics->query_id.empty())
             {
                 // We have statistics structs for skipped queries as well, so we
                 // have to filter them out.
@@ -313,7 +314,7 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
             // last one, because this is when the query performance has stabilized.
             RemoteBlockInputStream log_reader(connection,
                 "select memory_usage, query_start_time from system.query_log "
-                "where type = 2 and query_id = '" + statistics.query_id + "' "
+                "where type = 2 and query_id = '" + statistics->query_id + "' "
                 "order by query_start_time desc",
                 {} /* header */, context);
 
@@ -321,12 +322,12 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
             Block block = log_reader.read();
             if (block.columns() == 0)
             {
-                LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+                LOG_WARNING(log, "Query '" << statistics->query_id << "' is not found in query log.");
                 continue;
             }
 
             auto column = block.getByName("memory_usage").column;
-            statistics.memory_usage = column->get64(0);
+            statistics->memory_usage = column->get64(0);
 
             log_reader.readSuffix();
         }
@@ -364,7 +365,7 @@ void PerformanceTest::runQueries(
         {
             for (size_t i = 0; i < connections.size(); ++i)
             {
-                executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i);
+                executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i, log);
             }
             if (test_info.exec_type == ExecutionType::Loop)
             {
@@ -380,7 +381,7 @@ void PerformanceTest::runQueries(
                     for (size_t i = 0; i < connections.size(); ++i)
                     {
                         connection_index = distribution(generator);
-                        executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index);
+                        executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index, log);
                     }
                 }
             }
@@ -402,7 +403,6 @@ void PerformanceTest::runQueries(
             LOG_INFO(log, "Got SIGINT, will terminate as soon as possible");
             break;
         }
-        t_test.compareAndReport();
     }
 }
 

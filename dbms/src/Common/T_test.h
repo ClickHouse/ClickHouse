@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 
 /**
  * About:
@@ -161,13 +162,13 @@ struct T_test
     const std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
 
     /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
-    bool compareAndReport(bool need_report = false, size_t confidence_level_index = 5)
+    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5)
     {
         if (confidence_level_index > 5)
             confidence_level_index = 5;
 
         if (data[0].size == 0 || data[1].size == 0)
-            return true;
+            return {true, ""};
 
         size_t degrees_of_freedom = (data[0].size - 1) + (data[1].size - 1);
 
@@ -181,23 +182,17 @@ struct T_test
 
         double mean_confidence_interval = table_value * t_statistic;
 
+        std::stringstream ss;
         if (mean_difference > mean_confidence_interval)
         {
-            if (need_report)
-            {
-                std::cerr << std::fixed << '\n';
-                std::cerr << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence\n";
-                std::cerr << "\t" << std::setprecision(6) << mean_difference << " +/- " << mean_confidence_interval << "\n";
-                std::cerr << "\t" << std::setprecision(6) << mean_difference * 100 / data[0].avg() << "% +/- " << mean_confidence_interval * 100 / data[0].avg() << "%\n";
-                std::cerr << "\t" << "(Student's t, pooled s = " << pooled_standard_deviation << ")\n";
-            }
-            return false;
+            ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
+            ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
+            return {false, ss.str()};
         }
         else
         {
-            if (need_report)
-                std::cerr << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence\n";
-            return true;
+            ss << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
+            return {true, ss.str()};
         }
     }
 
