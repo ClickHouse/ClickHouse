@@ -376,16 +376,14 @@ struct CurrentlyMovingPartsTagger
 {
     MergeTreeMovingParts parts;
 
-    bool is_successful = false;
-    String exception_message;
-
     StorageMergeTree & storage;
 
 public:
     CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, StorageMergeTree & storage_)
-            : parts(std::move(parts_)), storage(storage_)
+        : parts(std::move(parts_))
+        , storage(storage_)
     {
-        /// Assume mutex is already locked, because this method is called from mergeTask.
+        /// Assume mutex is already locked, because this method is called from moveParts.
         for (const auto & part : parts)
         {
             if (storage.currently_processing_in_background.count(part.part))
@@ -700,7 +698,7 @@ bool StorageMergeTree::moveParts()
 
         std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
-        auto can_move = [this](const DataPartPtr & part, String *)
+        auto can_move = [this](const DataPartPtr & part, String *) -> bool
         {
             return !currently_processing_in_background.count(part);
         };

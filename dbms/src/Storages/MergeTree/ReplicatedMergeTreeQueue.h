@@ -28,6 +28,7 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class ReplicatedMergeTreeMovePredicate;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -157,8 +158,6 @@ private:
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -228,6 +227,9 @@ public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
 
     ~ReplicatedMergeTreeQueue();
+
+    /// Put a set of (already existing) parts in virtual_parts. TODO(MOVE TO PRIVATE)
+    void addVirtualParts(const MergeTreeData::DataParts & parts, bool throw_if_already_virtual=false);
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts);
@@ -322,7 +324,7 @@ public:
     /// Prohibit merges in the specified blocks range.
     /// Add part to virtual_parts, which means that part must exist
     /// after processing replication log up to log_pointer.
-    /// part maybe fake (look at ReplicatedMergeTreeMergePredicate)
+    /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
@@ -397,6 +399,22 @@ private:
     String inprogress_quorum_part;
 };
 
+
+class ReplicatedMergeTreeMovePredicate
+{
+public:
+    ReplicatedMergeTreeMovePredicate(const ReplicatedMergeTreeQueue & queue_);
+
+    bool operator()(const MergeTreeData::DataPartPtr & part, String * out_reason = nullptr) const;
+
+    ~ReplicatedMergeTreeMovePredicate();
+
+private:
+    const ReplicatedMergeTreeQueue & queue;
+
+    /// Locks queue state in constructor and unlocks in desctructor
+    std::unique_lock<std::mutex> queue_state_lock;
+};
 
 /** Convert a number to a string in the format of the suffixes of auto-incremental nodes in ZooKeeper.
   * Negative numbers are also supported - for them the name of the node looks somewhat silly

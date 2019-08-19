@@ -48,5 +48,4 @@ private:
     Logger * log;
 };
 
-using MergeTreePartsMoverPtr = std::unique_ptr<MergeTreePartsMover>;
 }
