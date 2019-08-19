@@ -70,7 +70,12 @@ protected:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        return std::make_shared<BaseFunctionToTypeName>(arguments, return_type);
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (auto & elem : arguments)
+            types.emplace_back(elem.type);
+
+        return std::make_shared<BaseFunctionToTypeName>(types, return_type);
     }
 };
 
