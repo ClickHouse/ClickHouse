@@ -1581,7 +1581,8 @@ void MergeTreeData::alterDataPart(
             true /* skip_offsets */,
             {},
             unused_written_offsets,
-            part->index_granularity);
+            part->index_granularity,
+            &part->index_granularity_info);
 
         in.readPrefix();
         out.writePrefix();

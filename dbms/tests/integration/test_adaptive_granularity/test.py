@@ -288,6 +288,17 @@ def test_mixed_granularity_single_node(start_dynamic_cluster, node):
 
     node.exec_in_container(["bash", "-c", "find {p} -name '*.mrk' | grep '.*'".format(p=path_to_old_part)]) # check that we have non adaptive files
 
+    node.query("ALTER TABLE table_with_default_granularity UPDATE dummy = dummy + 1 WHERE 1")
+    # still works
+    assert node.query("SELECT count() from table_with_default_granularity") == '6\n'
+
+    node.query("ALTER TABLE table_with_default_granularity MODIFY COLUMN dummy String")
+    node.query("ALTER TABLE table_with_default_granularity ADD COLUMN dummy2 Float64")
+
+    #still works
+    assert node.query("SELECT count() from table_with_default_granularity") == '6\n'
+
+
 def test_version_update_two_nodes(start_dynamic_cluster):
     node11.query("INSERT INTO table_with_default_granularity VALUES (toDate('2018-10-01'), 1, 333), (toDate('2018-10-02'), 2, 444)")
     node12.query("SYSTEM SYNC REPLICA table_with_default_granularity")
