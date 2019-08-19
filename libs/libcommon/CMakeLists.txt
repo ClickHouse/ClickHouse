@@ -119,7 +119,7 @@ target_link_libraries (common
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
+    stdc++fs
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE

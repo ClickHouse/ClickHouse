@@ -1,9 +1,7 @@
 #include <Formats/FormatFactory.h>
+#include "ProtobufRowOutputFormat.h"
 
-#include "config_formats.h"
 #if USE_PROTOBUF
-
-#include <Processors/Formats/Impl/ProtobufRowOutputFormat.h>
 
 #include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>

@@ -6,6 +6,7 @@
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -200,6 +201,10 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+
+    /// Used by MySQL Secure Password Authentication plugin.
+    std::shared_ptr<const User> getUser(const String & user_name);
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
