@@ -1,12 +1,12 @@
 # Roadmap
 
-## Q2 2019
+## Q3 2019
 
 - DDL for dictionaries
 - Integration with S3-like object stores
 - Multiple storages for hot/cold data, JBOD support
 
-## Q3 2019
+## Q4 2019
 
 - JOIN execution improvements:
     - Distributed join not limited by memory
