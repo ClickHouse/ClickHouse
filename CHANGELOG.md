@@ -1,14 +1,14 @@
 ## ClickHouse release 19.13.2.19, 2019-08-14
 
 ### New Feature
+* Sampling profiler on query level. [Example](https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194). [#4247](https://github.com/yandex/ClickHouse/issues/4247) ([laplab](https://github.com/laplab)) [#6124](https://github.com/yandex/ClickHouse/pull/6124) ([alexey-milovidov](https://github.com/alexey-milovidov)) [#6250](https://github.com/yandex/ClickHouse/pull/6250) [#6283](https://github.com/yandex/ClickHouse/pull/6283) [#6386](https://github.com/yandex/ClickHouse/pull/6386) 
 * Allow to specify a list of columns with `COLUMNS('regexp')` expression that works like a more sophisticated variant of `*` asterisk. [#5951](https://github.com/yandex/ClickHouse/pull/5951)  ([mfridental](https://github.com/mfridental)), ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `CREATE TABLE AS table_function()` is now possible [#6057](https://github.com/yandex/ClickHouse/pull/6057) ([dimarub2000](https://github.com/dimarub2000))
-* Sampling profiler on query level. [Example](https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194). [#4247](https://github.com/yandex/ClickHouse/issues/4247) ([laplab](https://github.com/laplab)) [#6124](https://github.com/yandex/ClickHouse/pull/6124) ([alexey-milovidov](https://github.com/alexey-milovidov)) [#6250](https://github.com/yandex/ClickHouse/pull/6250) [#6283](https://github.com/yandex/ClickHouse/pull/6283) [#6386](https://github.com/yandex/ClickHouse/pull/6386) 
 * Adam optimizer for stochastic gradient descent is used by default in `stochasticLinearRegression()` and `stochasticLogisticRegression()` aggregate functions, because it shows good quality without almost any tuning. [#6000](https://github.com/yandex/ClickHouse/pull/6000) ([Quid37](https://github.com/Quid37))
+* Added functions for working with the сustom week number [#5212](https://github.com/yandex/ClickHouse/pull/5212) ([Andy Yang](https://github.com/andyyzh))
 
 ### Experimental features
-* Added functions for working with the сustom week number [#5212](https://github.com/yandex/ClickHouse/pull/5212) ([Andy Yang](https://github.com/andyyzh))
-* New query processing pipeline. Use `experimental_use_processors=1` option to enable it. [#4914](https://github.com/yandex/ClickHouse/pull/4914) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* New query processing pipeline. Use `experimental_use_processors=1` option to enable it. Use for your own trouble. [#4914](https://github.com/yandex/ClickHouse/pull/4914) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
 ### Bug Fix
 * `RENAME` queries now work with all storages. [#5953](https://github.com/yandex/ClickHouse/pull/5953) ([Ivan](https://github.com/abyss7))
