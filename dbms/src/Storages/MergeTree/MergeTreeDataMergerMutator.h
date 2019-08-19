@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Common/DiskSpaceMonitor.h>
 #include <Storages/MutationCommands.h>
 #include <atomic>
 #include <functional>
@@ -32,19 +31,6 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_);
 };
 
-struct MargeTreeMoveEntry
-{
-    MergeTreeData::DataPartPtr part;
-    DiskSpace::ReservationPtr reserved_space;
-
-    MargeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpace::ReservationPtr reservation_)
-        : part(part_),
-          reserved_space(std::move(reservation_)) { }
-
-    MargeTreeMoveEntry() { }
-};
-
-using MergeTreeMovingParts = std::vector<MargeTreeMoveEntry>;
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
@@ -53,7 +39,6 @@ class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
-    using AllowedMovingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, String * reason)>;
 
 public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
@@ -87,9 +72,6 @@ public:
         const AllowedMergingPredicate & can_merge,
         String * out_disable_reason = nullptr);
 
-    bool selectPartsToMove(
-        MergeTreeMovingParts & parts_to_move,
-        const AllowedMovingPredicate & can_move);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
@@ -128,7 +110,6 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    MergeTreeData::DataPartsVector cloneParts(const MergeTreeMovingParts & parts);
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
