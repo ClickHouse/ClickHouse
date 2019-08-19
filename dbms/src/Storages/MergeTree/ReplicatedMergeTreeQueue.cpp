@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
+    extern const int PART_IS_TEMPORARY_LOCKED;
 }
 
 
@@ -26,12 +27,15 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 {}
 
 
-void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts)
+void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts, bool throw_if_already_virtual)
 {
     std::lock_guard lock(state_mutex);
 
     for (const auto & part : parts)
     {
+        if (throw_if_already_virtual && !virtual_parts.getContainingPart(part->info).empty())
+            throw Exception("Part " + part->name + " or covering part is already contains in virtual (future) parts set.", ErrorCodes::PART_IS_TEMPORARY_LOCKED);
+
         current_parts.add(part->name);
         virtual_parts.add(part->name);
     }
@@ -1729,6 +1733,24 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     return true;
 }
 
+
+ReplicatedMergeTreeMovePredicate::ReplicatedMergeTreeMovePredicate(const ReplicatedMergeTreeQueue & queue_)
+    : queue(queue_)
+    , queue_state_lock(queue_.state_mutex)
+{
+}
+
+
+bool ReplicatedMergeTreeMovePredicate::operator()(const MergeTreeData::DataPartPtr & part, String * /* out_reason */) const
+{
+    return !queue.virtual_parts.getContainingPart(part->info).empty();
+}
+
+
+ReplicatedMergeTreeMovePredicate::~ReplicatedMergeTreeMovePredicate()
+{
+    queue_state_lock.unlock();
+}
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)

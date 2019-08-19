@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
+#include <Common/DiskSpaceMonitor.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -211,8 +212,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             [this] (const std::string & name) { enqueuePartForCheck(name); }),
         zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name_, table_name_)),
         replica_name(global_context.getMacros()->expand(replica_name_, database_name_, table_name_)),
-        reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool()), queue(*this), fetcher(*this),
-        cleanup_thread(*this), alter_thread(*this), part_check_thread(*this), restarting_thread(*this)
+        reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool()), parts_mover(*this),
+        queue(*this), fetcher(*this), cleanup_thread(*this), alter_thread(*this),
+        part_check_thread(*this), restarting_thread(*this)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -1051,7 +1053,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     /// Start to make the main work
-
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
@@ -1180,6 +1181,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
             return false;
         }
     }
+
 
     MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(
         entry.new_part_name, format_version);
@@ -1770,9 +1772,9 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Filter covered parts
     PartDescriptions final_parts;
     {
-        auto final_part_names = adding_parts_active_set.getParts();
+        Strings final_part_names = adding_parts_active_set.getParts();
 
-        for (const auto & final_part_name : final_part_names)
+        for (const String & final_part_name : final_part_names)
         {
             auto part_desc = part_name_to_desc[final_part_name];
             if (!part_desc)
@@ -1954,8 +1956,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings parts = zookeeper->getChildren(source_path + "/parts");
     ActiveDataPartSet active_parts_set(format_version, parts);
 
-    auto active_parts = active_parts_set.getParts();
-    for (const auto & name : active_parts)
+    Strings active_parts = active_parts_set.getParts();
+    for (const String & name : active_parts)
     {
         LogEntry log_entry;
         log_entry.type = LogEntry::GET_PART;
@@ -2164,6 +2166,74 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
+namespace
+{
+
+/// While exists, marks parts as 'currently_moving' and keep reservations.
+struct CurrentlyMovingPartsTagger
+{
+    MergeTreeMovingParts parts;
+
+    ReplicatedMergeTreeQueue & queue;
+
+public:
+    CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, ReplicatedMergeTreeQueue & queue_)
+        : parts(std::move(parts_))
+        , queue(queue_)
+    {
+        MergeTreeData::DataParts data_parts;
+        /// Assume queue mutex is already locked, because this method is called from tryMoveParts.
+        for (const auto & moving_part : parts)
+            data_parts.emplace(moving_part.part);
+
+        /// Throws exception if some parts already exists
+        queue.addVirtualParts(data_parts, true);
+    }
+
+    ~CurrentlyMovingPartsTagger()
+    {
+        for (auto & part : parts)
+            queue.removeFromVirtualParts(part.part->info);
+    }
+};
+
+}
+
+BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
+{
+    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
+    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    {
+        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
+        MergeTreeMovingParts parts_to_move;
+        {
+            /// Holds lock on queue until selection finished
+            ReplicatedMergeTreeMovePredicate can_move(queue);
+
+            if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+            {
+                LOG_INFO(log, "Nothing to move.");
+                return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+            }
+        }
+
+        moving_tagger.emplace(std::move(parts_to_move), queue);
+    }
+
+    LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
+
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
+
+    std::string reason;
+    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+    {
+        LOG_WARNING(log, "Move failed. " << reason);
+        return BackgroundProcessingPoolTaskResult::ERROR;
+    }
+
+    return BackgroundProcessingPoolTaskResult::SUCCESS;
+}
 
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
@@ -2776,7 +2846,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         get_part = [&, address, timeouts, user_password, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemas are different: '" + interserver_scheme
+                throw Exception("Interserver schemes are different: '" + interserver_scheme
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::LOGICAL_ERROR);
 
@@ -2862,6 +2932,7 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
+    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return tryMoveParts(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -3054,6 +3125,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
             else
             {
+
                 UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
                 String partition_id = getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
@@ -3376,7 +3448,6 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, query_context);
                 break;
-
             case PartitionCommand::MOVE_PARTITION:
             {
                 switch (command.move_destination_type)
@@ -3384,15 +3455,12 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::DISK:
                         movePartitionToDisk(command.partition, command.move_destination_name, query_context);
                         break;
-
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, query_context);
                         break;
-
                     case PartitionCommand::MoveDestinationType::NONE:
                         throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
                 }
-
             }
             break;
 
@@ -3632,11 +3700,13 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
                 part_names.insert(name);
                 name_to_disk[name] = disk;
             }
+
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         auto tmp_parts = active_parts.getParts();
         for (const auto & name : tmp_parts)
             parts.push_back(name);
+
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)
@@ -3723,8 +3793,10 @@ void StorageReplicatedMergeTree::drop()
 }
 
 
-void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name,
-                                        const String & new_table_name)
+void StorageReplicatedMergeTree::rename(
+    const String & new_path_to_db,
+    const String & new_database_name,
+    const String & new_table_name)
 {
     MergeTreeData::rename(new_path_to_db, new_database_name, new_table_name);
 

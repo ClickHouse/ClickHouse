@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -229,6 +230,7 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+    MergeTreePartsMover parts_mover;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -265,7 +267,7 @@ private:
 
     /// A task which move parts to another disks/volumes
     /// Transparent for replication.
-    BackgroundProcessingPool::TaskHandle move_parts_task;
+    BackgroundProcessingPool::TaskHandle move_parts_task_handle;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
@@ -384,7 +386,6 @@ private:
 
     bool tryExecutePartMutation(const LogEntry & entry);
 
-    bool tryMove();
 
     bool executeFetch(LogEntry & entry);
 
@@ -409,6 +410,11 @@ private:
     /** Performs actions from the queue.
       */
     BackgroundProcessingPoolTaskResult queueTask();
+
+    /// Perform moves of parts to another disks
+    /// No log entry, because moves are not replicated
+    BackgroundProcessingPoolTaskResult tryMoveParts();
+
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
