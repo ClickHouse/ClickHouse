@@ -68,7 +68,9 @@ StorageMergeTree::StorageMergeTree(
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, false, attach),
         background_pool(context_.getBackgroundPool()),
-        reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool())
+        reader(*this), writer(*this),
+        merger_mutator(*this, global_context.getBackgroundPool()),
+        parts_mover(*this)
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -666,20 +668,30 @@ void StorageMergeTree::movePartitionToSpace(MergeTreeData::DataPartPtr part, Dis
         throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
             ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    if (currently_processing_in_background.count(part))
-        throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
-            ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    {
+        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+        std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
-    MergeTreeMovingParts parts_to_move;
-    parts_to_move.emplace_back(part, std::move(reservation));
-    auto copied_parts = merger_mutator.cloneParts(parts_to_move);
+        if (currently_processing_in_background.count(part))
+            throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
 
-    auto swap_failed_parts = swapActiveParts(copied_parts);
-    if (!swap_failed_parts.empty())
-        throw Exception("Cannot move " + toString(swap_failed_parts.size()) + " parts. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        MergeTreeMovingParts parts_to_move;
+        parts_to_move.emplace_back(part, std::move(reservation));
+
+        moving_tagger.emplace(std::move(parts_to_move), *this);
+    }
+
+    std::string reason;
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
+
+    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+        throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
+
 }
 
-bool StorageMergeTree::movePartsInBackground()
+bool StorageMergeTree::moveParts()
 {
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
@@ -695,7 +707,7 @@ bool StorageMergeTree::movePartsInBackground()
 
         MergeTreeMovingParts parts_to_move;
 
-        if (!merger_mutator.selectPartsToMove(parts_to_move, can_move))
+        if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
         {
             LOG_INFO(log, "Nothing to move.");
             return false;
@@ -705,13 +717,14 @@ bool StorageMergeTree::movePartsInBackground()
     }
     LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
 
-    auto copied_parts = merger_mutator.cloneParts(moving_tagger->parts);
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
 
-    auto swap_failed_parts = swapActiveParts(copied_parts);
-    if (!swap_failed_parts.empty())
-        LOG_ERROR(log, "Failed to move " << swap_failed_parts.size() << " parts. Original active parts doesn't exist. "
-            << "Probably they were merged or deleted by hand. Move is not completed. "
-            << "Copy can be found in detached folder. Copies can be found in detached folders. It's a bug.");
+    std::string reason;
+    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+    {
+        LOG_WARNING(log, "Move failed. " << reason);
+        return false;
+    }
 
     return true;
 }
@@ -860,7 +873,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        if (movePartsInBackground())
+        if (moveParts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())

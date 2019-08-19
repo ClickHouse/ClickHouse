@@ -2390,12 +2390,13 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
-void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & /* lock */)
+void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
+            auto lock = lockParts();
             auto active_part_it = data_parts_by_info.find(original_active_part->info);
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("No such active part by info. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
@@ -2412,29 +2413,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
     throw Exception("No such active part. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
-
-MergeTreeData::DataPartsVector MergeTreeData::swapActiveParts(const MergeTreeData::DataPartsVector & copied_parts)
-{
-    auto data_parts_lock = lockParts();
-
-    DataPartsVector failed_parts;
-    for (auto && copied_part : copied_parts)
-    {
-        auto part = getActiveContainingPart(copied_part->name);
-        if (!part || part->name != copied_part->name)
-        {
-            LOG_ERROR(log, "Failed to swap " << copied_part->name << ". Active part doesn't exist."
-                << "Copy can be found. Copy path: '" << copied_part->getFullPath() << "'.");
-
-            continue;
-        }
-
-        copied_part->renameTo(part->name);
-
-        swapActivePart(copied_part, data_parts_lock);
-    }
-    return failed_parts;
-}
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
 {

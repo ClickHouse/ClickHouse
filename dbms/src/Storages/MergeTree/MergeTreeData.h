@@ -402,11 +402,7 @@ public:
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
-    void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock & lock);
-
-    /// Tries to swap several active data parts with their copies.
-    /// Returns vector with failed parts (for example not active).
-    DataPartsVector swapActiveParts(const DataPartsVector & copied_parts);
+    void swapActivePart(MergeTreeData::DataPartPtr part_copy);
 
     /// Returns all parts in specified partition
     DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);

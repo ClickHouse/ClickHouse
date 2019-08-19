@@ -384,6 +384,8 @@ private:
 
     bool tryExecutePartMutation(const LogEntry & entry);
 
+    bool tryMove();
+
     bool executeFetch(LogEntry & entry);
 
     void executeClearColumnOrIndexInPartition(const LogEntry & entry);
