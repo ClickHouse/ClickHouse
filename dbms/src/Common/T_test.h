@@ -13,7 +13,7 @@
  *
  * Usage:
  * It's it used to assume with some level of confidence that two distributions don't differ.
- * Values can be added with dist_1(2).add(value) and after compared and reported with compareAndReport().
+ * Values can be added with T_test.add(0/1, value) and after compared and reported with compareAndReport().
  */
 struct T_test
 {
@@ -162,7 +162,7 @@ struct T_test
     const std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
 
     /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
-    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5)
+    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const
     {
         if (confidence_level_index > 5)
             confidence_level_index = 5;
@@ -174,7 +174,7 @@ struct T_test
 
         double table_value = students_table[degrees_of_freedom > 100 ? 0 : degrees_of_freedom][confidence_level_index];
 
-        double pooled_standard_deviation = sqrt( ((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var())  /  degrees_of_freedom);
+        double pooled_standard_deviation = sqrt(((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var()) / degrees_of_freedom);
 
         double t_statistic = pooled_standard_deviation * sqrt(1.0 / data[0].size + 1.0 / data[1].size);
 
@@ -183,7 +183,7 @@ struct T_test
         double mean_confidence_interval = table_value * t_statistic;
 
         std::stringstream ss;
-        if (mean_difference > mean_confidence_interval)
+        if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
         {
             ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
             ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;

@@ -15,9 +15,9 @@
 
 #include "executeQuery.h"
 
+
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
