@@ -458,7 +458,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
     return in;
 }
 
-void MutationsInterpreter::validate()
+void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
     prepare(/* dry_run = */ true);
     Block first_stage_header = interpreter_select->getSampleBlock();
@@ -466,7 +466,7 @@ void MutationsInterpreter::validate()
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
     prepare(/* dry_run = */ false);
     BlockInputStreamPtr in = interpreter_select->execute().in;
