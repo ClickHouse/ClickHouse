@@ -58,6 +58,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/queryToString.h>
@@ -102,7 +103,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
-    extern const int FILL_STEP_ZERO_VALUE;
 }
 
 namespace
@@ -614,20 +614,47 @@ static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
     return field;
 }
 
-static FillColumnDescription getWithFillDescription(const ASTOrderByElement &node, const Context &context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context &context)
 {
     FillColumnDescription descr;
-    if (node.fill_from)
-        descr.fill_from = getWithFillFieldValue(node.fill_from, context);
-    if (node.fill_to)
-        descr.fill_to = getWithFillFieldValue(node.fill_to, context);
-    if (node.fill_step)
-        descr.fill_step = getWithFillFieldValue(node.fill_step, context);
+    if (order_by_elem.fill_from)
+        descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
+    if (order_by_elem.fill_to)
+        descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.fill_step)
+        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
     else
-        descr.fill_step = 1;
+        descr.fill_step = order_by_elem.direction;
 
-    if (descr.fill_step == 0)
-        throw Exception("STEP value can not be zero", ErrorCodes::FILL_STEP_ZERO_VALUE);
+    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    if (order_by_elem.direction == 1)
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+        {
+            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+    else
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+        {
+            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
 
     return descr;
 }
@@ -648,22 +675,8 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
-
-            if (order_by_elem.direction == -1)
-            {
-                /// if DESC, then STEP < 0, FROM > TO
-                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from < fill_desc.fill_to)
-                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
-            }
-            else
-            {
-                /// if ASC, then STEP > 0, FROM < TO
-                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from > fill_desc.fill_to)
-                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
-            }
-
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
-                true, fill_desc);
+            order_descr.emplace_back(name, order_by_elem.direction,
+                order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
@@ -1055,8 +1068,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     executeLimitBy(pipeline);
                 }
 
-                executeWithFill(pipeline);
-
                 if (query.limitLength())
                     executePreLimit(pipeline);
             }
@@ -1180,6 +1191,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeLimitBy(pipeline);
             }
 
+            executeWithFill(pipeline);
+
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
             executeProjection(pipeline, expressions.final_projection);
@@ -1187,8 +1200,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
               */
             executeExtremes(pipeline);
-
-            executeWithFill(pipeline);
 
             executeLimit(pipeline);
         }
@@ -2389,7 +2400,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPipeline &)
 {
     throw Exception("Unsupported WITH FILL with processors", ErrorCodes::NOT_IMPLEMENTED);
 }
- 
+
 
 void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 {
