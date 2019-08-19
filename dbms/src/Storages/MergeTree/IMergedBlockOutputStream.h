@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
@@ -21,7 +22,8 @@ public:
         CompressionCodecPtr default_codec_,
         size_t aio_threshold_,
         bool blocks_are_granules_size_,
-        const MergeTreeIndexGranularity & index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -133,6 +135,7 @@ protected:
 
     size_t current_mark = 0;
 
+    const bool can_use_adaptive_granularity;
     const std::string marks_file_extension;
     const bool blocks_are_granules_size;
 
