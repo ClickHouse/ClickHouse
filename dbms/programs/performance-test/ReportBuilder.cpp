@@ -227,4 +227,5 @@ std::string ReportBuilder::buildCompactReport(
     }
     return output.str();
 }
+
 }

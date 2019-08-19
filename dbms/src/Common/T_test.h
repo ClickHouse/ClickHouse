@@ -48,11 +48,6 @@ struct T_test
         }
     };
 
-    T_test()
-    {
-        data.resize(2);
-    }
-
     std::vector<DistributionData> data;
 
     const std::vector<std::vector<double>> students_table =
@@ -161,6 +156,24 @@ struct T_test
     };
     const std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
 
+    T_test()
+    {
+        data.resize(2);
+    }
+
+    void clear()
+    {
+        data[0].clear();
+        data[1].clear();
+    }
+
+    void add(size_t distribution, double value)
+    {
+        if (distribution > 1)
+            return;
+        data[distribution].add(value);
+    }
+
     /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
     std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const
     {
@@ -196,13 +209,4 @@ struct T_test
         }
     }
 
-    void clear()
-    {
-        data[0].clear();
-        data[1].clear();
-    }
-    void add(size_t distribution, double value)
-    {
-        data[distribution].add(value);
-    }
 };
