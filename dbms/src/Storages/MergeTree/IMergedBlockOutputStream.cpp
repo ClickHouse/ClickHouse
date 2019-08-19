@@ -25,24 +25,25 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     size_t aio_threshold_,
     bool blocks_are_granules_size_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    const MergeTreeIndexGranularityInfo * index_granularity_info_)
     : storage(storage_)
     , part_path(part_path_)
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
-    , marks_file_extension(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
+    , can_use_adaptive_granularity(index_granularity_info_ ? index_granularity_info_->is_adaptive : storage.canUseAdaptiveGranularity())
+    , marks_file_extension(can_use_adaptive_granularity ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
     , skip_indices(indices_to_recalc)
-    , with_final_mark(storage.settings.write_final_mark && storage.canUseAdaptiveGranularity())
+    , with_final_mark(storage.settings.write_final_mark && can_use_adaptive_granularity)
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 }
-
 
 void IMergedBlockOutputStream::addStreams(
     const String & path,
@@ -145,7 +146,7 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         blocks_are_granules_size,
         index_offset,
         index_granularity,
-        storage.canUseAdaptiveGranularity());
+        can_use_adaptive_granularity);
 }
 
 void IMergedBlockOutputStream::writeSingleMark(
@@ -176,7 +177,7 @@ void IMergedBlockOutputStream::writeSingleMark(
 
          writeIntBinary(stream.plain_hashing.count(), stream.marks);
          writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (storage.canUseAdaptiveGranularity())
+         if (can_use_adaptive_granularity)
              writeIntBinary(number_of_rows, stream.marks);
      }, path);
 }
@@ -362,7 +363,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
                     writeIntBinary(stream.compressed.offset(), stream.marks);
                     /// Actually this numbers is redundant, but we have to store them
                     /// to be compatible with normal .mrk2 file format
-                    if (storage.canUseAdaptiveGranularity())
+                    if (can_use_adaptive_granularity)
                         writeIntBinary(1UL, stream.marks);
 
                     ++skip_index_current_mark;
