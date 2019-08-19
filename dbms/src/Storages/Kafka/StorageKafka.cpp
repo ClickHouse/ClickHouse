@@ -247,7 +247,8 @@ ProducerBufferPtr StorageKafka::createWriteBuffer()
     const Settings & settings = global_context.getSettingsRef();
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
-    return std::make_shared<WriteBufferToKafkaProducer>(producer, topics[0], 1, 1024, std::chrono::milliseconds(poll_timeout));
+    return std::make_shared<WriteBufferToKafkaProducer>(
+        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
 }
 
 

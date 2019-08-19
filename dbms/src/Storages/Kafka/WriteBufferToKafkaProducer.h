@@ -20,6 +20,7 @@ public:
     WriteBufferToKafkaProducer(
         ProducerPtr producer_,
         const std::string & topic_,
+        std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_,
         std::chrono::milliseconds poll_timeout);
@@ -33,6 +34,7 @@ private:
 
     ProducerPtr producer;
     const std::string topic;
+    const std::optional<char> delim;
     const size_t max_rows;
     const size_t chunk_size;
     const std::chrono::milliseconds timeout;
