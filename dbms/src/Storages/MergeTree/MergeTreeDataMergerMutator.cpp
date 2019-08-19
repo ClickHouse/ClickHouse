@@ -911,6 +911,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
+    new_data_part->index_granularity_info = source_part->index_granularity_info;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -1021,7 +1022,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             compression_codec,
             /* skip_offsets = */ false,
             unused_written_offsets,
-            source_part->index_granularity
+            source_part->index_granularity,
+            &source_part->index_granularity_info
         );
 
         in->readPrefix();

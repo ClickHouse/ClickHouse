@@ -7,13 +7,15 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    const MergeTreeIndexGranularityInfo * index_granularity_info_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io,
         false,
-        index_granularity_),
+        index_granularity_,
+        index_granularity_info_),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
 {

@@ -16,7 +16,8 @@ public:
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         WrittenOffsetColumns & already_written_offset_columns,
-        const MergeTreeIndexGranularity & index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
