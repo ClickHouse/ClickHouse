@@ -101,6 +101,7 @@ class IO(object):
 
     def close(self, force=True):
         self.reader['kill_event'].set()
+        os.system('pkill -TERM -P %d' % self.process.pid)
         if force:
             self.process.kill()
         else:
@@ -199,7 +200,7 @@ def reader(process, out, queue, kill_event):
         try:
             data = os.read(out, 65536)
             queue.put(data)
-        except OSError, e:
+        except:
             if kill_event.is_set():
                 break
             raise
