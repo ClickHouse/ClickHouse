@@ -655,6 +655,10 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
+std::shared_ptr<const User> Context::getUser(const String & user_name)
+{
+    return shared->users_manager->getUser(user_name);
+}
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {

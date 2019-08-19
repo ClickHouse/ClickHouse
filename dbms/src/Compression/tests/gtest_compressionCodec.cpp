@@ -27,7 +27,7 @@
 /// For the expansion of gtest macros.
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wdeprecated"
-#elif defined (__GNUC__)
+#elif defined (__GNUC__) && __GNUC__ >= 9
     #pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #endif
 
