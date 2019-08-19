@@ -1,7 +1,5 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -48,40 +46,6 @@ size_t AnalyzedJoin::rightKeyInclusion(const String & name) const
         if (name == key_name)
             ++count;
     return count;
-}
-
-ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
-    const NamesAndTypesList & columns_added_by_join,
-    const ASTSelectQuery * select_query_with_join,
-    const Context & context) const
-{
-    if (!select_query_with_join)
-        return nullptr;
-
-    const ASTTablesInSelectQueryElement * join = select_query_with_join->join();
-
-    if (!join)
-        return nullptr;
-
-    const auto & join_params = join->table_join->as<ASTTableJoin &>();
-
-    /// Create custom expression list with join keys from right table.
-    auto expression_list = std::make_shared<ASTExpressionList>();
-    ASTs & children = expression_list->children;
-
-    if (join_params.on_expression)
-        for (const auto & join_right_key : key_asts_right)
-            children.emplace_back(join_right_key);
-
-    NameSet required_columns_set(key_names_right.begin(), key_names_right.end());
-    for (const auto & joined_column : columns_added_by_join)
-        required_columns_set.insert(joined_column.name);
-    Names required_columns(required_columns_set.begin(), required_columns_set.end());
-
-    ASTPtr query = expression_list;
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns_from_joined_table, required_columns);
-    ExpressionAnalyzer analyzer(query, syntax_result, context, required_columns_set);
-    return analyzer.getActions(true, false);
 }
 
 void AnalyzedJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
