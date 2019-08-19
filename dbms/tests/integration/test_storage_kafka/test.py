@@ -1,4 +1,6 @@
 import os.path as p
+import random
+import threading
 import time
 import pytest
 
@@ -488,6 +490,69 @@ def test_kafka_insert(kafka_cluster):
 
     result = '\n'.join(messages)
     kafka_check_result(result, True)
+
+
+def test_kafka_produce_consume(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert',
+                     kafka_group_name = 'insert',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+    ''')
+
+    messages_num = 100000
+    def insert():
+        values = []
+        for i in range(messages_num):
+            values.append("({i}, {i})".format(i=i))
+        values = ','.join(values)
+
+        while True:
+            try:
+                instance.query("INSERT INTO test.kafka VALUES {}".format(values))
+                break
+            except QueryRuntimeException as e:
+                if 'Local: Timed out.' in str(e):
+                    continue
+                else:
+                    raise
+
+    threads = []
+    threads_num = 16
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=insert))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':
