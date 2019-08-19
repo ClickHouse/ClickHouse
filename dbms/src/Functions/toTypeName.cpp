@@ -58,6 +58,7 @@ private:
 
 class FunctionToTypeNameBuilder : public FunctionBuilderImpl
 {
+public:
     static constexpr auto name = "toTypeName";
     String getName() const override { return name; }
     static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionToTypeNameBuilder>(); }
