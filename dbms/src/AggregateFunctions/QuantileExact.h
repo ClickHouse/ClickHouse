@@ -107,19 +107,6 @@ struct QuantileExact
                 result[i] = Value();
         }
     }
-
-    /// The same, but in the case of an empty state, NaN is returned.
-    virtual Float64 getFloat(Float64)
-    {
-        throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *)
-    {
-        throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual ~QuantileExact() = default;
 };
 
 /// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
@@ -129,7 +116,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
     using QuantileExact<Value>::array;
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1 excluding bounds.
-    Float64 getFloat(Float64 level) override
+    Float64 getFloat(Float64 level)
     {
         if (!array.empty())
         {
@@ -153,7 +140,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
         return std::numeric_limits<Float64>::quiet_NaN();
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result) override
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
     {
         if (!array.empty())
         {
@@ -196,7 +183,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
     using QuantileExact<Value>::array;
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1 including bounds.
-    Float64 getFloat(Float64 level) override
+    Float64 getFloat(Float64 level)
     {
         if (!array.empty())
         {
@@ -217,7 +204,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
         return std::numeric_limits<Float64>::quiet_NaN();
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result) override
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
     {
         if (!array.empty())
         {
