@@ -335,13 +335,13 @@ BlockInputStreams StorageDistributed::read(
             if (smaller_cluster)
             {
                 cluster = smaller_cluster;
-                LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
                                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
             {
-                LOG_DEBUG(log, "Reading from: " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
                                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
             }
         }
