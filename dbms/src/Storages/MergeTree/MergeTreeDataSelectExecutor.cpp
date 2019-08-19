@@ -871,7 +871,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
         return streams;
 
     /// Let's split ranges to avoid reading much data.
-    auto split_ranges = [rows_granularity = data.settings.index_granularity, max_block_size](const auto & ranges, int direction)
+    auto split_ranges = [rows_granularity = data_settings->index_granularity, max_block_size](const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
         const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
