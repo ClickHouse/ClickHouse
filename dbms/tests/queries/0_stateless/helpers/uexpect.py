@@ -189,6 +189,7 @@ def spawn(command):
     queue = Queue()
     reader_kill_event = Event()
     thread = Thread(target=reader, args=(process, master, queue, reader_kill_event))
+    thread.daemon = True
     thread.start()
 
     return IO(process, master, queue, reader={'thread':thread, 'kill_event':reader_kill_event})
@@ -199,6 +200,6 @@ def reader(process, out, queue, kill_event):
             data = os.read(out, 65536)
             queue.put(data)
         except OSError, e:
-            if e.errno == 5 and kill_event.is_set():
+            if kill_event.is_set():
                 break
             raise
