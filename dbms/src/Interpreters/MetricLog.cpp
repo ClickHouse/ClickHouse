@@ -1,8 +1,8 @@
 #include <Interpreters/MetricLog.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -11,11 +11,10 @@ Block MetricLogElement::createBlock()
 {
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),       "event_date");
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(),   "event_time");
-    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),     "milliseconds");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),     "event_date");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(), "event_time");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "milliseconds");
 
-    //ProfileEvents
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         std::string name;
@@ -24,7 +23,6 @@ Block MetricLogElement::createBlock()
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), std::move(name));
     }
 
-    //CurrentMetrics
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
         std::string name;
@@ -36,30 +34,24 @@ Block MetricLogElement::createBlock()
     return Block(columns_with_type_and_name);
 }
 
+
 void MetricLogElement::appendToBlock(Block & block) const
 {
     MutableColumns columns = block.mutateColumns();
 
-    size_t iter = 0;
+    size_t column_idx = 0;
 
-    columns[iter++]->insert(DateLUT::instance().toDayNum(event_time));
-    columns[iter++]->insert(event_time);
-    columns[iter++]->insert(milliseconds);
+    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[column_idx++]->insert(event_time);
+    columns[column_idx++]->insert(milliseconds);
 
-    //ProfileEvents
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
-    {
-        const UInt64 value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        columns[iter++]->insert(value);
-    }
+        columns[column_idx++]->insert(profile_events[i]);
 
-    //CurrentMetrics
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-    {
-        const UInt64 value = CurrentMetrics::values[i];
-        columns[iter++]->insert(value);
-    }
+        columns[column_idx++]->insert(current_metrics[i]);
 }
+
 
 void MetricLog::startCollectMetric(size_t collect_interval_milliseconds_)
 {
@@ -67,6 +59,7 @@ void MetricLog::startCollectMetric(size_t collect_interval_milliseconds_)
     is_shutdown_metric_thread = false;
     metric_flush_thread = ThreadFromGlobalPool([this] { metricThreadFunction(); });
 }
+
 
 void MetricLog::stopCollectMetric()
 {
@@ -76,27 +69,50 @@ void MetricLog::stopCollectMetric()
     metric_flush_thread.join();
 }
 
+
 inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();
 }
+
 
 inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
+
 void MetricLog::metricThreadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
+
+    /// For differentiation of ProfileEvents counters.
+    std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
+
     while (!is_shutdown_metric_thread)
     {
         try
         {
-            MetricLogElement elem;
             const auto current_time = std::chrono::system_clock::now();
+
+            MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
             elem.milliseconds = time_in_milliseconds(current_time) - time_in_seconds(current_time) * 1000;
+
+            elem.profile_events.resize(ProfileEvents::end());
+            for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+            {
+                const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+                UInt64 & old_value = prev_profile_events[i];
+                elem.profile_events[i] = new_value - old_value;
+                old_value = new_value;
+            }
+
+            elem.current_metrics.resize(CurrentMetrics::end());
+            for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+            {
+                elem.current_metrics[i] = CurrentMetrics::values[i];
+            }
 
             this->add(elem);
 
