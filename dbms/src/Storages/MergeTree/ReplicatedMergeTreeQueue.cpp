@@ -1281,9 +1281,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     }
 
     if (!finished.empty())
+    {
         zookeeper->set(replica_path + "/mutation_pointer", finished.back()->znode_name);
 
-    {
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
