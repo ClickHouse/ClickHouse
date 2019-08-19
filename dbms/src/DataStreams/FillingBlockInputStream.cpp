@@ -1,176 +1,238 @@
 #include "FillingBlockInputStream.h"
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-namespace detail
+static bool less(const Field & lhs, const Field & rhs, int direction)
 {
+    if (direction == -1)
+        return applyVisitor(FieldVisitorAccurateLess(), rhs, lhs);
 
-ColumnRawPtrs getColumnsExcept(SharedBlockPtr & block_ptr, ColumnRawPtrs & except_columns)
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+}
+
+static bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
+
+FillingRow::FillingRow(const SortDescription & description_) : description(description_)
 {
-    ColumnRawPtrs res;
-    res.reserve(block_ptr->columns() - except_columns.size());
+    row.resize(description.size());
+}
 
-    for (size_t i = 0; i < block_ptr->columns(); ++i)
+bool FillingRow::next(const FillingRow & to_row)
+{
+    size_t pos = 0;
+    for (; pos < row.size(); ++pos)
+        if (!row[pos].isNull() && !to_row[pos].isNull() && !equals(row[pos], to_row[pos]))
+            break;
+
+    if (pos == row.size() || less(to_row[pos], row[pos], getDirection(pos)))
+        return false;
+
+    for (size_t i = row.size() - 1; i > pos; --i)
     {
-        const IColumn * raw_col = block_ptr->safeGetByPosition(i).column.get();
-        if (std::find(except_columns.begin(), except_columns.end(), raw_col) == except_columns.end())
-            res.emplace_back(raw_col);
+        if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
+            continue;
+
+        auto next_value = row[i];
+        applyVisitor(FieldVisitorSum(getFillDescription(i).fill_step), next_value);
+        if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
+        {
+            initFromDefaults(i + 1);
+            row[i] = next_value;
+            return true;
+        }
     }
 
-    return res;
-}
+    auto next_value = row[pos];
+    applyVisitor(FieldVisitorSum(getFillDescription(pos).fill_step), next_value);
 
-void copyRowFromColumns(ColumnRawPtrs & from, ColumnRawPtrs & to, size_t row_num)
-{
-    for (size_t i = 0; i < from.size(); ++i)
-        const_cast<IColumn *>(to[i])->insertFrom(*from[i], row_num);
-}
-
-void fillRestOfRow(
-        size_t cols_copied, ColumnRawPtrs & res_fill_columns, ColumnRawPtrs & res_rest_columns,
-        ColumnRawPtrs & old_rest_columns, UInt64 & next_row_num)
-{
-    /// step_val was inserted, fill all other columns with default values
-    if (cols_copied < res_fill_columns.size())
+    if (equals(next_value, to_row[pos]))
     {
-        for (; cols_copied < res_fill_columns.size(); ++cols_copied)
-            const_cast<IColumn *>(res_fill_columns[cols_copied])->insertDefault();
-        for (size_t it = 0; it < res_rest_columns.size(); ++it)
-            const_cast<IColumn *>(res_rest_columns[it])->insertDefault();
+        bool is_less = false;
+        for (size_t i = pos + 1; i < row.size(); ++i)
+        {
+            const auto & fill_from = getFillDescription(i).fill_from;
+            if (!fill_from.isNull() && less(fill_from, to_row[i], getDirection(i)))
+            {
+                is_less = true;
+                row[i] = fill_from;
+            }
+            else
+                row[i] = to_row[i];
+        }
 
-        return;
+        row[pos] = next_value;
+        return is_less;
     }
 
-    /// fill row wasn't created, copy rest values from row
-    detail::copyRowFromColumns(old_rest_columns, res_rest_columns, next_row_num);
-    ++next_row_num;
+    if (less(next_value, to_row[pos], getDirection(pos)))
+    {
+        initFromDefaults(pos + 1);
+        row[pos] = next_value;
+        return true;
+    }
+
+    return false;
 }
 
-Field sumTwoFields(Field & a, Field & b)
+void FillingRow::initFromColumns(const Columns & columns, size_t row_num, size_t from_pos, bool ignore_default_from)
 {
-    switch (a.getType())
+    for (size_t i = from_pos; i < columns.size(); ++i)
     {
-        case Field::Types::Null:        return a;
-        case Field::Types::UInt64:      return a.get<UInt64>()  + b.get<UInt64>();
-        case Field::Types::Int64:       return a.get<Int64>()   + b.get<Int64>();
-        case Field::Types::Int128:      return a.get<Int128>()  + b.get<Int128>();
-        case Field::Types::Float64:     return a.get<Float64>() + b.get<Float64>();
-        default:
-            throw Exception("WITH FILL can be used only with numeric types", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        columns[i]->get(row_num, row[i]);
+        const auto & fill_from = getFillDescription(i).fill_from;
+        if (!ignore_default_from && !fill_from.isNull() && less(fill_from, row[i], getDirection(i)))
+            row[i] = fill_from;
     }
 }
 
+void FillingRow::initFromDefaults(size_t from_pos)
+{
+    for (size_t i = from_pos; i < row.size(); ++i)
+        row[i] = getFillDescription(i).fill_from;
 }
+
+
+static void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & other_columns, const FillingRow & filling_row)
+{
+    for (size_t i = 0; i < filling_columns.size(); ++i)
+    {
+        if (filling_row[i].isNull())
+            filling_columns[i]->insertDefault();
+        else
+            filling_columns[i]->insert(filling_row[i]);
+    }
+
+    for (size_t i = 0; i < other_columns.size(); ++i)
+        other_columns[i]->insertDefault();
+
+}
+
+static void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)
+{
+    for (size_t i = 0; i < source.size(); ++i)
+        dest[i]->insertFrom(*source[i], row_num);
+}
+
 
 FillingBlockInputStream::FillingBlockInputStream(
         const BlockInputStreamPtr & input, const SortDescription & fill_description_)
-        : fill_description(fill_description_)
+        : fill_description(fill_description_), filling_row(fill_description_), next_row(fill_description_)
 {
     children.push_back(input);
+    header = children.at(0)->getHeader();
+
+    std::vector<bool> is_fill_column(header.columns());
+    for (const auto & elem : fill_description)
+    {
+        size_t pos = header.getPositionByName(elem.column_name);
+        fill_column_positions.push_back(pos);
+        is_fill_column[pos] = true;
+    }
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        if (is_fill_column[i])
+        {
+            if (!isNumber(header.getByPosition(i).type))
+                throw Exception("WITH FILL can be used only with numeric types, but is set for column with type "
+                    + header.getByPosition(i).type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+        else
+            other_column_positions.push_back(i);
+    }
 }
 
 
 Block FillingBlockInputStream::readImpl()
 {
-    Block old_block;
-    UInt64 rows = 0;
+    Columns old_fill_columns;
+    Columns old_other_columns;
+    MutableColumns res_fill_columns;
+    MutableColumns res_other_columns;
 
-    old_block = children.back()->read();
-    if (!old_block)
-        return old_block;
-
-    Block res_block = old_block.cloneEmpty();
-
-    rows = old_block.rows();
-
-    SharedBlockPtr old_block_ptr = new detail::SharedBlock(std::move(old_block));
-    ColumnRawPtrs old_fill_columns = SharedBlockRowRef::getBlockColumns(*old_block_ptr, fill_description);
-    ColumnRawPtrs old_rest_columns = detail::getColumnsExcept(old_block_ptr, old_fill_columns);
-
-    SharedBlockPtr res_block_ptr = new detail::SharedBlock(std::move(res_block));
-    ColumnRawPtrs res_fill_columns = SharedBlockRowRef::getBlockColumns(*res_block_ptr, fill_description);
-    ColumnRawPtrs res_rest_columns = detail::getColumnsExcept(res_block_ptr, res_fill_columns);
-
-    /// number of next row in current block
-    UInt64 next_row_num = 0;
-
-    /// read first block
-    if (!pos)
+    auto init_columns_by_positions = [](const Block & block, Columns & columns,
+        MutableColumns & mutable_columns, const Positions & positions)
     {
-        ++next_row_num;
-        /// create row number 0 in result block here
-        detail::copyRowFromColumns(old_fill_columns, res_fill_columns, 0);
-        detail::copyRowFromColumns(old_rest_columns, res_rest_columns, 0);
-    }
-
-    /// current block is not first, need to compare with row in other block
-    if (!next_row_num)
-    {
-        size_t cnt_cols = 0;
-        size_t fill_columns_size = old_fill_columns.size();
-        for (; cnt_cols < fill_columns_size; ++cnt_cols)
+        for (size_t pos : positions)
         {
-            Field step = fill_description[cnt_cols].fill_description.fill_step;
-            Field next_val;
-            Field prev_val;
-            old_fill_columns[cnt_cols]->get(next_row_num, next_val);
-            (*last_row_ref.columns)[cnt_cols]->get(last_row_ref.row_num, prev_val);
-            Field step_val = detail::sumTwoFields(prev_val, step);
-            if (step_val >= next_val)
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(
-                        *old_fill_columns[cnt_cols], next_row_num);
-            else
-            {
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insert(step_val);
-                break;
-            }
+            auto column = block.getByPosition(pos).column;
+            columns.push_back(column);
+            mutable_columns.push_back(column->cloneEmpty()->assumeMutable());
         }
-        /// create row number 0 in result block here
-        detail::fillRestOfRow(cnt_cols, res_fill_columns, res_rest_columns, old_rest_columns, next_row_num);
-        ++pos;
+    };
+
+    auto block = children.back()->read();
+    if (!block)
+    {
+        init_columns_by_positions(header, old_fill_columns, res_fill_columns, fill_column_positions);
+        init_columns_by_positions(header, old_other_columns, res_other_columns, other_column_positions);
+
+        bool generated = false;
+        for (size_t i = 0; i < filling_row.size(); ++i)
+            next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+        while (filling_row.next(next_row))
+        {
+            generated = true;
+            insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
+        }
+
+        if (generated)
+            return createResultBlock(res_fill_columns, res_other_columns);
+
+        return block;
     }
 
-    /// number of last added row in result block
-    UInt64 last_row_num = 0;
+    size_t rows = block.rows();
+    init_columns_by_positions(block, old_fill_columns, res_fill_columns, fill_column_positions);
+    init_columns_by_positions(block, old_other_columns, res_other_columns, other_column_positions);
 
-    while (next_row_num < rows)
+    if (first)
     {
-        size_t cnt_cols = 0;
-        size_t fill_columns_size = old_fill_columns.size();
-        for (; cnt_cols < fill_columns_size; ++cnt_cols)
+        filling_row.initFromColumns(old_fill_columns, 0);
+        for (size_t i = 0; i < filling_row.size(); ++i)
         {
-            Field step = fill_description[cnt_cols].fill_description.fill_step;
-            Field prev_val;
-            res_fill_columns[cnt_cols]->get(last_row_num, prev_val);
-            Field step_val = detail::sumTwoFields(prev_val, step);
-            Field next_val;
-            old_fill_columns[cnt_cols]->get(next_row_num, next_val);
-            if (step_val >= next_val)
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(
-                        *old_fill_columns[cnt_cols], next_row_num);
-            else
+            if (less(filling_row[i], (*old_fill_columns[i])[0], filling_row.getDirection(i)))
             {
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insert(step_val);
+                insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
                 break;
             }
         }
 
-        /// create new row in result block, increment last_row_num
-        detail::fillRestOfRow(cnt_cols, res_fill_columns, res_rest_columns, old_rest_columns, next_row_num);
-        ++last_row_num;
-        ++pos;
+        first = false;
     }
 
-    /// finished current block, need to remember last row
-    SharedBlockRowRef::setSharedBlockRowRef(last_row_ref, res_block_ptr, & res_fill_columns, last_row_num);
-    return *res_block_ptr;
+    for (size_t row_ind = 0; row_ind < rows; ++row_ind)
+    {
+        next_row.initFromColumns(old_fill_columns, row_ind, 0, true);
+
+        /// Comment
+        while (filling_row.next(next_row))
+            insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
+
+        copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
+        copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
+    }
+
+    return createResultBlock(res_fill_columns, res_other_columns);
 }
 
+Block FillingBlockInputStream::createResultBlock(MutableColumns & fill_columns, MutableColumns & other_columns) const
+{
+    MutableColumns result_columns(header.columns());
+    for (size_t i = 0; i < fill_columns.size(); ++i)
+        result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
+    for (size_t i = 0; i < other_columns.size(); ++i)
+        result_columns[other_column_positions[i]] = std::move(other_columns[i]);
+
+    return header.cloneWithColumns(std::move(result_columns));
+}
 
 }

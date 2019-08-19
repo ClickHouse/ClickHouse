@@ -1401,13 +1401,13 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     }
 
     /// WITH FILL [FROM x] [TO y] [STEP z]
-    bool with_fill_val = false;
+    bool has_with_fill = false;
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
     if (with_fill.ignore(pos))
     {
-        with_fill_val = true;
+        has_with_fill = true;
         if (from.ignore(pos) && !exp_parser.parse(pos, fill_from, expected))
             return false;
 
@@ -1420,7 +1420,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     node = std::make_shared<ASTOrderByElement>(
             direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node,
-            with_fill_val, fill_from, fill_to, fill_step);
+            has_with_fill, fill_from, fill_to, fill_step);
     node->children.push_back(expr_elem);
     if (locale_node)
         node->children.push_back(locale_node);

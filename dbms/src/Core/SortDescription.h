@@ -13,11 +13,11 @@ namespace DB
 
 struct FillColumnDescription
 {
-    /// All missed values in range [FROM, TO] will be filled
-    /// Range [FROM, TO] respects sorting direction
+    /// All missed values in range [FROM, TO) will be filled
+    /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
-    Field fill_to;          /// Fill value + STEP <= FILL_TO
-    Field fill_step;        /// Default = 1
+    Field fill_to;          /// Fill value + STEP < FILL_TO
+    Field fill_step;        /// Default = 1 or -1 according to direction
 };
 
 /// Description of the sorting rule by one column.
