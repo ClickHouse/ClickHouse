@@ -206,7 +206,7 @@ private:
     void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline, Block header = {});
+    void executeUnion(Pipeline & pipeline, Block header); /// If header is not empty, convert streams structure to it.
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
