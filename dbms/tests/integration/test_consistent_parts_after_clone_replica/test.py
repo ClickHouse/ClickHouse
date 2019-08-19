@@ -36,7 +36,8 @@ def start_cluster():
 def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
     with PartitionManager() as pm:
         # insert into all replicas
-        node1.query("INSERT INTO test_table VALUES ('2019-08-16', 100)")
+        for i in range(50):
+            node1.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(i))
         assert_eq_with_retry(node2, "SELECT count(*) FROM test_table", node1.query("SELECT count(*) FROM test_table"))
 
         # disable network on the first replica
@@ -49,8 +50,8 @@ def test_inconsistent_parts_if_drop_while_replica_not_active(start_cluster):
 
         # insert into the second replica
         # DROP_RANGE will be removed from the replication log and the first replica will be lost
-        for i in range(100):
-            node2.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(i))
+        for i in range(50):
+            node2.query("INSERT INTO test_table VALUES ('2019-08-16', {})".format(50 + i))
 
         # the first replica will be cloned from the second
         pm.heal_all()
