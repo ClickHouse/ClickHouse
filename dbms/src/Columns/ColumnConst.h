@@ -222,7 +222,4 @@ public:
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };
 
-/// Materialize constants recursively for all nested columns.
-ColumnPtr recursiveMaterializeConstants(const ColumnPtr & column);
-
 }

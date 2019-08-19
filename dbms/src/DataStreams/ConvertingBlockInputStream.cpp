@@ -103,8 +103,8 @@ Block ConvertingBlockInputStream::readImpl()
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
-        if (!isColumnConst(*res_elem.column))
-            converted = recursiveMaterializeConstants(converted);
+        if (isColumnConst(*src_elem.column) && !isColumnConst(*res_elem.column))
+            converted = converted->convertToFullColumnIfConst();
 
         res_elem.column = std::move(converted);
     }
