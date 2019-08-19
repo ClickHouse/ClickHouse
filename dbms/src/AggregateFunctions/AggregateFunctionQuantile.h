@@ -199,8 +199,15 @@ struct NameQuantileDeterministic { static constexpr auto name = "quantileDetermi
 struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeterministic"; };
 
 struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
-struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
+
+struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
+struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };
+
+struct NameQuantileExactInclusive { static constexpr auto name = "quantileExactInclusive"; };
+struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExactInclusive"; };
+
+struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
