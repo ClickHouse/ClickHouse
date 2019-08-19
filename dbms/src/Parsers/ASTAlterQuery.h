@@ -31,6 +31,7 @@ public:
 
         ADD_INDEX,
         DROP_INDEX,
+        MATERIALIZE_INDEX,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
@@ -69,6 +70,8 @@ public:
 
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
+     *  The MATERIALIZE INDEX query stores the name of the index to materialize.
+     *  The CLEAR INDEX query stores the name of the index to clear.
      */
     ASTPtr index;
 
@@ -95,9 +98,11 @@ public:
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
-    bool if_not_exists = false;  /// option for ADD_COLUMN
+    bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
-    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+    bool if_not_exists = false; /// option for ADD_COLUMN
+
+    bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
     enum MoveDestinationType
     {
