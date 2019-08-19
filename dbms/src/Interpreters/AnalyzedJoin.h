@@ -14,9 +14,6 @@ class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 struct AnalyzedJoin
 {
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -35,6 +32,7 @@ private:
     friend class SyntaxAnalyzer;
     friend struct SyntaxAnalyzerResult;
     friend class ExpressionAnalyzer;
+    friend class SelectQueryExpressionAnalyzer;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
@@ -55,10 +53,8 @@ public:
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    ExpressionActionsPtr createJoinedBlockActions(
-        const NamesAndTypesList & columns_added_by_join, /// Subset of available_joined_columns.
-        const ASTSelectQuery * select_query_with_join,
-        const Context & context) const;
+    bool hasUsing() const { return with_using; }
+    bool hasOn() const { return !with_using; }
 
     NameSet getQualifiedColumnsSet() const;
     NameSet getOriginalColumnsSet() const;
