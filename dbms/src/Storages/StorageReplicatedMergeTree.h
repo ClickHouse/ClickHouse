@@ -339,7 +339,7 @@ private:
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
                                                                const DataPartPtr & part);
 
-    void movePartitionToSpace(MergeTreeData::DataPartPtr /* part */, DiskSpace::SpacePtr /* space */) override {}
+    void movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space) override;
 
     void getCommitPartOps(
         Coordination::Requests & ops,

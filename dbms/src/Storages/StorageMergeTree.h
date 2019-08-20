@@ -124,7 +124,7 @@ private:
     void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space) override;
+    void movePartsToSpace(const MergeTreeData::DataPartsVector & part, DiskSpace::SpacePtr space) override;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
