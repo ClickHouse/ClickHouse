@@ -390,7 +390,7 @@ CREATE TABLE IF NOT EXISTS example_table
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-Из описания типа данных `Nested`, видно, что ClickHouse трактует каждый компонент вложенной структуры как отдельный столбец (для нашей таблицы`n.s` и `n.i`). Можно вставить данные следующим образом:
+Из описания типа данных `Nested` видно, что ClickHouse трактует каждый компонент вложенной структуры как отдельный столбец (для нашей таблицы `n.s` и `n.i`). Можно вставить данные следующим образом:
 
 ```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
