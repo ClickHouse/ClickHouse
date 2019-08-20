@@ -97,4 +97,4 @@ timeout $TIMEOUT bash -c thread6 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
+for i in {0..9}; do $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i"; done
