@@ -19,6 +19,9 @@ class Context;
   * If multithreaded is specified, numbers will be generated in several streams
   *  (and result could be out of order). If both multithreaded and limit are specified,
   *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
+  *
+  *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
+  *     and result is always in [0 ... limit - 1] range.
   */
 class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
