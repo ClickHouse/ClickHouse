@@ -66,6 +66,7 @@ timeout $TIMEOUT bash -c thread3 2> /dev/null &
 timeout $TIMEOUT bash -c thread4 2> /dev/null &
 timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
+
 wait
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE alter_table"
