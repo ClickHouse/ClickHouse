@@ -287,7 +287,9 @@ Possible values:
 
 - `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic format.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+
+Default value: `'basic'`.
 
 **See Also**
 
