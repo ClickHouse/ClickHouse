@@ -854,6 +854,14 @@ Computes the quantile of the specified level with determined precision. The func
 quantileTiming(level)(expr)
 ```
 
+**Parameters**
+
+- `level` — Quantile level. Range: [0, 1].
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
+    
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+
 **Accuracy**
 
 The calculation is accurate if:
@@ -866,21 +874,14 @@ Otherwise, the result of a calculation is rounded to the value, multiple of 16 m
 !! note "Note"
     For calculating quantiles of page loading times, this function is more effective and accurate compared to [quantile](#agg_function-quantile).
 
-**Parameters**
-
-- `level` — Quantile level. Range: [0, 1].
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type.
-    
-    - If negative values are passed to the function, the behavior is undefined.
-    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
-
 **Returned value**
 
 - Quantile of the specified level.
 
 Type: `Float32`.
 
-If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
+!!! note "Note"
+    If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
 
 The result is deterministic (it doesn't depend on the order of query processing).
 
