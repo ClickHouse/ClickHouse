@@ -208,7 +208,6 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
     ThreadPool thread_pool(thread_pool_size);
 
-
     for (const auto & part : parts)
     {
         transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
@@ -217,8 +216,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
             [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
             {
                 this->alterDataPart(columns_for_parts, new_indices, false, transaction);
-            }
-        );
+            });
     }
 
     thread_pool.wait();
@@ -227,8 +225,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
         [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
         {
             return !transaction->isValid();
-        }
-    );
+        });
     transactions.erase(erase_pos, transactions.end());
 
     return transactions;
