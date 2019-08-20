@@ -248,7 +248,7 @@ private:
     Context context;
     NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
-    std::unique_ptr<ExpressionAnalyzer> query_analyzer;
+    std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.

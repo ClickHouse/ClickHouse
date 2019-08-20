@@ -28,7 +28,7 @@ Main features:
 
 ## Creating a Table  {#table_engine-mergetree-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -45,9 +45,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For descriptions of request parameters, see the [request description](../../query_language/create.md).
+For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-**Query clauses**
+!!! note "Note"
+    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
+
+### Query Clauses
 
 - `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
@@ -81,7 +84,7 @@ For descriptions of request parameters, see the [request description](../../quer
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
 
-**Example of setting the sections**
+**Example of Sections Setting**
 
 ```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
@@ -107,7 +110,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-**MergeTree() parameters**
+**MergeTree() Parameters**
 
 - `date-column` — The name of a column of the [Date](../../data_types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — An expression for sampling.
@@ -236,7 +239,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indices (Experimental)
+### Data Skipping Indexes (Experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
@@ -295,6 +298,14 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
+- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+
+    The `false_positive` optional parameter is the probability of false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+
+    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+
+    Supported for the following functions: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
+
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
 INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
@@ -312,16 +323,16 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. If `TTL` is set for the whole table, individual `TTL` for columns are ignored.
+The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which expires earlier.
 
-
-The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval from the date column value.
+The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
 
 ```
-TTL date_time + interval
+TTL time_column
+TTL time_column + interval
 ```
 
-You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use [time interval](../../query_language/operators.md#operators-datetime) operators.
+To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
 ```
 TTL date_time + INTERVAL 1 MONTH
@@ -330,20 +341,20 @@ TTL date_time + INTERVAL 15 HOUR
 
 **Column TTL**
 
-When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part become expired, ClickHouse deletes this column from the data part in a filesystem.
+When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause cannot be used for key columns.
+The `TTL` clause can't be used for key columns.
 
 **Table TTL**
 
-When some data in table expires, ClickHouse deletes all the corresponding rows.
+When data in a table expires, ClickHouse deletes all corresponding rows.
 
-**Cleaning up of Data**
+**Removing Data**
 
-Data with expired TTL is removed, when ClickHouse merges data parts.
+Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges consume much resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
-If you perform the `SELECT` query between merges you can get the expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
+If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->

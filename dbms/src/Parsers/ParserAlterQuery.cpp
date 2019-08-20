@@ -31,6 +31,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
+    ParserKeyword s_clear_index("CLEAR INDEX");
+    ParserKeyword s_materialize_index("MATERIALIZE INDEX");
 
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
@@ -102,6 +104,24 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->type = ASTAlterCommand::DROP_COLUMN;
         command->detach = false;
     }
+    else if (s_clear_column.ignore(pos, expected))
+    {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
+        if (!parser_name.parse(pos, command->column, expected))
+            return false;
+
+        command->type = ASTAlterCommand::DROP_COLUMN;
+        command->clear_column = true;
+        command->detach = false;
+
+        if (s_in_partition.ignore(pos, expected))
+        {
+            if (!parser_partition.parse(pos, command->partition, expected))
+                return false;
+        }
+    }
     else if (s_add_index.ignore(pos, expected))
     {
         if (s_if_not_exists.ignore(pos, expected))
@@ -150,16 +170,32 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->type = ASTAlterCommand::DROP_CONSTRAINT;
         command->detach = false;
     }
-    else if (s_clear_column.ignore(pos, expected))
+    else if (s_clear_index.ignore(pos, expected))
     {
         if (s_if_exists.ignore(pos, expected))
             command->if_exists = true;
 
-        if (!parser_name.parse(pos, command->column, expected))
+        if (!parser_name.parse(pos, command->index, expected))
             return false;
 
-        command->type = ASTAlterCommand::DROP_COLUMN;
-        command->clear_column = true;
+        command->type = ASTAlterCommand::DROP_INDEX;
+        command->clear_index = true;
+        command->detach = false;
+
+        if (!s_in_partition.ignore(pos, expected))
+            return false;
+        if (!parser_partition.parse(pos, command->partition, expected))
+            return false;
+    }
+    else if (s_materialize_index.ignore(pos, expected))
+    {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
+        if (!parser_name.parse(pos, command->index, expected))
+            return false;
+
+        command->type = ASTAlterCommand::MATERIALIZE_INDEX;
         command->detach = false;
 
         if (s_in_partition.ignore(pos, expected))

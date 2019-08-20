@@ -190,6 +190,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
 - [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
 - [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера.
 
@@ -272,6 +273,14 @@ ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```sql
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
+
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+
+``` sql
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо данных в столбцах.
 
 #### FREEZE PARTITION {#alter_freeze-partition}
 
@@ -386,6 +395,12 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 Команда доступна начиная с версии 18.12.14. Выражение `filter_expr` должно иметь тип UInt8. Запрос изменяет значение указанных столбцов на вычисленное значение соответствующих выражений в каждой строке, для которой `filter_expr` принимает ненулевое значение. Вычисленные значения преобразуются к типу столбца с помощью оператора `CAST`. Изменение столбцов, которые используются при вычислении первичного ключа или ключа партиционирования, не поддерживается.
+
+``` sql
+ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+```
+
+Команда перестроит вторичный индекс `name` для партиции `partition_name`.
 
 В одном запросе можно указать несколько команд через запятую.
 

@@ -11,7 +11,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
@@ -289,7 +288,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 "template void Aggregator::executeSpecialized<\n"
                     "    " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
                     "    " << method_typename << " &, Arena *, size_t, ColumnRawPtrs &,\n"
-                    "    AggregateColumns &, StringRefs &, bool, AggregateDataPtr) const;\n"
+                    "    AggregateColumns &, bool, AggregateDataPtr) const;\n"
                 "\n"
                 "static void wrapper" << suffix << "(\n"
                     "    const Aggregator & aggregator,\n"
@@ -298,13 +297,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                     "    size_t rows,\n"
                     "    ColumnRawPtrs & key_columns,\n"
                     "    Aggregator::AggregateColumns & aggregate_columns,\n"
-                    "    StringRefs & keys,\n"
                     "    bool no_more_keys,\n"
                     "    AggregateDataPtr overflow_row)\n"
                 "{\n"
                     "    aggregator.executeSpecialized<\n"
                         "        " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "        method, arena, rows, key_columns, aggregate_columns, keys, no_more_keys, overflow_row);\n"
+                        "        method, arena, rows, key_columns, aggregate_columns, no_more_keys, overflow_row);\n"
                 "}\n"
                 "\n"
                 "void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
@@ -583,16 +581,16 @@ void NO_INLINE Aggregator::executeImpl(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
-    StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     if (!no_more_keys)
-        executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
+        //executeImplCase<false>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+        executeImplBatch(method, state, aggregates_pool, rows, aggregate_instructions);
     else
-        executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
+        executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
 }
 
 
@@ -602,9 +600,7 @@ void NO_INLINE Aggregator::executeImplCase(
     typename Method::State & state,
     Arena * aggregates_pool,
     size_t rows,
-    ColumnRawPtrs & /*key_columns*/,
     AggregateFunctionInstruction * aggregate_instructions,
-    StringRefs & /*keys*/,
     AggregateDataPtr overflow_row) const
 {
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
@@ -655,34 +651,60 @@ void NO_INLINE Aggregator::executeImplCase(
 }
 
 
+template <typename Method>
+void NO_INLINE Aggregator::executeImplBatch(
+    Method & method,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    size_t rows,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    PODArray<AggregateDataPtr> places(rows);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        AggregateDataPtr aggregate_data = nullptr;
+
+        auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+        if (emplace_result.isInserted())
+        {
+            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+            emplace_result.setMapped(nullptr);
+
+            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+
+            emplace_result.setMapped(aggregate_data);
+        }
+        else
+            aggregate_data = emplace_result.getMapped();
+
+        places[i] = aggregate_data;
+    }
+
+    /// Add values to the aggregate functions.
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        inst->that->addBatch(rows, places.data(), inst->state_offset, inst->arguments, aggregates_pool);
+}
+
+
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions,
     Arena * arena) const
 {
-    /// Optimization in the case of a single aggregate function `count`.
-    AggregateFunctionCount * agg_count = params.aggregates_size == 1
-        ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : nullptr;
-
-    if (agg_count)
-        agg_count->addDelta(res, rows);
-    else
-    {
-        for (size_t i = 0; i < rows; ++i)
-        {
-            /// Adding values
-            for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-                (*inst->func)(inst->that, res + inst->state_offset, inst->arguments, i, arena);
-        }
-    }
+    /// Adding values
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
 }
 
 
 bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
-    bool & no_more_keys)
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
 {
     if (isCancelled())
         return true;
@@ -796,9 +818,9 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 reinterpret_cast<void (*)( \
                     const Aggregator &, decltype(result.NAME)::element_type &, \
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
-                    StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
+                    bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-                    key, no_more_keys, overflow_row_ptr);
+                    no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -812,9 +834,9 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 reinterpret_cast<void (*)( \
                     const Aggregator &, decltype(result.NAME)::element_type &, \
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
-                    StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
+                    bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-                    key, no_more_keys, overflow_row_ptr);
+                    no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -826,7 +848,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
                 executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_functions_instructions.data(), \
-                    key, no_more_keys, overflow_row_ptr);
+                    no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1032,7 +1054,6 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     if (isCancelled())
         return;
 
-    StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
     AggregateColumns aggregate_columns(params.aggregates_size);
 
@@ -1059,14 +1080,14 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         src_rows += block.rows();
         src_bytes += block.bytes();
 
-        if (!executeOnBlock(block, result, key_columns, aggregate_columns, key, no_more_keys))
+        if (!executeOnBlock(block, result, key_columns, aggregate_columns, no_more_keys))
             break;
     }
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (result.empty() && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, key, no_more_keys);
+        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, no_more_keys);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
@@ -2321,7 +2342,6 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     Method & method,
     Arena * pool,
     ColumnRawPtrs & key_columns,
-    StringRefs & keys [[maybe_unused]],
     const Block & source,
     std::vector<Block> & destinations) const
 {
@@ -2383,7 +2403,6 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
     AggregatedDataVariants data;
 
-    StringRefs key(params.keys_size);
     ColumnRawPtrs key_columns(params.keys_size);
 
     /// Remember the columns we will work with
@@ -2423,7 +2442,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
         convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
-            key_columns, key, block, splitted_blocks);
+            key_columns, block, splitted_blocks);
 
     if (false) {}
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
