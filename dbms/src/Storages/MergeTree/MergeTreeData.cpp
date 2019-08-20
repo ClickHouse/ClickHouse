@@ -2576,42 +2576,70 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 }
 
 
-void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & /*context*/)
+void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
-    String partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    String partition_id;
 
-    auto part = getActiveContainingPart(partition_id);
-    if (!part)
-        throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+    if (moving_part)
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    else
+        partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector parts;
+    if (moving_part)
+    {
+        parts.push_back(getActiveContainingPart(partition_id));
+        if (!parts.back())
+            throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+    }
+    else
+        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     auto disk = storage_policy->getDiskByName(name);
     if (!disk)
         throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    if (part->disk->getName() == disk->getName())
-        throw Exception("Part " + partition_id + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+    for (const auto & part : parts)
+    {
 
-    movePartitionToSpace(part, std::static_pointer_cast<const DiskSpace::Space>(disk));
+        if (part->disk->getName() == disk->getName())
+            throw Exception("Part " + partition_id + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+    }
+
+    movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk));
 }
 
 
-void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, const Context & /*context*/)
+void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
 {
-    String partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    String partition_id;
 
-    auto part = getActiveContainingPart(partition_id);
-    if (!part)
-        throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+    if (moving_part)
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+    else
+        partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector parts;
+    if (moving_part)
+    {
+        parts.push_back(getActiveContainingPart(partition_id));
+        if (!parts.back())
+            throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+    }
+    else
+        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
 
     auto volume = storage_policy->getVolumeByName(name);
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & disk : volume->disks)
-        if (part->disk->getName() == disk->getName())
-            throw Exception("Part " + partition_id + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
+    for (const auto & part : parts)
+        for (const auto & disk : volume->disks)
+            if (part->disk->getName() == disk->getName())
+                throw Exception("Part " + partition_id + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
 
-    movePartitionToSpace(part, std::static_pointer_cast<const DiskSpace::Space>(volume));
+    movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume));
 }
 
 

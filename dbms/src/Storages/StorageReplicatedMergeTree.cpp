@@ -2192,7 +2192,7 @@ public:
 
     ~CurrentlyMovingPartsTagger()
     {
-        /// May return false, but we don't care, it's ok
+        /// May return false, but we don't care, it's ok.
         for (auto & part : parts)
             queue.removeFromVirtualParts(part.part->info);
     }
@@ -2202,7 +2202,6 @@ public:
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
 {
-    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
@@ -2239,6 +2238,42 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
     }
 
     return BackgroundProcessingPoolTaskResult::SUCCESS;
+}
+
+
+
+void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space)
+{
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
+    MergeTreeMovingParts parts_to_move;
+    for (const auto & part : parts)
+    {
+        auto reservation = space->reserve(part->bytes_on_disk);
+        if (!reservation)
+            throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
+
+        auto & reserved_disk = reservation->getDisk();
+        String path_to_clone = getFullPathOnDisk(reserved_disk);
+
+        if (Poco::File(path_to_clone + part->name).exists())
+            throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
+                ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+        if (queue.isVirtualPart(part))
+            throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+        parts_to_move.emplace_back(part, std::move(reservation));
+    }
+
+    CurrentlyMovingPartsTagger moving_tagger(std::move(parts_to_move), queue);
+
+    std::string reason;
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger.parts);
+
+    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+        throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
 }
 
 void StorageReplicatedMergeTree::mergeSelectingTask()
@@ -3463,10 +3498,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 switch (command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, query_context);
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
                         break;
                     case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, query_context);
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
                     case PartitionCommand::MoveDestinationType::NONE:
                         throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);

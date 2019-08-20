@@ -550,14 +550,14 @@ public:
 
 protected:
     /// Moves part to specified space
-    virtual void movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space) = 0;
+    virtual void movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space) = 0;
 
 public:
     /// Moves partition to specified Disk
-    void movePartitionToDisk(const ASTPtr & partition, const String & name, const Context & context);
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
 
     /// Moves partition to specified Volume
-    void movePartitionToVolume(const ASTPtr & partition, const String & name, const Context & context);
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {

@@ -652,32 +652,35 @@ bool StorageMergeTree::merge(
     return true;
 }
 
-
-void StorageMergeTree::movePartitionToSpace(MergeTreeData::DataPartPtr part, DiskSpace::SpacePtr space)
+void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space)
 {
-    auto reservation = space->reserve(part->bytes_on_disk);
-    if (!reservation)
-        throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
-
-    auto & reserved_disk = reservation->getDisk();
-    String path_to_clone = getFullPathOnDisk(reserved_disk);
-
-    if (Poco::File(path_to_clone + part->name).exists())
-        throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
-            ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
-        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+        MergeTreeMovingParts parts_to_move;
         std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
-        if (currently_processing_in_background.count(part))
-            throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
-                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+        for (const auto & part : parts)
+        {
+            auto reservation = space->reserve(part->bytes_on_disk);
+            if (!reservation)
+                throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        MergeTreeMovingParts parts_to_move;
-        parts_to_move.emplace_back(part, std::move(reservation));
+            auto & reserved_disk = reservation->getDisk();
+            String path_to_clone = getFullPathOnDisk(reserved_disk);
 
+            if (Poco::File(path_to_clone + part->name).exists())
+                throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
+                    ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+            if (currently_processing_in_background.count(part))
+                throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
+                    ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+            parts_to_move.emplace_back(part, std::move(reservation));
+
+        }
         moving_tagger.emplace(std::move(parts_to_move), *this);
     }
 
@@ -686,15 +689,15 @@ void StorageMergeTree::movePartitionToSpace(MergeTreeData::DataPartPtr part, Dis
 
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
-
 }
 
 bool StorageMergeTree::moveParts()
 {
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
-        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
         std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
@@ -1068,11 +1071,11 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 switch (command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, context);
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, context);
                         break;
 
                     case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, context);
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
                         break;
 
                     case PartitionCommand::MoveDestinationType::NONE:

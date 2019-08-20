@@ -144,7 +144,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE "
-                      << "PART " << (settings.hilite ? hilite_none : "");
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << " TO ";
         switch (move_destination_type)
