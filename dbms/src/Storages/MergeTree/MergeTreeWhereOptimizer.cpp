@@ -62,7 +62,7 @@ void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, c
 
 static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
 {
-    if (auto opt_name = getIdentifierName(ast))
+    if (auto opt_name = tryGetIdentifierName(ast))
         return (void)set.insert(*opt_name);
 
     if (ast->as<ASTSubquery>())

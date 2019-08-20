@@ -64,7 +64,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
 
         if (command_ast->column)
-            command.after_column = *getIdentifierName(command_ast->column);
+            command.after_column = getIdentifierName(command_ast->column);
 
         if (ast_col_decl.ttl)
             command.ttl = ast_col_decl.ttl;
@@ -80,7 +80,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.type = AlterCommand::DROP_COLUMN;
-        command.column_name = *getIdentifierName(command_ast->column);
+        command.column_name = getIdentifierName(command_ast->column);
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -123,7 +123,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.type = COMMENT_COLUMN;
-        command.column_name = *getIdentifierName(command_ast->column);
+        command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
         command.comment = ast_comment.value.get<String>();
         command.if_exists = command_ast->if_exists;

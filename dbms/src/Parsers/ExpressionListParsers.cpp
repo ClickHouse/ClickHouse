@@ -139,6 +139,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 {
     bool first = true;
 
+    auto current_depth = pos.depth;
     while (1)
     {
         if (first)
@@ -190,10 +191,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 ++pos;
             }
 
+            /// Left associative operator chain is parsed as a tree: ((((1 + 1) + 1) + 1) + 1)...
+            /// We must account it's depth - otherwise we may end up with stack overflow later - on destruction of AST.
+            pos.increaseDepth();
             node = function;
         }
     }
 
+    pos.depth = current_depth;
     return true;
 }
 

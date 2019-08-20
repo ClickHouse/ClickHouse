@@ -524,7 +524,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? *getIdentifierName(ast_query_with_output->format)
+                ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
             if (ast_query_with_output && ast_query_with_output->settings_ast)
