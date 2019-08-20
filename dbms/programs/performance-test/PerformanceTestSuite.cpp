@@ -103,7 +103,8 @@ public:
         {
             UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
-            connections.emplace_back(std::make_shared<Connection>(cur_host, cur_port, default_database_, user_, password_, "performance-test-" + toString(i + 1), Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable));
+            connections.emplace_back(std::make_shared<Connection>(cur_host, cur_port, default_database_, user_, password_,
+                    "performance-test-" + toString(i + 1),Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable));
         }
     }
 

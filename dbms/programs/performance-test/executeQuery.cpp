@@ -75,6 +75,7 @@ void executeQuery(
     stream.readPrefix();
     while (Block block = stream.read());
     stream.readSuffix();
+
     double seconds = statistic->watch_per_query.elapsedSeconds();
 
     if (!statistic->last_query_was_cancelled)

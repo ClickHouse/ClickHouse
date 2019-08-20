@@ -343,15 +343,16 @@ void PerformanceTest::runQueries(
     for (const auto & [query, run_index] : queries_with_indexes)
     {
         LOG_INFO(log, "[" << run_index<< "] Run query '" << query << "'");
+
         TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
-        TestStatsPtrs & statistics = statistics_by_run[run_index];
+        TestStatsPtrs & statistics_by_connections = statistics_by_run[run_index];
         t_test.clear();
 
-        auto gotSIGINT = [&statistics]()
+        auto gotSIGINT = [&statistics_by_connections]()
         {
-            for (const auto & statistics_by_server : statistics)
+            for (const auto & statistics : statistics_by_connections)
             {
-                if (statistics_by_server->got_SIGINT)
+                if (statistics->got_SIGINT)
                     return true;
             }
             return false;
@@ -363,10 +364,10 @@ void PerformanceTest::runQueries(
 
         try
         {
+            /// Executes once on every connection and than continues randomly if execution type is loop
             for (size_t i = 0; i < connections.size(); ++i)
-            {
-                executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i, log);
-            }
+                executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i, log);
+
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 LOG_INFO(log, "Will run query in loop");
@@ -381,21 +382,21 @@ void PerformanceTest::runQueries(
                     for (size_t i = 0; i < connections.size(); ++i)
                     {
                         connection_index = distribution(generator);
-                        executeQuery(connections, query, statistics, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index, log);
+                        executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index, log);
                     }
                 }
             }
         }
         catch (const Exception & e)
         {
-            statistics[connection_index]->exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
+            statistics_by_connections[connection_index]->exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
         }
         if (!gotSIGINT())
         {
-            for (auto & statistics_by_server : statistics)
-                statistics_by_server->ready = true;
+            for (auto & statistics : statistics_by_connections)
+                statistics->ready = true;
         }
         else
         {
