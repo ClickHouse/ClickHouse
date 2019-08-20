@@ -51,10 +51,10 @@ struct NumbersMtState
 
 using NumbersMtStatePtr = std::shared_ptr<NumbersMtState>;
 
-class NumbersMtBlockInputStream : public IBlockInputStream
+class NumbersMultiThreadedBlockInputStream : public IBlockInputStream
 {
 public:
-    NumbersMtBlockInputStream(NumbersMtStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
+    NumbersMultiThreadedBlockInputStream(NumbersMtStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
         : state(std::move(state_)), counter(state->counter), block_size(block_size_), max_counter(max_counter_) {}
 
     String getName() const override { return "NumbersMt"; }
@@ -131,7 +131,7 @@ BlockInputStreams StorageSystemNumbers::read(
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            res[i] = std::make_shared<NumbersMtBlockInputStream>(state, max_block_size, max_counter);
+            res[i] = std::make_shared<NumbersMultiThreadedBlockInputStream>(state, max_block_size, max_counter);
 
         return res;
     }
