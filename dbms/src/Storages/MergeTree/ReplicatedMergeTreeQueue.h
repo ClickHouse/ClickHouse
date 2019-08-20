@@ -253,6 +253,8 @@ public:
 
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
+    bool removeFromVirtualParts(const String & part_name);
+
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
@@ -331,7 +333,7 @@ public:
     /// Add part to virtual_parts, which means that part must exist
     /// after processing replication log up to log_pointer.
     /// Throws exception if any part was in virtual parts
-    void disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts);
+    Names disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts);
 
     /// Cheks that part is already in virtual parts
     bool isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const;

@@ -2176,6 +2176,8 @@ struct CurrentlyMovingPartsTagger
 
     ReplicatedMergeTreeQueue & queue;
 
+    Names remove_names;
+
 public:
     CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, ReplicatedMergeTreeQueue & queue_)
         : parts(std::move(parts_))
@@ -2186,14 +2188,15 @@ public:
             data_parts.emplace_back(moving_part.part);
 
         /// Throws exception if some parts already exists
-        queue.disableMergesForParts(data_parts);
+        remove_names = queue.disableMergesForParts(data_parts);
     }
 
     ~CurrentlyMovingPartsTagger()
     {
         /// May return false, but we don't care, it's ok.
-        for (auto & part : parts)
-            queue.removeFromVirtualParts(part.part->info);
+        for (auto & part_name : remove_names)
+            if (!queue.removeFromVirtualParts(part_name))
+                std::terminate();
     }
 };
 
