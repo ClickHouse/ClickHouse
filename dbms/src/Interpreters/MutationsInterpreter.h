@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
@@ -25,20 +26,19 @@ public:
     {
     }
 
-    void validate();
+    void validate(TableStructureReadLockHolder & table_lock_holder);
 
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
     /// The resulting stream will return blocks containing changed columns only.
-    BlockInputStreamPtr execute();
+    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
 
 private:
     void prepare(bool dry_run);
 
     BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
 
-private:
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
