@@ -238,7 +238,7 @@ Default value: 0.
 
 ## input_format_import_nested_json {#settings-input_format_import_nested_json}
 
-Enables or disables inserting of JSON data with nested objects.
+Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
@@ -275,7 +275,7 @@ Default value: 1.
 
 ## date_time_input_format {#settings-date_time_input_format}
 
-Enables or disables extended parsing of date and time formatted strings.
+Allows to choose a parser of text representation of date and time.
 
 The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
 
@@ -283,11 +283,13 @@ Possible values:
 
 - `'best_effort'` — Enables extended parsing.
 
-    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
 - `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic format.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+
+Default value: `'basic'`.
 
 **See Also**
 
