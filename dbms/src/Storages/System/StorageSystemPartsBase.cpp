@@ -152,7 +152,6 @@ StoragesInfo StoragesInfoStream::next()
 
     while (next_row < rows)
     {
-
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
 
