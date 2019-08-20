@@ -206,20 +206,29 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     const Settings & settings_ = context.getSettingsRef();
     size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
-    ThreadPool thread_pool(thread_pool_size);
+
+    std::optional<ThreadPool> thread_pool;
+
+    if (thread_pool_size > 1)
+        thread_pool.emplace(thread_pool_size);
 
     for (const auto & part : parts)
     {
         transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
 
-        thread_pool.schedule(
-            [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
-            {
-                this->alterDataPart(columns_for_parts, new_indices, false, transaction);
-            });
+        auto job = [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
+        {
+            this->alterDataPart(columns_for_parts, new_indices, false, transaction);
+        };
+
+        if (thread_pool)
+            thread_pool->schedule(job);
+        else
+            job();
     }
 
-    thread_pool.wait();
+    if (thread_pool)
+        thread_pool->wait();
 
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
         [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
