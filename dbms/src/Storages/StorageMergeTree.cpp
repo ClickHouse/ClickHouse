@@ -706,10 +706,7 @@ bool StorageMergeTree::moveParts()
         MergeTreeMovingParts parts_to_move;
 
         if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-        {
-            LOG_INFO(log, "Nothing to move.");
             return false;
-        }
 
         moving_tagger.emplace(std::move(parts_to_move), *this);
     }
