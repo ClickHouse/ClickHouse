@@ -863,7 +863,8 @@ The calculation is accurate if:
 
 Otherwise, the result of a calculation is rounded to the value, multiple of 16 ms.
 
-For calculating quantiles of page loading times, using this function is more effective, and the result is more accurate than for the [quantile](#agg_function-quantile) function.
+!! note "Note"
+    For calculating quantiles of page loading times, this function is more effective and accurate compared to [quantile](#agg_function-quantile).
 
 **Parameters**
 
