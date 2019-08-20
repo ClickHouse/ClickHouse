@@ -557,7 +557,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 ## remote_servers {#server_settings_remote_servers}
 
-Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine.
+Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
 **Example**
 
