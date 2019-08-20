@@ -252,6 +252,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
 void registerOutputFormatProcessorVertical(FormatFactory & factory);
 void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
@@ -267,6 +268,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatNative(*this);
     registerInputFormatTabSeparated(*this);
     registerInputFormatCSV(*this);
+
+    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
