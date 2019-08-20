@@ -5,7 +5,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMaterializedView.h>
-
+#include <Storages/StorageLiveView.h>
 
 namespace DB
 {
