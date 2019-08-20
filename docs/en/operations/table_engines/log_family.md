@@ -14,7 +14,7 @@ Engines:
 
 - Store data on a disk.
 - Append data to the end of file when writing.
-- Support locs for concurrent data access.
+- Support locks for concurrent data access.
     
     During `INSERT` query the table is locked, and other queries for reading and writing data both wait for unlocking. If there are no writing data queries, any number of reading data queries can be performed concurrently.
 
