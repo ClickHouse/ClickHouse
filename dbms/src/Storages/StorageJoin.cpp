@@ -90,7 +90,7 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto opt_strictness_id = getIdentifierName(engine_args[0]);
+        auto opt_strictness_id = tryGetIdentifierName(engine_args[0]);
         if (!opt_strictness_id)
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -103,7 +103,7 @@ void registerStorageJoin(StorageFactory & factory)
         else
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        auto opt_kind_id = getIdentifierName(engine_args[1]);
+        auto opt_kind_id = tryGetIdentifierName(engine_args[1]);
         if (!opt_kind_id)
             throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -124,7 +124,7 @@ void registerStorageJoin(StorageFactory & factory)
         key_names.reserve(engine_args.size() - 2);
         for (size_t i = 2, size = engine_args.size(); i < size; ++i)
         {
-            auto opt_key = getIdentifierName(engine_args[i]);
+            auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
