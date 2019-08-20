@@ -191,6 +191,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 
@@ -308,6 +309,14 @@ Restoring from a backup doesn't require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../operations/backup.md) section.
 
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+
+``` sql
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
+
 #### FETCH PARTITION {#alter_fetch-partition}
 
 ``` sql
@@ -385,6 +394,12 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+
+``` sql
+ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+```
+
+The query rebuilds the secondary index `name` in the partition `partition_name`.
 
 One query can contain several commands separated by commas.
 

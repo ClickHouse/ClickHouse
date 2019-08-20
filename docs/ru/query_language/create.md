@@ -1,13 +1,30 @@
-## CREATE DATABASE
+## CREATE DATABASE {#query_language-create-database}
 
-Создание базы данных db\_name.
+Создает базу данных.
 
 ```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
 ```
 
-`База данных` - это просто директория для таблиц.
-Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
+### Секции
+
+- `IF NOT EXISTS`
+
+    Если база данных с именем `db_name` уже существует, то ClickHouse не создаёт базу данных и:
+    - Не генерирует исключение, если секция указана.
+    - Генерирует исключение, если секция не указана.
+
+- `ON CLUSTER`
+
+    ClickHouse создаёт базу данных `db_name` на всех серверах указанного кластера.
+
+- `ENGINE`
+
+    - [MySQL](../database_engines/mysql.md)
+
+        Позволяет получать данные с удаленного сервера MySQL.
+
+    По умолчанию ClickHouse использует собственный [движок баз данных](../database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
@@ -48,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
 
-После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков](../operations/table_engines/index.md#table_engines).
+После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../operations/table_engines/index.md#table_engines).
 
 ### Значения по умолчанию {#create-default-values}
 
@@ -108,11 +125,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Выражение для TTL
 
-Может быть указано только для таблиц семейства MergeTree. Выражение для указания времени хранения значений. Оно должно зависеть от стобца типа `Date` или `DateTime` и в качестве результата вычислять столбец типа `Date` или `DateTime`. Пример:
-    `TTL date + INTERVAL 1 DAY`
-
-Нельзя указывать TTL для ключевых столбцов. Подробнее смотрите в [TTL для стоблцов и таблиц](../operations/table_engines/mergetree.md)
-
+Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
 ## Форматы сжатия для колонок
 

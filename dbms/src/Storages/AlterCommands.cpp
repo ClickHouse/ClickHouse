@@ -168,30 +168,27 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT
-             || command_ast->type == ASTAlterCommand::DROP_INDEX
-             || (command_ast->type == ASTAlterCommand::DROP_COLUMN && !command_ast->partition))
+    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT && !command_ast->partition)
     {
         if (command_ast->clear_column)
             throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
         command.if_exists = command_ast->if_exists;
-        if (command_ast->type == ASTAlterCommand::DROP_INDEX)
-        {
-            command.type = AlterCommand::DROP_INDEX;
-            command.index_name = command_ast->index->as<ASTIdentifier &>().name;
-        }
-        else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
-        {
-            command.type = AlterCommand::DROP_CONSTRAINT;
-            command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
-        }
-        else if (command_ast->type == ASTAlterCommand::DROP_COLUMN)
-        {
-            command.type = AlterCommand::DROP_COLUMN;
-            command.column_name = getIdentifierName(command_ast->column);
-        }
+        command.type = AlterCommand::DROP_CONSTRAINT;
+        command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX && !command_ast->partition)
+    {
+        if (command_ast->clear_column)
+            throw Exception("\"ALTER TABLE table CLEAR INDEX index\" queries are not supported yet. Use \"CLEAR INDEX index IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
+        AlterCommand command;
+        command.type = AlterCommand::DROP_INDEX;
+        command.index_name = command_ast->index->as<ASTIdentifier &>().name;
+        command.if_exists = command_ast->if_exists;
 
         return command;
     }
