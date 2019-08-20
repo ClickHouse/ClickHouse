@@ -846,7 +846,7 @@ Enables or disables silent skipping of:
 
     If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
-- Shard, if there are no nodes available in the shard.
+- Shard, if there are no available replicas of the shard.
 
     When skipping is disabled, ClickHouse throws an exception.
 
