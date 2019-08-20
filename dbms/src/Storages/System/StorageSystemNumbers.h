@@ -38,7 +38,7 @@ public:
 private:
     const std::string name;
     bool multithreaded;
-    bool bool even_distribution;
+    bool even_distribution;
     std::optional<UInt64> limit;
     UInt64 offset;
 
