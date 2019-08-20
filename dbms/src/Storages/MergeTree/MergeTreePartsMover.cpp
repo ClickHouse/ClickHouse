@@ -8,8 +8,8 @@ namespace DB
 
 namespace
 {
-/// Contains minimal number of greatest elems, which sum is greater then required
-/// If there are not enough elems contains all.
+/// Contains minimal number of heaviest parts, which sum size on disk is greater than required.
+/// If there are not enough summary size, than contains all.
 class LargestPartsWithRequiredSize
 {
     struct PartsSizeOnDiskComparator

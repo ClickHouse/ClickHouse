@@ -44,9 +44,9 @@ void ReplicatedMergeTreeQueue::disableMergesForParts(const MergeTreeData::DataPa
     std::lock_guard lock(state_mutex);
     for (const auto & data_part : data_parts)
     {
-        if (!virtual_parts.getContainingPart(data_part->name).empty())
-            throw Exception("Part " + data_part->name + " or covering part is"
-                + " already contains in virtual (future) parts set.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+        if (virtual_parts.getContainingPart(data_part->name) != data_part->name)
+            throw Exception("Part " + data_part->name + " is"
+                + " already assigned to background operation.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
     }
 
     for (const auto & data_part : data_parts)
@@ -54,10 +54,10 @@ void ReplicatedMergeTreeQueue::disableMergesForParts(const MergeTreeData::DataPa
 }
 
 
-bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
+bool ReplicatedMergeTreeQueue::isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const
 {
     std::lock_guard lock(state_mutex);
-    return !virtual_parts.getContainingPart(data_part->name).empty();
+    return virtual_parts.getContainingPart(data_part->info) != data_part->name;
 }
 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)

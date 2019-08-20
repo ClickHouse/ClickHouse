@@ -693,7 +693,9 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
 
 bool StorageMergeTree::moveParts()
 {
+    LOG_INFO(log, "Trying to move something");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
@@ -709,7 +711,10 @@ bool StorageMergeTree::moveParts()
         MergeTreeMovingParts parts_to_move;
 
         if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+        {
+            LOG_INFO(log, "Nothing to move");
             return false;
+        }
 
         moving_tagger.emplace(std::move(parts_to_move), *this);
     }
