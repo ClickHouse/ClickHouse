@@ -903,7 +903,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 
     for (const auto & value : data)
     {
-        method.insertKeyIntoColumns(value.getValue(), key_columns, key_sizes);
+        method.insertKeyIntoColumns(value.getFirst(), key_columns, key_sizes);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->insertResultInto(
@@ -934,7 +934,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 
     for (auto & value : data)
     {
-        method.insertKeyIntoColumns(value.getValue(), key_columns, key_sizes);
+        method.insertKeyIntoColumns(value.getFirst(), key_columns, key_sizes);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
