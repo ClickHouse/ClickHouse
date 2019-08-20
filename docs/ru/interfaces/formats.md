@@ -382,7 +382,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### Использование вложенных структур {#jsoneachrow-nested}
 
-Если у вас есть таблица со столбцами типа [Nested](../data_types/nested_data_structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Если у вас есть таблица со столбцами типа [Nested](../data_types/nested_data_structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 Например, рассмотрим следующую таблицу:
 
