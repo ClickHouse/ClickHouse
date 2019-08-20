@@ -334,7 +334,7 @@ public:
     void disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts);
 
     /// Cheks that part is already in virtual parts
-    bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+    bool isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.

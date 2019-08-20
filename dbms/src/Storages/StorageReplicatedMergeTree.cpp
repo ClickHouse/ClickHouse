@@ -2182,7 +2182,6 @@ public:
         , queue(queue_)
     {
         MergeTreeData::DataPartsVector data_parts;
-        /// Assume queue mutex is already locked, because this method is called from tryMoveParts.
         for (const auto & moving_part : parts)
             data_parts.emplace_back(moving_part.part);
 
@@ -2202,13 +2201,15 @@ public:
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
 {
+
+    LOG_INFO(log, "Trying to move in replicated mt");
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
         auto can_move = [this](const DataPartPtr & part, String *) -> bool
         {
-            return !queue.isVirtualPart(part);
+            return !queue.isPartAssignedToBackgroundOperation(part);
         };
 
         MergeTreeMovingParts parts_to_move;
@@ -2260,7 +2261,7 @@ void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataParts
             throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
                 ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-        if (queue.isVirtualPart(part))
+        if (queue.isPartAssignedToBackgroundOperation(part))
             throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
                 ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
 

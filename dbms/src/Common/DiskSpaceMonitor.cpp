@@ -260,10 +260,6 @@ Volume::Volume(
             auto disk_name = config.getString(config_prefix + "." + disk);
             disks.push_back(disk_selector[disk_name]);
         }
-        else
-        {
-            LOG_WARNING(logger, "Unused param " << config_prefix << '.' << disk);
-        }
     }
 
     if (disks.empty())
@@ -308,7 +304,7 @@ Volume::Volume(
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume max_data_part_size is too low ("
+        LOG_WARNING(logger, "Volume '" << name << "' max_data_part_size is too low ("
             << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
             << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
