@@ -4,7 +4,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace ErrorCodes

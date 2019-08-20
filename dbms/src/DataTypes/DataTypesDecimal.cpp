@@ -22,6 +22,7 @@ namespace ErrorCodes
 }
 
 
+// TODO: Move to other places so that DataTypes won't depend on Context
 bool decimalCheckComparisonOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
 bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
 

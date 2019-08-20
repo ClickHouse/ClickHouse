@@ -1,7 +1,7 @@
 #include "config_formats.h"
 #if USE_PROTOBUF
 
-#include "ProtobufReader.h"
+#include <Formats/ProtobufReader.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <boost/numeric/conversion/cast.hpp>

@@ -103,26 +103,27 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Core)
-add_headers_and_sources(dbms src/Compression/)
+add_headers_and_sources(clickhouse_core_datatypes_columns_formats src/Core)
+add_headers_and_sources(clickhouse_core_datatypes_columns_formats src/DataTypes)
+add_headers_and_sources(clickhouse_core_datatypes_columns_formats src/Columns)
+add_headers_and_sources(clickhouse_core_datatypes_columns_formats src/Formats)
+
 add_headers_and_sources(dbms src/DataStreams)
-add_headers_and_sources(dbms src/DataTypes)
-add_headers_and_sources(dbms src/Databases)
-add_headers_and_sources(dbms src/Interpreters)
-add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
-add_headers_and_sources(dbms src/Columns)
-add_headers_and_sources(dbms src/Storages)
-add_headers_and_sources(dbms src/Storages/Distributed)
-add_headers_and_sources(dbms src/Storages/MergeTree)
-add_headers_and_sources(dbms src/Client)
-add_headers_and_sources(dbms src/Formats)
 add_headers_and_sources(dbms src/Processors)
 add_headers_and_sources(dbms src/Processors/Executors)
 add_headers_and_sources(dbms src/Processors/Formats)
 add_headers_and_sources(dbms src/Processors/Formats/Impl)
 add_headers_and_sources(dbms src/Processors/Transforms)
 add_headers_and_sources(dbms src/Processors/Sources)
-add_headers_only(dbms src/Server)
+add_headers_and_sources(dbms src/Interpreters)
+add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
+
+add_headers_and_sources(dbms src/Client)
+
+add_headers_and_sources(dbms src/Databases)
+add_headers_and_sources(dbms src/Storages)
+add_headers_and_sources(dbms src/Storages/Distributed)
+add_headers_and_sources(dbms src/Storages/MergeTree)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -150,12 +151,50 @@ list (APPEND dbms_headers
     src/AggregateFunctions/FactoryHelpers.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
+# Theoretically these files should be moved out of Core, however all consumers are from downstreams which makes them similar to stub interfaces
+# list (APPEND dbms_sources src/Core/iostream_debug_helpers.cpp src/Core/ExternalTable.cpp)
+# list (APPEND dbms_headers src/Core/iostream_debug_helpers.h src/Core/ExternalTable.h)
+
+# Perhaps aggregate column along with its type should be moved directly into target clickhouse_aggregate_functions
+list (REMOVE_ITEM clickhouse_core_datatypes_columns_formats_sources
+    src/Columns/ColumnAggregateFunction.cpp
+    src/Formats/registerFormats.cpp
+    src/Formats/FormatFactory.cpp
+    src/DataTypes/registerDataTypes.cpp
+    src/DataTypes/DataTypeCustomSimpleAggregateFunction.cpp
+    src/DataTypes/DataTypeAggregateFunction.cpp
+)
+list (REMOVE_ITEM clickhouse_core_datatypes_columns_formats_headers
+    src/Columns/ColumnAggregateFunction.h
+    src/Formats/FormatFactory.h
+    src/DataTypes/DataTypeCustomSimpleAggregateFunction.h
+    src/DataTypes/DataTypeAggregateFunction.h
+)
+list (APPEND dbms_sources
+    src/Columns/ColumnAggregateFunction.cpp
+    src/Formats/registerFormats.cpp
+    src/Formats/FormatFactory.cpp
+    src/DataTypes/registerDataTypes.cpp
+    src/DataTypes/DataTypeCustomSimpleAggregateFunction.cpp
+    src/DataTypes/DataTypeAggregateFunction.cpp
+)
+list (APPEND dbms_headers
+    src/Columns/ColumnAggregateFunction.h
+    src/Formats/FormatFactory.h
+    src/DataTypes/DataTypeCustomSimpleAggregateFunction.h
+    src/DataTypes/DataTypeAggregateFunction.h
+)
+
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_core_datatypes_columns_formats
+    ${clickhouse_core_datatypes_columns_formats_headers}
+    ${clickhouse_core_datatypes_columns_formats_sources}
+)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -252,6 +291,8 @@ target_link_libraries(clickhouse_common_io
     roaring
 )
 
+target_link_libraries(clickhouse_core_datatypes_columns_formats PRIVATE clickhouse_parsers PUBLIC clickhouse_common_io)
+
 if (USE_RDKAFKA)
     target_link_libraries(dbms PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -285,9 +326,10 @@ target_link_libraries (dbms
     string_utils # FIXME: not sure if it's private
         PUBLIC
     clickhouse_common_io
+    clickhouse_compression
+    clickhouse_core_datatypes_columns_formats
         PRIVATE
     clickhouse_dictionaries_embedded
-    ${LZ4_LIBRARY}
         PUBLIC
     ${MYSQLXX_LIBRARY}
         PRIVATE
@@ -303,17 +345,6 @@ target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/incl
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 target_include_directories(dbms SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
-    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
-endif ()
-
-if (ZSTD_LIBRARY)
-    target_link_libraries(dbms PRIVATE ${ZSTD_LIBRARY})
-endif()
-if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
-    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
-endif ()
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -358,6 +389,7 @@ endif()
 target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
+    target_link_libraries (clickhouse_core_datatypes_columns_formats PRIVATE ${ICU_LIBRARIES})
     target_link_libraries (dbms PRIVATE ${ICU_LIBRARIES})
     target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
@@ -385,8 +417,8 @@ target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
 if (USE_PROTOBUF)
-    target_link_libraries (dbms PRIVATE ${Protobuf_LIBRARY})
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
+    target_link_libraries (clickhouse_core_datatypes_columns_formats PRIVATE ${Protobuf_LIBRARY})
+    target_include_directories (clickhouse_core_datatypes_columns_formats SYSTEM BEFORE PUBLIC ${Protobuf_INCLUDE_DIR})
 endif ()
 
 if (USE_HDFS)
@@ -406,6 +438,15 @@ endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (clickhouse_core_datatypes_columns_formats
+        PRIVATE
+    ${DBMS_INCLUDE_DIR}
+    ${COMMON_INCLUDE_DIR}
+    ${SPARCEHASH_INCLUDE_DIR}
+    ${PDQSORT_INCLUDE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include
+)
+
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 

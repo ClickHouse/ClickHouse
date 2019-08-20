@@ -8,7 +8,7 @@
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
 #    include <ext/range.h>
-#    include "MySQLBlockInputStream.h"
+#    include <DataStreams/MySQLBlockInputStream.h>
 
 
 namespace DB

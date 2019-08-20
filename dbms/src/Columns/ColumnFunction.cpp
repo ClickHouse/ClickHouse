@@ -1,4 +1,3 @@
-#include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <IO/WriteHelpers.h>

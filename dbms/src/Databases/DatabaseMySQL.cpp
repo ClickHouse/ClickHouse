@@ -4,7 +4,7 @@
 #include <Databases/DatabaseMySQL.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
-#include <Formats/MySQLBlockInputStream.h>
+#include <DataStreams/MySQLBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>

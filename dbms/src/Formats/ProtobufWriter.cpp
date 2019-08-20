@@ -1,7 +1,7 @@
 #include "config_formats.h"
 #if USE_PROTOBUF
 
-#include "ProtobufWriter.h"
+#include <Formats/ProtobufWriter.h>
 
 #include <cassert>
 #include <optional>

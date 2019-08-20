@@ -29,7 +29,7 @@
 
 #include <Parsers/queryToString.h>
 #include <boost/algorithm/string.hpp>
-#include "ASTColumnsMatcher.h"
+#include <Parsers/ASTColumnsMatcher.h>
 
 
 namespace DB

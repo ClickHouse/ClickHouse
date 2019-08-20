@@ -4,7 +4,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB

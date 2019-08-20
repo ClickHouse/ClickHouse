@@ -9,7 +9,7 @@
 #include <Formats/TabSeparatedRowInputStream.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
 
 
 namespace DB

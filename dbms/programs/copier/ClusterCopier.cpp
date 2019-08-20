@@ -40,6 +40,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/registerDataTypes.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -2176,6 +2177,7 @@ void ClusterCopierApp::mainImpl()
     context->setApplicationType(Context::ApplicationType::LOCAL);
     context->setPath(process_path);
 
+    registerDataTypes();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();

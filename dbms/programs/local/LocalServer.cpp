@@ -7,6 +7,7 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
+#include <DataTypes/registerDataTypes.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -145,6 +146,7 @@ try
 
     /// Don't initialize DateLUT
 
+    registerDataTypes();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();

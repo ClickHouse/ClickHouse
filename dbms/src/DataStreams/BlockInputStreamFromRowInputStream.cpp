@@ -1,6 +1,6 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <common/logger_useful.h>
 
 

@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/MySQLBlockInputStream.h>
+#include <DataStreams/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>

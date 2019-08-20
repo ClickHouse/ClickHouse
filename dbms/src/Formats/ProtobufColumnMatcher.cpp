@@ -1,4 +1,4 @@
-#include "ProtobufColumnMatcher.h"
+#include <Formats/ProtobufColumnMatcher.h>
 #if USE_PROTOBUF
 #include <Common/Exception.h>
 #include <google/protobuf/descriptor.h>

@@ -9,6 +9,7 @@
 
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
+#include <Core/Block.h>
 #include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 
 namespace DB

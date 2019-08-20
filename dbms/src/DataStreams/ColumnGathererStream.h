@@ -103,6 +103,8 @@ private:
     Block output_block;
 
     Poco::Logger * log;
+
+    std::function<void(Source &, size_t)> block_fetcher = [this] (Source & source, size_t source_num) { fetchNewBlock(source, source_num); };
 };
 
 template <typename Column>
@@ -135,7 +137,7 @@ void ColumnGathererStream::gather(Column & column_res)
 
         if (source.pos >= source.size) /// Fetch new block from source_num part
         {
-            fetchNewBlock(source, source_num);
+            block_fetcher(source, source_num);
         }
 
         /// Consecutive optimization. TODO: precompute lengths

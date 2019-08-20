@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <set>

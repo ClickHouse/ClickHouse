@@ -1,8 +1,8 @@
-#include "parseIdentifierOrStringLiteral.h"
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
-#include "ExpressionElementParsers.h"
-#include "ASTLiteral.h"
-#include "ASTIdentifier.h"
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

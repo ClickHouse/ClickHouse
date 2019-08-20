@@ -262,49 +262,7 @@ void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 
-FormatFactory::FormatFactory()
-{
-    registerInputFormatNative(*this);
-    registerOutputFormatNative(*this);
-    registerInputFormatTabSeparated(*this);
-    registerInputFormatCSV(*this);
+FormatFactory::FormatFactory() {}
 
-    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
-
-    registerInputFormatProcessorNative(*this);
-    registerOutputFormatProcessorNative(*this);
-    registerInputFormatProcessorRowBinary(*this);
-    registerOutputFormatProcessorRowBinary(*this);
-    registerInputFormatProcessorTabSeparated(*this);
-    registerOutputFormatProcessorTabSeparated(*this);
-    registerInputFormatProcessorValues(*this);
-    registerOutputFormatProcessorValues(*this);
-    registerInputFormatProcessorCSV(*this);
-    registerOutputFormatProcessorCSV(*this);
-    registerInputFormatProcessorTSKV(*this);
-    registerOutputFormatProcessorTSKV(*this);
-    registerInputFormatProcessorJSONEachRow(*this);
-    registerOutputFormatProcessorJSONEachRow(*this);
-    registerInputFormatProcessorProtobuf(*this);
-    registerOutputFormatProcessorProtobuf(*this);
-    registerInputFormatProcessorCapnProto(*this);
-    registerInputFormatProcessorParquet(*this);
-    registerOutputFormatProcessorParquet(*this);
-
-
-    registerOutputFormatNull(*this);
-
-    registerOutputFormatProcessorPretty(*this);
-    registerOutputFormatProcessorPrettyCompact(*this);
-    registerOutputFormatProcessorPrettySpace(*this);
-    registerOutputFormatProcessorVertical(*this);
-    registerOutputFormatProcessorJSON(*this);
-    registerOutputFormatProcessorJSONCompact(*this);
-    registerOutputFormatProcessorXML(*this);
-    registerOutputFormatProcessorODBCDriver(*this);
-    registerOutputFormatProcessorODBCDriver2(*this);
-    registerOutputFormatProcessorNull(*this);
-    registerOutputFormatProcessorMySQLWrite(*this);
-}
 
 }

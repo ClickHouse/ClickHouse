@@ -1,9 +1,8 @@
 #pragma once
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include "ColumnsNumber.h"
 
 
 namespace DB

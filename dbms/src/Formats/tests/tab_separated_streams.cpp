@@ -10,8 +10,8 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Formats/TabSeparatedRowInputStream.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
 
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>

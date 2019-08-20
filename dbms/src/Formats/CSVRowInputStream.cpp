@@ -7,7 +7,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/CSVRowInputStream.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <DataStreams/BlockInputStreamFromRowInputStream.h>
 
 #include <DataTypes/DataTypeNullable.h>
 

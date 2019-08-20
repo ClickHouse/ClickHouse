@@ -1,5 +1,3 @@
-#include "ColumnVector.h"
-
 #include <cstring>
 #include <cmath>
 #include <common/unaligned.h>
@@ -10,6 +8,7 @@
 #include <Common/RadixSort.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>

@@ -1,4 +1,4 @@
-#include "parseDatabaseAndTableName.h"
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>

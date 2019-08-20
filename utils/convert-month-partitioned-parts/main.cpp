@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
