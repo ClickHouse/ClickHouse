@@ -1,4 +1,6 @@
 <test>
+    <type>loop</type>
+
     <stop_conditions>
           <all_of>
             <iterations>3</iterations>
@@ -9,7 +11,6 @@
             <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
-
 
     <main_metric>
         <min_time/>
