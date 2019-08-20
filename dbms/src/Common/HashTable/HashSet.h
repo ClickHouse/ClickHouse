@@ -30,6 +30,9 @@ public:
     using Self = HashSetTable;
     using Cell = TCell;
 
+    using Base = HashTable<Key, TCell, Hash, Grower, Allocator>;
+    using typename Base::LookupResult;
+
     void merge(const Self & rhs)
     {
         if (!this->hasZero() && rhs.hasZero())
@@ -81,6 +84,11 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
+template<typename Key, typename Hash, typename State>
+auto lookupResultGetKey(HashSetCellWithSavedHash<Key, Hash, State> * cell) { return &cell->key; }
+
+template<typename Key, typename Hash, typename State>
+void * lookupResultGetMapped(HashSetCellWithSavedHash<Key, Hash, State> *) { return nullptr; }
 
 template
 <

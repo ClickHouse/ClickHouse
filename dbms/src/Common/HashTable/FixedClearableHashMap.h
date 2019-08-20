@@ -23,7 +23,6 @@ struct FixedClearableHashMapCell
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
     static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & value) { mapped = value.getSecond(); }
 
     struct CellExt
     {
