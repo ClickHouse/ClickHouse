@@ -15,7 +15,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
-    extern const int PART_IS_TEMPORARY_LOCKED;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -27,20 +27,38 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 {}
 
 
-void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts, bool throw_if_already_virtual)
+void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & parts)
 {
     std::lock_guard lock(state_mutex);
 
-    for (const auto & part : parts)
+    for (auto part : parts)
     {
-        if (throw_if_already_virtual && !virtual_parts.getContainingPart(part->info).empty())
-            throw Exception("Part " + part->name + " or covering part is already contains in virtual (future) parts set.", ErrorCodes::PART_IS_TEMPORARY_LOCKED);
-
         current_parts.add(part->name);
         virtual_parts.add(part->name);
     }
 }
 
+
+void ReplicatedMergeTreeQueue::disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts)
+{
+    std::lock_guard lock(state_mutex);
+    for (const auto & data_part : data_parts)
+    {
+        if (!virtual_parts.getContainingPart(data_part->name).empty())
+            throw Exception("Part " + data_part->name + " or covering part is"
+                + " already contains in virtual (future) parts set.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+    }
+
+    for (const auto & data_part : data_parts)
+        virtual_parts.add(data_part->name);
+}
+
+
+bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
+{
+    std::lock_guard lock(state_mutex);
+    return !virtual_parts.getContainingPart(data_part->name).empty();
+}
 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
@@ -1733,24 +1751,6 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     return true;
 }
 
-
-ReplicatedMergeTreeMovePredicate::ReplicatedMergeTreeMovePredicate(const ReplicatedMergeTreeQueue & queue_)
-    : queue(queue_)
-    , queue_state_lock(queue_.state_mutex)
-{
-}
-
-
-bool ReplicatedMergeTreeMovePredicate::operator()(const MergeTreeData::DataPartPtr & part, String * /* out_reason */) const
-{
-    return !queue.virtual_parts.getContainingPart(part->info).empty();
-}
-
-
-ReplicatedMergeTreeMovePredicate::~ReplicatedMergeTreeMovePredicate()
-{
-    queue_state_lock.unlock();
-}
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
