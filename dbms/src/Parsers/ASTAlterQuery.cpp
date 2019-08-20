@@ -45,6 +45,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+    if (values)
+    {
+        res->values = values->clone();
+        res->children.push_back(res->values);
+    }
 
     return res;
 }
@@ -200,6 +205,46 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_ADD)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_DROP)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_MODIFY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_SUSPEND)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "SUSPEND " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_RESUME)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESUME " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_CHANNEL_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
+
+        values->formatImpl(settings, state, frame);
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -252,7 +297,12 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+    if (is_live_view)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
+    else if (is_live_channel)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE CHANNEL " << (settings.hilite ? hilite_none : "");
+    else
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
     if (!table.empty())
     {
