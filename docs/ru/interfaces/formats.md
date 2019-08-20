@@ -407,7 +407,7 @@ INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i
 }
 ```
 
-Без этой установки ClickHouse генерирует исключение.
+Без этой настройки ClickHouse сгенерирует исключение.
 
 ```sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
