@@ -37,9 +37,9 @@ You can also download and install packages manually from here: <https://repo.yan
 
 ### From RPM Packages
 
-Yandex ClickHouse team recommends using official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based distributions.
+Yandex ClickHouse team recommends using official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
 
-First you need to add our repository:
+First you need to add the official repository:
 
 ```bash
 sudo yum install yum-utils
