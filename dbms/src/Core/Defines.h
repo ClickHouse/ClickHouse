@@ -96,6 +96,7 @@
 #endif
 
 /// Check for presence of address sanitizer
+#if !defined(ADDRESS_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer)
         #define ADDRESS_SANITIZER 1
@@ -103,7 +104,9 @@
 #elif defined(__SANITIZE_ADDRESS__)
     #define ADDRESS_SANITIZER 1
 #endif
+#endif
 
+#if !defined(THREAD_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(thread_sanitizer)
         #define THREAD_SANITIZER 1
@@ -111,13 +114,16 @@
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
 #endif
+#endif
 
+#if !defined(MEMORY_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(memory_sanitizer)
         #define MEMORY_SANITIZER 1
     #endif
 #elif defined(__MEMORY_SANITIZER__)
     #define MEMORY_SANITIZER 1
+#endif
 #endif
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.

@@ -172,7 +172,7 @@
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
-    M(QueryProfilerCannotWriteTrace, "Number of stack traces dropped by query profiler because pipe is full or cannot write to pipe.") \
+    M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
 
 namespace ProfileEvents

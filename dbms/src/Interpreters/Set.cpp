@@ -320,13 +320,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         return res;
     }
 
-    if (data_types.size() != num_key_columns)
-    {
-        std::stringstream message;
-        message << "Number of columns in section IN doesn't match. "
-            << num_key_columns << " at left, " << data_types.size() << " at right.";
-        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-    }
+    checkColumnsNumber(num_key_columns);
 
     /// Remember the columns we will work with. Also check that the data types are correct.
     ColumnRawPtrs key_columns;
@@ -337,11 +331,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
-            throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-                + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
-                " on the left.", ErrorCodes::TYPE_MISMATCH);
-
+        checkTypesEqual(i, block.safeGetByPosition(i).type);
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back() = materialized_columns.back().get();
     }
@@ -421,6 +411,24 @@ void Set::executeOrdinary(
     }
 }
 
+void Set::checkColumnsNumber(size_t num_key_columns) const
+{
+    if (data_types.size() != num_key_columns)
+    {
+        std::stringstream message;
+        message << "Number of columns in section IN doesn't match. "
+                << num_key_columns << " at left, " << data_types.size() << " at right.";
+        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+    }
+}
+
+void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
+{
+    if (!removeNullable(data_types[set_type_idx])->equals(*removeNullable(other_type)))
+        throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
+                        + data_types[set_type_idx]->getName() + " on the right, " + other_type->getName() +
+                        " on the left.", ErrorCodes::TYPE_MISMATCH);
+}
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
     : indexes_mapping(std::move(index_mapping_))
