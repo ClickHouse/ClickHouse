@@ -385,7 +385,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this function with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
