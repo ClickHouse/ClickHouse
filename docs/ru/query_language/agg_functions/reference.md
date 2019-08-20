@@ -703,7 +703,7 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 **Пример**
 
-Входная таблица:
+Таблица с исходными данными:
 
 ```sql
 CREATE TABLE t
