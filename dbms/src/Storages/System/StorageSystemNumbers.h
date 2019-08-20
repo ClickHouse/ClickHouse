@@ -38,11 +38,14 @@ public:
 private:
     const std::string name;
     bool multithreaded;
+    bool bool even_distribution;
     std::optional<UInt64> limit;
     UInt64 offset;
 
 protected:
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0);
+    /// If even_distribution is true, numbers are distributed evenly between streams.
+    /// Otherwise, streams concurrently increment atomic.
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, bool even_distribution_ = true);
 };
 
 }
