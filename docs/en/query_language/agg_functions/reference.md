@@ -871,7 +871,7 @@ Otherwise, the result of a calculation is rounded to the value, multiple of 16 m
 - `level` — Quantile level. Range: [0, 1].
 - `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type.
     
-    - When passing negative values to the function, the behavior is undefined.
+    - If negative values are passed to the function, the behavior is undefined.
     - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 **Returned value**
