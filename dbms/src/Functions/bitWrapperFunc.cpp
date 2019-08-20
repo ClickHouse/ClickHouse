@@ -4,6 +4,10 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int BAD_CAST;
+    }
 
     /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     /// This function wraps bool atomic functions
@@ -15,7 +19,9 @@ namespace DB
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
-            return a == static_cast<UInt8>(0) ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
+            if constexpr (!std::is_integral_v<A>)
+                throw DB::Exception("It's a bug! Only integer types are supported by __bitWrapperFunc.", ErrorCodes::BAD_CAST);
+            return a == 0 ? static_cast<ResultType>(0b10) : static_cast<ResultType >(0b1);
         }
 
 #if USE_EMBEDDED_COMPILER

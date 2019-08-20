@@ -4,6 +4,10 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int BAD_CAST;
+    }
 
     /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     /// This function provides "NOT" operation for BoolMasks by swapping last two bits ("can be true" <-> "can be false").
@@ -14,6 +18,8 @@ namespace DB
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {
+            if constexpr (!std::is_same_v<A, ResultType>)
+                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_CAST);
             return static_cast<ResultType>(
                     ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
         }

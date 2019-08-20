@@ -4,6 +4,10 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int BAD_CAST;
+    }
 
     /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     /// This function provides "AND" operation for BoolMasks.
@@ -17,6 +21,8 @@ namespace DB
         template <typename Result = ResultType>
         static inline Result apply(A left, B right)
         {
+            if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
+                throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskAnd.", ErrorCodes::BAD_CAST);
             return static_cast<ResultType>(
                     ((static_cast<ResultType>(left) & static_cast<ResultType>(right)) & 1)
                     | ((((static_cast<ResultType>(left) >> 1) | (static_cast<ResultType>(right) >> 1)) & 1) << 1));

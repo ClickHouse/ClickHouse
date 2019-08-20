@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
@@ -16,12 +17,15 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 public:
     IMergedBlockOutputStream(
         MergeTreeData & storage_,
+        const String & part_path_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
         CompressionCodecPtr default_codec_,
         size_t aio_threshold_,
         bool blocks_are_granules_size_,
-        const MergeTreeIndexGranularity & index_granularity_);
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const MergeTreeIndexGranularity & index_granularity_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -117,9 +121,14 @@ protected:
         bool skip_offsets,
         DB::IDataType::SubstreamPath & path);
 
+    void initSkipIndices();
+    void calculateAndSerializeSkipIndices(const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows);
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 protected:
-
     MergeTreeData & storage;
+
+    SerializationStates serialization_states;
+    String part_path;
 
     ColumnStreams column_streams;
 
@@ -132,7 +141,9 @@ protected:
     size_t aio_threshold;
 
     size_t current_mark = 0;
+    size_t skip_index_mark = 0;
 
+    const bool can_use_adaptive_granularity;
     const std::string marks_file_extension;
     const bool blocks_are_granules_size;
 
@@ -140,6 +151,11 @@ protected:
 
     const bool compute_granularity;
     CompressionCodecPtr codec;
+
+    std::vector<MergeTreeIndexPtr> skip_indices;
+    std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
+    MergeTreeIndexAggregators skip_indices_aggregators;
+    std::vector<size_t> skip_index_filling;
 
     const bool with_final_mark;
 };
