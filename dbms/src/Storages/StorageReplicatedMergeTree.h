@@ -470,10 +470,15 @@ private:
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
+      *
+      * NOTE: This method must be called without table lock held.
+      * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
+      * TODO: There are wrong usages of this method that are not fixed yet.
       */
     void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
 
     /** Wait until the specified replica executes the specified action from the log.
+      * NOTE: See comment about locks above.
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
