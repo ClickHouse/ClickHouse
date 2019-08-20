@@ -77,6 +77,9 @@ protected:
 
         return std::make_shared<BaseFunctionToTypeName>(types, return_type);
     }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 };
 
 
