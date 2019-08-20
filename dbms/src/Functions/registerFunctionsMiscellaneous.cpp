@@ -6,6 +6,7 @@ namespace DB
 class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
+void registerFunctionCurrentUser(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
 void registerFunctionToTypeName(FunctionFactory &);
@@ -56,6 +57,7 @@ void registerFunctionConvertCharset(FunctionFactory &);
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
+    registerFunctionCurrentUser(factory);
     registerFunctionHostName(factory);
     registerFunctionVisibleWidth(factory);
     registerFunctionToTypeName(factory);

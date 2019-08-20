@@ -1,9 +1,7 @@
 #include <Formats/FormatFactory.h>
+#include "ProtobufRowOutputFormat.h"
 
-#include "config_formats.h"
 #if USE_PROTOBUF
-
-#include <Processors/Formats/Impl/ProtobufRowOutputFormat.h>
 
 #include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -25,8 +23,9 @@ namespace ErrorCodes
 ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
+    FormatFactory::WriteCallback callback,
     const FormatSchemaInfo & format_schema)
-    : IRowOutputFormat(header, out_)
+    : IRowOutputFormat(header, out_, callback)
     , data_types(header.getDataTypes())
     , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames())
 {
@@ -48,9 +47,14 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "Protobuf", [](WriteBuffer & buf, const Block & header, const Context & context, const FormatSettings &)
+        "Protobuf",
+        [](WriteBuffer & buf,
+           const Block & header,
+           const Context & context,
+           FormatFactory::WriteCallback callback,
+           const FormatSettings &)
         {
-            return std::make_shared<ProtobufRowOutputFormat>(buf, header, FormatSchemaInfo(context, "Protobuf"));
+            return std::make_shared<ProtobufRowOutputFormat>(buf, header, callback, FormatSchemaInfo(context, "Protobuf"));
         });
 }
 

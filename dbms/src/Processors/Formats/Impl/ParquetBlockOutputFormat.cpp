@@ -1,5 +1,4 @@
-#include "config_formats.h"
-#include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include "ParquetBlockOutputFormat.h"
 
 #if USE_PARQUET
 
@@ -424,7 +423,12 @@ void ParquetBlockOutputFormat::finalize()
 void registerOutputFormatProcessorParquet(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context & /*context*/, const FormatSettings & format_settings)
+        "Parquet",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const Context & /*context*/,
+           FormatFactory::WriteCallback,
+           const FormatSettings & format_settings)
         {
             auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
             /// TODO
