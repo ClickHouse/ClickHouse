@@ -7,7 +7,7 @@
 1. [Создайте таблицу для обучающей выборки](#create-a-table).
 1. [Вставьте данные в таблицу](#insert-the-data-to-the-table).
 1. [Настройте конфигурацию модели](#configure-the-model).
-1. [Протестируйте обученную модель](#test-the-trained-model)
+1. [Протестируйте обученную модель](#test-the-trained-model).
 
 ## Подготовка к работе {#before-you-start}
 
