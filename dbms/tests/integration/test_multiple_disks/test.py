@@ -28,39 +28,10 @@ def start_cluster():
     try:
         cluster.start()
 
-        # for node in [node1, node2]:
-        #     node.query('''
-        #     CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        #     ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
-        #         '''.format(replica=node.name))
-        #
-        # node1.query('''
-        #     CREATE TABLE non_replicated_mt(date Date, id UInt32, value Int32)
-        #     ENGINE = MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id;
-        # ''')
-
         yield cluster
 
     finally:
         cluster.shutdown()
-
-
-# Check that configuration is valid
-def test_config_parser(start_cluster):
-    assert node1.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
-    assert node2.query("select name, path, keep_free_space from system.disks") == "default\t/var/lib/clickhouse/data/\t1000\nexternal\t/external/\t0\njbod1\t/jbod1/\t10000000\njbod2\t/jbod2/\t10000000\n"
-    assert node1.query("select * from system.storage_policies") == "" \
-               "default\tdefault\t0\t['default']\t18446744073709551615\n" \
-               "default_disk_with_external\tsmall\t0\t['default']\t2000000\n" \
-               "default_disk_with_external\tbig\t1\t['external']\t20000000\n" \
-               "jbods_with_external\tmain\t0\t['jbod1','jbod2']\t10000000\n" \
-               "jbods_with_external\texternal\t1\t['external']\t18446744073709551615\n"
-    assert node2.query("select * from system.storage_policies") == "" \
-               "default\tdefault\t0\t['default']\t18446744073709551615\n" \
-               "default_disk_with_external\tsmall\t0\t['default']\t2000000\n" \
-               "default_disk_with_external\tbig\t1\t['external']\t20000000\n" \
-               "jbods_with_external\tmain\t0\t['jbod1','jbod2']\t10000000\n" \
-               "jbods_with_external\texternal\t1\t['external']\t18446744073709551615\n"
 
 
 def get_random_string(length):
@@ -69,79 +40,89 @@ def get_random_string(length):
 def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' order by modification_time".format(table_name)).strip().split('\n')
 
-def test_round_robin(start_cluster):
+@pytest.mark.parametrize("name,engine", [
+    ("mt_on_jbod","MergeTree()"),
+    ("replicated_mt_on_jbod","ReplicatedMergeTree('/clickhouse/replicated_mt_on_jbod', '1')",),
+])
+def test_round_robin(start_cluster, name, engine):
     try:
         node1.query("""
-            CREATE TABLE mt_on_jbod (
+            CREATE TABLE {name} (
                 d UInt64
-            ) ENGINE = MergeTree()
+            ) ENGINE = {engine}
             ORDER BY d
             SETTINGS storage_policy_name='jbods_with_external'
-        """)
+        """.format(name=name, engine=engine))
 
         # first should go to the jbod1
-        node1.query("insert into mt_on_jbod select * from numbers(10000)")
-        used_disk = get_used_disks_for_table(node1, 'mt_on_jbod')
+        node1.query("insert into {} select * from numbers(10000)".format(name))
+        used_disk = get_used_disks_for_table(node1, name)
         assert len(used_disk) == 1, 'More than one disk used for single insert'
-        assert used_disk[0] == 'jbod1', 'First disk should by jbod1'
 
-        node1.query("insert into mt_on_jbod select * from numbers(10000)")
-        used_disks = get_used_disks_for_table(node1, 'mt_on_jbod')
+        node1.query("insert into {} select * from numbers(10000, 10000)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
 
         assert len(used_disks) == 2, 'Two disks should be used for two parts'
-        assert used_disks[0] == 'jbod1'
-        assert used_disks[1] == 'jbod2'
+        assert used_disks[0] != used_disks[1], "Should write to different disks"
 
-        node1.query("insert into mt_on_jbod select * from numbers(10000)")
-        used_disks = get_used_disks_for_table(node1, 'mt_on_jbod')
+        node1.query("insert into {} select * from numbers(20000, 10000)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
 
+        # jbod1 -> jbod2 -> jbod1 -> jbod2 ... etc
         assert len(used_disks) == 3
-        assert used_disks[0] == 'jbod1'
-        assert used_disks[1] == 'jbod2'
-        assert used_disks[2] == 'jbod1'
+        assert used_disks[0] != used_disks[1]
+        assert used_disks[2] == used_disks[0]
     finally:
-        node1.query("DROP TABLE IF EXISTS mt_ob_jbod")
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
 
-def test_max_data_part_size(start_cluster):
+@pytest.mark.parametrize("name,engine", [
+    ("mt_with_huge_part","MergeTree()"),
+    ("replicated_mt_with_huge_part","ReplicatedMergeTree('/clickhouse/replicated_mt_with_huge_part', '1')",),
+])
+def test_max_data_part_size(start_cluster, name, engine):
     try:
         node1.query("""
-            CREATE TABLE mt_with_huge_part (
+            CREATE TABLE {name} (
                 s1 String
-            ) ENGINE = MergeTree()
+            ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy_name='jbods_with_external'
-        """)
+        """.format(name=name, engine=engine))
         data = [] # 10MB in total
         for i in range(10):
             data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO mt_with_huge_part VALUES {}".format(','.join(["('" + x + "')" for x in data])))
-        used_disks = get_used_disks_for_table(node1, 'mt_with_huge_part')
+        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        used_disks = get_used_disks_for_table(node1, name)
         assert len(used_disks) == 1
         assert used_disks[0] == 'external'
     finally:
-        node1.query("DROP TABLE IF EXISTS mt_with_huge_part")
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
 
-def test_jbod_overflow(start_cluster):
+@pytest.mark.parametrize("name,engine", [
+    ("mt_with_overflow","MergeTree()"),
+    ("replicated_mt_with_overflow","ReplicatedMergeTree('/clickhouse/replicated_mt_with_overflow', '1')",),
+])
+def test_jbod_overflow(start_cluster, name, engine):
     try:
         node1.query("""
-            CREATE TABLE mt_with_overflow (
+            CREATE TABLE {name} (
                 s1 String
-            ) ENGINE = MergeTree()
+            ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy_name='small_jbod_with_external'
-        """)
-        data = [] # 5MB in total
-        for i in range(5):
-            data.append(get_random_string(1024 * 1024)) # 1MB row
+        """.format(name=name, engine=engine))
 
         node1.query("SYSTEM STOP MERGES")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
-            node1.query("INSERT INTO mt_with_overflow VALUES {}".format(','.join(["('" + x + "')" for x in data])))
+            data = [] # 5MB in total
+            for i in range(5):
+                data.append(get_random_string(1024 * 1024)) # 1MB row
+            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
-        used_disks = get_used_disks_for_table(node1, 'mt_with_overflow')
+        used_disks = get_used_disks_for_table(node1, name)
         assert all(disk == 'jbod1' for disk in used_disks)
 
         # should go to the external disk (jbod is overflown)
@@ -149,25 +130,30 @@ def test_jbod_overflow(start_cluster):
         for i in range(10):
             data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO mt_with_overflow VALUES {}".format(','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
-        used_disks = get_used_disks_for_table(node1, 'mt_with_overflow')
+        used_disks = get_used_disks_for_table(node1, name)
 
+        print used_disks
         assert used_disks[-1] == 'external'
 
         node1.query("SYSTEM START MERGES")
-        node1.query("OPTIMIZE TABLE mt_with_overflow FINAL")
+        time.sleep(1)
 
-        disks_for_merges = node1.query("SELECT disk_name FROM system.parts WHERE table == 'mt_with_overflow' AND level >= 1 ORDER BY modification_time").strip().split('\n')
+        node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+        time.sleep(2)
+
+        disks_for_merges = node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 ORDER BY modification_time".format(name)).strip().split('\n')
+        print disks_for_merges
 
         assert all(disk == 'external' for disk in disks_for_merges)
 
     finally:
-        node1.query("DROP TABLE IF EXISTS mt_with_overflow")
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 @pytest.mark.parametrize("name,engine", [
     ("moving_mt","MergeTree()"),
-    ("moving_replicated_mt","ReplicatedMergeTree('/clickhouse/sometable', '1')",),
+    ("moving_replicated_mt","ReplicatedMergeTree('/clickhouse/moving_replicated_mt', '1')",),
 ])
 def test_background_move(start_cluster, name, engine):
     try:
@@ -200,43 +186,42 @@ def test_background_move(start_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
-
-def test_default(start_cluster):
-    assert node1.query("create table node1_default_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d") == ""
-    assert node1.query("select storage_policy from system.tables where name == 'node1_default_mt'") == "default\n"
-    assert node1.query("insert into node1_default_mt values (1)") == ""
-    assert node1.query("select disk_name from system.parts where table == 'node1_default_mt'") == "default\n"
-
-
-def test_move(start_cluster):
-    node2.query("create table move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'")
-    node2.query("insert into move_mt values (1)")
-    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-
-    # move from default to external
-    node2.query("alter table move_mt move PART 'all_1_1_0' to disk 'external'")
-    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
-    time.sleep(5)
-    # Check that it really moved
-    node2.query("detach table move_mt")
-    node2.query("attach table move_mt")
-    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
-
-    # move back by volume small, that contains only 'default' disk
-    node2.query("alter table move_mt move PART 'all_1_1_0' to volume 'small'")
-    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-    time.sleep(5)
-    # Check that it really moved
-    node2.query("detach table move_mt")
-    node2.query("attach table move_mt")
-    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-
-
-def test_no_policy(start_cluster):
-    try:
-        node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
-    except Exception as e:
-        assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
+#def test_default(start_cluster):
+#    assert node1.query("create table node1_default_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d") == ""
+#    assert node1.query("select storage_policy from system.tables where name == 'node1_default_mt'") == "default\n"
+#    assert node1.query("insert into node1_default_mt values (1)") == ""
+#    assert node1.query("select disk_name from system.parts where table == 'node1_default_mt'") == "default\n"
+#
+#
+#def test_move(start_cluster):
+#    node2.query("create table move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'")
+#    node2.query("insert into move_mt values (1)")
+#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
+#
+#    # move from default to external
+#    node2.query("alter table move_mt move PART 'all_1_1_0' to disk 'external'")
+#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
+#    time.sleep(5)
+#    # Check that it really moved
+#    node2.query("detach table move_mt")
+#    node2.query("attach table move_mt")
+#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
+#
+#    # move back by volume small, that contains only 'default' disk
+#    node2.query("alter table move_mt move PART 'all_1_1_0' to volume 'small'")
+#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
+#    time.sleep(5)
+#    # Check that it really moved
+#    node2.query("detach table move_mt")
+#    node2.query("attach table move_mt")
+#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
+#
+#
+#def test_no_policy(start_cluster):
+#    try:
+#        node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
+#    except Exception as e:
+#        assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
 
 
 '''

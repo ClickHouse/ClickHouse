@@ -2204,8 +2204,6 @@ public:
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
 {
-
-    LOG_INFO(log, "Trying to move in replicated mt");
     std::optional<CurrentlyMovingPartsTagger> moving_tagger;
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
