@@ -2590,7 +2590,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     {
         parts.push_back(getActiveContainingPart(partition_id));
         if (!parts.back())
-            throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+            throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
@@ -2624,7 +2624,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     {
         parts.push_back(getActiveContainingPart(partition_id));
         if (!parts.back())
-            throw Exception("Part " + partition_id + " is not active", ErrorCodes::NO_SUCH_DATA_PART);
+            throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);

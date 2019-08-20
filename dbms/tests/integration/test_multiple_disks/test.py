@@ -27,7 +27,6 @@ node2 = cluster.add_instance('node2',
 def start_cluster():
     try:
         cluster.start()
-
         yield cluster
 
     finally:
@@ -184,6 +183,53 @@ def test_background_move(start_cluster, name, engine):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+@pytest.mark.parametrize("name,engine", [
+    ("altering_mt","MergeTree()"),
+    ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
+])
+def test_alter_move(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy_name='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d.startswith("jbod") for d in used_disks), "All writes shoud go to jbods"
+
+        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
+
+        node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+        assert disk == 'external'
+
+        node1.query("ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part))
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+        assert disk == 'jbod1'
+
+        node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
+        assert len(disks) == 2
+        assert all(d == "external" for d in disks)
+
+        node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
+        assert len(disks) == 2
+        assert all(d == "jbod2" for d in disks)
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
 
 
 #def test_default(start_cluster):
