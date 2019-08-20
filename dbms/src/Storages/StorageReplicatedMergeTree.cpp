@@ -2181,17 +2181,18 @@ public:
         : parts(std::move(parts_))
         , queue(queue_)
     {
-        MergeTreeData::DataParts data_parts;
+        MergeTreeData::DataPartsVector data_parts;
         /// Assume queue mutex is already locked, because this method is called from tryMoveParts.
         for (const auto & moving_part : parts)
-            data_parts.emplace(moving_part.part);
+            data_parts.emplace_back(moving_part.part);
 
         /// Throws exception if some parts already exists
-        queue.addVirtualParts(data_parts, true);
+        queue.disableMergesForParts(data_parts);
     }
 
     ~CurrentlyMovingPartsTagger()
     {
+        /// May return false, but we don't care, it's ok
         for (auto & part : parts)
             queue.removeFromVirtualParts(part.part->info);
     }
@@ -2206,19 +2207,24 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
     {
         auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-        MergeTreeMovingParts parts_to_move;
+        auto can_move = [this](const DataPartPtr & part, String *) -> bool
         {
-            /// Holds lock on queue until selection finished
-            ReplicatedMergeTreeMovePredicate can_move(queue);
+            return !queue.isVirtualPart(part);
+        };
 
-            if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-            {
-                LOG_INFO(log, "Nothing to move.");
-                return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-            }
+        MergeTreeMovingParts parts_to_move;
+        if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+
+        try
+        {
+            moving_tagger.emplace(std::move(parts_to_move), queue);
         }
-
-        moving_tagger.emplace(std::move(parts_to_move), queue);
+        catch (const DB::Exception & ex)
+        {
+            LOG_INFO(log, "Cannot start moving: " + ex.displayText());
+            return BackgroundProcessingPoolTaskResult::ERROR;
+        }
     }
 
     LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
@@ -2953,6 +2959,10 @@ void StorageReplicatedMergeTree::shutdown()
     if (queue_task_handle)
         global_context.getBackgroundPool().removeTask(queue_task_handle);
     queue_task_handle.reset();
+
+    if (move_parts_task_handle)
+        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
+    move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {

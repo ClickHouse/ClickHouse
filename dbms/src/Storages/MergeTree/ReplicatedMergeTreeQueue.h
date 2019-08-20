@@ -158,6 +158,8 @@ private:
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
+    /// Put a set of (already existing) parts in virtual_parts.
+    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -228,8 +230,6 @@ public:
 
     ~ReplicatedMergeTreeQueue();
 
-    /// Put a set of (already existing) parts in virtual_parts. TODO(MOVE TO PRIVATE)
-    void addVirtualParts(const MergeTreeData::DataParts & parts, bool throw_if_already_virtual=false);
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts);
@@ -326,6 +326,15 @@ public:
     /// after processing replication log up to log_pointer.
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
+
+    /// Prohibit merges for specified parts.
+    /// Add part to virtual_parts, which means that part must exist
+    /// after processing replication log up to log_pointer.
+    /// Throws exception if any part was in virtual parts
+    void disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts);
+
+    /// Cheks that part is already in virtual parts
+    bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
