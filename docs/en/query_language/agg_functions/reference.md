@@ -882,7 +882,7 @@ Type: `Float32`.
 
 If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
 
-The result is determinate (it doesn't depend on the order of query processing).
+The result is deterministic (it doesn't depend on the order of query processing).
 
 **Example**
 
