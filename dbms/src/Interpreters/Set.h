@@ -70,6 +70,9 @@ public:
     bool hasExplicitSetElements() const { return fill_set_elements; }
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
 
+    void checkColumnsNumber(size_t num_key_columns) const;
+    void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
+
 private:
     size_t keys_size = 0;
     Sizes key_sizes;
