@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/GatherUtils/IArraySink.h>
+#include "IArraySink.h"
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -196,8 +196,8 @@ struct NullableArraySink : public ArraySink
 
     NullMap & null_map;
 
-    NullableArraySink(ColumnArray & arr, NullMap & null_map, size_t column_size)
-            : ArraySink(arr, column_size), null_map(null_map)
+    NullableArraySink(ColumnArray & arr, NullMap & null_map_, size_t column_size)
+            : ArraySink(arr, column_size), null_map(null_map_)
     {
     }
 

@@ -110,11 +110,17 @@
         <table>query_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
-    <dictionaries_config>dictionaries/dictionary_*.xml</dictionaries_config>
+    <dictionaries_config>*_dictionary.xml</dictionaries_config>
     <compression incl="clickhouse_compression">
     </compression>
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
     <format_schema_path>/tmp/clickhouse/data/format_schemas/</format_schema_path>
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
 </yandex>

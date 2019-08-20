@@ -10,7 +10,8 @@ namespace DB
 
 NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 {
-    return {
+    return
+    {
         {"cluster", std::make_shared<DataTypeString>()},
         {"shard_num", std::make_shared<DataTypeUInt32>()},
         {"shard_weight", std::make_shared<DataTypeUInt32>()},
@@ -48,7 +49,8 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
                 res_columns[i++]->insert(shard_info.weight);
                 res_columns[i++]->insert(replica_index + 1);
                 res_columns[i++]->insert(address.host_name);
-                res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
+                auto resolved = address.getResolvedAddress();
+                res_columns[i++]->insert(resolved ? resolved->host().toString() : String());
                 res_columns[i++]->insert(address.port);
                 res_columns[i++]->insert(shard_info.isLocal());
                 res_columns[i++]->insert(address.user);

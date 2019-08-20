@@ -15,7 +15,90 @@
 
 ## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
 
-Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+Converts `value` to the [Decimal](../../data_types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+
+## toDecimal(32|64|128)OrNull
+
+Converts an input string to a [Nullable(Decimal(P,S))](../../data_types/decimal.md) data type value. This family of functions include:
+
+- `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
+- `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
+- `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
+
+These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
+
+**Parameters**
+
+- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+- `S` — Scale, the number of decimal places in the resulting value.
+
+**Returned value**
+
+A value in the `Nullable(Decimal(P,S))` data type. The value contains:
+
+- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+- `NULL`, if ClickHouse can't interpret the input string as a number or if the input number contains more than `S` decimal places.
+
+**Examples**
+
+```sql
+SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val)
+```
+```text
+┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.11100 │ Nullable(Decimal(9, 5))                            │
+└──────────┴────────────────────────────────────────────────────┘
+```
+```sql
+SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
+```
+```text
+┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
+│ ᴺᵁᴸᴸ │ Nullable(Decimal(9, 2))                            │
+└──────┴────────────────────────────────────────────────────┘
+```
+
+
+## toDecimal(32|64|128)OrZero
+
+Converts an input value to the [Decimal(P,S)](../../data_types/decimal.md) data type. This family of functions include:
+
+- `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
+- `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
+- `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
+
+These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
+
+**Parameters**
+
+- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+- `S` — Scale, the number of decimal places in the resulting value.
+
+**Returned value**
+
+A value in the `Nullable(Decimal(P,S))` data type. The value contains:
+
+- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+- 0 with `S` decimal places, if ClickHouse can't interpret the input string as a number or if the input number contains more than `S` decimal places.
+
+**Example**
+
+```sql
+SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val)
+```
+```text
+┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.11100 │ Decimal(9, 5)                                      │
+└──────────┴────────────────────────────────────────────────────┘
+```
+```sql
+SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val)
+```
+```text
+┌──val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 2))─┐
+│ 0.00 │ Decimal(9, 2)                                      │
+└──────┴────────────────────────────────────────────────────┘
+```
 
 ## toString
 
@@ -97,7 +180,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
 
-## reinterpretAsString
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 

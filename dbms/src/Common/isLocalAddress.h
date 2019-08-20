@@ -23,9 +23,7 @@ namespace DB
      * - the routing rules that affect which network interface we go to the specified address are not checked.
      */
     bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port);
-
     bool isLocalAddress(const Poco::Net::SocketAddress & address);
-
     bool isLocalAddress(const Poco::Net::IPAddress & address);
 
     /// Returns number of different bytes in hostnames, used for load balancing

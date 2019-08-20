@@ -236,6 +236,9 @@ void Compiler::compile(
             " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
             " -fdiagnostics-color=never"
 
+            /// Do not use libgcc and startup files. The library will work nevertheless and we avoid extra dependency.
+            " -nodefaultlibs -nostartfiles"
+
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             /// To get correct order merge this results carefully:
             /// echo | clang -x c++ -E -Wp,-v -
@@ -262,8 +265,8 @@ void Compiler::compile(
             " -I " << compiler_headers << "/dbms/src/"
             " -isystem " << compiler_headers << "/contrib/cityhash102/include/"
             " -isystem " << compiler_headers << "/contrib/libpcg-random/include/"
-        #if USE_LFALLOC
-            " -isystem " << compiler_headers << "/contrib/lfalloc/src/"
+        #if USE_MIMALLOC
+            " -isystem " << compiler_headers << "/contrib/mimalloc/include/"
         #endif
             " -isystem " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
             " -isystem " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR

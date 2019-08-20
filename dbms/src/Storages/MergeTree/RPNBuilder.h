@@ -4,7 +4,6 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -24,10 +23,7 @@ public:
     using AtomFromASTFunc = std::function<
             bool(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)>;
 
-    RPNBuilder(
-        const SelectQueryInfo & query_info,
-        const Context & context_,
-        const AtomFromASTFunc & atomFromAST_)
+    RPNBuilder(const SelectQueryInfo & query_info, const Context & context_, const AtomFromASTFunc & atomFromAST_)
         : context(context_), atomFromAST(atomFromAST_)
     {
         /** Evaluation of expressions that depend only on constants.

@@ -1,21 +1,19 @@
-DROP TABLE IF EXISTS test.src;
-DROP TABLE IF EXISTS test.view_table;
-DROP TABLE IF EXISTS test.new_view_table;
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS view_table;
+DROP TABLE IF EXISTS new_view_table;
 
-CREATE TABLE test.src (x UInt8) ENGINE = Null;
+CREATE TABLE src (x UInt8) ENGINE = Null;
 
-USE test;
+CREATE MATERIALIZED VIEW view_table Engine = Memory AS SELECT * FROM src;
 
-CREATE MATERIALIZED VIEW test.view_table Engine = Memory AS SELECT * FROM test.src;
-
-INSERT INTO test.src VALUES (1), (2), (3);
-SELECT * FROM test.view_table ORDER BY x;
+INSERT INTO src VALUES (1), (2), (3);
+SELECT * FROM view_table ORDER BY x;
 
 --Check if we can rename the view and if we can still fetch datas
 
-RENAME TABLE test.view_table TO test.new_view_table;
-SELECT * FROM test.new_view_table ORDER BY x;
+RENAME TABLE view_table TO new_view_table;
+SELECT * FROM new_view_table ORDER BY x;
 
-DROP TABLE test.src;
-DROP TABLE IF EXISTS test.view_table;
-DROP TABLE IF EXISTS test.new_view_table;
+DROP TABLE src;
+DROP TABLE IF EXISTS view_table;
+DROP TABLE IF EXISTS new_view_table;

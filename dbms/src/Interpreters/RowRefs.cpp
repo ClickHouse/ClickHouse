@@ -27,7 +27,7 @@ void callWithType(AsofRowRefs::Type which, F && f)
     __builtin_unreachable();
 }
 
-} // namespace
+}
 
 
 AsofRowRefs::AsofRowRefs(Type type)

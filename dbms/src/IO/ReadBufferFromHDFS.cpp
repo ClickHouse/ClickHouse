@@ -1,11 +1,9 @@
-#include <Common/config.h>
+#include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-
-#include <IO/ReadBufferFromHDFS.h> // Y_IGNORE
 #include <IO/HDFSCommon.h>
 #include <Poco/URI.h>
-#include <hdfs/hdfs.h> // Y_IGNORE
+#include <hdfs/hdfs.h>
 
 
 namespace DB

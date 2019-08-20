@@ -1,5 +1,7 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufWriter.h"
 
 #include <cassert>
 #include <optional>
@@ -7,11 +9,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <boost/numeric/conversion/cast.hpp>
-#include <google/protobuf/descriptor.h> // Y_IGNORE
-#include <google/protobuf/descriptor.pb.h> // Y_IGNORE
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "ProtobufWriter.h"
 
 
 namespace DB
@@ -140,7 +141,8 @@ void ProtobufWriter::SimpleWriter::endMessage()
     size_t size_of_message = buffer.size() - num_bytes_skipped;
     writeVarint(size_of_message, out);
     for (const auto & piece : pieces)
-        out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
+        if (piece.end > piece.start)
+            out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
     buffer.clear();
     pieces.clear();
     num_bytes_skipped = 0;

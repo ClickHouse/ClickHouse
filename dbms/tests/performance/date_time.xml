@@ -1,5 +1,4 @@
 <test>
-    <name>Functions for working with date and time</name>
 
     <type>once</type>
 
@@ -13,13 +12,6 @@
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
-
-    <metrics>
-        <max_rows_per_second />
-        <max_bytes_per_second />
-        <avg_rows_per_second />
-        <avg_bytes_per_second />
-    </metrics>
 
     <substitutions>
        <substitution>

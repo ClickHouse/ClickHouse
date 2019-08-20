@@ -194,8 +194,7 @@ private:
     friend void rs_perf_test();
 
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
-    static constexpr size_t bytes_on_stack = 64;
-    using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using Array = DB::PODArrayWithStackMemory<T, 64>;
 
     size_t sample_count;
     size_t total_values = 0;

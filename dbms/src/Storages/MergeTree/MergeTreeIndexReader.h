@@ -11,10 +11,10 @@ class MergeTreeIndexReader
 {
 public:
     MergeTreeIndexReader(
-        MergeTreeIndexPtr index,
-        MergeTreeData::DataPartPtr part,
-        size_t marks_count,
-        const MarkRanges & all_mark_ranges);
+        MergeTreeIndexPtr index_,
+        MergeTreeData::DataPartPtr part_,
+        size_t marks_count_,
+        const MarkRanges & all_mark_ranges_);
 
     void seek(size_t mark);
 

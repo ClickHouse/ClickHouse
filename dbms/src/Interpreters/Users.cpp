@@ -11,7 +11,7 @@
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/SimpleCache.h>
+#include <common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
 #include <common/logger_useful.h>
@@ -278,12 +278,14 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
 {
     bool has_password = config.has(config_elem + ".password");
     bool has_password_sha256_hex = config.has(config_elem + ".password_sha256_hex");
+    bool has_password_double_sha1_hex = config.has(config_elem + ".password_double_sha1_hex");
 
-    if (has_password && has_password_sha256_hex)
-        throw Exception("Both fields 'password' and 'password_sha256_hex' are specified for user " + name + ". Must be only one of them.", ErrorCodes::BAD_ARGUMENTS);
+    if (has_password + has_password_sha256_hex + has_password_double_sha1_hex > 1)
+        throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex' is used to specify password for user " + name + ". Must be only one of them.",
+            ErrorCodes::BAD_ARGUMENTS);
 
-    if (!has_password && !has_password_sha256_hex)
-        throw Exception("Either 'password' or 'password_sha256_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
+    if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex)
+        throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
 
     if (has_password)
         password     = config.getString(config_elem + ".password");
@@ -294,6 +296,14 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
 
         if (password_sha256_hex.size() != 64)
             throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (has_password_double_sha1_hex)
+    {
+        password_double_sha1_hex = Poco::toLower(config.getString(config_elem + ".password_double_sha1_hex"));
+
+        if (password_double_sha1_hex.size() != 40)
+            throw Exception("password_double_sha1_hex for user " + name + " has length " + toString(password_double_sha1_hex.size()) + " but must be exactly 40 symbols.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     profile = config.getString(config_elem + ".profile");

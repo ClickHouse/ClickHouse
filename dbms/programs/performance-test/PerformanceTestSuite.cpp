@@ -4,11 +4,11 @@
 #include <regex>
 #include <thread>
 #include <memory>
+#include <filesystem>
 
 #include <port/unistd.h>
 #include <sys/stat.h>
 
-#include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
 #include <Poco/AutoPtr.h>
@@ -36,7 +36,7 @@
 #include "ReportBuilder.h"
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 namespace DB
@@ -72,10 +72,11 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const std::unordered_map<std::string, std::vector<size_t>> query_indexes_,
-        const ConnectionTimeouts & timeouts)
+        const ConnectionTimeouts & timeouts_)
         : connection(host_, port_, default_database_, user_,
-            password_, timeouts, "performance-test", Protocol::Compression::Enable,
+            password_, "performance-test", Protocol::Compression::Enable,
             secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable)
+        , timeouts(timeouts_)
         , tests_tags(std::move(tests_tags_))
         , tests_names(std::move(tests_names_))
         , tests_names_regexp(std::move(tests_names_regexp_))
@@ -88,6 +89,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
@@ -100,7 +102,7 @@ public:
         UInt64 version_minor;
         UInt64 version_patch;
         UInt64 version_revision;
-        connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
+        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
         ss << version_major << "." << version_minor << "." << version_patch;
@@ -115,6 +117,7 @@ public:
 
 private:
     Connection connection;
+    const ConnectionTimeouts & timeouts;
 
     const Strings & tests_tags;
     const Strings & tests_names;
@@ -195,15 +198,14 @@ private:
     {
         PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
+        PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
 
         if (current.checkPreconditions())
         {
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
             LOG_INFO(
                 log,
-                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
-                                           << " fill queries");
+                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
@@ -258,15 +260,12 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         if (input_files.empty())
             throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
-        else
-            LOG_INFO(log, "Found " << input_files.size() << " files");
     }
     else
     {
         input_files = options["input-files"].as<std::vector<std::string>>();
-        LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
-        std::vector<std::string> collected_files;
 
+        std::vector<std::string> collected_files;
         for (const std::string & filename : input_files)
         {
             fs::path file(filename);
@@ -288,6 +287,8 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         input_files = std::move(collected_files);
     }
+
+    LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
     std::sort(input_files.begin(), input_files.end());
     return input_files;
 }
@@ -322,7 +323,6 @@ try
 {
     using po::value;
     using Strings = DB::Strings;
-
 
     po::options_description desc("Allowed options");
     desc.add_options()

@@ -25,26 +25,30 @@ IStorage::IStorage(ColumnsDescription columns_)
     setColumns(std::move(columns_));
 }
 
+IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
+{
+    setColumns(std::move(columns_));
+}
+
+IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
+{
+    setColumns(std::move(columns_));
+    setIndices(std::move(indices_));
+}
+
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
 }
 
-void IStorage::setColumns(ColumnsDescription columns_)
+const ColumnsDescription & IStorage::getVirtuals() const
 {
-    if (columns_.getOrdinary().empty())
-        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    columns = std::move(columns_);
+    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
 {
     return indices;
-}
-
-void IStorage::setIndices(IndicesDescription indices_)
-{
-    indices = std::move(indices_);
 }
 
 NameAndTypePair IStorage::getColumn(const String & column_name) const
@@ -64,6 +68,16 @@ Block IStorage::getSampleBlock() const
     Block res;
 
     for (const auto & column : getColumns().getAllPhysical())
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
+Block IStorage::getSampleBlockWithVirtuals() const
+{
+    auto res = getSampleBlock();
+
+    for (const auto & column : getColumns().getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -142,9 +156,12 @@ namespace
     }
 }
 
-void IStorage::check(const Names & column_names) const
+void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
-    const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
+    if (include_virtuals)
+        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+
     const String list_of_columns = listOfColumns(available_columns);
 
     if (column_names.empty())
@@ -157,7 +174,7 @@ void IStorage::check(const Names & column_names) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + name + " in table. There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))
@@ -264,6 +281,29 @@ void IStorage::check(const Block & block, bool need_all) const
                 throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
+}
+
+void IStorage::setColumns(ColumnsDescription columns_)
+{
+    if (columns_.getOrdinary().empty())
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    columns = std::move(columns_);
+
+    for (const auto & column : virtuals)
+    {
+        if (!columns.has(column.name))
+            columns.add(column);
+    }
+}
+
+void IStorage::setIndices(IndicesDescription indices_)
+{
+    indices = std::move(indices_);
+}
+
+bool IStorage::isVirtualColumn(const String & column_name) const
+{
+    return getColumns().get(column_name).is_virtual;
 }
 
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)

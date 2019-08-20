@@ -62,7 +62,29 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 ## toValidUTF8
 
-Returns string where all invalid UTF-8 characters are replaced by replacement character `�` (U+FFFD). If there are many invalid characters subsequently, it is collapsed to one replacement character.
+Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
+
+```
+toValidUTF8( input_string )
+```
+
+Parameters:
+
+- input_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
+
+Returned value: Valid UTF-8 string.
+
+### Example
+
+```sql
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+```
+```text
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
+```
+
 
 ## reverse
 
@@ -142,5 +164,10 @@ Returns a string that removes the whitespace characters on right side.
 ## trimBoth(s)
 
 Returns a string that removes the whitespace characters on either side.
+
+## CRC32(s)
+
+Returns the CRC32 checksum of a string
+The result type is UInt32.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

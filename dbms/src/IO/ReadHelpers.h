@@ -426,6 +426,9 @@ template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -676,7 +679,7 @@ inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
-inline void readText(UInt128 &, ReadBuffer &)
+[[noreturn]] inline void readText(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
@@ -755,7 +758,7 @@ inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & se
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt128 &, ReadBuffer &)
+[[noreturn]] inline void readCSV(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.

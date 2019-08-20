@@ -246,9 +246,9 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
 ///
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -320,12 +320,27 @@ inline std::enable_if_t<IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDa
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
+    using ToNativeType = typename ToDataType::FieldType::NativeType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
         if (!std::isfinite(value))
             throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
-        return value * ToDataType::getScaleMultiplier(scale);
+
+        auto out = value * ToDataType::getScaleMultiplier(scale);
+        if constexpr (std::is_same_v<ToNativeType, Int128>)
+        {
+            static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+            static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+            if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
+                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        else
+        {
+            if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
+                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        return out;
     }
     else
     {

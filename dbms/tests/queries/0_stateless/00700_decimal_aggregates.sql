@@ -90,6 +90,8 @@ SELECT covarSamp(a, a), covarSamp(b, b), covarSamp(c, c) FROM decimal; -- { serv
 SELECT corr(a, a), corr(b, b), corr(c, c) FROM decimal; -- { serverError 43 }
 SELECT 1 LIMIT 0;
 
+DROP TABLE decimal;
+
 -- TODO: sumMap
 -- TODO: other quantile(s)
 -- TODO: groupArray, groupArrayInsertAt, groupUniqArray

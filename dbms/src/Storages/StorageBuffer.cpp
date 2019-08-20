@@ -55,17 +55,17 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription & columns_,
+StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
     : IStorage{columns_},
-    name(name_), global_context(context_),
+    table_name(table_name_), database_name(database_name_), global_context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + name + ")"))
+    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name + ")"))
 {
 }
 
@@ -692,7 +692,7 @@ void StorageBuffer::flushThread()
 }
 
 
-void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageBuffer::alter(const AlterCommands & params, const String & database_name_, const String & table_name_, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -702,7 +702,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
+    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 
@@ -741,6 +741,7 @@ void registerStorageBuffer(StorageFactory & factory)
         UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[8]->as<ASTLiteral &>().value);
 
         return StorageBuffer::create(
+            args.database_name,
             args.table_name, args.columns,
             args.context,
             num_buckets,

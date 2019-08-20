@@ -1,9 +1,12 @@
+#include "config_core.h"
+
 namespace DB
 {
 
 class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
+void registerFunctionCurrentUser(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
 void registerFunctionToTypeName(FunctionFactory &);
@@ -45,10 +48,16 @@ void registerFunctionJoinGet(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
+
+#if USE_ICU
+void registerFunctionConvertCharset(FunctionFactory &);
+#endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
+    registerFunctionCurrentUser(factory);
     registerFunctionHostName(factory);
     registerFunctionVisibleWidth(factory);
     registerFunctionToTypeName(factory);
@@ -90,6 +99,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionFilesystem(factory);
     registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);
+    registerFunctionTransform(factory);
+
+#if USE_ICU
+    registerFunctionConvertCharset(factory);
+#endif
 }
 
 }

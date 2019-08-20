@@ -111,7 +111,7 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
         {
             auto col = low_cardinality_type->createColumn();
             static_cast<ColumnLowCardinality &>(*col).insertRangeFromFullColumn(*column, 0, column->size());
-            return std::move(col);
+            return col;
         }
     }
 

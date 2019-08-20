@@ -30,7 +30,9 @@ public:
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
-    virtual Entry get(const Settings * settings = nullptr, bool force_connected = true) = 0;
+    virtual Entry get(const ConnectionTimeouts & timeouts,
+                      const Settings * settings = nullptr,
+                      bool force_connected = true) = 0;
 };
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
@@ -50,7 +52,6 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
-            const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
             Protocol::Secure secure_ = Protocol::Secure::Disable)
@@ -63,12 +64,13 @@ public:
         password(password_),
         client_name(client_name_),
         compression(compression_),
-        secure{secure_},
-        timeouts(timeouts)
+        secure{secure_}
     {
     }
 
-    Entry get(const Settings * settings = nullptr, bool force_connected = true) override
+    Entry get(const ConnectionTimeouts & timeouts,
+              const Settings * settings = nullptr,
+              bool force_connected = true) override
     {
         Entry entry;
         if (settings)
@@ -77,7 +79,7 @@ public:
             entry = Base::get(-1);
 
         if (force_connected)
-            entry->forceConnected();
+            entry->forceConnected(timeouts);
 
         return entry;
     }
@@ -93,7 +95,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, timeouts,
+            default_database, user, password,
             client_name, compression, secure);
     }
 
@@ -108,7 +110,6 @@ private:
     Protocol::Compression compression;        /// Whether to compress data when interacting with the server.
     Protocol::Secure secure;          /// Whether to encrypt data when interacting with the server.
 
-    ConnectionTimeouts timeouts;
 };
 
 }

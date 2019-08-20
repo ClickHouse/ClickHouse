@@ -92,7 +92,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             materialized_columns.push_back(full_column);
             columns.back() = full_column.get();
         }
-        if (auto * col_nullable = typeid_cast<const ColumnNullable *>(columns.back()))
+        if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
         {
             if (!null_map)
                 null_map = col_nullable->getNullMapColumnPtr();

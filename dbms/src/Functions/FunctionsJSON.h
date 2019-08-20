@@ -4,9 +4,10 @@
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
-#include <Common/config.h>
+#include "config_functions.h"
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -15,7 +16,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -64,7 +64,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_AVX2)
+        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
         {
             Executor<SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
             return;
@@ -120,11 +120,22 @@ private:
             /// prepare() does Impl-specific preparation before handling each row.
             impl.prepare(Name::name, block, arguments, result_pos);
 
+            bool json_parsed_ok = false;
+            if (col_json_const)
+            {
+                StringRef json{reinterpret_cast<const char *>(&chars[0]), offsets[0] - 1};
+                json_parsed_ok = parser.parse(json);
+            }
+
             for (const auto i : ext::range(0, input_rows_count))
             {
-                StringRef json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
-                bool ok = parser.parse(json);
+                if (!col_json_const)
+                {
+                    StringRef json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                    json_parsed_ok = parser.parse(json);
+                }
 
+                bool ok = json_parsed_ok;
                 if (ok)
                 {
                     auto it = parser.getRoot();
@@ -202,7 +213,7 @@ private:
                                         + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-                if (column.column->isColumnConst())
+                if (isColumnConst(*column.column))
                 {
                     const auto & column_const = static_cast<const ColumnConst &>(*column.column);
                     if (isString(column.type))

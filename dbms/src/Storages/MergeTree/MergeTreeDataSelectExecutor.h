@@ -52,7 +52,18 @@ private:
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        const SelectQueryInfo & query_info,
+        const Names & virt_columns,
+        const Settings & settings) const;
+
+    BlockInputStreams spreadMarkRangesAmongStreamsWithOrder(
+        RangesInDataParts && parts,
+        size_t num_streams,
+        const Names & column_names,
+        UInt64 max_block_size,
+        bool use_uncompressed_cache,
+        const SelectQueryInfo & query_info,
+        const ExpressionActionsPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings) const;
 
@@ -61,7 +72,7 @@ private:
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings) const;
 
@@ -84,7 +95,7 @@ private:
 
     MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index,
-        IndexConditionPtr condition,
+        MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings) const;

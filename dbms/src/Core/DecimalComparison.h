@@ -167,8 +167,8 @@ private:
 
         if constexpr (_actual)
         {
-            bool c0_is_const = c0->isColumnConst();
-            bool c1_is_const = c1->isColumnConst();
+            bool c0_is_const = isColumnConst(*c0);
+            bool c1_is_const = isColumnConst(*c1);
 
             if (c0_is_const && c1_is_const)
             {

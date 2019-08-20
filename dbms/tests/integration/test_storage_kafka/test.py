@@ -22,7 +22,6 @@ import kafka_pb2
 
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
-# TODO: add test for mat. view is working.
 # TODO: add test for SELECT LIMIT is working.
 # TODO: modify tests to respect `skip_broken_messages` setting.
 
@@ -62,10 +61,10 @@ def wait_kafka_is_available(max_retries=50):
             time.sleep(1)
 
 
-def kafka_produce(topic, messages):
+def kafka_produce(topic, messages, timestamp=None):
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
     for message in messages:
-        producer.send(topic=topic, value=message)
+        producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
     print ("Produced {} messages for topic {}".format(len(messages), topic))
 
@@ -86,8 +85,8 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
 
 # Since everything is async and shaky when receiving messages from Kafka,
 # we may want to try and check results multiple times in a loop.
-def  kafka_check_result(result, check=False):
-    fpath = p.join(p.dirname(__file__), 'test_kafka_json.reference')
+def  kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'):
+    fpath = p.join(p.dirname(__file__), ref_file)
     with open(fpath) as reference:
         if check:
             assert TSV(result) == TSV(reference)
@@ -123,6 +122,7 @@ def kafka_setup_teardown():
 
 # Tests
 
+@pytest.mark.timeout(60)
 def test_kafka_settings_old_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -137,24 +137,25 @@ def test_kafka_settings_old_syntax(kafka_cluster):
     kafka_produce('old', messages)
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_settings_new_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'new',
-                kafka_group_name = 'new',
-                kafka_format = 'JSONEachRow',
-                kafka_row_delimiter = '\\n',
-                kafka_skip_broken_messages = 1;
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'new',
+                     kafka_group_name = 'new',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n',
+                     kafka_skip_broken_messages = 1;
         ''')
 
     messages = []
@@ -172,23 +173,24 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_produce('new', messages)
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_csv_with_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'csv',
-                kafka_group_name = 'csv',
-                kafka_format = 'CSV',
-                kafka_row_delimiter = '\\n';
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'csv',
+                     kafka_group_name = 'csv',
+                     kafka_format = 'CSV',
+                     kafka_row_delimiter = '\\n';
         ''')
 
     messages = []
@@ -197,23 +199,24 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
     kafka_produce('csv', messages)
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_tsv_with_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'tsv',
-                kafka_group_name = 'tsv',
-                kafka_format = 'TSV',
-                kafka_row_delimiter = '\\n';
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'tsv',
+                     kafka_group_name = 'tsv',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
         ''')
 
     messages = []
@@ -222,22 +225,23 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
     kafka_produce('tsv', messages)
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_json_without_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'json',
-                kafka_group_name = 'json',
-                kafka_format = 'JSONEachRow';
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'json',
+                     kafka_group_name = 'json',
+                     kafka_format = 'JSONEachRow';
         ''')
 
     messages = ''
@@ -251,23 +255,24 @@ def test_kafka_json_without_delimiter(kafka_cluster):
     kafka_produce('json', [messages])
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_protobuf(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value String)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'pb',
-                kafka_group_name = 'pb',
-                kafka_format = 'Protobuf',
-                kafka_schema = 'kafka.proto:KeyValuePair';
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'pb',
+                     kafka_group_name = 'pb',
+                     kafka_format = 'Protobuf',
+                     kafka_schema = 'kafka.proto:KeyValuePair';
         ''')
 
     kafka_produce_protobuf_messages('pb', 0, 20)
@@ -275,25 +280,26 @@ def test_kafka_protobuf(kafka_cluster):
     kafka_produce_protobuf_messages('pb', 21, 29)
 
     result = ''
-    for i in range(50):
-        result += instance.query('SELECT * FROM test.kafka')
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
         if kafka_check_result(result):
             break
+
     kafka_check_result(result, True)
 
 
+@pytest.mark.timeout(60)
 def test_kafka_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'json',
-                kafka_group_name = 'json',
-                kafka_format = 'JSONEachRow',
-                kafka_row_delimiter = '\\n';
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'mv',
+                     kafka_group_name = 'mv',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
@@ -304,24 +310,73 @@ def test_kafka_materialized_view(kafka_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce('json', messages)
+    kafka_produce('mv', messages)
 
-    for i in range(20):
-        time.sleep(1)
+    while True:
         result = instance.query('SELECT * FROM test.view')
         if kafka_check_result(result):
             break
-    kafka_check_result(result, True)
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
 
+    kafka_check_result(result, True)
 
+
+@pytest.mark.timeout(60)
+def test_kafka_many_materialized_views(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view1;
+        DROP TABLE IF EXISTS test.view2;
+        DROP TABLE IF EXISTS test.consumer1;
+        DROP TABLE IF EXISTS test.consumer2;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'mmv',
+                     kafka_group_name = 'mmv',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view1 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
+            SELECT * FROM test.kafka;
+        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    kafka_produce('mmv', messages)
+
+    while True:
+        result1 = instance.query('SELECT * FROM test.view1')
+        result2 = instance.query('SELECT * FROM test.view2')
+        if kafka_check_result(result1) and kafka_check_result(result2):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer1;
+        DROP TABLE test.consumer2;
+        DROP TABLE test.view1;
+        DROP TABLE test.view2;
+    ''')
+
+    kafka_check_result(result1, True)
+    kafka_check_result(result2, True)
+
+
+@pytest.mark.timeout(300)
 def test_kafka_flush_on_big_message(kafka_cluster):
     # Create batchs of messages of size ~100Kb
-    kafka_messages = 10000
+    kafka_messages = 1000
     batch_messages = 1000
     messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(kafka_messages)]
     kafka_produce('flush', messages)
@@ -331,12 +386,11 @@ def test_kafka_flush_on_big_message(kafka_cluster):
         DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.kafka (key UInt64, value String)
             ENGINE = Kafka
-            SETTINGS
-                kafka_broker_list = 'kafka1:19092',
-                kafka_topic_list = 'flush',
-                kafka_group_name = 'flush',
-                kafka_format = 'JSONEachRow',
-                kafka_max_block_size = 10;
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'flush',
+                     kafka_group_name = 'flush',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 10;
         CREATE TABLE test.view (key UInt64, value String)
             ENGINE = MergeTree
             ORDER BY key;
@@ -356,13 +410,84 @@ def test_kafka_flush_on_big_message(kafka_cluster):
         except kafka.errors.GroupCoordinatorNotAvailableError:
             continue
 
-    for _ in range(20):
-        time.sleep(1)
+    while True:
         result = instance.query('SELECT count() FROM test.view')
         if int(result) == kafka_messages*batch_messages:
             break
 
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
     assert int(result) == kafka_messages*batch_messages, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(60)
+def test_kafka_virtual_columns(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'virt1',
+                     kafka_group_name = 'virt1',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    messages = ''
+    for i in range(25):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce('virt1', [messages], 0)
+
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce('virt1', [messages], 0)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT _key, key, _topic, value, _offset, _partition, _timestamp FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result, False, 'test_kafka_virtual1.reference'):
+            break
+
+    kafka_check_result(result, True, 'test_kafka_virtual1.reference')
+
+
+@pytest.mark.timeout(60)
+def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'virt2',
+                     kafka_group_name = 'virt2',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64, kafka_key String, topic String, offset UInt64, partition UInt64, timestamp Nullable(DateTime))
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT *, _key as kafka_key, _topic as topic, _offset as offset, _partition as partition, _timestamp as timestamp FROM test.kafka;
+    ''')
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    kafka_produce('virt2', messages, 0)
+
+    while True:
+        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view')
+        if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
 
 if __name__ == '__main__':

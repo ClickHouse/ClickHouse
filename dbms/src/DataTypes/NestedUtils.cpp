@@ -91,7 +91,7 @@ Block flatten(const Block & block)
                 const Strings & names = type_tuple->getElementNames();
                 size_t tuple_size = element_types.size();
 
-                bool is_const = elem.column->isColumnConst();
+                bool is_const = isColumnConst(*elem.column);
                 const ColumnArray * column_array;
                 if (is_const)
                     column_array = typeid_cast<const ColumnArray *>(&static_cast<const ColumnConst &>(*elem.column).getDataColumn());

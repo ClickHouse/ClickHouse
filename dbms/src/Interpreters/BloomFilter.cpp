@@ -1,5 +1,4 @@
 #include <Interpreters/BloomFilter.h>
-
 #include <city.h>
 
 
@@ -9,14 +8,13 @@ namespace DB
 static constexpr UInt64 SEED_GEN_A = 845897321;
 static constexpr UInt64 SEED_GEN_B = 217728422;
 
-
-StringBloomFilter::StringBloomFilter(size_t size_, size_t hashes_, size_t seed_)
+BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0) {}
 
-StringBloomFilter::StringBloomFilter(const StringBloomFilter & bloom_filter)
+BloomFilter::BloomFilter(const BloomFilter & bloom_filter)
     : size(bloom_filter.size), hashes(bloom_filter.hashes), seed(bloom_filter.seed), words(bloom_filter.words), filter(bloom_filter.filter) {}
 
-bool StringBloomFilter::find(const char * data, size_t len)
+bool BloomFilter::find(const char * data, size_t len)
 {
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
@@ -30,7 +28,7 @@ bool StringBloomFilter::find(const char * data, size_t len)
     return true;
 }
 
-void StringBloomFilter::add(const char * data, size_t len)
+void BloomFilter::add(const char * data, size_t len)
 {
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
@@ -42,12 +40,12 @@ void StringBloomFilter::add(const char * data, size_t len)
     }
 }
 
-void StringBloomFilter::clear()
+void BloomFilter::clear()
 {
     filter.assign(words, 0);
 }
 
-bool StringBloomFilter::contains(const StringBloomFilter & bf)
+bool BloomFilter::contains(const BloomFilter & bf)
 {
     for (size_t i = 0; i < words; ++i)
     {
@@ -57,7 +55,7 @@ bool StringBloomFilter::contains(const StringBloomFilter & bf)
     return true;
 }
 
-UInt64 StringBloomFilter::isEmpty() const
+UInt64 BloomFilter::isEmpty() const
 {
     for (size_t i = 0; i < words; ++i)
         if (filter[i] != 0)
@@ -65,12 +63,24 @@ UInt64 StringBloomFilter::isEmpty() const
     return true;
 }
 
-bool operator== (const StringBloomFilter & a, const StringBloomFilter & b)
+bool operator== (const BloomFilter & a, const BloomFilter & b)
 {
     for (size_t i = 0; i < a.words; ++i)
         if (a.filter[i] != b.filter[i])
             return false;
     return true;
+}
+
+void BloomFilter::addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed)
+{
+    size_t pos = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)) % (8 * size);
+    filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
+}
+
+bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed)
+{
+    size_t pos = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed)) % (8 * size);
+    return bool(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType)))));
 }
 
 }

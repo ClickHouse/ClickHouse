@@ -56,6 +56,8 @@
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 
+#define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
+
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
 
@@ -86,10 +88,11 @@
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
 
 #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
-//    #error PLATFORM_NOT_SUPPORTED
+    #error PLATFORM_NOT_SUPPORTED
 #endif
 
 /// Check for presence of address sanitizer
+#if !defined(ADDRESS_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer)
         #define ADDRESS_SANITIZER 1
@@ -97,13 +100,26 @@
 #elif defined(__SANITIZE_ADDRESS__)
     #define ADDRESS_SANITIZER 1
 #endif
+#endif
 
+#if !defined(THREAD_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(thread_sanitizer)
         #define THREAD_SANITIZER 1
     #endif
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
+#endif
+#endif
+
+#if !defined(MEMORY_SANITIZER)
+#if defined(__has_feature)
+    #if __has_feature(memory_sanitizer)
+        #define MEMORY_SANITIZER 1
+    #endif
+#elif defined(__MEMORY_SANITIZER__)
+    #define MEMORY_SANITIZER 1
+#endif
 #endif
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
@@ -112,10 +128,12 @@
 #if defined(__clang__)
     #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
     #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+    #define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #else
     /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
     #define NO_SANITIZE_UNDEFINED
     #define NO_SANITIZE_ADDRESS
+    #define NO_SANITIZE_THREAD
 #endif
 
 #if defined __GNUC__ && !defined __clang__
@@ -127,3 +145,12 @@
 /// This number is only used for distributed version compatible.
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+
+#if !__has_include(<sanitizer/asan_interface.h>)
+#   define ASAN_UNPOISON_MEMORY_REGION(a, b)
+#   define ASAN_POISON_MEMORY_REGION(a, b)
+#endif
+
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(...) (void)(__VA_ARGS__)

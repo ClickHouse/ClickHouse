@@ -20,6 +20,6 @@ if(MAKE_STATIC_LIBRARIES)
     list(APPEND glibc_compatibility_sources libcxxabi/cxa_thread_atexit.cpp)
 endif()
 
-add_library(glibc-compatibility ${glibc_compatibility_sources})
+add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)

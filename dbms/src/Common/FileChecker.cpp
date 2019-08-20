@@ -42,35 +42,40 @@ void FileChecker::update(const Files::const_iterator & begin, const Files::const
     save();
 }
 
-bool FileChecker::check() const
+CheckResults FileChecker::check() const
 {
     /** Read the files again every time you call `check` - so as not to violate the constancy.
         * `check` method is rarely called.
         */
+
+    CheckResults results;
     Map local_map;
     load(local_map, files_info_path);
 
     if (local_map.empty())
-        return true;
+        return {};
 
     for (const auto & name_size : local_map)
     {
-        Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + name_size.first);
+        Poco::Path path = Poco::Path(files_info_path).parent().toString() + "/" + name_size.first;
+        Poco::File file(path);
         if (!file.exists())
         {
-            LOG_ERROR(log, "File " << file.path() << " doesn't exist");
-            return false;
+            results.emplace_back(path.getFileName(), false, "File " + file.path() + " doesn't exist");
+            break;
         }
+
 
         size_t real_size = file.getSize();
         if (real_size != name_size.second)
         {
-            LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << name_size.second);
-            return false;
+            results.emplace_back(path.getFileName(), false, "Size of " + file.path() + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second));
+            break;
         }
+        results.emplace_back(path.getFileName(), true, "");
     }
 
-    return true;
+    return results;
 }
 
 void FileChecker::initialize()

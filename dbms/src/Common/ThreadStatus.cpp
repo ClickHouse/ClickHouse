@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 
 #include <Poco/Logger.h>
@@ -50,6 +51,19 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
+    try
+    {
+        if (untracked_memory > 0)
+            memory_tracker.alloc(untracked_memory);
+        else
+            memory_tracker.free(-untracked_memory);
+    }
+    catch (const DB::Exception &)
+    {
+        /// It's a minor tracked memory leak here (not the memory itself but it's counter).
+        /// We've already allocated a little bit more then the limit and cannot track it in the thread memory tracker or its parent.
+    }
+
     if (deleter)
         deleter();
     current_thread = nullptr;
@@ -117,7 +131,8 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
     throw Exception(ss.str(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue)
+void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                               LogsLevel client_logs_level)
 {
     logs_queue_ptr = logs_queue;
 
@@ -126,6 +141,7 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
 
     std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
+    thread_group->client_logs_level = client_logs_level;
 }
 
 }

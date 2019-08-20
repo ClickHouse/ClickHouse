@@ -16,7 +16,12 @@ list(APPEND dirs ${dirs1})
 get_property (dirs1 TARGET roaring PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
-if (USE_INTERNAL_BOOST_LIBRARY)
+if (TARGET double-conversion)
+    get_property (dirs1 TARGET double-conversion PROPERTY INCLUDE_DIRECTORIES)
+    list(APPEND dirs ${dirs1})
+endif ()
+
+if (TARGET ${Boost_PROGRAM_OPTIONS_LIBRARY})
     get_property (dirs1 TARGET ${Boost_PROGRAM_OPTIONS_LIBRARY} PROPERTY INCLUDE_DIRECTORIES)
     list(APPEND dirs ${dirs1})
 endif ()

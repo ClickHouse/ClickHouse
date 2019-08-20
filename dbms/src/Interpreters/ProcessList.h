@@ -203,7 +203,7 @@ struct ProcessListForUser
     ProcessListForUser();
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
-    using QueryToElement = std::unordered_multimap<String, QueryStatus *>;
+    using QueryToElement = std::unordered_map<String, QueryStatus *>;
     QueryToElement queries;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
@@ -315,6 +315,8 @@ public:
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+
+    void killAllQueries();
 };
 
 }

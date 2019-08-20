@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -216,6 +217,12 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
+void DataTypeAggregateFunction::deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const
+{
+    throw Exception("AggregateFunction data type cannot be read from text", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(serializeToString(function, column, row_num), ostr, settings);
@@ -359,7 +366,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row[i] = literal->value;
         }
     }
-    else if (auto opt_name = getIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
     {
         function_name = *opt_name;
     }

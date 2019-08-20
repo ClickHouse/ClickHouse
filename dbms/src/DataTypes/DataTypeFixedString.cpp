@@ -176,6 +176,12 @@ void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 }
 
 
+void DataTypeFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringInto(data, istr); });
+}
+
+
 void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);

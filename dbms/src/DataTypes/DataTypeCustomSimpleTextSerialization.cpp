@@ -23,13 +23,20 @@ static void deserializeFromString(const DataTypeCustomSimpleTextSerialization & 
     domain.deserializeText(column, istr, settings);
 }
 
-} // namespace
+}
 
 namespace DB
 {
 
 DataTypeCustomSimpleTextSerialization::~DataTypeCustomSimpleTextSerialization()
 {
+}
+
+void DataTypeCustomSimpleTextSerialization::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String str;
+    readString(str, istr);
+    deserializeFromString(*this, column, str, settings);
 }
 
 void DataTypeCustomSimpleTextSerialization::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -85,4 +92,4 @@ void DataTypeCustomSimpleTextSerialization::serializeTextXML(const IColumn & col
     writeXMLString(serializeToString(*this, column, row_num, settings), ostr);
 }
 
-} // namespace DB
+}

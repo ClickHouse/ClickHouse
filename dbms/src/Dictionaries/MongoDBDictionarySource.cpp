@@ -198,6 +198,7 @@ static std::string getDB(const std::string & uri)
 
 /** uri can be specified as an alternative to 'host', 'port' and, possibly, 'db'. */
 MongoDBDictionarySource::MongoDBDictionarySource(
+
     const DictionaryStructure & dict_struct,
     const std::string & host,
     UInt16 port,
@@ -219,6 +220,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , uri{uri}
     , sample_block{sample_block}
     , connection{getConnection(host, port, uri)}
+
 {
     if (uri.empty())
     {
@@ -234,11 +236,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 }
 
 MongoDBDictionarySource::MongoDBDictionarySource(
-    const DictionaryStructure & dict_struct,
+    const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block)
+    Block & sample_block_)
     : MongoDBDictionarySource(
+
           dict_struct,
           config.getString(config_prefix + ".host",""),
           config.getUInt(config_prefix + ".port",0),
@@ -247,7 +250,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
           config.getString(config_prefix + ".method", ""),
           config.getString(config_prefix + ".db", getDB(config.getString(config_prefix + ".uri", ""))),
           config.getString(config_prefix + ".collection"),
-	      config.getString(config_prefix + ".uri", ""),
+	        config.getString(config_prefix + ".uri", ""),
           sample_block)
 {
 }
@@ -331,27 +334,27 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
         {
             switch (attr.second.underlying_type)
             {
-                case AttributeUnderlyingType::UInt8:
-                case AttributeUnderlyingType::UInt16:
-                case AttributeUnderlyingType::UInt32:
-                case AttributeUnderlyingType::UInt64:
-                case AttributeUnderlyingType::UInt128:
-                case AttributeUnderlyingType::Int8:
-                case AttributeUnderlyingType::Int16:
-                case AttributeUnderlyingType::Int32:
-                case AttributeUnderlyingType::Int64:
-                case AttributeUnderlyingType::Decimal32:
-                case AttributeUnderlyingType::Decimal64:
-                case AttributeUnderlyingType::Decimal128:
+                case AttributeUnderlyingType::utUInt8:
+                case AttributeUnderlyingType::utUInt16:
+                case AttributeUnderlyingType::utUInt32:
+                case AttributeUnderlyingType::utUInt64:
+                case AttributeUnderlyingType::utUInt128:
+                case AttributeUnderlyingType::utInt8:
+                case AttributeUnderlyingType::utInt16:
+                case AttributeUnderlyingType::utInt32:
+                case AttributeUnderlyingType::utInt64:
+                case AttributeUnderlyingType::utDecimal32:
+                case AttributeUnderlyingType::utDecimal64:
+                case AttributeUnderlyingType::utDecimal128:
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
 
-                case AttributeUnderlyingType::Float32:
-                case AttributeUnderlyingType::Float64:
+                case AttributeUnderlyingType::utFloat32:
+                case AttributeUnderlyingType::utFloat64:
                     key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
                     break;
 
-                case AttributeUnderlyingType::String:
+                case AttributeUnderlyingType::utString:
                     String _str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
                     if (attr.second.is_object_id)

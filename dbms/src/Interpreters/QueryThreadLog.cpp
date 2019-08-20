@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/ClickHouseRevision.h>
@@ -44,11 +44,11 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
         {std::make_shared<DataTypeString>(),        "user"},
         {std::make_shared<DataTypeString>(),        "query_id"},
-        {std::make_shared<DataTypeFixedString>(16), "address"},
+        {DataTypeFactory::instance().get("IPv6"),   "address"},
         {std::make_shared<DataTypeUInt16>(),        "port"},
         {std::make_shared<DataTypeString>(),        "initial_user"},
         {std::make_shared<DataTypeString>(),        "initial_query_id"},
-        {std::make_shared<DataTypeFixedString>(16), "initial_address"},
+        {DataTypeFactory::instance().get("IPv6"),   "initial_address"},
         {std::make_shared<DataTypeUInt16>(),        "initial_port"},
         {std::make_shared<DataTypeUInt8>(),         "interface"},
         {std::make_shared<DataTypeString>(),        "os_user"},

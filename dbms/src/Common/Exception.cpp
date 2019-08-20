@@ -9,6 +9,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <common/demangle.h>
 #include <Common/config_version.h>
+#include <Common/formatReadable.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -19,6 +22,7 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 std::string errnoToString(int code, int e)
@@ -51,6 +55,11 @@ void throwFromErrno(const std::string & s, int code, int e)
     throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
 }
 
+void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
+{
+    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
+}
+
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
     tryLogCurrentException(&Logger::get(log_name), start_of_message);
@@ -67,7 +76,52 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace)
+void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+{
+    path = std::filesystem::absolute(path);
+    /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
+    /// So try to get info for existent parent directory.
+    while (!std::filesystem::exists(path) && path.has_relative_path())
+        path = path.parent_path();
+
+    auto fs = DiskSpaceMonitor::getStatVFS(path);
+    msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
+         + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
+         + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
+         + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
+
+    auto mount_point = DiskSpaceMonitor::getMountPoint(path).string();
+    msg += "\nMount point: " + mount_point;
+#if defined(__linux__)
+    msg += "\nFilesystem: " + DiskSpaceMonitor::getFilesystemName(mount_point);
+#endif
+}
+
+std::string getExtraExceptionInfo(const std::exception & e)
+{
+    String msg;
+    try
+    {
+        if (auto file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        {
+            if (file_exception->code() == ENOSPC)
+                getNoSpaceLeftInfoMessage(file_exception->message(), msg);
+        }
+        else if (auto errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
+        {
+            if (errno_exception->getErrno() == ENOSPC && errno_exception->getPath())
+                getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);
+        }
+    }
+    catch (...)
+    {
+        msg += "\nCannot print extra info: " + getCurrentExceptionMessage(false, false, false);
+    }
+
+    return msg;
+}
+
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
     std::stringstream stream;
 
@@ -77,7 +131,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace) << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
+               << (with_extra_info ? getExtraExceptionInfo(e) : "")
+               << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
     }
     catch (const Poco::Exception & e)
     {
@@ -85,7 +141,8 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+                << (with_extra_info ? getExtraExceptionInfo(e) : "")
+                << " (version " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }
@@ -99,7 +156,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what() << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
+                   << (with_extra_info ? getExtraExceptionInfo(e) : "")
+                   << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }

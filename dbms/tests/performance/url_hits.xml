@@ -1,5 +1,4 @@
 <test>
-    <name>url_hits</name>
     <type>loop</type>
 
     <preconditions>

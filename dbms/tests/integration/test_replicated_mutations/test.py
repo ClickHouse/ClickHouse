@@ -11,7 +11,8 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', with_zookeeper=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True)
+# Check, that limits on max part size for merges doesn`t affect mutations
+node2 = cluster.add_instance('node2', main_configs=["configs/merge_tree.xml"], with_zookeeper=True)
 nodes = [node1, node2]
 
 @pytest.fixture(scope="module")

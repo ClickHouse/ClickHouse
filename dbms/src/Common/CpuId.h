@@ -14,8 +14,9 @@ namespace DB
 namespace Cpu
 {
 
-#if defined(__x86_64__) || defined(__i386__)
-inline UInt64 _xgetbv(UInt32 xcr) noexcept
+#if (defined(__x86_64__) || defined(__i386__))
+/// Our version is independent of -mxsave option, because we do dynamic dispatch.
+inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 {
     UInt32 eax;
     UInt32 edx;
@@ -185,7 +186,7 @@ bool haveAVX() noexcept
     // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
     // https://bugs.chromium.org/p/chromium/issues/detail?id=375968
     return haveOSXSAVE()                           // implies haveXSAVE()
-           && (_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
+           && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
            && ((CpuInfo(0x1).ecx >> 28) & 1u); // AVX bit
 #else
     return false;
@@ -217,8 +218,8 @@ bool haveAVX512F() noexcept
 #if defined(__x86_64__) || defined(__i386__)
     // https://software.intel.com/en-us/articles/how-to-detect-knl-instruction-support
     return haveOSXSAVE()                           // implies haveXSAVE()
-           && (_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
-           && ((_xgetbv(0) >> 5) & 7u) == 7u       // ZMM state is enabled by OS
+           && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
+           && ((our_xgetbv(0) >> 5) & 7u) == 7u       // ZMM state is enabled by OS
            && CpuInfo(0x0).eax >= 0x7          // leaf 7 is present
            && ((CpuInfo(0x7).ebx >> 16) & 1u); // AVX512F bit
 #else

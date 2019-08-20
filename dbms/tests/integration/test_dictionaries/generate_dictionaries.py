@@ -52,32 +52,32 @@ def generate_structure():
 
 def generate_dictionaries(path, structure):
     dictionary_skeleton = '''
-    <dictionaries>
-        <dictionary>
-            <name>{name}</name>
+    <yandex>
+       <dictionary>
+           <name>{name}</name>
 
-            <source>
-                {source}
-            </source>
+           <source>
+               {source}
+           </source>
 
-            <lifetime>
-                <min>0</min>
-                <max>0</max>
-            </lifetime>
+           <lifetime>
+               <min>0</min>
+               <max>0</max>
+           </lifetime>
 
-            <layout>
-                {layout}
-            </layout>
+           <layout>
+               {layout}
+           </layout>
 
-            <structure>
-                {key}
+           <structure>
+               {key}
 
-                %s
+               %s
 
-                {parent}
-            </structure>
-        </dictionary>
-    </dictionaries>'''
+               {parent}
+           </structure>
+       </dictionary>
+    </yandex>'''
     attribute_skeleton = '''
     <attribute>
         <name>%s_</name>
@@ -183,7 +183,7 @@ def generate_dictionaries(path, structure):
     file_names = []
 
     # Add ready dictionaries.
-    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*.xml")))
+    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*")))
 
     # Generate dictionaries.
     for (name, key_idx, has_parent), (source, layout) in zip(structure, sources_and_layouts):

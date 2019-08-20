@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -36,11 +37,39 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     }
 }
 
+void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+{
+#if defined(POCO_CLICKHOUSE_PATCH)
+    if (headers_finished_sending)
+        return;
+
+    WriteBufferFromOwnString progress_string_writer;
+    accumulated_progress.writeJSON(progress_string_writer);
+
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+#endif
+}
+
+void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
+{
+#if defined(POCO_CLICKHOUSE_PATCH)
+    if (headers_finished_sending)
+        return;
+
+    WriteBufferFromOwnString progress_string_writer;
+    accumulated_progress.writeJSON(progress_string_writer);
+
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+#endif
+}
 
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
+        writeHeaderSummary();
         headers_finished_sending = true;
 
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
@@ -100,6 +129,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*deflating_buf;
                 }
+#if USE_BROTLI
                 else if (compression_method == CompressionMethod::Brotli)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
@@ -112,6 +142,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*brotli_buf;
                 }
+#endif
 
                 else
                     throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
@@ -174,13 +205,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
         /// Send all common headers before our special progress headers.
         startSendHeaders();
-
-        WriteBufferFromOwnString progress_string_writer;
-        accumulated_progress.writeJSON(progress_string_writer);
-
-#if defined(POCO_CLICKHOUSE_PATCH)
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
-#endif
+        writeHeaderProgress();
     }
 }
 

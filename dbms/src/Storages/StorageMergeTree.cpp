@@ -1,30 +1,27 @@
-#include <Databases/IDatabase.h>
+#include "StorageMergeTree.h"
 
+#include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
-#include <Common/localBackup.h>
-
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
-
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/queryToString.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-
 #include <optional>
 
 
@@ -44,6 +41,7 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -107,7 +105,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger_mutator.actions_blocker.cancelForever();
+    merger_mutator.merges_blocker.cancelForever();
     if (background_task_handle)
         background_pool.removeTask(background_task_handle);
 }
@@ -167,7 +165,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
         /// NOTE: It's assumed that this method is called under lockForAlter.
 
@@ -180,7 +178,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -188,6 +186,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     path = new_path_to_db;
     table_name = new_table_name;
+    database_name = new_database_name;
     full_path = new_full_path;
 
     /// NOTE: Logger names are not updated.
@@ -205,8 +204,8 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     const auto & columns_for_parts = new_columns.getAllPhysical();
 
-    const Settings & settings = context.getSettingsRef();
-    size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
+    const Settings & settings_ = context.getSettingsRef();
+    size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
     ThreadPool thread_pool(thread_pool_size);
 
 
@@ -254,7 +253,7 @@ void StorageMergeTree::alter(
     }
 
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -519,7 +518,7 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
             if (max_source_parts_size > 0)
                 selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
             else if (out_disable_reason)
@@ -532,7 +531,11 @@ bool StorageMergeTree::merge(
         }
 
         if (!selected)
+        {
+            if (out_disable_reason)
+                *out_disable_reason = "Cannot select parts for optimization";
             return false;
+        }
 
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
@@ -588,9 +591,13 @@ bool StorageMergeTree::merge(
 
     try
     {
+        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate);
+            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 
@@ -728,7 +735,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
     if (shutdown_called)
         return BackgroundProcessingPoolTaskResult::ERROR;
 
-    if (merger_mutator.actions_blocker.isCancelled())
+    if (merger_mutator.merges_blocker.isCancelled())
         return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
@@ -754,7 +761,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         else
             return BackgroundProcessingPoolTaskResult::ERROR;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
@@ -819,11 +826,11 @@ void StorageMergeTree::clearOldMutations()
 }
 
 
-void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
@@ -832,10 +839,6 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     std::vector<AlterDataPartTransactionPtr> transactions;
-
-    AlterCommand alter_command;
-    alter_command.type = AlterCommand::DROP_COLUMN;
-    alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
@@ -855,7 +858,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (transaction->isValid())
             transactions.push_back(std::move(transaction));
 
-        LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
+        if (alter_command.type == AlterCommand::DROP_COLUMN)
+            LOG_DEBUG(log, "Removing column " << alter_command.column_name << " from part " << part->name);
+        else if (alter_command.type == AlterCommand::DROP_INDEX)
+            LOG_DEBUG(log, "Removing index " << alter_command.index_name << " from part " << part->name);
     }
 
     if (transactions.empty())
@@ -888,8 +894,16 @@ bool StorageMergeTree::optimize(
         {
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
+                std::stringstream message;
+                message << "Cannot OPTIMIZE table";
+                if (!disable_reason.empty())
+                    message << ": " << disable_reason;
+                else
+                    message << " by some reason.";
+                LOG_INFO(log, message.rdbuf());
+
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
                 return false;
             }
         }
@@ -902,8 +916,16 @@ bool StorageMergeTree::optimize(
 
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
+            std::stringstream message;
+            message << "Cannot OPTIMIZE table";
+            if (!disable_reason.empty())
+                message << ": " << disable_reason;
+            else
+                message << " by some reason.";
+            LOG_INFO(log, message.rdbuf());
+
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
             return false;
         }
     }
@@ -943,8 +965,22 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                clearColumnInPartition(command.partition, command.column_name, context);
-                break;
+            {
+                AlterCommand alter_command;
+                alter_command.type = AlterCommand::DROP_COLUMN;
+                alter_command.column_name = get<String>(command.column_name);
+                clearColumnOrIndexInPartition(command.partition, alter_command, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_INDEX:
+            {
+                AlterCommand alter_command;
+                alter_command.type = AlterCommand::DROP_INDEX;
+                alter_command.index_name = get<String>(command.index_name);
+                clearColumnOrIndexInPartition(command.partition, alter_command, context);
+            }
+            break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
@@ -964,7 +1000,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
         auto lock = lockExclusively(context.getCurrentQueryId());
 
@@ -1063,6 +1099,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     for (const DataPartPtr & src_part : src_parts)
     {
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
@@ -1117,9 +1158,66 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return merger_mutator.actions_blocker.cancel();
+        return merger_mutator.merges_blocker.cancel();
+    else if (action_type == ActionLocks::PartsTTLMerge)
+        return  merger_mutator.ttl_merges_blocker.cancel();
 
     return {};
+}
+
+CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & context)
+{
+    CheckResults results;
+    DataPartsVector data_parts;
+    if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
+    {
+        String partition_id = getPartitionIDFromQuery(check_query.partition, context);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    }
+    else
+        data_parts = getDataPartsVector();
+
+    for (auto & part : data_parts)
+    {
+        String full_part_path = part->getFullPath();
+        /// If the checksums file is not present, calculate the checksums and write them to disk.
+        String checksums_path = full_part_path + "checksums.txt";
+        String tmp_checksums_path = full_part_path + "checksums.txt.tmp";
+        if (!Poco::File(checksums_path).exists())
+        {
+            try
+            {
+                auto calculated_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+                calculated_checksums.checkEqual(part->checksums, true);
+                WriteBufferFromFile out(tmp_checksums_path, 4096);
+                part->checksums.write(out);
+                Poco::File(tmp_checksums_path).renameTo(checksums_path);
+                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
+            }
+            catch (const Exception & ex)
+            {
+                Poco::File tmp_file(tmp_checksums_path);
+                if (tmp_file.exists())
+                    tmp_file.remove();
+
+                results.emplace_back(part->name, false,
+                    "Check of part finished with error: '" + ex.message() + "'");
+            }
+        }
+        else
+        {
+            try
+            {
+                checkDataPart(part, true, primary_key_data_types, skip_indices);
+                results.emplace_back(part->name, true, "");
+            }
+            catch (const Exception & ex)
+            {
+                results.emplace_back(part->name, false, ex.message());
+            }
+        }
+    }
+    return results;
 }
 
 }

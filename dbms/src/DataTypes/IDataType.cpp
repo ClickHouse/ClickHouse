@@ -142,121 +142,89 @@ void IDataType::insertDefaultInto(IColumn & column) const
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeTextEscaped(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeTextEscaped(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->deserializeTextEscaped(column, istr, settings);
-    }
     else
-    {
         deserializeTextEscaped(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeTextQuoted(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeTextQuoted(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->deserializeTextQuoted(column, istr, settings);
-    }
     else
-    {
         deserializeTextQuoted(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeTextCSV(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeTextCSV(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->deserializeTextCSV(column, istr, settings);
-    }
     else
-    {
         deserializeTextCSV(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeText(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeText(column, row_num, ostr, settings);
-    }
+}
+
+void IDataType::deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (custom_text_serialization)
+        custom_text_serialization->deserializeWholeText(column, istr, settings);
+    else
+        deserializeWholeText(column, istr, settings);
 }
 
 void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeTextJSON(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeTextJSON(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->deserializeTextJSON(column, istr, settings);
-    }
     else
-    {
         deserializeTextJSON(column, istr, settings);
-    }
 }
 
 void IDataType::serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)
-    {
         custom_text_serialization->serializeTextXML(column, row_num, ostr, settings);
-    }
     else
-    {
         serializeTextXML(column, row_num, ostr, settings);
-    }
 }
 
 void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const

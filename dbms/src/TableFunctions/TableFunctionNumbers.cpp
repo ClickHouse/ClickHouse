@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     if (const auto * function = ast_function->as<ASTFunction>())
     {
@@ -30,7 +30,7 @@ StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const 
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemNumbers::create(getName(), false, length, offset);
+        auto res = StorageSystemNumbers::create(table_name, false, length, offset);
         res->startup();
         return res;
     }

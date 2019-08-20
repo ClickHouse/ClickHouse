@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-
+#include "config_core.h"
 #if USE_EMBEDDED_COMPILER
 
 #include <Functions/IFunction.h>

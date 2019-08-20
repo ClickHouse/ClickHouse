@@ -1,6 +1,4 @@
 <test>
-    <name>Simple Join Query</name>
-
     <type>loop</type>
 
     <stop_conditions>

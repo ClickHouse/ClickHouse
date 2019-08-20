@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_core.h"
 #include <Parsers/IAST.h>
 
 
@@ -33,6 +33,8 @@ public:
         RELOAD_CONFIG,
         STOP_MERGES,
         START_MERGES,
+        STOP_TTL_MERGES,
+        START_TTL_MERGES,
         STOP_FETCHES,
         START_FETCHES,
         STOP_REPLICATED_SENDS,
@@ -40,6 +42,9 @@ public:
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
         FLUSH_LOGS,
+        FLUSH_DISTRIBUTED,
+        STOP_DISTRIBUTED_SENDS,
+        START_DISTRIBUTED_SENDS,
         END
     };
 

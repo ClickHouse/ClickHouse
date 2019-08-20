@@ -33,7 +33,6 @@ public:
 
     void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     bool isTableExist(
@@ -44,7 +43,7 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context) override;
+    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     bool empty(const Context & context) const override;
 
@@ -96,7 +95,7 @@ private:
 
     Poco::Logger * log;
 
-    Tables listTables(const Context & context);
+    Tables listTables(const Context & context, const FilterByNameFunction & filter_by_name);
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 

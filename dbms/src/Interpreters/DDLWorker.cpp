@@ -1,6 +1,9 @@
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -19,6 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
+#include <common/sleep.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -29,6 +33,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <random>
 #include <pcg_random.hpp>
@@ -200,16 +205,16 @@ static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
 
 static bool isSupportedAlterType(int type)
 {
-    static const std::unordered_set<int> supported_alter_types{
-        ASTAlterCommand::ADD_COLUMN,
-        ASTAlterCommand::DROP_COLUMN,
-        ASTAlterCommand::MODIFY_COLUMN,
-        ASTAlterCommand::DROP_PARTITION,
-        ASTAlterCommand::DELETE,
-        ASTAlterCommand::UPDATE,
+    static const std::unordered_set<int> unsupported_alter_types{
+        ASTAlterCommand::ATTACH_PARTITION,
+        ASTAlterCommand::REPLACE_PARTITION,
+        ASTAlterCommand::FETCH_PARTITION,
+        ASTAlterCommand::FREEZE_PARTITION,
+        ASTAlterCommand::FREEZE_ALL,
+        ASTAlterCommand::NO_TYPE,
     };
 
-    return supported_alter_types.count(type) != 0;
+    return unsupported_alter_types.count(type) == 0;
 }
 
 
@@ -502,8 +507,9 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
-                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
+            if (auto resolved = address.getResolvedAddress();
+                resolved && (isLocalAddress(*resolved, context.getTCPPort())
+                    || (context.getTCPPortSecure() && isLocalAddress(*resolved, *context.getTCPPortSecure()))))
             {
                 if (found_via_resolving)
                 {
@@ -614,14 +620,24 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             String rewritten_query = queryToString(rewritten_ast);
             LOG_DEBUG(log, "Executing query: " << rewritten_query);
 
-            if (const auto * ast_alter = rewritten_ast->as<ASTAlterQuery>())
+            if (auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
             {
-                processTaskAlter(task, ast_alter, rewritten_query, task.entry_path, zookeeper);
+                String database = query_with_table->database.empty() ? context.getCurrentDatabase() : query_with_table->database;
+                StoragePtr storage = context.tryGetTable(database, query_with_table->table);
+
+                /// For some reason we check consistency of cluster definition only
+                /// in case of ALTER query, but not in case of CREATE/DROP etc.
+                /// It's strange, but this behaviour exits for a long and we cannot change it.
+                if (storage && query_with_table->as<ASTAlterQuery>())
+                    checkShardConfig(query_with_table->table, task, storage);
+
+                if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage))
+                    tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
+                else
+                    tryExecuteQuery(rewritten_query, task, task.execution_status);
             }
             else
-            {
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
-            }
         }
         catch (const Coordination::Exception &)
         {
@@ -646,43 +662,52 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 }
 
 
-void DDLWorker::processTaskAlter(
-    DDLTask & task,
-    const ASTAlterQuery * ast_alter,
-    const String & rewritten_query,
-    const String & node_path,
-    const ZooKeeperPtr & zookeeper)
+bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage) const
 {
-    String database = ast_alter->database.empty() ? context.getCurrentDatabase() : ast_alter->database;
-    StoragePtr storage = context.getTable(database, ast_alter->table);
+    /// Pure DROP queries have to be executed on each node separately
+    if (auto query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
+        return false;
 
-    bool execute_once_on_replica = storage->supportsReplication();
-    bool execute_on_leader_replica = false;
+    if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
+        return false;
 
-    for (const auto & command : ast_alter->command_list->commands)
-    {
-        if (!isSupportedAlterType(command->type))
-            throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
+    return storage->supportsReplication();
+}
 
-        if (execute_once_on_replica)
-            execute_on_leader_replica |= command->type == ASTAlterCommand::DROP_PARTITION;
-    }
 
+void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const
+{
     const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
     bool config_is_replicated_shard = shard_info.hasInternalReplication();
 
-    if (execute_once_on_replica && !config_is_replicated_shard)
+    if (storage->supportsReplication() && !config_is_replicated_shard)
     {
-        throw Exception("Table " + ast_alter->table + " is replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table '" + table + "' is replicated, but shard #" + toString(task.host_shard_num + 1) +
             " isn't replicated according to its cluster definition."
             " Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
-    if (!execute_once_on_replica && config_is_replicated_shard)
+
+    if (!storage->supportsReplication() && config_is_replicated_shard)
     {
-        throw Exception("Table " + ast_alter->table + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table '" + table + "' isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
             " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
+}
+
+
+bool DDLWorker::tryExecuteQueryOnLeaderReplica(
+    DDLTask & task,
+    StoragePtr storage,
+    const String & rewritten_query,
+    const String & node_path,
+    const ZooKeeperPtr & zookeeper)
+{
+    StorageReplicatedMergeTree * replicated_storage = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
+
+    /// If we will develop new replicated storage
+    if (!replicated_storage)
+        throw Exception("Storage type '" + storage->getName() + "' is not supported by distributed DDL", ErrorCodes::NOT_IMPLEMENTED);
 
     /// Generate unique name for shard node, it will be used to execute the query by only single host
     /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
@@ -701,70 +726,73 @@ void DDLWorker::processTaskAlter(
         return res;
     };
 
-    if (execute_once_on_replica)
+    String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
+    String shard_path = node_path + "/shards/" + shard_node_name;
+    String is_executed_path = shard_path + "/executed";
+    zookeeper->createAncestors(shard_path + "/");
+
+    auto is_already_executed = [&]() -> bool
     {
-        String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
-        String shard_path = node_path + "/shards/" + shard_node_name;
-        String is_executed_path = shard_path + "/executed";
-        zookeeper->createAncestors(shard_path + "/");
-
-        bool is_executed_by_any_replica = false;
+        String executed_by;
+        if (zookeeper->tryGet(is_executed_path, executed_by))
         {
-            auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-            pcg64 rng(randomSeed());
+            LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by leader replica ("
+                << executed_by << ") of the same shard.");
+            return true;
+        }
 
-            auto is_already_executed = [&]() -> bool
+        return false;
+    };
+
+    pcg64 rng(randomSeed());
+
+    auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
+    static const size_t max_tries = 20;
+    bool executed_by_leader = false;
+    for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
+    {
+        if (is_already_executed())
+        {
+            executed_by_leader = true;
+            break;
+        }
+
+        StorageReplicatedMergeTree::Status status;
+        replicated_storage->getStatus(status);
+
+        /// Leader replica take lock
+        if (status.is_leader && lock->tryLock())
+        {
+            if (is_already_executed())
             {
-                String executed_by;
-                if (zookeeper->tryGet(is_executed_path, executed_by))
-                {
-                    is_executed_by_any_replica = true;
-                    LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by another replica ("
-                        << executed_by << ") of the same shard.");
-                    return true;
-                }
-
-                return false;
-            };
-
-            static const size_t max_tries = 20;
-            for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
-            {
-                if (is_already_executed())
-                    break;
-
-                if (lock->tryLock())
-                {
-                    if (is_already_executed())
-                        break;
-
-                    tryExecuteQuery(rewritten_query, task, task.execution_status);
-
-                    if (execute_on_leader_replica && task.execution_status.code == ErrorCodes::NOT_IMPLEMENTED)
-                    {
-                        /// TODO: it is ok to receive exception "host is not leader"
-                    }
-
-                    zookeeper->create(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
-                    lock->unlock();
-                    is_executed_by_any_replica = true;
-                    break;
-                }
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
+                executed_by_leader = true;
+                break;
             }
+
+            /// If the leader will unexpectedly changed this method will return false
+            /// and on the next iteration new leader will take lock
+            if (tryExecuteQuery(rewritten_query, task, task.execution_status))
+            {
+                zookeeper->create(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
+                executed_by_leader = true;
+                break;
+            }
+
         }
 
-        if (!is_executed_by_any_replica)
-        {
-            task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED,
-                                                    "Cannot enqueue replicated DDL query for a replicated shard");
-        }
+        /// Does nothing if wasn't previously locked
+        lock->unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
     }
-    else
+
+    /// Not executed by leader so was not executed at all
+    if (!executed_by_leader)
     {
-        tryExecuteQuery(rewritten_query, task, task.execution_status);
+        task.execution_status = ExecutionStatus(ErrorCodes::NOT_IMPLEMENTED,
+                                                "Cannot execute replicated DDL query on leader");
+        return false;
     }
+    return true;
 }
 
 
@@ -926,7 +954,7 @@ void DDLWorker::runMainThread()
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 /// Avoid busy loop when ZooKeeper is not available.
-                ::sleep(1);
+                sleepForSeconds(1);
             }
         }
         catch (...)
@@ -970,6 +998,10 @@ void DDLWorker::runMainThread()
                         std::this_thread::sleep_for(5s);
                     }
                 }
+            }
+            else if (e.code == Coordination::ZNONODE)
+            {
+                LOG_ERROR(log, "ZooKeeper error: " << getCurrentExceptionMessage(true));
             }
             else
             {
@@ -1026,8 +1058,8 @@ class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_)
+        : node_path(zk_node_path), context(context_), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},

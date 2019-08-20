@@ -5,6 +5,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 
@@ -38,9 +39,19 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
             if (!insertion.second)
-                throw Exception("Multiple assignments in the single statement to column `" + assignment.column_name + "`",
+                throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
                     ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
         }
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_INDEX;
+        res.partition = command->partition;
+        res.predicate = nullptr;
+        res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
     else

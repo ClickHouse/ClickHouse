@@ -1,6 +1,4 @@
 <test>
-    <name>IPv6 Functions</name>
-
     <type>loop</type>
 
     <stop_conditions>

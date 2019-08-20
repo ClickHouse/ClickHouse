@@ -20,7 +20,7 @@ IRegionsHierarchyReaderPtr RegionsHierarchyDataSource::createReader()
 }
 
 
-RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path) : path(path)
+RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path_) : path(path_)
 {
     discoverFilesWithCustomHierarchies();
 }
@@ -69,5 +69,5 @@ IRegionsHierarchyDataSourcePtr RegionsHierarchiesDataProvider::getHierarchySourc
         return std::make_shared<RegionsHierarchyDataSource>(hierarchy_file_path);
     }
 
-    throw Poco::Exception("Regions hierarchy `" + name + "` not found");
+    throw Poco::Exception("Regions hierarchy '" + name + "' not found");
 }

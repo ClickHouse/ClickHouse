@@ -89,7 +89,7 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    DatabaseIteratorPtr getIterator(const Context & context) override;
+    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     void shutdown() override;
 

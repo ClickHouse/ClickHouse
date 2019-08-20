@@ -110,15 +110,15 @@ public:
         }
         else if (col_haystack_const && col_needle_vector)
         {
-            const String & needle = col_haystack_const->getValue<String>();
-            if (needle.size() > Impl::max_string_size)
+            const String & haystack = col_haystack_const->getValue<String>();
+            if (haystack.size() > Impl::max_string_size)
             {
                 throw Exception(
-                    "String size of needle is too big for function " + getName() + ". Should be at most "
+                    "String size of haystack is too big for function " + getName() + ". Should be at most "
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::vector_constant(col_needle_vector->getChars(), col_needle_vector->getOffsets(), needle, vec_res);
+            Impl::constant_vector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {

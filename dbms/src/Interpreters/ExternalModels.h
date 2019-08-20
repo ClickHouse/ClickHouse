@@ -15,27 +15,21 @@ class Context;
 class ExternalModels : public ExternalLoader
 {
 public:
-    using ModelPtr = std::shared_ptr<IModel>;
+    using ModelPtr = std::shared_ptr<const IModel>;
 
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalModels(
         std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-        Context & context);
-
-    /// Forcibly reloads specified model.
-    void reloadModel(const std::string & name) { reload(name); }
+        Context & context_);
 
     ModelPtr getModel(const std::string & name) const
     {
-        return std::static_pointer_cast<IModel>(getLoadable(name));
+        return std::static_pointer_cast<const IModel>(getLoadable(name));
     }
 
 protected:
-
-    std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
-                                              const std::string & config_prefix) const override;
-
-    using ExternalLoader::getObjectsMap;
+    LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
+                       const std::string & key_in_config) const override;
 
     friend class StorageSystemModels;
 private:

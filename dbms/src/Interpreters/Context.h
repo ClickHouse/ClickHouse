@@ -6,13 +6,13 @@
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -63,6 +63,9 @@ class Clusters;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TextLog;
+class TraceLog;
+class MetricLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -75,6 +78,8 @@ class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -131,10 +136,11 @@ private:
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TableAndCreateASTs external_tables;     /// Temporary tables.
+    StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -144,6 +150,9 @@ private:
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+
+    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -192,6 +201,10 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+
+    /// Used by MySQL Secure Password Authentication plugin.
+    std::shared_ptr<const User> getUser(const String & user_name);
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
@@ -240,6 +253,9 @@ public:
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
+    void addViewSource(const StoragePtr & storage);
+    StoragePtr getViewSource();
+
     void addDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name);
 
@@ -282,12 +298,12 @@ public:
     ExternalDictionaries & getExternalDictionaries();
     ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
-    void tryCreateExternalDictionaries() const;
-    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
+
+    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -344,7 +360,10 @@ public:
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
-    void setGlobalContext(Context & context_) { global_context = &context_; }
+
+    void makeQueryContext() { query_context = this; }
+    void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
@@ -373,6 +392,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
@@ -411,9 +432,15 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    void initializeTraceCollector();
+    bool hasTraceCollector();
+
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
+    std::shared_ptr<TraceLog> getTraceLog();
+    std::shared_ptr<TextLog> getTextLog();
+    std::shared_ptr<MetricLog> getMetricLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
@@ -467,6 +494,11 @@ public:
 
     SampleBlockCache & getSampleBlockCache() const;
 
+    /// Query parameters for prepared statements.
+    bool hasQueryParameters() const;
+    const NameToNameMap & getQueryParameters() const;
+    void setQueryParameter(const String & name, const String & value);
+
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
     void setCompiledExpressionCache(size_t cache_size);
@@ -479,6 +511,14 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
+    struct MySQLWireContext
+    {
+        uint8_t sequence_id = 0;
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+    };
+
+    MySQLWireContext mysql;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
@@ -489,8 +529,6 @@ private:
     void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
-    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

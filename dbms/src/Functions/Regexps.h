@@ -15,7 +15,7 @@
 #include <common/StringRef.h>
 
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_HYPERSCAN
 #    if __has_include(<hs/hs.h>)
 #        include <hs/hs.h>

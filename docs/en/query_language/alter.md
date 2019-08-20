@@ -21,7 +21,7 @@ The following actions are supported:
 - [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 - [MODIFY COLUMN](#alter_modify-column) — Changes column's type and/or default expression.
 
-Detailed description of these actions is shown below.
+These actions are described in detail below.
 
 #### ADD COLUMN {#alter_add-column}
 
@@ -127,7 +127,7 @@ The `ALTER` query for changing columns is replicated. The instructions are saved
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
+There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
 If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query. 
 
@@ -175,6 +175,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 
@@ -292,6 +293,14 @@ Restoring from a backup doesn't require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../operations/backup.md) section.
 
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+
+``` sql
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
+
 #### FETCH PARTITION {#alter_fetch-partition}
 
 ``` sql
@@ -369,6 +378,12 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+
+``` sql
+ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+```
+
+The query rebuilds the secondary index `name` in the partition `partition_name`.
 
 One query can contain several commands separated by commas.
 

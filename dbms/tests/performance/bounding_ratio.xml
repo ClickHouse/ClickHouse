@@ -1,5 +1,4 @@
 <test>
-    <name>bounding_ratio</name>
     <type>once</type>
 
     <stop_conditions>
@@ -9,10 +8,6 @@
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
-
-    <metrics>
-        <max_rows_per_second />
-    </metrics>
 
     <query>SELECT boundingRatio(number, number) FROM system.numbers</query>
     <query>SELECT (argMax(number, number) - argMin(number, number)) / (max(number) - min(number)) FROM system.numbers</query>

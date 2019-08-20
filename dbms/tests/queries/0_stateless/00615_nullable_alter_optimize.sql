@@ -1,6 +1,6 @@
-DROP TABLE IF EXISTS test;
+DROP TABLE IF EXISTS test_00615;
 
-CREATE TABLE test
+CREATE TABLE test_00615
 (
     dt Date,
     id Int32,
@@ -8,15 +8,15 @@ CREATE TABLE test
     data Nullable(Int8)
 ) ENGINE = MergeTree(dt, (id, key, dt), 8192);
 
-INSERT INTO test (dt,id, key,data) VALUES ('2000-01-01', 100, 'key', 100500);
+INSERT INTO test_00615 (dt,id, key,data) VALUES ('2000-01-01', 100, 'key', 100500);
 
-alter table test drop column data;
-alter table test add column data Nullable(Float64);
+alter table test_00615 drop column data;
+alter table test_00615 add column data Nullable(Float64);
 
-INSERT INTO test (dt,id, key,data) VALUES ('2000-01-01', 100, 'key', 100500);
+INSERT INTO test_00615 (dt,id, key,data) VALUES ('2000-01-01', 100, 'key', 100500);
 
-SELECT * FROM test ORDER BY data NULLS FIRST;
-OPTIMIZE TABLE test;
-SELECT * FROM test ORDER BY data NULLS FIRST;
+SELECT * FROM test_00615 ORDER BY data NULLS FIRST;
+OPTIMIZE TABLE test_00615;
+SELECT * FROM test_00615 ORDER BY data NULLS FIRST;
 
-DROP TABLE test;
+DROP TABLE test_00615;

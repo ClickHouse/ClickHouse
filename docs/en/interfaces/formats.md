@@ -1,10 +1,14 @@
 # Formats for input and output data {#formats}
 
-ClickHouse can accept (`INSERT`) and return (`SELECT`) data in various formats.
+ClickHouse can accept and return data in various formats. A format supported
+for input can be used to parse the data provided to `INSERT`s, to perform
+`SELECT`s from a file-backed table such as File, URL or HDFS, or to read an
+external dictionary. A format supported for output can be used to arrange the
+results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
-The table below lists supported formats and how they can be used in `INSERT` and `SELECT` queries.
+The supported formats are:
 
-| Format | INSERT | SELECT |
+| Format | Input | Output |
 | ------- | -------- | -------- |
 | [TabSeparated](#tabseparated) | ✔ | ✔ |
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
@@ -24,13 +28,14 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
+| [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
 
-You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
+You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
 ## TabSeparated {#tabseparated}
 
@@ -164,7 +169,11 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
-`NULL` is formatted as `\N`.
+Empty unquoted input values are replaced with default values for the respective columns, if
+[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+is enabled.
+
+`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
@@ -314,7 +323,7 @@ When using this format, ClickHouse outputs rows as separated, newline-delimited 
 ```json
 {"SearchPhrase":"curtain designs","count()":"1064"}
 {"SearchPhrase":"baku","count()":"1000"}
-{"SearchPhrase":"","count":"8267016"}
+{"SearchPhrase":"","count()":"8267016"}
 ```
 
 When inserting the data, you should provide a separate JSON object for each row.
@@ -376,6 +385,60 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 !!! note "Note"
     Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
+
+### Usage of Nested Structures {#jsoneachrow-nested}
+
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+
+For example, consider the following table:
+
+```sql
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Without this setting ClickHouse throws the exception.
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+```text
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
 
 ## Native {#native}
 
@@ -710,6 +773,54 @@ are not applied; the [table defaults](../query_language/create.md#create-default
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+## Parquet {#data-format-parquet}
+
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+
+### Data Types Matching
+
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`) |
+| -------------------- | ------------------ | ---- |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
+| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
+| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
+| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
+| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
+| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
+| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
+| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
+| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
+| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
+| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
+| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
+
+ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Data types of a ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+
+### Inserting and Selecting Data
+
+You can insert Parquet data from a file into ClickHouse table by the following command:
+
+```
+cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```
+
+You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
+
+```
+clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```
+
+To exchange data with the Hadoop, you can use `HDFS` table engine.
 
 ## Format Schema {#formatschema}
 

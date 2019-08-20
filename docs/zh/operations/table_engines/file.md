@@ -1,41 +1,41 @@
 # File(InputFormat) {#table_engines-file}
 
-The data source is a file that stores data in one of the supported input formats (TabSeparated, Native, etc.).
+数据源是以 Clickhouse 支持的一种输入格式（TabSeparated，Native等）存储数据的文件。
 
-Usage examples:
+用法示例：
 
-- Data export from ClickHouse to file.
-- Convert data from one format to another.
-- Updating data in ClickHouse via editing a file on a disk.
+- 从 ClickHouse 导出数据到文件。
+- 将数据从一种格式转换为另一种格式。
+- 通过编辑磁盘上的文件来更新 ClickHouse 中的数据。
 
-## Usage in ClickHouse Server
+## 在 ClickHouse 服务器中的使用
 
 ```
 File(Format)
 ```
 
-`Format` should be supported for either `INSERT` and `SELECT`. For the full list of supported formats see [Formats](../../interfaces/formats.md#formats).
+选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../interfaces/formats.md#formats)。
 
-ClickHouse does not allow to specify filesystem path for`File`. It will use folder defined by [path](../server_settings/settings.md) setting in server configuration.
+ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [path](../server_settings/settings.md) 设定的文件夹。
 
-When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it's put into `data.Format` file in that subdirectory.
+使用 `File(Format)` 创建表时，它会在该文件夹中创建空的子目录。当数据写入该表时，它会写到该子目录中的 `data.Format` 文件中。
 
-You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md) it to table information with matching name, so you can query data from that file.
+你也可以在服务器文件系统中手动创建这些子文件夹和文件，然后通过 [ATTACH](../../query_language/misc.md) 将其创建为具有对应名称的表，这样你就可以从该文件中查询数据了。
 
-!!! warning
-    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+!!! 注意
+    注意这个功能，因为 ClickHouse 不会跟踪这些文件在外部的更改。在 ClickHouse 中和 ClickHouse 外部同时写入会造成结果是不确定的。
 
-**Example:**
+**示例：**
 
-**1.** Set up the `file_engine_table` table:
+**1.** 创建 `file_engine_table` 表：
 
 ``` sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
-By default ClickHouse will create folder `/var/lib/clickhouse/data/default/file_engine_table`.
+默认情况下，Clickhouse 会创建目录 `/var/lib/clickhouse/data/default/file_engine_table` 。
 
-**2.** Manually create `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` containing:
+**2.** 手动创建 `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` 文件，并且包含内容：
 
 ```bash
 $ cat data.TabSeparated
@@ -43,7 +43,7 @@ one	1
 two	2
 ```
 
-**3.** Query the data:
+**3.** 查询这些数据:
 
 ``` sql
 SELECT * FROM file_engine_table
@@ -56,22 +56,22 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Usage in Clickhouse-local
+## 在 Clickhouse-local 中的使用
 
-In [clickhouse-local](../utils/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`.
-**Example:**
+使用 [clickhouse-local](../utils/clickhouse-local.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
+**例如：**
 
 ```bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Details of Implementation
+## 功能实现
 
-- Reads can be parallel, but not writes
-- Not supported:
+- 读操作可支持并发，但写操作不支持
+- 不支持:
   - `ALTER`
   - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+  - 索引
+  - 副本
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->

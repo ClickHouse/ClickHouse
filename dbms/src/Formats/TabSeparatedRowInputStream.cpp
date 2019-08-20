@@ -48,8 +48,8 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 
 TabSeparatedRowInputStream::TabSeparatedRowInputStream(
-    ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), with_names(with_names_), with_types(with_types_), format_settings(format_settings)
+    ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : istr(istr_), header(header_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     const auto num_columns = header.columns();
 
@@ -308,7 +308,7 @@ bool OPTIMIZE(1) TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
             if (curr_position < prev_position)
                 throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-            if (isNumber(current_column_type) || isDateOrDateTime(current_column_type))
+            if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
             {
                 /// An empty string instead of a value.
                 if (curr_position == prev_position)
@@ -457,11 +457,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, false, false, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 
@@ -473,11 +474,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, false, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 
@@ -489,11 +491,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 }

@@ -1,5 +1,4 @@
 <test>
-    <name>general_purpose_hashes</name>
     <type>once</type>
 
     <stop_conditions>
@@ -32,6 +31,7 @@
                <value>hiveHash</value>
                <value>xxHash32</value>
                <value>xxHash64</value>
+               <value>CRC32</value>
            </values>
         </substitution>
         <substitution>

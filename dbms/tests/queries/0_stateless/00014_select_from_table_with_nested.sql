@@ -9,3 +9,4 @@ SELECT s, n.x, n.y FROM nested_test ARRAY JOIN nest AS n;
 SELECT s, n.x, n.y, nest.x FROM nested_test ARRAY JOIN nest AS n;
 SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n;
 SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num;
+DROP TABLE nested_test;

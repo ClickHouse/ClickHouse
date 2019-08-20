@@ -309,7 +309,7 @@ SOFTWARE.
             res[i] = isValidUTF8(data.data() + i * n, n);
     }
 
-    static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
     {
         throw Exception("Cannot apply function isValidUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

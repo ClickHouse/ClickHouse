@@ -1,6 +1,9 @@
 include (CheckCXXSourceCompiles)
 include (CMakePushCheckState)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads)
+
 cmake_push_check_state ()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

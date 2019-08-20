@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "config_core.h"
 
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>

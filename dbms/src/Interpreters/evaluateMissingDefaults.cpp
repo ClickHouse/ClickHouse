@@ -1,12 +1,14 @@
+#include "evaluateMissingDefaults.h"
+
 #include <Core/Block.h>
 #include <Storages/ColumnDefault.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateMissingDefaults.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
 #include <utility>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -58,7 +60,29 @@ void evaluateMissingDefaults(Block & block,
     Block copy_block{block};
 
     auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
-    ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);
+    auto expression_analyzer = ExpressionAnalyzer{default_expr_list, syntax_result, context};
+    auto required_source_columns = syntax_result->requiredSourceColumns();
+    auto rows_was = copy_block.rows();
+
+    // Delete all not needed columns in DEFAULT expression.
+    // They can intersect with columns added in PREWHERE
+    // test 00950_default_prewhere
+    // CLICKHOUSE-4523
+    for (const auto & delete_column : copy_block.getNamesAndTypesList())
+    {
+        if (std::find(required_source_columns.begin(), required_source_columns.end(), delete_column.name) == required_source_columns.end())
+        {
+            copy_block.erase(delete_column.name);
+        }
+    }
+
+    if (copy_block.columns() == 0)
+    {
+        // Add column to indicate block size in execute()
+        copy_block.insert({DataTypeUInt8().createColumnConst(rows_was, 0u), std::make_shared<DataTypeUInt8>(), "__dummy"});
+    }
+
+    expression_analyzer.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
     size_t pos = 0;

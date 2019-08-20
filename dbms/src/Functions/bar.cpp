@@ -55,8 +55,8 @@ public:
                     + ".",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
-            || (arguments.size() == 4 && !isNumber(arguments[3])))
+        if (!isNativeNumber(arguments[0]) || !isNativeNumber(arguments[1]) || !isNativeNumber(arguments[2])
+            || (arguments.size() == 4 && !isNativeNumber(arguments[3])))
             throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -108,7 +108,7 @@ private:
     {
         const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
-        if (!column.isColumnConst())
+        if (!isColumnConst(column))
             throw Exception(
                 which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 

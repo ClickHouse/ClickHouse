@@ -78,7 +78,7 @@ def test_reconnect(started_cluster):
 
         assert remote.query("SELECT count(*) FROM local1").strip() == '3'
 
-
+@pytest.mark.skip(reason="Flapping test")
 def test_inserts_batching(started_cluster):
     instance = instance_test_inserts_batching
 

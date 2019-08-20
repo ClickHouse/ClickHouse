@@ -173,7 +173,10 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::OpeningSquareBracket, token_begin, ++pos);
         case ']':
             return Token(TokenType::ClosingSquareBracket, token_begin, ++pos);
-
+        case '{':
+            return Token(TokenType::OpeningCurlyBrace, token_begin, ++pos);
+        case '}':
+            return Token(TokenType::ClosingCurlyBrace, token_begin, ++pos);
         case ',':
             return Token(TokenType::Comma, token_begin, ++pos);
         case ';':

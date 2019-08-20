@@ -26,16 +26,18 @@ class Context;
 class ITableFunction
 {
 public:
+    static inline std::string getDatabaseName() { return "_table_function"; }
+
     /// Get the main function name.
     virtual std::string getName() const = 0;
 
     /// Create storage according to the query.
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context) const;
+    StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const;
 
     virtual ~ITableFunction() {}
 
 private:
-    virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const = 0;
+    virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const = 0;
 };
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;

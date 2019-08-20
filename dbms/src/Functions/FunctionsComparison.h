@@ -554,8 +554,8 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
 
-    FunctionComparison(const Context & context)
-    :   context(context),
+    FunctionComparison(const Context & context_)
+    :   context(context_),
         check_decimal_overflow(decimalCheckComparisonOverflow(context))
     {}
 
@@ -1032,8 +1032,8 @@ private:
 
     void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
-        bool c0_const = c0->isColumnConst();
-        bool c1_const = c1->isColumnConst();
+        bool c0_const = isColumnConst(*c0);
+        bool c1_const = isColumnConst(*c1);
 
         if (c0_const && c1_const)
         {

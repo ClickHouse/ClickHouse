@@ -7,8 +7,8 @@
 #include <IO/BufferWithOwnMemory.h>
 
 #include <Common/config.h>
-#if USE_LFALLOC
-#include <Common/LFAllocator.h>
+#if USE_MIMALLOC
+#include <Common/MiAllocator.h>
 #endif
 
 
@@ -25,8 +25,8 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-#if USE_LFALLOC
-    Memory<LFAllocator> data;
+#if USE_MIMALLOC
+    Memory<MiAllocator> data;
 #else
     Memory<> data;
 #endif

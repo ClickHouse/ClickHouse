@@ -33,7 +33,7 @@ template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore(pos, data[n]);
+    unalignedStore<T>(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
 
@@ -213,6 +213,12 @@ template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n) const
 {
     return ext::bit_cast<UInt64>(data[n]);
+}
+
+template <typename T>
+Float64 ColumnVector<T>::getFloat64(size_t n) const
+{
+    return static_cast<Float64>(data[n]);
 }
 
 template <typename T>

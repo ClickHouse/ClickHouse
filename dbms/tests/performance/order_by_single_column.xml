@@ -1,6 +1,4 @@
 <test>
-    <name>ORDER BY single string column</name>
-
     <tags>
         <tag>sorting</tag>
         <tag>comparison</tag>
