@@ -275,7 +275,7 @@ Default value: 1.
 
 ## date_time_input_format {#settings-date_time_input_format}
 
-Enables or disables the extended parsing of formatted date and time strings.
+Allows to choose a parser of text representation of date and time.
 
 The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
 
