@@ -33,7 +33,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         buffer->reset();
     }
 
-    storage.pushBuffer(buffer);
+    storage.pushReadBuffer(buffer);
 }
 
 Block KafkaBlockInputStream::getHeader() const
@@ -43,11 +43,12 @@ Block KafkaBlockInputStream::getHeader() const
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    buffer = storage.tryClaimBuffer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+    buffer = storage.popReadBuffer(timeout);
     claimed = !!buffer;
 
     if (!buffer)
-        buffer = storage.createBuffer();
+        return;
 
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.getTopics());
 
@@ -80,6 +81,9 @@ void KafkaBlockInputStream::readPrefixImpl()
 
 Block KafkaBlockInputStream::readImpl()
 {
+    if (!buffer)
+        return Block();
+
     Block block = children.back()->read();
     if (!block)
         return block;
@@ -99,6 +103,9 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
+    if (!buffer)
+        return;
+
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->commit();
 
     broken = false;

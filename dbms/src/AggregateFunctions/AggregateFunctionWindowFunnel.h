@@ -139,6 +139,7 @@ class AggregateFunctionWindowFunnel final
 private:
     UInt64 window;
     UInt8 events_size;
+    UInt8 strict;
 
 
     // Loop through the entire events_list, update the event timestamp value
@@ -165,6 +166,10 @@ private:
 
             if (event_idx == 0)
                 events_timestamp[0] = timestamp;
+            else if (strict && events_timestamp[event_idx] >= 0)
+            {
+                return event_idx + 1;
+            }
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
             {
                 events_timestamp[event_idx] = events_timestamp[event_idx - 1];
@@ -191,8 +196,17 @@ public:
     {
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
-    }
 
+        strict = 0;
+        for (size_t i = 1; i < params.size(); ++i)
+        {
+            String option = params.at(i).safeGet<String>();
+            if (option.compare("strict") == 0)
+                strict = 1;
+            else
+                throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
+        }
+    }
 
     DataTypePtr getReturnType() const override
     {

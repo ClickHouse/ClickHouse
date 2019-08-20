@@ -233,7 +233,26 @@ Ok.
 - 0 — выключена.
 - 1 — включена.
 
-Значение по умолчанию: 0.
+Значение по умолчанию — 0.
+
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Включает или отключает вставку данных JSON с вложенными объектами.
+
+Поддерживаемые форматы:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Возможные значения:
+
+- 0 — выключена.
+- 1 — включена.
+
+Значение по умолчанию — 0.
+
+**Смотрите также**
+
+- [Использование вложенных структур](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
@@ -252,6 +271,29 @@ Ok.
 - 1 — включена.
 
 Значение по умолчанию: 1.
+
+## date_time_input_format {#settings-date_time_input_format}
+
+Выбор парсера для текстового представления дат и времени при обработке входного формата.
+
+Настройка не применяется к [функциям для работы с датой и временем](../../query_language/functions/date_time_functions.md).
+
+Возможные значения:
+
+- `'best_effort'` — включает расширенный парсинг.
+
+    ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — используется базовый парсер.
+
+    ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS`. Например, `'2019-08-20 10:18:56'`.
+
+Значение по умолчанию — `'basic'`.
+
+**Смотрите также**
+
+- [Тип данных DateTime.](../../data_types/datetime.md)
+- [Функции для работы с датой и временем.](../../query_language/functions/date_time_functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 
