@@ -10,8 +10,8 @@ namespace DB
 {
 
 
-ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
 }
 
@@ -47,9 +47,10 @@ void registerOutputFormatProcessorValues(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<ValuesRowOutputFormat>(buf, sample, callback, settings);
     });
 }
 

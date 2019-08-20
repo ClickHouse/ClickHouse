@@ -8,7 +8,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/LiveViewCommands.h>
 #include <Common/typeid_cast.h>
+#include <Storages/StorageLiveView.h>
 
 #include <algorithm>
 
@@ -48,6 +50,7 @@ BlockIO InterpreterAlterQuery::execute()
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
+    LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
         if (auto alter_command = AlterCommand::parse(command_ast))
@@ -56,6 +59,8 @@ BlockIO InterpreterAlterQuery::execute()
             partition_commands.emplace_back(std::move(*partition_command));
         else if (auto mut_command = MutationCommand::parse(command_ast))
             mutation_commands.emplace_back(std::move(*mut_command));
+        else if (auto live_view_command = LiveViewCommand::parse(command_ast))
+            live_view_commands.emplace_back(std::move(*live_view_command));
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
@@ -70,6 +75,21 @@ BlockIO InterpreterAlterQuery::execute()
     {
         partition_commands.validate(*table);
         table->alterPartition(query_ptr, partition_commands, context);
+    }
+
+    if (!live_view_commands.empty())
+    {
+        live_view_commands.validate(*table);
+        for (const LiveViewCommand & command : live_view_commands)
+        {
+            auto live_view = std::dynamic_pointer_cast<StorageLiveView>(table);
+            switch (command.type)
+            {
+                case LiveViewCommand::REFRESH:
+                    live_view->refresh(context);
+                    break;
+            }
+        }
     }
 
     if (!alter_commands.empty())

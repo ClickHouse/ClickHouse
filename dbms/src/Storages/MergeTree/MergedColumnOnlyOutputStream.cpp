@@ -8,14 +8,16 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     WrittenOffsetColumns & already_written_offset_columns_,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    const MergeTreeIndexGranularityInfo * index_granularity_info_)
     : IMergedBlockOutputStream(
         storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io,
         false,
         indices_to_recalc_,
-        index_granularity_),
+        index_granularity_,
+        index_granularity_info_),
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns_)
 {
