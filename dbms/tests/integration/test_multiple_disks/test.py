@@ -227,6 +227,8 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "jbod2" for d in disks)
 
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "4\n"
+
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
