@@ -850,7 +850,7 @@ Enables or disables silent skipping of:
 
     When skipping is disabled, ClickHouse throws an exception.
 
-    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about problems with nodes availability.
+    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
 
 Possible values:
 
