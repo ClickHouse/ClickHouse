@@ -16,6 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaBlockInputStream.h>
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -106,7 +107,7 @@ StorageKafka::StorageKafka(
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
 {
-    task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 }
 
@@ -140,14 +141,21 @@ BlockInputStreams StorageKafka::read(
 }
 
 
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context)
+{
+    if (topics.size() > 1)
+        throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
+    return std::make_shared<KafkaBlockOutputStream>(*this, context);
+}
+
+
 void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        // Make buffer available
         try
         {
-            pushBuffer(createBuffer());
+            pushReadBuffer(createReadBuffer());
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -169,7 +177,7 @@ void StorageKafka::shutdown()
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto buffer = claimBuffer();
+        auto buffer = popReadBuffer();
         // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
@@ -193,10 +201,70 @@ void StorageKafka::updateDependencies()
 }
 
 
-BufferPtr StorageKafka::createBuffer()
+void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
 {
+    std::lock_guard lock(mutex);
+    buffers.push_back(buffer);
+    semaphore.set();
+}
+
+
+ConsumerBufferPtr StorageKafka::popReadBuffer()
+{
+    return popReadBuffer(std::chrono::milliseconds::zero());
+}
+
+
+ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
+{
+    // Wait for the first free buffer
+    if (timeout == std::chrono::milliseconds::zero())
+        semaphore.wait();
+    else
+    {
+        if (!semaphore.tryWait(timeout.count()))
+            return nullptr;
+    }
+
+    // Take the first available buffer from the list
+    std::lock_guard lock(mutex);
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
+}
+
+
+ProducerBufferPtr StorageKafka::createWriteBuffer()
+{
+    cppkafka::Configuration conf;
+    conf.set("metadata.broker.list", brokers);
+    conf.set("group.id", group);
+    conf.set("client.id", VERSION_FULL);
+    // TODO: fill required settings
+    updateConfiguration(conf);
+
+    auto producer = std::make_shared<cppkafka::Producer>(conf);
+    const Settings & settings = global_context.getSettingsRef();
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+
+    return std::make_shared<WriteBufferToKafkaProducer>(
+        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
+}
+
+
+ConsumerBufferPtr StorageKafka::createReadBuffer()
+{
+    cppkafka::Configuration conf;
+    conf.set("metadata.broker.list", brokers);
+    conf.set("group.id", group);
+    conf.set("client.id", VERSION_FULL);
+    conf.set("auto.offset.reset", "smallest"); // If no offset stored for this group, read all messages from the start
+    conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
+    conf.set("enable.partition.eof", "false"); // Ignore EOF messages
+    updateConfiguration(conf);
+
     // Create a consumer and subscribe to topics
-    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+    auto consumer = std::make_shared<cppkafka::Consumer>(conf);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
@@ -209,61 +277,9 @@ BufferPtr StorageKafka::createBuffer()
         std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
 }
 
-BufferPtr StorageKafka::claimBuffer()
+
+void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
-    return tryClaimBuffer(-1L);
-}
-
-BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
-{
-    // Wait for the first free buffer
-    if (wait_ms >= 0)
-    {
-        if (!semaphore.tryWait(wait_ms))
-            return nullptr;
-    }
-    else
-        semaphore.wait();
-
-    // Take the first available buffer from the list
-    std::lock_guard lock(mutex);
-    auto buffer = buffers.back();
-    buffers.pop_back();
-    return buffer;
-}
-
-void StorageKafka::pushBuffer(BufferPtr buffer)
-{
-    std::lock_guard lock(mutex);
-    buffers.push_back(buffer);
-    semaphore.set();
-}
-
-
-cppkafka::Configuration StorageKafka::createConsumerConfiguration()
-{
-    cppkafka::Configuration conf;
-
-    LOG_TRACE(log, "Setting brokers: " << brokers);
-    conf.set("metadata.broker.list", brokers);
-
-    LOG_TRACE(log, "Setting Group ID: " << group << " Client ID: clickhouse");
-    conf.set("group.id", group);
-
-    conf.set("client.id", VERSION_FULL);
-
-    // If no offset stored for this group, read all messages from the start
-    conf.set("auto.offset.reset", "smallest");
-
-    // We manually commit offsets after a stream successfully finished
-    conf.set("enable.auto.commit", "false");
-
-    // Ignore EOF messages
-    conf.set("enable.partition.eof", "false");
-
-    // for debug logs inside rdkafka
-    // conf.set("debug", "consumer,cgrp,topic,fetch");
-
     // Update consumer configuration from the configuration
     const auto & config = global_context.getConfigRef();
     if (config.has(CONFIG_PREFIX))
@@ -276,8 +292,6 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
-
-    return conf;
 }
 
 bool StorageKafka::checkDependencies(const String & current_database_name, const String & current_table_name)
@@ -307,7 +321,7 @@ bool StorageKafka::checkDependencies(const String & current_database_name, const
     return true;
 }
 
-void StorageKafka::streamThread()
+void StorageKafka::threadFunc()
 {
     try
     {
