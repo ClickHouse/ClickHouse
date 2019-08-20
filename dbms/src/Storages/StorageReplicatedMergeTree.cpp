@@ -91,7 +91,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int LEADERSHIP_CHANGED;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
