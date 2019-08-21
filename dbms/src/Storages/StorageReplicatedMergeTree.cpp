@@ -2193,27 +2193,31 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
-        if (merges_and_mutations_queued >= settings.max_replicated_merges_in_queue)
+        auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
+        size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
+        if (merges_and_mutations_sum >= settings.max_replicated_merges_in_queue)
         {
-            LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
-                << ") is greater than max_replicated_merges_in_queue ("
+            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations ("
+                << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue ("
                 << settings.max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
         }
         else
         {
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
-                settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
+                settings.max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
+
+            /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
             }
-            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
+            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
+                     && merges_and_mutations_queued.second < settings.max_replicated_mutations_in_queue)
             {
                 /// Choose a part to mutate.
                 DataPartsVector data_parts = getDataPartsVector();
