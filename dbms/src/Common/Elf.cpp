@@ -1,3 +1,5 @@
+#ifdef __ELF__
+
 #include <Common/Elf.h>
 #include <Common/Exception.h>
 
@@ -128,3 +130,5 @@ size_t Elf::Section::size() const
 }
 
 }
+
+#endif
