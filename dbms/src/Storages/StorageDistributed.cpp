@@ -176,6 +176,22 @@ IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeA
     throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
+std::string makeFormattedListOfShards(const ClusterPtr & cluster)
+{
+    std::ostringstream os;
+
+    bool head = true;
+    os << "[";
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
+        (head ? os : os << ", ") << shard_info.shard_num;
+        head = false;
+    }
+    os << "]";
+
+    return os.str();
+}
+
 }
 
 
@@ -301,8 +317,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
+    Block header =
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
@@ -312,10 +328,23 @@ BlockInputStreams StorageDistributed::read(
 
     if (settings.optimize_skip_unused_shards)
     {
-        auto smaller_cluster = skipUnusedShards(cluster, query_info);
+        if (has_sharding_key)
+        {
+            auto smaller_cluster = skipUnusedShards(cluster, query_info);
 
-        if (smaller_cluster)
-            cluster = smaller_cluster;
+            if (smaller_cluster)
+            {
+                cluster = smaller_cluster;
+                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                               "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
+                               " " << makeFormattedListOfShards(cluster));
+            }
+            else
+            {
+                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                               "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
+            }
+        }
     }
 
     return ClusterProxy::executeQuery(
@@ -488,15 +517,32 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
-/// using constraints from "WHERE" condition, otherwise returns `nullptr`
+/// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
+    if (!has_sharding_key)
+    {
+        throw Exception("Internal error: cannot determine shards of a distributed table if no sharding expression is supplied", ErrorCodes::LOGICAL_ERROR);
+    }
+
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where() || !sharding_key_expr)
+    if (!select.prewhere() && !select.where())
+    {
         return nullptr;
+    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
+    ASTPtr condition_ast;
+    if (select.prewhere() && select.where())
+    {
+        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
+    }
+    else
+    {
+        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
+    }
+
+    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)

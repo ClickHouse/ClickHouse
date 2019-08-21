@@ -1282,9 +1282,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     }
 
     if (!finished.empty())
+    {
         zookeeper->set(replica_path + "/mutation_pointer", finished.back()->znode_name);
 
-    {
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
@@ -1656,7 +1656,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
-    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate()).
+    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
     /// This means that if we have loaded the mutation with version number X then all mutations with
     /// the version numbers less than X are also loaded and if there is no merge or mutation assigned to
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to

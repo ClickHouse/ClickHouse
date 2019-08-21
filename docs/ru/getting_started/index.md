@@ -37,13 +37,25 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ### Из RPM пакетов
 
-Яндекс не использует ClickHouse на поддерживающих `rpm` дистрибутивах Linux, а также `rpm` пакеты менее тщательно тестируются. Таким образом, использовать их стоит на свой страх и риск, но, тем не менее, многие другие компании успешно работают на них в production без каких-либо серьезных проблем.
+Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHad и всех остальных дистрибутивов Linux, основанных на rpm.
 
-Для CentOS, RHEL и Fedora возможны следующие варианты:
+Сначала нужно подключить официальный репозиторий:
+```bash
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+```
 
-* Пакеты из <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64/> генерируются на основе официальных `deb` пакетов от Яндекса и содержат в точности тот же исполняемый файл.
-* Пакеты из <https://github.com/Altinity/clickhouse-rpm-install> собираются независимой компанией Altinity, но широко используются без каких-либо нареканий.
-* Либо можно использовать Docker (см. ниже).
+Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений).
+
+Then run these commands to actually install packages:
+Для, собственно, установки пакетов необходимо выполнить следующие команды:
+
+```bash
+sudo yum install clickhouse-server clickhouse-client
+```
+
+Также есть возможность установить пакеты вручную, скачав отсюда: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
 
 ### Из Docker образа
 

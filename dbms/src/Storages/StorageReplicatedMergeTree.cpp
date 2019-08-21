@@ -91,7 +91,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int LEADERSHIP_CHANGED;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
@@ -1091,7 +1090,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
+            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -1221,7 +1220,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1962,10 +1961,37 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
-    Strings parts = zookeeper->getChildren(source_path + "/parts");
-    ActiveDataPartSet active_parts_set(format_version, parts);
+    Strings source_replica_parts = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet active_parts_set(format_version, source_replica_parts);
 
     Strings active_parts = active_parts_set.getParts();
+
+    /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
+    Strings local_parts_in_zk = zookeeper->getChildren(replica_path + "/parts");
+    Strings parts_to_remove_from_zk;
+    for (const auto & part : local_parts_in_zk)
+    {
+        if (active_parts_set.getContainingPart(part).empty())
+        {
+            queue.remove(zookeeper, part);
+            parts_to_remove_from_zk.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part << ". Removing it from ZooKeeper.");
+        }
+    }
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
+
+    auto local_active_parts = getDataParts();
+    DataPartsVector parts_to_remove_from_working_set;
+    for (const auto & part : local_active_parts)
+    {
+        if (active_parts_set.getContainingPart(part->name).empty())
+        {
+            parts_to_remove_from_working_set.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part->name << ". Removing it from working set.");
+        }
+    }
+    removePartsFromWorkingSet(parts_to_remove_from_working_set, true);
+
     for (const String & name : active_parts)
     {
         LogEntry log_entry;
@@ -3093,9 +3119,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
     }
 
-    /// TODO: Bad setting name for such purpose
     if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
+        /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
+        /// TODO Check all other "wait" places.
         for (auto & merge_entry : merge_entries)
             waitForAllReplicasToProcessLogEntry(merge_entry);
     }
