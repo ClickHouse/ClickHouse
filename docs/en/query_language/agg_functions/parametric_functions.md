@@ -2,6 +2,75 @@
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
+## histogram
+
+Calculates an adaptive histogram. It doesn't guarantee precise results.
+
+```
+histogram(number_of_bins)(values)
+```
+ 
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as a new data enters a function, and in common case the widths of bins are not equal.
+
+**Parameters**
+
+`number_of_bins` — Upper limit for a number of bins for the histogram. Function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses less number of bins.
+`values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
+
+**Returned values**
+
+- [Array](../../data_types/array.md) of [Tuples](../../data_types/tuple.md) of the following format:
+
+    ```
+    [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+    ```
+
+    - `lower` — Lower bound of the bin.
+    - `upper` — Upper bound of the bin.
+    - `height` — Calculated height of the bin.
+
+**Example**
+
+```sql
+SELECT histogram(5)(number + 1) 
+FROM (
+    SELECT * 
+    FROM system.numbers 
+    LIMIT 20
+)
+```
+```text
+┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
+│ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+You can visualize a histogram with the [bar](../other_functions.md#function-bar) function, for example:
+
+```sql
+WITH histogram(5)(rand() % 100) AS hist
+SELECT 
+    arrayJoin(hist).3 AS height, 
+    bar(height, 0, 6, 5) AS bar
+FROM 
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+```text
+┌─height─┬─bar───┐
+│  2.125 │ █▋    │
+│   3.25 │ ██▌   │
+│  5.625 │ ████▏ │
+│  5.625 │ ████▏ │
+│  3.375 │ ██▌   │
+└────────┴───────┘
+```
+
+In this case you should remember, that you don't know the borders of histogram bins.
+
 ## sequenceMatch(pattern)(time, cond1, cond2, ...)
 
 Pattern matching for event chains.

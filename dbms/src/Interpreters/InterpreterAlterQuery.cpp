@@ -67,7 +67,8 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        MutationsInterpreter(table, mutation_commands, context).validate();
+        auto table_lock_holder = table->lockStructureForShare(false /* because mutation is executed asyncronously */, context.getCurrentQueryId());
+        MutationsInterpreter(table, mutation_commands, context).validate(table_lock_holder);
         table->mutate(mutation_commands, context);
     }
 
