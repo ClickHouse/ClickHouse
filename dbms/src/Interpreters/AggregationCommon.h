@@ -7,6 +7,7 @@
 #include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
+#include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <common/StringRef.h>
 #include <Columns/IColumn.h>
@@ -90,10 +91,10 @@ static inline T ALWAYS_INLINE packFixed(
             {
                 switch ((*low_cardinality_sizes)[j])
                 {
-                    case sizeof(UInt8): index = static_cast<const ColumnUInt8 *>(positions)->getElement(i); break;
-                    case sizeof(UInt16): index = static_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
-                    case sizeof(UInt32): index = static_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
-                    case sizeof(UInt64): index = static_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
+                    case sizeof(UInt8): index = assert_cast<const ColumnUInt8 *>(positions)->getElement(i); break;
+                    case sizeof(UInt16): index = assert_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
+                    case sizeof(UInt32): index = assert_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
+                    case sizeof(UInt64): index = assert_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
                     default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
                 }
             }
@@ -102,23 +103,23 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
@@ -168,23 +169,23 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
+                memcpy(bytes + offset, assert_cast<const ColumnVectorHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
