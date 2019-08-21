@@ -15,6 +15,15 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
+ *  ALTER LIVE VIEW [db.]name_type
+ *      REFRESH
+ *  ALTER CHANNEL [db.]name_type
+ *      ADD live_view,...
+ *      DROP live_view,...
+ *      SUSPEND live_view,...
+ *      RESUME live_view,...
+ *      REFRESH live_view,...
+ *      MODIFY live_view,...
  */
 
 class ASTAlterCommand : public IAST
@@ -44,6 +53,15 @@ public:
         UPDATE,
 
         NO_TYPE,
+
+        LIVE_VIEW_REFRESH,
+
+        LIVE_CHANNEL_ADD,
+        LIVE_CHANNEL_DROP,
+        LIVE_CHANNEL_SUSPEND,
+        LIVE_CHANNEL_RESUME,
+        LIVE_CHANNEL_REFRESH,
+        LIVE_CHANNEL_MODIFY
     };
 
     Type type = NO_TYPE;
@@ -90,6 +108,10 @@ public:
 
     /// For MODIFY TTL query
     ASTPtr ttl;
+
+    /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
+     */
+    ASTPtr values;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -147,6 +169,9 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
+    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    bool is_live_channel{false}; /// true for ALTER LIVE CHANNEL
+
     ASTAlterCommandList * command_list = nullptr;
 
     String getID(char) const override;
