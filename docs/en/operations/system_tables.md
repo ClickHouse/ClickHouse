@@ -405,7 +405,7 @@ Columns:
     - 4 — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
-- `query_start_time` (DateTime) — Start time of query processing.
+- `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query processing.
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
