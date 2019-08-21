@@ -398,7 +398,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             all_nullable = false;
     }
 
-    auto & result_data = assert_cast<ColumnType &>(*result_data_ptr);
+    auto & result_data = static_cast<ColumnType &>(*result_data_ptr);
     auto result_offsets_ptr = ColumnArray::ColumnOffsets::create(rows);
     auto & result_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
     auto null_map_column = ColumnUInt8::create();
