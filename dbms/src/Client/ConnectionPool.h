@@ -88,6 +88,10 @@ public:
     {
         return host;
     }
+    std::string getDescription() const
+    {
+        return host + ":" + toString(port);
+    }
 
 protected:
     /** Creates a new object to put in the pool. */
