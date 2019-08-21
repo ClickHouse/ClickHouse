@@ -131,7 +131,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr join = {}) const;
+    void addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, JoinPtr join = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 

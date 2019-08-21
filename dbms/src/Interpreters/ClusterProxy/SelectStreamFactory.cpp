@@ -68,7 +68,13 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & 
       * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
       * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
       */
-    return std::make_shared<MaterializingBlockInputStream>(stream);
+
+    /* Now we don't need to materialize constants, because RemoteBlockInputStream will ignore constant and take it from header.
+     * So, streams from different threads will always have the same header.
+     */
+    /// return std::make_shared<MaterializingBlockInputStream>(stream);
+
+    return stream;
 }
 
 }
