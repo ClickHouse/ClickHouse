@@ -70,7 +70,7 @@ public:
             {temp_block.getByPosition(equals_res_pos), temp_block.getByPosition(null_pos), temp_block.getByPosition(arguments[0])});
         func_if->execute(temp_block, {equals_res_pos, null_pos, arguments[0]}, result, input_rows_count);
 
-        block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
+        block.getByPosition(result).column = makeNullable(std::move(temp_block.getByPosition(result).column));
     }
 };
 
