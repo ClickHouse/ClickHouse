@@ -126,6 +126,7 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
+static const auto MOVE_PARTS_SLEEP_MS             = 1 * 1000;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, data_parts, all_data_parts.
@@ -231,6 +232,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     merge_selecting_task->deactivate();
 
     mutations_finalizing_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+
+    moving_parts_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::movingPartsTask)", [this] { movingPartsTask(); });
+    moving_parts_task->activateAndSchedule();
 
     if (global_context.hasZooKeeper())
         current_zookeeper = global_context.getZooKeeper();
@@ -2192,7 +2196,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
-BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
+void StorageReplicatedMergeTree::movingPartsTask()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
     MergeTreeMovingParts parts_to_move;
@@ -2203,8 +2207,10 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
     };
 
     if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-
+    {
+        moving_parts_task->scheduleAfter(MOVE_PARTS_SLEEP_MS);
+        return;
+    }
 
     LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
 
@@ -2214,10 +2220,10 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
     {
         LOG_INFO(log, "Move failed. " << reason);
-        return BackgroundProcessingPoolTaskResult::ERROR;
+        moving_parts_task->scheduleAfter(MOVE_PARTS_SLEEP_MS);
     }
-
-    return BackgroundProcessingPoolTaskResult::SUCCESS;
+    else
+        moving_parts_task->schedule();
 }
 
 
@@ -2950,7 +2956,6 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return tryMoveParts(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -2971,10 +2976,6 @@ void StorageReplicatedMergeTree::shutdown()
     if (queue_task_handle)
         global_context.getBackgroundPool().removeTask(queue_task_handle);
     queue_task_handle.reset();
-
-    if (move_parts_task_handle)
-        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
-    move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {
