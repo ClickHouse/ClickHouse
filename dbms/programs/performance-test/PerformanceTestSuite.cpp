@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int SYSTEM_ERROR;
 }
 
 /** Tests launcher for ClickHouse.
@@ -321,10 +322,25 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
+    using namespace DB;
     using po::value;
-    using Strings = DB::Strings;
 
-    po::options_description desc("Allowed options");
+    unsigned line_length = po::options_description::m_default_line_length;
+    unsigned min_description_length = line_length / 2;
+    winsize terminal_size {};
+
+    if (isatty(STDIN_FILENO))
+    {
+        if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
+            throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
+
+        line_length = std::max(
+                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
+                static_cast<unsigned>(terminal_size.ws_col));
+        min_description_length = std::min(min_description_length, line_length - 2);
+    }
+
+    po::options_description desc("Allowed options", line_length, min_description_length);
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")
