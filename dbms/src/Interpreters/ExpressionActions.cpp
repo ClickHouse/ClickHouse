@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <set>
 #include <optional>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace ProfileEvents
@@ -35,6 +36,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// Read comment near usage
+static constexpr auto DUMMY_COLUMN_NAME = "_dummy";
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -157,20 +160,24 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
 }
 
 ExpressionAction ExpressionAction::ordinaryJoin(
+    const ASTTableJoin & join_params,
     std::shared_ptr<const Join> join_,
     const Names & join_key_names_left,
+    const Names & join_key_names_right,
     const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
     a.join = std::move(join_);
+    a.join_kind = join_params.kind;
     a.join_key_names_left = join_key_names_left;
+    a.join_key_names_right = join_key_names_right;
     a.columns_added_by_join = columns_added_by_join_;
     return a;
 }
 
 
-void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
+void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
     // std::cerr << "preparing: " << toString() << std::endl;
 
@@ -185,6 +192,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
             bool all_const = true;
+            bool all_suitable_for_constant_folding = true;
 
             ColumnNumbers arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
@@ -193,6 +201,9 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
                 if (!col || !isColumnConst(*col))
                     all_const = false;
+
+                if (names_not_for_constant_folding.count(argument_names[i]))
+                    all_suitable_for_constant_folding = false;
             }
 
             size_t result_position = sample_block.columns();
@@ -227,6 +238,22 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
                     if (col.column->empty())
                         col.column = col.column->cloneResized(1);
+
+                    if (!all_suitable_for_constant_folding)
+                        names_not_for_constant_folding.insert(result_name);
+                }
+            }
+
+            /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+            /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+            /// unnecessary materialization.
+            auto & res = sample_block.getByPosition(result_position);
+            if (!res.column && function_base->isSuitableForConstantFolding())
+            {
+                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+                {
+                    res.column = std::move(col);
+                    names_not_for_constant_folding.insert(result_name);
                 }
             }
 
@@ -250,10 +277,50 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
         case JOIN:
         {
-            /// TODO join_use_nulls setting
+            bool is_null_used_as_default = settings.join_use_nulls;
+            bool right_or_full_join = join_kind == ASTTableJoin::Kind::Right || join_kind == ASTTableJoin::Kind::Full;
+            bool left_or_full_join = join_kind == ASTTableJoin::Kind::Left || join_kind == ASTTableJoin::Kind::Full;
+
+            for (auto & col : sample_block)
+            {
+                /// Materialize column.
+                /// Column is not empty if it is constant, but after Join all constants will be materialized.
+                /// So, we need remove constants from header.
+                if (col.column)
+                    col.column = nullptr;
+
+                bool make_nullable = is_null_used_as_default && right_or_full_join;
+
+                if (make_nullable && !col.type->isNullable())
+                    col.type = std::make_shared<DataTypeNullable>(col.type);
+            }
 
             for (const auto & col : columns_added_by_join)
-                sample_block.insert(ColumnWithTypeAndName(nullptr, col.type, col.name));
+            {
+                auto res_type = col.type;
+
+                bool make_nullable = is_null_used_as_default && left_or_full_join;
+
+                if (!make_nullable)
+                {
+                    /// Keys from right table are usually not stored in Join, but copied from the left one.
+                    /// So, if left key is nullable, let's make right key nullable too.
+                    /// Note: for some join types it's not needed and, probably, may be removed.
+                    /// Note: changing this code, take into account the implementation in Join.cpp.
+                    auto it = std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name);
+                    if (it != join_key_names_right.end())
+                    {
+                        auto pos = it - join_key_names_right.begin();
+                        const auto & left_key_name = join_key_names_left[pos];
+                        make_nullable = sample_block.getByName(left_key_name).type->isNullable();
+                    }
+                }
+
+                if (make_nullable && !res_type->isNullable())
+                    res_type = std::make_shared<DataTypeNullable>(res_type);
+
+                sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
+            }
 
             break;
         }
@@ -508,11 +575,15 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             if (can_replace && block.has(result_name))
             {
                 auto & result = block.getByName(result_name);
-                result.type = result_type;
-                result.column = block.getByName(source_name).column;
+                const auto & source = block.getByName(source_name);
+                result.type = source.type;
+                result.column = source.column;
             }
             else
-                block.insert({ block.getByName(source_name).column, result_type, result_name });
+            {
+                const auto & source_column = block.getByName(source_name);
+                block.insert({source_column.column, source_column.type, result_name});
+            }
 
             break;
     }
@@ -677,7 +748,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         for (const auto & name_with_alias : action.projection)
             new_names.emplace_back(name_with_alias.second);
 
-    action.prepare(sample_block, settings);
+    action.prepare(sample_block, settings, names_not_for_constant_folding);
     actions.push_back(action);
 }
 
@@ -909,7 +980,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                 if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
                 {
                     auto & result = sample_block.getByName(out);
-                    if (result.column)
+                    if (result.column && names_not_for_constant_folding.count(result.name) == 0)
                     {
                         action.type = ExpressionAction::ADD_COLUMN;
                         action.result_type = result.type;
@@ -927,13 +998,44 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
+
+    /// 1) Sometimes we don't need any columns to perform actions and sometimes actions doesn't produce any columns as result.
+    /// But Block class doesn't store any information about structure itself, it uses information from column.
+    /// If we remove all columns from input or output block we will lose information about amount of rows in it.
+    /// To avoid this situation we always leaving one of the columns in required columns (input)
+    /// and output column. We choose that "redundant" column by size with help of getSmallestColumn.
+    ///
+    /// 2) Sometimes we have to read data from different Storages to execute query.
+    /// For example in 'remote' function which requires to read data from local table (for example MergeTree) and
+    /// remote table (doesn't know anything about it).
+    ///
+    /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
+    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
+    /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
+
+    /// Also, it seems like we will always have same type (UInt8) of "redundant" column, but it's not obvious.
+
+    bool dummy_column_copied = false;
+
+
     /// We will not throw out all the input columns, so as not to lose the number of rows in the block.
     if (needed_columns.empty() && !input_columns.empty())
-        needed_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        needed_columns.insert(colname);
+        actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+        dummy_column_copied = true;
+    }
 
     /// We will not leave the block empty so as not to lose the number of rows in it.
     if (final_columns.empty() && !input_columns.empty())
-        final_columns.insert(getSmallestColumn(input_columns));
+    {
+        auto colname = getSmallestColumn(input_columns);
+        final_columns.insert(DUMMY_COLUMN_NAME);
+        if (!dummy_column_copied) /// otherwise we already have this column
+            actions.insert(actions.begin(), ExpressionAction::copyColumn(colname, DUMMY_COLUMN_NAME, true));
+    }
 
     for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end();)
     {
@@ -948,9 +1050,9 @@ void ExpressionActions::finalize(const Names & output_columns)
     }
 
 /*    std::cerr << "\n";
-    for (const auto & action : actions)
-        std::cerr << action.toString() << "\n";
-    std::cerr << "\n";*/
+      for (const auto & action : actions)
+          std::cerr << action.toString() << "\n";
+      std::cerr << "\n";*/
 
     /// Deletes unnecessary temporary columns.
 
@@ -1225,6 +1327,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && array_join_is_left == other.array_join_is_left
         && join == other.join
         && join_key_names_left == other.join_key_names_left
+        && join_key_names_right == other.join_key_names_right
         && columns_added_by_join == other.columns_added_by_join
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;

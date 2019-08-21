@@ -167,7 +167,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     else
         update_query = " WHERE " + update_field + " >= '" + time_point + "'";
 
-    return out.insert(out.size() - 1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
+    return out.insert(out.size() - 1, update_query); /// This is done to insert "update_query" before "out"'s semicolon
 }
 
 

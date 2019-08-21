@@ -328,6 +328,7 @@ public:
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
+    Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -476,6 +477,7 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
+    void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
@@ -530,6 +532,7 @@ public:
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
+    bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
@@ -573,7 +576,9 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
-    bool canUseAdaptiveGranularity() const
+    /// Returns true if table can create new parts with adaptive granularity
+    /// Has additional constraint in replicated version
+    virtual bool canUseAdaptiveGranularity() const
     {
         return settings.index_granularity_bytes != 0 &&
             (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
@@ -629,7 +634,7 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const MergeTreeSettings settings;
+    MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

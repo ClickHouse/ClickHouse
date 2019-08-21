@@ -7,7 +7,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -75,7 +74,7 @@ public:
             if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                if (external_tables.end() != external_tables.find(*getIdentifierName(subquery_or_table_name)))
+                if (external_tables.end() != external_tables.find(getIdentifierName(subquery_or_table_name)))
                     return;
             }
 

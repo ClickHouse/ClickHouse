@@ -19,7 +19,6 @@ public:
 
     void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     void createTable(
@@ -73,7 +72,7 @@ private:
     const String data_path;
     Poco::Logger * log;
 
-    void startupTables(ThreadPool * thread_pool);
+    void startupTables(ThreadPool & thread_pool);
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };

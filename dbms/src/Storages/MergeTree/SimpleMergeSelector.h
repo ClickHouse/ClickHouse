@@ -71,7 +71,7 @@ public:
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
     };
 
-    explicit SimpleMergeSelector(const Settings & settings) : settings(settings) {}
+    explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
 
     PartsInPartition select(
         const Partitions & partitions,

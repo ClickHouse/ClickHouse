@@ -170,7 +170,7 @@ class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 public:
     static constexpr auto name = "if";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(context); }
-    FunctionIf(const Context & context) : context(context) {}
+    FunctionIf(const Context & context_) : context(context_) {}
 
 private:
     template <typename T0, typename T1>

@@ -56,6 +56,32 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
+
+Return subset in specified range (not include the range_end).
+
+```
+bitmapSubsetInRange(bitmap, range_start, range_end)
+```
+
+**Parameters**
+
+- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
+- `range_end` – range end point(excluded). Type: [UInt32](../../data_types/int_uint.md).
+
+**Example**
+
+``` sql
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+```
+┌─res───────────────┐
+│ [30,31,32,33,100] │
+└───────────────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.
@@ -66,10 +92,10 @@ bitmapContains(haystack, needle)
 
 **Parameters**
 
-- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the functions searches.
+- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
 - `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
 
-**Returned value**
+**Returned values**
 
 - 0 — If `haystack` doesn't contain `needle`.
 - 1 — If `haystack` contains `needle`.

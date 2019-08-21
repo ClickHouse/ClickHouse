@@ -33,8 +33,8 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    const UInt64 max_block_size)
-    : connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size}
+    const UInt64 max_block_size_)
+    : connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size_}
 {
     description.init(sample_block);
 }
@@ -87,38 +87,38 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8:
+            case ValueType::vtUInt8:
                 insertNumber<UInt8>(column, value, name);
                 break;
-            case ValueType::UInt16:
+            case ValueType::vtUInt16:
                 insertNumber<UInt16>(column, value, name);
                 break;
-            case ValueType::UInt32:
+            case ValueType::vtUInt32:
                 insertNumber<UInt32>(column, value, name);
                 break;
-            case ValueType::UInt64:
+            case ValueType::vtUInt64:
                 insertNumber<UInt64>(column, value, name);
                 break;
-            case ValueType::Int8:
+            case ValueType::vtInt8:
                 insertNumber<Int8>(column, value, name);
                 break;
-            case ValueType::Int16:
+            case ValueType::vtInt16:
                 insertNumber<Int16>(column, value, name);
                 break;
-            case ValueType::Int32:
+            case ValueType::vtInt32:
                 insertNumber<Int32>(column, value, name);
                 break;
-            case ValueType::Int64:
+            case ValueType::vtInt64:
                 insertNumber<Int64>(column, value, name);
                 break;
-            case ValueType::Float32:
+            case ValueType::vtFloat32:
                 insertNumber<Float32>(column, value, name);
                 break;
-            case ValueType::Float64:
+            case ValueType::vtFloat64:
                 insertNumber<Float64>(column, value, name);
                 break;
 
-            case ValueType::String:
+            case ValueType::vtString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
                 {
@@ -137,7 +137,7 @@ namespace
                                 ErrorCodes::TYPE_MISMATCH};
             }
 
-            case ValueType::Date:
+            case ValueType::vtDate:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
                     throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
@@ -148,7 +148,7 @@ namespace
                 break;
             }
 
-            case ValueType::DateTime:
+            case ValueType::vtDateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
                     throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
@@ -158,7 +158,7 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
-            case ValueType::UUID:
+            case ValueType::vtUUID:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {

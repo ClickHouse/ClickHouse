@@ -61,7 +61,8 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
+                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -124,7 +125,8 @@ off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
         pos = working_buffer.end();
         off_t res = ::lseek(fd, new_pos, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                                   ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         pos_in_file = new_pos;
 
         watch.stop();

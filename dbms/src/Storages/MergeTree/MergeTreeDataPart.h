@@ -153,7 +153,7 @@ struct MergeTreeDataPart
     struct StatesFilter
     {
         std::initializer_list<State> affordable_states;
-        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
+        StatesFilter(const std::initializer_list<State> & affordable_states_) : affordable_states(affordable_states_) {}
 
         bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
         {

@@ -186,10 +186,10 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
     : column_holder(std::move(holder))
-    , is_nullable(is_nullable)
-    , index(numSpecialValues(is_nullable), 0)
+    , is_nullable(is_nullable_)
+    , index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);

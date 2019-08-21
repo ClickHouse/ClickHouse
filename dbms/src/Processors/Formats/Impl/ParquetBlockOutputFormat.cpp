@@ -1,7 +1,6 @@
-#include "config_formats.h"
+#include "ParquetBlockOutputFormat.h"
 
 #if USE_PARQUET
-#    include "ParquetBlockOutputFormat.h"
 
 // TODO: clean includes
 #    include <Columns/ColumnDecimal.h>
@@ -35,8 +34,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IOutputFormat(header, out_), format_settings{format_settings}
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
 }
 
@@ -424,7 +423,12 @@ void ParquetBlockOutputFormat::finalize()
 void registerOutputFormatProcessorParquet(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context & /*context*/, const FormatSettings & format_settings)
+        "Parquet",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const Context & /*context*/,
+           FormatFactory::WriteCallback,
+           const FormatSettings & format_settings)
         {
             auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
             /// TODO

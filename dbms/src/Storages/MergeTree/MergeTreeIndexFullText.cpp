@@ -61,9 +61,9 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
     return true;
 }
 
-MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index)
+MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
     : IMergeTreeIndexGranule()
-    , index(index)
+    , index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -87,8 +87,8 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index)
-    : index(index), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
+MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index_)
+    : index(index_), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 {

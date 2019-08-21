@@ -6,6 +6,8 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/FilterBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -21,10 +23,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
 #include <Core/SettingsCommon.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/ASTFunction.h>
@@ -387,6 +388,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
+    checkStackSize();
     auto database = context.getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getIterator(global_context, table_name_match);

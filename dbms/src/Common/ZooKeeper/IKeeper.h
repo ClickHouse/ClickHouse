@@ -301,12 +301,12 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const int32_t code, int);
+    Exception(const std::string & msg, const int32_t code_, int);
 
 public:
-    explicit Exception(const int32_t code);
-    Exception(const std::string & msg, const int32_t code);
-    Exception(const int32_t code, const std::string & path);
+    explicit Exception(const int32_t code_);
+    Exception(const std::string & msg, const int32_t code_);
+    Exception(const int32_t code_, const std::string & path);
     Exception(const Exception & exc);
 
     const char * name() const throw() override { return "Coordination::Exception"; }

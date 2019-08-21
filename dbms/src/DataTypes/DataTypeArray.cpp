@@ -462,7 +462,7 @@ void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & proto
         bool nested_row_added;
         do
             nested->deserializeProtobuf(nested_column, protobuf, true, nested_row_added);
-        while (nested_row_added && protobuf.maybeCanReadValue());
+        while (nested_row_added && protobuf.canReadMoreValues());
         if (allow_add_row)
         {
             offsets.emplace_back(nested_column.size());

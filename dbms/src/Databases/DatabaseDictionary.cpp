@@ -27,7 +27,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
+void DatabaseDictionary::loadTables(Context &, bool)
 {
 }
 

@@ -152,7 +152,7 @@ class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStrea
 public:
     GraphiteRollupSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        const Graphite::Params & params, time_t time_of_merge);
+        const Graphite::Params & params_, time_t time_of_merge_);
 
     String getName() const override { return "GraphiteRollupSorted"; }
 

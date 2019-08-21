@@ -257,8 +257,8 @@ struct ColumnTuple::Less
     TupleColumns columns;
     int nan_direction_hint;
 
-    Less(const TupleColumns & columns, int nan_direction_hint_)
-        : columns(columns), nan_direction_hint(nan_direction_hint_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
 

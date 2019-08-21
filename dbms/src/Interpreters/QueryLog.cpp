@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Poco/Net/IPAddress.h>
@@ -20,11 +21,22 @@
 namespace DB
 {
 
+template <> struct NearestFieldTypeImpl<QueryLogElement::Type> { using Type = UInt64; };
+
 Block QueryLogElement::createBlock()
 {
+    auto query_status_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"QueryStart",                  static_cast<Int8>(QUERY_START)},
+            {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
+            {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
+            {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+        });
+
     return
     {
-        {std::make_shared<DataTypeUInt8>(),                                   "type"},
+        {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
@@ -80,7 +92,7 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(UInt64(type));
+    columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_start_time);

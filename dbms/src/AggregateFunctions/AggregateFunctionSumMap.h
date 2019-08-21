@@ -62,10 +62,10 @@ private:
 
 public:
     AggregateFunctionSumMapBase(
-        const DataTypePtr & keys_type, const DataTypes & values_types,
+        const DataTypePtr & keys_type_, const DataTypes & values_types_,
         const DataTypes & argument_types_, const Array & params_)
         : IAggregateFunctionDataHelper<AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
-        , keys_type(keys_type), values_types(values_types) {}
+        , keys_type(keys_type_), values_types(values_types_) {}
 
     String getName() const override { return "sumMap"; }
 
@@ -295,9 +295,9 @@ private:
 
 public:
     AggregateFunctionSumMapFiltered(
-        const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_,
+        const DataTypePtr & keys_type_, const DataTypes & values_types_, const Array & keys_to_keep_,
         const DataTypes & argument_types_, const Array & params_)
-        : Base{keys_type, values_types, argument_types_, params_}
+        : Base{keys_type_, values_types_, argument_types_, params_}
     {
         keys_to_keep.reserve(keys_to_keep_.size());
         for (const Field & f : keys_to_keep_)

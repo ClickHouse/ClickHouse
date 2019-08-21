@@ -32,7 +32,7 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    ConcatImpl(const Context & context) : context(context) {}
+    ConcatImpl(const Context & context_) : context(context_) {}
     static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
@@ -190,7 +190,7 @@ public:
     static constexpr auto name = "concat";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
 
-    FunctionBuilderConcat(const Context & context) : context(context) {}
+    FunctionBuilderConcat(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
