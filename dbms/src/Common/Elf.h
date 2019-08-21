@@ -26,7 +26,7 @@ typedef Elf64_Rel GElf_Rel;
 typedef Elf64_Rela GElf_Rela;
 typedef Elf64_Sym GElf_Sym;
 
-#define DT_GNU_HASH	0x6ffffef5	/* GNU-style hash table. */
+#define DT_GNU_HASH	0x6ffffef5 /* GNU-style hash table. */
 
 #define __ELF_NATIVE_CLASS __WORDSIZE
 #define ElfW(type)         _ElfW(Elf, __ELF_NATIVE_CLASS, type)
