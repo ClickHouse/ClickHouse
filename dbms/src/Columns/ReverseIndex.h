@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include <common/unaligned.h>
 

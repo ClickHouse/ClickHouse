@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -800,7 +801,7 @@ namespace
         void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
-                column = creator(static_cast<ColumnVector<T> *>(nullptr));
+                column = creator(assert_cast<ColumnVector<T> *>(nullptr));
         }
     };
 }
@@ -814,13 +815,13 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
-        return creator(static_cast<ColumnString *>(nullptr));
+        return creator(assert_cast<ColumnString *>(nullptr));
     if (isFixedString(type))
-        return creator(static_cast<ColumnFixedString *>(nullptr));
+        return creator(assert_cast<ColumnFixedString *>(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
-        return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
+        return creator(assert_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+        return creator(assert_cast<ColumnVector<UInt32> *>(nullptr));
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
