@@ -36,6 +36,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
 #include <DataTypes/registerDataTypes.h>
+#include <Formats/registerFormats.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -297,6 +298,7 @@ private:
         UseSSL use_ssl;
 
         registerDataTypes();
+        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 

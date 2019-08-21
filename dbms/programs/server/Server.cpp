@@ -45,6 +45,7 @@
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <DataTypes/registerDataTypes.h>
+#include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
@@ -181,6 +182,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ThreadStatus thread_status;
 
     registerDataTypes();
+    registerFormats();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();

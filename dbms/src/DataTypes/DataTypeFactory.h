@@ -29,6 +29,9 @@ private:
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
 public:
+    // Override instance so that it's definition only exists in one TU.
+    static DataTypeFactory & instance();
+
     DataTypePtr get(const String & full_name) const;
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
@@ -54,7 +57,6 @@ private:
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
 
-    DataTypeFactory();
     ~DataTypeFactory() override;
 
     const DataTypesDictionary & getCreatorMap() const override { return data_types; }

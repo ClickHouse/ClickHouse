@@ -87,6 +87,9 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
+    // Override instance so that it's definition only exists in one TU.
+    static FormatFactory & instance();
+
     BlockInputStreamPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -127,7 +130,6 @@ private:
     /// FormatsDictionary dict;
     FormatsDictionary dict;
 
-    FormatFactory();
     friend class ext::singleton<FormatFactory>;
 
     const Creators & getCreators(const String & name) const;

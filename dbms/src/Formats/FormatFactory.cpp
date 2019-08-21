@@ -215,54 +215,10 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
     target = std::move(output_creator);
 }
 
-
-/// Formats for both input/output.
-
-void registerInputFormatNative(FormatFactory & factory);
-void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatCSV(FormatFactory & factory);
-
-void registerInputFormatProcessorNative(FormatFactory & factory);
-void registerOutputFormatProcessorNative(FormatFactory & factory);
-void registerInputFormatProcessorRowBinary(FormatFactory & factory);
-void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerInputFormatProcessorValues(FormatFactory & factory);
-void registerOutputFormatProcessorValues(FormatFactory & factory);
-void registerInputFormatProcessorCSV(FormatFactory & factory);
-void registerOutputFormatProcessorCSV(FormatFactory & factory);
-void registerInputFormatProcessorTSKV(FormatFactory & factory);
-void registerOutputFormatProcessorTSKV(FormatFactory & factory);
-void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerOutputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorProtobuf(FormatFactory & factory);
-void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
-
-/// Output only (presentational) formats.
-
-void registerOutputFormatNull(FormatFactory & factory);
-
-void registerOutputFormatProcessorPretty(FormatFactory & factory);
-void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
-void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
-void registerOutputFormatProcessorVertical(FormatFactory & factory);
-void registerOutputFormatProcessorJSON(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
-void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
-void registerOutputFormatProcessorNull(FormatFactory & factory);
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
-
-/// Input only formats.
-void registerInputFormatProcessorCapnProto(FormatFactory & factory);
-
-FormatFactory::FormatFactory() {}
-
+FormatFactory & FormatFactory::instance()
+{
+    static FormatFactory instance;
+    return instance;
+}
 
 }

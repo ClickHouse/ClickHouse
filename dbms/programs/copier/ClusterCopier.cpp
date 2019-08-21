@@ -41,6 +41,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/registerDataTypes.h>
+#include <Formats/registerFormats.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -2178,6 +2179,7 @@ void ClusterCopierApp::mainImpl()
     context->setPath(process_path);
 
     registerDataTypes();
+    registerFormats();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();

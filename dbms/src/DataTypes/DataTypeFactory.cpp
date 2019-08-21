@@ -157,8 +157,11 @@ const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String 
         throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
-DataTypeFactory::DataTypeFactory()
-{}
+DataTypeFactory & DataTypeFactory::instance()
+{
+    static DataTypeFactory instance;
+    return instance;
+}
 
 DataTypeFactory::~DataTypeFactory()
 {}
