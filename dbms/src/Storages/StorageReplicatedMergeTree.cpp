@@ -92,7 +92,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int LEADERSHIP_CHANGED;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
@@ -1084,7 +1083,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
+            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -1214,7 +1213,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get());
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get(), table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1953,10 +1952,37 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
-    Strings parts = zookeeper->getChildren(source_path + "/parts");
-    ActiveDataPartSet active_parts_set(format_version, parts);
+    Strings source_replica_parts = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet active_parts_set(format_version, source_replica_parts);
 
     Strings active_parts = active_parts_set.getParts();
+
+    /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
+    Strings local_parts_in_zk = zookeeper->getChildren(replica_path + "/parts");
+    Strings parts_to_remove_from_zk;
+    for (const auto & part : local_parts_in_zk)
+    {
+        if (active_parts_set.getContainingPart(part).empty())
+        {
+            queue.remove(zookeeper, part);
+            parts_to_remove_from_zk.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part << ". Removing it from ZooKeeper.");
+        }
+    }
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
+
+    auto local_active_parts = getDataParts();
+    DataPartsVector parts_to_remove_from_working_set;
+    for (const auto & part : local_active_parts)
+    {
+        if (active_parts_set.getContainingPart(part->name).empty())
+        {
+            parts_to_remove_from_working_set.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part->name << ". Removing it from working set.");
+        }
+    }
+    removePartsFromWorkingSet(parts_to_remove_from_working_set, true);
+
     for (const String & name : active_parts)
     {
         LogEntry log_entry;
@@ -2166,71 +2192,23 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
-namespace
-{
-
-/// While exists, marks parts as 'currently_moving' and keep reservations.
-struct CurrentlyMovingPartsTagger
-{
-    MergeTreeMovingParts parts;
-
-    ReplicatedMergeTreeQueue & queue;
-
-    Names remove_names;
-
-public:
-    CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, ReplicatedMergeTreeQueue & queue_)
-        : parts(std::move(parts_))
-        , queue(queue_)
-    {
-        MergeTreeData::DataPartsVector data_parts;
-        for (const auto & moving_part : parts)
-            data_parts.emplace_back(moving_part.part);
-
-        /// Throws exception if some parts already exists
-        remove_names = queue.disableMergesForParts(data_parts);
-    }
-
-    ~CurrentlyMovingPartsTagger()
-    {
-        /// May return false, but we don't care, it's ok.
-        for (auto & part_name : remove_names)
-            if (!queue.removeFromVirtualParts(part_name))
-                std::terminate();
-    }
-};
-
-}
-
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
 {
-    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    MergeTreeMovingParts parts_to_move;
+
+    auto can_move = [this](const DataPartPtr & part, String *) -> bool
     {
-        auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+        return !queue.isPartAssignedToBackgroundOperation(part);
+    };
 
-        auto can_move = [this](const DataPartPtr & part, String *) -> bool
-        {
-            return !queue.isPartAssignedToBackgroundOperation(part);
-        };
+    if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
-        MergeTreeMovingParts parts_to_move;
-        if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
-        try
-        {
-            moving_tagger.emplace(std::move(parts_to_move), queue);
-        }
-        catch (const DB::Exception & ex)
-        {
-            LOG_INFO(log, "Cannot start moving: " + ex.displayText());
-            return BackgroundProcessingPoolTaskResult::ERROR;
-        }
-    }
+    LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
 
-    LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
-
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
+    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
 
     std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
@@ -2241,7 +2219,6 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
 
     return BackgroundProcessingPoolTaskResult::SUCCESS;
 }
-
 
 
 void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space)
@@ -2269,10 +2246,8 @@ void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataParts
         parts_to_move.emplace_back(part, std::move(reservation));
     }
 
-    CurrentlyMovingPartsTagger moving_tagger(std::move(parts_to_move), queue);
-
     std::string reason;
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger.parts);
+    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
 
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
@@ -3198,9 +3173,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
     }
 
-    /// TODO: Bad setting name for such purpose
     if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
+        /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
+        /// TODO Check all other "wait" places.
         for (auto & merge_entry : merge_entries)
             waitForAllReplicasToProcessLogEntry(merge_entry);
     }

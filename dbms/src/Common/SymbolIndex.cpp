@@ -1,3 +1,5 @@
+#ifdef __ELF__
+
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -316,3 +318,5 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 }
 
 }
+
+#endif

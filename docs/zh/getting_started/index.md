@@ -43,6 +43,32 @@ ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与'config
 默认情况下，允许从任何地方使用默认的‘default’用户无密码的访问ClickHouse。参考‘user/default/networks’。
 有关更多信息，请参考"Configuration files"部分。
 
+###来自RPM包
+
+Yandex ClickHouse团队建议使用官方预编译的`rpm`软件包，用于CentOS，RedHat和所有其他基于rpm的Linux发行版。
+
+首先，您需要添加官方存储库：
+
+```bash
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+```
+
+如果您想使用最新版本，请将`stable`替换为`testing`（建议您在测试环境中使用）。
+
+然后运行这些命令以实际安装包：
+
+```bash
+sudo yum install clickhouse-server clickhouse-client
+```
+
+您也可以从此处手动下载和安装软件包：<https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>。
+
+###来自Docker
+
+要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。那些图像使用官方的`deb`包。
+
 ### 使用源码安装
 
 具体编译方式可以参考build.md。
@@ -66,14 +92,6 @@ Server: dbms/programs/clickhouse-server
 为需要的用户运行‘chown’
 
 日志的路径可以在server config (src/dbms/programs/server/config.xml)中配置。
-
-### 其他的安装方法
-
-Docker image：<https://hub.docker.com/r/yandex/clickhouse-server/>
-
-CentOS或RHEL安装包：<https://github.com/Altinity/clickhouse-rpm-install>
-
-Gentoo：`emerge clickhouse`
 
 ## 启动
 

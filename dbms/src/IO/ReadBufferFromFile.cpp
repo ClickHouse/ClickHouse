@@ -47,7 +47,7 @@ ReadBufferFromFile::ReadBufferFromFile(
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrno("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
     }
 #endif
 }

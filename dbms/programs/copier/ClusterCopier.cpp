@@ -1932,15 +1932,13 @@ protected:
 
         TaskTable & task_table = task_shard.task_table;
 
-        String query;
-        {
-            WriteBufferFromOwnString wb;
-            wb << "SELECT 1"
-               << " FROM "<< getQuotedTable(task_shard.table_read_shard)
-               << " WHERE " << queryToString(task_table.engine_push_partition_key_ast) << " = " << partition_quoted_name
-               << " LIMIT 1";
-            query = wb.str();
-        }
+        std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard)
+            + " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + partition_quoted_name + " AS partition_key))";
+
+        if (!task_table.where_condition_str.empty())
+            query += " AND (" + task_table.where_condition_str + ")";
+
+        query += " LIMIT 1";
 
         LOG_DEBUG(log, "Checking shard " << task_shard.getDescription() << " for partition "
                        << partition_quoted_name << " existence, executing query: " << query);

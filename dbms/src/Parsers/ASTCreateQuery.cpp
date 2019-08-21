@@ -173,6 +173,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
+    if (tables)
+        res->set(res->tables, tables->clone());
 
     cloneOutputOptions(*res);
 
@@ -204,6 +206,11 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "VIEW";
         if (is_materialized_view)
             what = "MATERIALIZED VIEW";
+        if (is_live_view)
+            what = "LIVE VIEW";
+        if (is_live_channel)
+            what = "LIVE CHANNEL";
+
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
@@ -256,6 +263,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
+    }
+
+    if (tables)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
+        tables->formatImpl(settings, state, frame);
     }
 }
 
