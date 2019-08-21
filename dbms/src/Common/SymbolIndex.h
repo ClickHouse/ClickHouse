@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef __ELF__
+
 #include <vector>
 #include <string>
 #include <ext/singleton.h>
@@ -53,3 +55,5 @@ private:
 };
 
 }
+
+#endif
