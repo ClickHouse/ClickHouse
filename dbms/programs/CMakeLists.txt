@@ -98,7 +98,7 @@ endif()
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier)
+            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-obfuscator clickhouse-copier)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
