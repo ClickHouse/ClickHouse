@@ -301,7 +301,7 @@ Columns:
 
 - `level` (`UInt32`) – Depth of the merge tree. Zero means that current part was created by insert rather than by merging other parts.
 
-- `data_version` (`UInt64`) – Block number that is used to determine which mutations should be applied to the data part (the mutations with the bigger version than `data_version`).
+- `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (the mutations with the higher version than `data_version`).
 
 - `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
 
