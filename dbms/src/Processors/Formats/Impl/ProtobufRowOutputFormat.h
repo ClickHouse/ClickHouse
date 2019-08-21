@@ -35,6 +35,7 @@ public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
+        FormatFactory::WriteCallback callback,
         const FormatSchemaInfo & format_schema);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }

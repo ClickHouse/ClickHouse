@@ -523,7 +523,7 @@ public:
 
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
-    const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry,
+    const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
     time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
@@ -886,7 +886,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const FutureMergedMutatedPart & future_part,
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
-    const Context & context)
+    const Context & context,
+    TableStructureReadLockHolder & table_lock_holder)
 {
     auto check_not_cancelled = [&]()
     {
@@ -921,7 +922,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                             command.partition, context_for_reading);
             });
 
-
     MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
 
     if (!mutations_interpreter.isStorageTouchedByMutations())
@@ -937,6 +937,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
+    new_data_part->index_granularity_info = source_part->index_granularity_info;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -951,7 +952,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
-    auto in = mutations_interpreter.execute();
+    auto in = mutations_interpreter.execute(table_lock_holder);
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
@@ -1074,7 +1075,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             /* skip_offsets = */ false,
             std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
             unused_written_offsets,
-            source_part->index_granularity
+            source_part->index_granularity,
+            &source_part->index_granularity_info
         );
 
         in->readPrefix();

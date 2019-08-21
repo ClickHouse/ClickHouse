@@ -49,6 +49,33 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. این تنظیمات در فایل 'users.xml' (کنار 'config.xml') می باشد. به صورت پیش فرض دسترسی برای کاربر 'default' از همه جا بدون نیاز به پسورد وجود دارد. 'user/default/networks' را مشاهده کنید. برای اطلاعات بیشتر قسمت "تنظیمات فایل ها" را مشاهده کنید.
 
+                                                           RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ###
+
+.ﺪﻨﮐ ﯽﻣ ﻪﯿﺻﻮﺗ ﺲﮐﻮﻨﯿﻟ ﺮﺑ ﯽﻨﺘﺒﻣ rpm ﺮﺑ ﯽﻨﺘﺒﻣ ﯼﺎﻫ ﻊﯾﺯﻮﺗ ﺮﯾﺎﺳ ﻭ CentOS ، RedHat ﯼﺍ
+
+                                           :ﺪﯿﻨﮐ ﻪﻓﺎﺿﺍ ﺍﺭ ﯽﻤﺳﺭ ﻥﺰﺨﻣ ﺪﯾﺎﺑ ﺍﺪﺘﺑﺍ
+
+```bash
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+```
+
+.(ﺩﻮﺷ ﯽﻣ ﻪﯿﺻﻮﺗ ﺎﻤﺷ ﺶﯾﺎﻣﺯﺁ ﯼﺎﻫ ﻂﯿﺤﻣ ﯼﺍﺮﺑ ﻦﯾﺍ) ﺪﯿﻨﮐ ﻦﯾﺰﮕﯾﺎﺟ "ﺖﺴﺗ" ﺎﺑ ﺍﺭ "ﺭﺍﺪﯾﺎﭘ"
+
+                  :ﺪﯿﻨﮐ ﺐﺼﻧ ﺍﺭ ﺎﻫ ﻪﺘﺴﺑ ﻊﻗﺍﻭ ﺭﺩ ﺎﺗ ﺪﯿﻨﮐ ﺍﺮﺟﺍ ﺍﺭ ﺕﺍﺭﻮﺘﺳﺩ ﻦﯾﺍ ﺲﭙﺳ
+
+```bash
+sudo yum install clickhouse-server clickhouse-client
+```
+
+.<https://repo.yandex.ru/clickhouse/rpm/stable/x86_64> :ﺪﯿﻨﮐ ﺐﺼﻧ ﻭ ﯼﺮﯿﮔﺭﺎﺑ ﺎﺠﻨ
+
+                                                           Docker Image ﺯﺍ ###
+
+.ﺪﻨﻨﮐ ﯽﻣ ﻩﺩﺎﻔﺘﺳﺍ ﻞﺧﺍﺩ ﺭﺩ "deb" ﯽﻤﺳﺭ ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ﺮﯾﻭﺎﺼﺗ ﻦﯾﺍ .ﺪﯿﻨﮐ ﻝﺎﺒﻧﺩ ﺍﺭ (/ht
+
+
 ### نصب از طریق Source
 
 برای Compile، دستورالعمل های فایل build.md را دنبال کنید:
