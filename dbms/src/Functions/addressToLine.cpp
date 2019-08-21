@@ -1,3 +1,5 @@
+#ifdef __ELF__
+
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
@@ -149,3 +151,5 @@ void registerFunctionAddressToLine(FunctionFactory & factory)
 }
 
 }
+
+#endif

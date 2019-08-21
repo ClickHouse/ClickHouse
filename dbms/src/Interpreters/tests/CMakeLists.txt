@@ -56,7 +56,7 @@ target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_syst
 add_check(expression_analyzer)
 
 add_executable (users users.cpp)
-target_link_libraries (users PRIVATE dbms clickhouse_common_config ${Boost_FILESYSTEM_LIBRARY})
+target_link_libraries (users PRIVATE dbms clickhouse_common_config stdc++fs)
 
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)
