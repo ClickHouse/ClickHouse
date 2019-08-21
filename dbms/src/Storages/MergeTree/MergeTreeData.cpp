@@ -2393,11 +2393,11 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
+    auto lock = lockParts();
     for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
-            auto lock = lockParts();
             auto active_part_it = data_parts_by_info.find(original_active_part->info);
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("No such active part by info. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
@@ -2602,9 +2602,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 
     for (const auto & part : parts)
     {
-
         if (part->disk->getName() == disk->getName())
-            throw Exception("Part " + partition_id + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+            throw Exception("Part " + part->name + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
     }
 
     movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk));
@@ -2638,7 +2637,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     for (const auto & part : parts)
         for (const auto & disk : volume->disks)
             if (part->disk->getName() == disk->getName())
-                throw Exception("Part " + partition_id + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
+                throw Exception("Part " + part->name + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
 
     movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume));
 }

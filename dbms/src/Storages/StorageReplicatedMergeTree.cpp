@@ -2213,7 +2213,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::tryMoveParts()
     std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
     {
-        LOG_WARNING(log, "Move failed. " << reason);
+        LOG_INFO(log, "Move failed. " << reason);
         return BackgroundProcessingPoolTaskResult::ERROR;
     }
 

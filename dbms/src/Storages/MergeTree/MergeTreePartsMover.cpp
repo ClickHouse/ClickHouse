@@ -174,7 +174,7 @@ bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector &
         std::ostringstream oss;
         oss << "Failed to swap parts: ";
         oss << boost::algorithm::join(failed_parts, ", ");
-        oss << ". Their active part doesn't exist.";
+        oss << ". Their active parts doesn't exist.";
         *out_reason = oss.str();
         return false;
     }

@@ -39,29 +39,6 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 }
 
 
-Names ReplicatedMergeTreeQueue::disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts)
-{
-    std::lock_guard lock(state_mutex);
-    for (const auto & data_part : data_parts)
-    {
-        if (virtual_parts.getContainingPart(data_part->name) != data_part->name)
-            throw Exception("Part " + data_part->name + " is"
-                + " already assigned to background operation.", ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
-    }
-
-    Names result;
-    for (const auto & data_part : data_parts)
-    {
-        MergeTreePartInfo info_copy = data_part->info;
-        info_copy.partition_id = "disabled"; /// Fake name to block this part
-        auto fake_part_name = info_copy.getPartName();
-        virtual_parts.add(fake_part_name);
-        result.emplace_back(fake_part_name);
-    }
-    return result;
-}
-
-
 bool ReplicatedMergeTreeQueue::isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const
 {
     std::lock_guard lock(state_mutex);
