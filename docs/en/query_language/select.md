@@ -588,7 +588,8 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
 
 
-- `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
+!!! note "Note"
+    `ASOF` join is **not** supported in the [Join](../operations/table_engines/join.md) table engine.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
