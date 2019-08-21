@@ -59,7 +59,7 @@ namespace DB
         std::shared_ptr<arrow::Table> table;
         arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, &table);
 
-        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context);
+        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context, "Parquet");
         return res;
     }
 

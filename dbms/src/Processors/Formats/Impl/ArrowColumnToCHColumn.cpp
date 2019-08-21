@@ -268,7 +268,7 @@ namespace DB
 
     void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
                                                     arrow::Status &read_status, const Block &header,
-                                                    int &row_group_current, const Context &context)
+                                                    int &row_group_current, const Context &context, std::string format_name)
                                                     {
         Columns columns_list;
         UInt64 num_rows = 0;
@@ -277,7 +277,7 @@ namespace DB
 
         using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
         if (!read_status.ok())
-            throw Exception{"Error while reading ORC data: " + read_status.ToString(),
+            throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
                             ErrorCodes::CANNOT_READ_ALL_DATA};
 
         if (0 == table->num_rows())
@@ -333,7 +333,7 @@ namespace DB
                 throw Exception
                 {
                         "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
-                        + "\" is not supported for conversion from a ORC data format",
+                        + "\" is not supported for conversion from a " + format_name + " data format",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
@@ -392,7 +392,7 @@ namespace DB
                 default:
                     throw Exception
                     {
-                            "Unsupported ORC type \"" + arrow_column->type()->name() + "\" of an input column \""
+                            "Unsupported " + format_name + " type \"" + arrow_column->type()->name() + "\" of an input column \""
                             + arrow_column->name() + "\"",
                             ErrorCodes::UNKNOWN_TYPE
                     };
