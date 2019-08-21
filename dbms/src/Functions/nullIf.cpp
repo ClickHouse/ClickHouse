@@ -47,14 +47,13 @@ public:
 
         Block temp_block = block;
 
-        size_t res_pos = temp_block.columns();
-        temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
+        auto not_equals_func = FunctionFactory::instance().get("notEquals", context)->build(
+            {temp_block.getByPosition(arguments[0]), temp_block.getByPosition(arguments[1])});
 
-        {
-            auto equals_func = FunctionFactory::instance().get("notEquals", context)->build(
-                {temp_block.getByPosition(arguments[0]), temp_block.getByPosition(arguments[1])});
-            equals_func->execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
-        }
+        size_t not_equals_res_pos = temp_block.columns();
+        temp_block.insert({nullptr, not_equals_func->getReturnType(), ""});
+
+        not_equals_func->execute(temp_block, {arguments[0], arguments[1]}, not_equals_res_pos, input_rows_count);
 
         /// Argument corresponding to the NULL value.
         size_t null_pos = temp_block.columns();
@@ -68,13 +67,12 @@ public:
         temp_block.insert(null_elem);
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {temp_block.getByPosition(res_pos), temp_block.getByPosition(null_pos), temp_block.getByPosition(arguments[0])});
-        func_if->execute(temp_block, {res_pos, arguments[0], null_pos}, result, input_rows_count);
+            {temp_block.getByPosition(not_equals_res_pos), temp_block.getByPosition(arguments[0]), temp_block.getByPosition(null_pos)});
+        func_if->execute(temp_block, {not_equals_res_pos, arguments[0], null_pos}, result, input_rows_count);
 
         block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
     }
 };
-
 
 
 void registerFunctionNullIf(FunctionFactory & factory)
