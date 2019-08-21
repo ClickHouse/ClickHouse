@@ -608,7 +608,7 @@ static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
-    if (!isNumber(type))
+    if (!isColumnedAsNumber(type))
         throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
     return field;
