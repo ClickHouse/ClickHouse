@@ -138,11 +138,6 @@ Compression is supported for the table engines:
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
-!!!warning
-    You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility.
-
-
-
 ### Specialized codecs {#create-query-specialized-codecs}
 
 These codecs are designed to make compression more effective using specifities of the data. Some of this codecs don't compress data by itself, but they prepare data to be compressed better by common purpose codecs.
