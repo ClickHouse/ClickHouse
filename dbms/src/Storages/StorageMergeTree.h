@@ -15,6 +15,7 @@
 #include <Common/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -95,6 +96,10 @@ private:
 
     BackgroundProcessingPool::TaskHandle background_task_handle;
 
+    /// A task which move parts to another disks/volumes
+    /// executes in background schedule pool
+    BackgroundSchedulePool::TaskHolder moving_parts_task;
+
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
         const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
 
@@ -106,7 +111,7 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
-    bool moveParts();
+    void movingPartsTask();
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();

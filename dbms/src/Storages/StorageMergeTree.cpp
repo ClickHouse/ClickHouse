@@ -80,6 +80,8 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
+
+    moving_parts_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageMergeTree::movingPartsTask)", [this] { movingPartsTask(); });
 }
 
 
@@ -94,6 +96,7 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     background_task_handle = background_pool.addTask([this] { return backgroundTask(); });
+    moving_parts_task->activateAndSchedule();
 }
 
 
@@ -658,8 +661,9 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
 }
 
-bool StorageMergeTree::moveParts()
+void StorageMergeTree::movingPartsTask()
 {
+    LOG_INFO(log, "TRYING TO MOVE SMS");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     MergeTreeMovingParts parts_to_move;
@@ -672,7 +676,10 @@ bool StorageMergeTree::moveParts()
         };
 
         if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-            return false;
+        {
+            moving_parts_task->scheduleAfter(1 * 1000);
+            return;
+        }
     }
     LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
 
@@ -680,12 +687,9 @@ bool StorageMergeTree::moveParts()
 
     std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
-    {
-        LOG_WARNING(log, "Some parts move failed: " << reason);
-        return false;
-    }
+        LOG_WARNING(log, "Move failed: " << reason);
 
-    return true;
+    moving_parts_task->scheduleAfter(1 * 1000);
 }
 
 
@@ -831,9 +835,6 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        if (moveParts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         if (tryMutatePart())
