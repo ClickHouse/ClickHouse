@@ -299,7 +299,7 @@ Columns:
 
 - `max_block_number` (`UInt64`) – The maximum number of data parts that make up the current part after merging.
 
-- `level` (`UInt32`) – Depth of the merge tree. If a merge was not performed, `level=0`.
+- `level` (`UInt32`) – Depth of the merge tree. Zero means that current part was created by insert rather than by merging other parts.
 
 - `data_version` (`UInt64`) – Block number that is used to determine which mutations should be applied to the data part (the mutations with the bigger version than `data_version`).
 
