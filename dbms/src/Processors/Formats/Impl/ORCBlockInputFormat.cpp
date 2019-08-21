@@ -57,7 +57,7 @@ namespace DB
 
         arrow::Status read_status = file_reader->Read(&table);
 
-        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context);
+        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context, "ORC");
 
         return res;
     }
