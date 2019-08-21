@@ -28,8 +28,16 @@ To assert_cast(From && from)
 #ifndef NDEBUG
     try
     {
-        if (typeid(from) == typeid(To))
-            return static_cast<To>(from);
+        if constexpr (std::is_pointer_v<To>)
+        {
+            if (typeid(*from) == typeid(std::remove_pointer_t<To>))
+                return static_cast<To>(from);
+        }
+        else
+        {
+            if (typeid(from) == typeid(To))
+                return static_cast<To>(from);
+        }
     }
     catch (const std::exception & e)
     {
