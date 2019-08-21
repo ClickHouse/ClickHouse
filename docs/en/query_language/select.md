@@ -547,18 +547,35 @@ ClickHouse doesn't directly support syntax with commas, so we don't recommend us
 
 Tables for `ASOF JOIN` must have an ordered sequence column. This column cannot be alone in a table, and should be one of the data types: `UInt32`, `UInt64`, `Float32`, `Float64`, `Date`, and `DateTime`.
 
-Use the following syntax for `ASOF JOIN`:
+You can use the following types of syntax:
 
-```
-SELECT expression_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... equi_columnN, asof_column)
-```
+- `ASOF JOIN ... ON`
 
-`ASOF JOIN` uses `equi_columnX` for joining on equality (`user_id` in our example) and `asof_column` for joining on the closest match.
+    ```sql
+    SELECT expressions_list
+    FROM table_1
+    ASOF LEFT JOIN table_2
+    ON equi_cond AND closest_match_cond
+    ```
+
+    You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. There is just `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` types of conditions are available. You cannot apply other conditions like `>` or `!=`.
+
+- `ASOF JOIN ... USING`
+
+    ```sql
+    SELECT expressions_list
+    FROM table_1
+    ASOF JOIN table_2
+    USING (equi_column1, ... equi_columnN, asof_column)
+    ```
+
+    `ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table2.asof_column` condition. The `asof_column` column must be the last in the `USING` clause.
 
 For example, consider the following tables:
 
 ```
-     table_1               table_2
+     table_1                           table_2
+
   event   | ev_time | user_id       event   | ev_time | user_id
 ----------|---------|----------   ----------|---------|----------             
               ...                               ...
@@ -568,13 +585,11 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` takes the timestamp of a user event from `table_1` and finds an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column is used for joining on equality and the `ev_time` column is used  for joining on the closest match.
- In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
 
-Implementation details:
 
-- `asof_column` should be last in the `USING` clause.
-- `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
+!!! note "Note"
+    `ASOF` join is **not** supported in the [Join](../operations/table_engines/join.md) table engine.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 

@@ -250,6 +250,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
     if (size == 0)
         return callback("<Empty trace>");
 
+#ifdef __ELF__
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
@@ -290,6 +291,18 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         callback(out.str());
         out.str({});
     }
+#else
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+        out << i << ". " << addr;
+
+        callback(out.str());
+        out.str({});
+    }
+#endif
 }
 
 static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
