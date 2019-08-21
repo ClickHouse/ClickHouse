@@ -563,7 +563,10 @@ You can use the following types of syntax:
 - `ASOF JOIN ... USING`
 
     ```sql
-    SELECT expressions_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... equi_columnN, asof_column)
+    SELECT expressions_list
+    FROM table_1
+    ASOF JOIN table_2
+    USING (equi_column1, ... equi_columnN, asof_column)
     ```
 
     `ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table2.asof_column` condition. The `asof_column` column must be the last in the `USING` clause.
