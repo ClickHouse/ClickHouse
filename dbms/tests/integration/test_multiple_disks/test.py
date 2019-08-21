@@ -1,8 +1,9 @@
 import time
 import pytest
-import os
 import random
 import string
+from multiprocessing.dummy import Pool
+from helpers.client import QueryRuntimeException
 
 from helpers.cluster import ClickHouseCluster
 
@@ -235,6 +236,69 @@ def test_alter_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+
+@pytest.mark.parametrize("name,engine", [
+    ("concurrently_altering_mt","MergeTree()"),
+    ("concurrently_altering_replicated_mt","ReplicatedMergeTree('/clickhouse/concurrently_altering_replicated_mt', '1')",),
+])
+def test_concurrent_alter_move(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy_name='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        def insert(num):
+            for i in range(num):
+                day = random.randint(11, 30)
+                value = random.randint(1, 1000000)
+                month = '0' + str(random.choice([3, 4]))
+                node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
+
+        def alter_move(num):
+            for i in range(num):
+                move_type = random.choice(["PART", "PARTITION"])
+                if move_type == "PART":
+                    parts = node1.query("SELECT name from system.parts where table = '{}'".format(name)).strip().split('\n')
+                    move_part = random.choice(["'" + part + "'" for part in parts])
+                else:
+                    move_part = random.choice([201903, 201904])
+
+                move_disk = random.choice(["DISK", "VOLUME"])
+                if move_disk == "DISK":
+                    move_volume = random.choice(["'external'", "'jbod1'", "'jbod2'"])
+                else:
+                    move_volume = random.choice(["'main'", "'external'"])
+                try:
+                    node1.query("ALTER TABLE {} MOVE {mt} {mp} TO {md} {mv}".format(
+                        name, mt=move_type, mp=move_part, md=move_disk, mv=move_volume))
+                except QueryRuntimeException as ex:
+                    pass
+
+        def optimize_table(num):
+            for i in range(num):
+                node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+
+
+        p = Pool(15)
+        tasks = []
+        for i in range(5):
+            tasks.append(p.apply_async(insert, (100,)))
+            tasks.append(p.apply_async(alter_move, (100,)))
+            tasks.append(p.apply_async(optimize_table, (100,)))
+
+        for task in tasks:
+            task.get(timeout=60)
+
+        assert node1.query("SELECT 1") == "1\n"
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 '''
 ## Test stand for multiple disks feature

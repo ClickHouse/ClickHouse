@@ -329,13 +329,6 @@ public:
     /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
     void disableMergesInBlockRange(const String & part_name);
 
-    /// Prohibit merges for specified parts.
-    /// Add part to virtual_parts, which means that part must exist
-    /// after processing replication log up to log_pointer.
-    /// Throws exception if any part was in virtual parts
-    /// You have to remove Names from virtual_parts to enable merges for them.
-    Names disableMergesForParts(const MergeTreeData::DataPartsVector & data_parts);
-
     /// Cheks that part is already in virtual parts
     bool isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const;
 
