@@ -445,7 +445,6 @@ namespace ErrorCodes
     extern const int CANNOT_PTHREAD_ATTR = 468;
     extern const int WITH_TIES_WITHOUT_ORDER_BY = 469;
     extern const int INVALID_WITH_FILL_EXPRESSION = 470;
-    extern const int FILL_STEP_ZERO_VALUE = 471;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

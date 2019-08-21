@@ -9,6 +9,7 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
+/// Compares fields in terms of sorting order, considering direction.
 static bool less(const Field & lhs, const Field & rhs, int direction)
 {
     if (direction == -1)
@@ -21,12 +22,27 @@ static bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(F
 
 FillingRow::FillingRow(const SortDescription & description_) : description(description_)
 {
+    for (size_t i = 0; i < description.size(); ++i)
+    {
+        auto & fill_from = description[i].fill_description.fill_from;
+        auto & fill_to = description[i].fill_description.fill_to;
+
+        /// Cast fields to same types. Otherwise, there will be troubles, when we reach zero, while generating rows.
+        if (fill_to.getType() == Field::Types::Int64 && fill_from.getType() == Field::Types::UInt64)
+            fill_from = fill_from.get<Int64>();
+
+        if (fill_from.getType() == Field::Types::Int64 && fill_to.getType() == Field::Types::UInt64)
+            fill_to = fill_to.get<Int64>();
+
+    }
     row.resize(description.size());
 }
 
 bool FillingRow::next(const FillingRow & to_row)
 {
     size_t pos = 0;
+
+    /// Find position we need to increment for generating next row.
     for (; pos < row.size(); ++pos)
         if (!row[pos].isNull() && !to_row[pos].isNull() && !equals(row[pos], to_row[pos]))
             break;
@@ -34,6 +50,8 @@ bool FillingRow::next(const FillingRow & to_row)
     if (pos == row.size() || less(to_row[pos], row[pos], getDirection(pos)))
         return false;
 
+    /// If we have any 'fill_to' value at position greater than 'pos',
+    ///  we need to generate rows up to 'fill_to' value.
     for (size_t i = row.size() - 1; i > pos; --i)
     {
         if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
@@ -58,10 +76,11 @@ bool FillingRow::next(const FillingRow & to_row)
         for (size_t i = pos + 1; i < row.size(); ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
-            if (!fill_from.isNull() && less(fill_from, to_row[i], getDirection(i)))
+            if (!fill_from.isNull() && !to_row[i].isNull() && less(fill_from, to_row[i], getDirection(i)))
             {
                 is_less = true;
-                row[i] = fill_from;
+                initFromDefaults(i);
+                break;
             }
             else
                 row[i] = to_row[i];
@@ -81,15 +100,10 @@ bool FillingRow::next(const FillingRow & to_row)
     return false;
 }
 
-void FillingRow::initFromColumns(const Columns & columns, size_t row_num, size_t from_pos, bool ignore_default_from)
+void FillingRow::initFromColumns(const Columns & columns, size_t row_num, size_t from_pos)
 {
     for (size_t i = from_pos; i < columns.size(); ++i)
-    {
         columns[i]->get(row_num, row[i]);
-        const auto & fill_from = getFillDescription(i).fill_from;
-        if (!ignore_default_from && !fill_from.isNull() && less(fill_from, row[i], getDirection(i)))
-            row[i] = fill_from;
-    }
 }
 
 void FillingRow::initFromDefaults(size_t from_pos)
@@ -122,14 +136,14 @@ static void copyRowFromColumns(MutableColumns & dest, const Columns & source, si
 
 
 FillingBlockInputStream::FillingBlockInputStream(
-        const BlockInputStreamPtr & input, const SortDescription & fill_description_)
-        : fill_description(fill_description_), filling_row(fill_description_), next_row(fill_description_)
+        const BlockInputStreamPtr & input, const SortDescription & sort_description_)
+        : sort_description(sort_description_), filling_row(sort_description_), next_row(sort_description_)
 {
     children.push_back(input);
     header = children.at(0)->getHeader();
 
     std::vector<bool> is_fill_column(header.columns());
-    for (const auto & elem : fill_description)
+    for (const auto & elem : sort_description)
     {
         size_t pos = header.getPositionByName(elem.column_name);
         fill_column_positions.push_back(pos);
@@ -140,9 +154,20 @@ FillingBlockInputStream::FillingBlockInputStream(
     {
         if (is_fill_column[i])
         {
-            if (!isNumber(header.getByPosition(i).type))
+            auto type = header.getByPosition(i).type;
+            if (!isColumnedAsNumber(header.getByPosition(i).type))
                 throw Exception("WITH FILL can be used only with numeric types, but is set for column with type "
                     + header.getByPosition(i).type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+            const auto & fill_from = sort_description[i].fill_description.fill_from;
+            const auto & fill_to = sort_description[i].fill_description.fill_to;
+            if (type->isValueRepresentedByUnsignedInteger() &&
+                ((!fill_from.isNull() && less(fill_from, Field{0}, 1)) ||
+                    (!fill_to.isNull() && less(fill_to, Field{0}, 1))))
+            {
+                throw Exception("WITH FILL bound values cannot be negative for unsigned type "
+                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            }
         }
         else
             other_column_positions.push_back(i);
@@ -199,8 +224,10 @@ Block FillingBlockInputStream::readImpl()
         filling_row.initFromColumns(old_fill_columns, 0);
         for (size_t i = 0; i < filling_row.size(); ++i)
         {
-            if (less(filling_row[i], (*old_fill_columns[i])[0], filling_row.getDirection(i)))
+            if (!filling_row.getFillDescription(i).fill_from.isNull() &&
+                less(filling_row.getFillDescription(i).fill_from, (*old_fill_columns[i])[0], filling_row.getDirection(i)))
             {
+                filling_row.initFromDefaults(i);
                 insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
                 break;
             }
@@ -211,9 +238,9 @@ Block FillingBlockInputStream::readImpl()
 
     for (size_t row_ind = 0; row_ind < rows; ++row_ind)
     {
-        next_row.initFromColumns(old_fill_columns, row_ind, 0, true);
+        next_row.initFromColumns(old_fill_columns, row_ind);
 
-        /// Comment
+        /// Insert generated filling row to block, while it is less than current row in block.
         while (filling_row.next(next_row))
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 

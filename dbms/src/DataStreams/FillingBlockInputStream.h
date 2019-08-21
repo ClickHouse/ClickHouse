@@ -10,8 +10,11 @@ class FillingRow
 public:
     FillingRow(const SortDescription & sort_description);
 
+    /// Generates next row according to fill from, to and step values.
+    /// Returns true, if generated row less than to_row in terms of sorting order.
     bool next(const FillingRow & to_row);
-    void initFromColumns(const Columns & columns, size_t row_num, size_t from_pos = 0, bool ignore_default_from = false);
+
+    void initFromColumns(const Columns & columns, size_t row_num, size_t from_pos = 0);
     void initFromDefaults(size_t from_pos = 0);
 
     Field & operator[](size_t ind) { return row[ind]; }
@@ -43,9 +46,9 @@ protected:
 private:
     Block createResultBlock(MutableColumns & fill_columns, MutableColumns & other_columns) const;
 
-    const SortDescription fill_description; /// contains only rows with WITH_FILL
-    FillingRow filling_row;
-    FillingRow next_row;
+    const SortDescription sort_description; /// Contains only rows with WITH FILL.
+    FillingRow filling_row; /// Current row, which is used to fill gaps.
+    FillingRow next_row; /// Row to which we need to generate filling rows.
     Block header;
 
     using Positions = std::vector<size_t>;
