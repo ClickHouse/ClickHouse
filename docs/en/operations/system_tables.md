@@ -406,7 +406,7 @@ Columns:
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `query_start_time` (DateTime) — Start time of query execution.
-- `query_duration_ms` (UInt64) — Duration of query processing.
+- `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
 - `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
