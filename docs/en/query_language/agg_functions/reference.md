@@ -681,11 +681,11 @@ groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -750,11 +750,11 @@ groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**

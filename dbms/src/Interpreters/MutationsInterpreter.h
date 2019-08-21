@@ -25,13 +25,13 @@ public:
     {
     }
 
-    void validate();
+    void validate(TableStructureReadLockHolder & table_lock_holder);
 
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    BlockInputStreamPtr execute();
+    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
 
     /// Only changed columns.
     const Block & getUpdatedHeader() const;
@@ -44,7 +44,6 @@ private:
     std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run);
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
-private:
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
