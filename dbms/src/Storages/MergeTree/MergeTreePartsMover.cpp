@@ -179,7 +179,7 @@ bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector &
         return false;
     }
 
-    return failed_parts.empty();
+    return true;
 }
 
 }
