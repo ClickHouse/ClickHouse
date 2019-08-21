@@ -1154,17 +1154,21 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-size_t ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+std::pair<size_t, size_t> ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
 {
     std::lock_guard lock(state_mutex);
 
-    size_t count = 0;
+    size_t count_merges = 0;
+    size_t count_mutations = 0;
     for (const auto & entry : queue)
-        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
-            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count;
+    {
+        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
+            ++count_merges;
+        else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+            ++count_mutations;
+    }
 
-    return count;
+    return std::make_pair(count_merges, count_mutations);
 }
 
 
