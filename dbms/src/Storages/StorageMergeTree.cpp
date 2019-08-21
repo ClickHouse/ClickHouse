@@ -660,7 +660,6 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
 
 bool StorageMergeTree::moveParts()
 {
-    LOG_INFO(log, "Trying to move something");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     MergeTreeMovingParts parts_to_move;
