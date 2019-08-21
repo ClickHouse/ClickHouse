@@ -156,9 +156,11 @@ bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector &
         auto part = data.getActiveContainingPart(cloned_part->name);
         if (!part || part->name != cloned_part->name)
         {
-            LOG_ERROR(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
-                << "Copy can be found. Copy path: '" << cloned_part->getFullPath() << "'.");
+            LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
+                << " It can be removed by merge or deleted by hand. Will remove copy on path '"
+                << cloned_part->getFullPath() << "'.");
             failed_parts.push_back(cloned_part->name);
+            cloned_part->remove();
             continue;
         }
 
@@ -167,17 +169,17 @@ bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector &
         data.swapActivePart(cloned_part);
     }
 
-    /// Shouldn't happen.
     if (!failed_parts.empty())
     {
         std::ostringstream oss;
         oss << "Failed to swap parts: ";
         oss << boost::algorithm::join(failed_parts, ", ");
-        oss << ". Their active part doesn't exist. It's a bug.";
+        oss << ". Their active part doesn't exist.";
         *out_reason = oss.str();
         return false;
     }
-    return true;
+
+    return failed_parts.empty();
 }
 
 }

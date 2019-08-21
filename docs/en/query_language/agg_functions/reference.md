@@ -681,11 +681,11 @@ groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -750,11 +750,11 @@ groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If it not specified, the function takes the window size equal to the number of rows in the column.
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
 
 **Parameters**
 
-- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting with a value in a numeric data type.
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
 - `window_size` — Size of the calculation window.
 
 **Returned values**
@@ -819,7 +819,7 @@ Creates an array from different argument values. Memory consumption is the same 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
 For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
-## quantile(level)(x)
+## quantile(level)(x) {#agg_function-quantile}
 
 Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
 We recommend using a `level` value in the range of `[0.01, 0.99]`
@@ -846,27 +846,55 @@ To achieve this, the function takes a second argument – the "determinator". Th
 
 Don't use this function for calculating timings. There is a more suitable function for this purpose: `quantileTiming`.
 
-## quantileTiming(level)(x)
+## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of 'level' with a fixed precision.
-Works for numbers. Intended for calculating quantiles of page loading time in milliseconds.
+Computes the quantile of the specified level with determined precision. The function intended for calculating quantiles of page loading time in milliseconds. 
 
-If the value is greater than 30,000 (a page loading time of more than 30 seconds), the result is equated to 30,000.
+```
+quantileTiming(level)(expr)
+```
 
-If the total value is not more than about 5670, then the calculation is accurate.
+**Parameters**
 
-Otherwise:
+- `level` — Quantile level. Range: [0, 1].
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
+    
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-- if the time is less than 1024 ms, then the calculation is accurate.
-- otherwise the calculation is rounded to a multiple of 16 ms.
+**Accuracy**
 
-When passing negative values to the function, the behavior is undefined.
+The calculation is accurate if:
 
-The returned value has the Float32 type. If no values were passed to the function (when using `quantileTimingIf`), 'nan' is returned. The purpose of this is to differentiate these instances from zeros. See the note on sorting NaNs in "ORDER BY clause".
+- Total number of values is not more than about 5670.
+- Total number of values is more than about 5670, but the times of page loading is less than 1024ms.
 
-The result is determinate (it doesn't depend on the order of query processing).
+Otherwise, the result of a calculation is rounded to the value, multiple of 16 ms.
 
-For its purpose (calculating quantiles of page loading times), using this function is more effective and the result is more accurate than for the `quantile` function.
+!! note "Note"
+    For calculating quantiles of page loading times, this function is more effective and accurate compared to [quantile](#agg_function-quantile).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type: `Float32`.
+
+!!! note "Note"
+    If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
+
+The result is deterministic (it doesn't depend on the order of query processing).
+
+**Example**
+
+```sql
+SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
+```
+```text
+┌─quantileTiming(0.5)(divide(number, 2))─┐
+│                                      2 │
+└────────────────────────────────────────┘
+```
 
 ## quantileTimingWeighted(level)(x, weight)
 

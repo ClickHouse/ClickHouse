@@ -96,14 +96,16 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        MergeListEntry & merge_entry, time_t time_of_merge,
+        MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
         DiskSpace::Reservation * disk_reservation, bool deduplication, bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context, DiskSpace::Reservation * disk_reservation);
+        MergeListEntry & merge_entry, const Context & context,
+        DiskSpace::Reservation * disk_reservation,
+        TableStructureReadLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

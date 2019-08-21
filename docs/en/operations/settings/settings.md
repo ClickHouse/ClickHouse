@@ -238,7 +238,7 @@ Default value: 0.
 
 ## input_format_import_nested_json {#settings-input_format_import_nested_json}
 
-Enables or disables inserting of JSON data with nested objects.
+Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
@@ -275,7 +275,7 @@ Default value: 1.
 
 ## date_time_input_format {#settings-date_time_input_format}
 
-Enables or disables extended parsing of date and time formatted strings.
+Allows to choose a parser of text representation of date and time.
 
 The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
 
@@ -283,11 +283,13 @@ Possible values:
 
 - `'best_effort'` — Enables extended parsing.
 
-    ClickHouse can parse the basic format `YYYY-MM-DD HH:MM:SS` and all the [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
 - `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic format.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+
+Default value: `'basic'`.
 
 **See Also**
 
@@ -834,3 +836,29 @@ Possible values:
 Default value: `uniqExact`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
+
+
+## skip_unavailable_shards {#settings-skip_unavailable_shards}
+
+Enables or disables silent skipping of:
+
+- Node, if its name cannot be resolved through DNS.
+
+    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+
+    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+
+- Shard, if there are no available replicas of the shard.
+
+    When skipping is disabled, ClickHouse throws an exception.
+
+    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+
+Possible values:
+
+- 1 — skipping enabled.
+- 0 — skipping disabled.
+
+Default value: 0.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

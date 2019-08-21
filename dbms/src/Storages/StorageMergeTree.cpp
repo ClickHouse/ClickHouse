@@ -199,29 +199,35 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     const Settings & settings_ = context.getSettingsRef();
     size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
-    ThreadPool thread_pool(thread_pool_size);
 
+    std::optional<ThreadPool> thread_pool;
+
+    if (thread_pool_size > 1)
+        thread_pool.emplace(thread_pool_size);
 
     for (const auto & part : parts)
     {
         transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
 
-        thread_pool.schedule(
-            [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
-            {
-                this->alterDataPart(columns_for_parts, new_indices, false, transaction);
-            }
-        );
+        auto job = [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
+        {
+            this->alterDataPart(columns_for_parts, new_indices, false, transaction);
+        };
+
+        if (thread_pool)
+            thread_pool->schedule(job);
+        else
+            job();
     }
 
-    thread_pool.wait();
+    if (thread_pool)
+        thread_pool->wait();
 
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
         [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
         {
             return !transaction->isValid();
-        }
-    );
+        });
     transactions.erase(erase_pos, transactions.end());
 
     return transactions;
@@ -366,43 +372,6 @@ public:
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
             }
-        }
-    }
-};
-
-
-/// While exists, marks parts as 'currently_moving' and keep reservations.
-struct CurrentlyMovingPartsTagger
-{
-    MergeTreeMovingParts parts;
-
-    StorageMergeTree & storage;
-
-public:
-    CurrentlyMovingPartsTagger(MergeTreeMovingParts parts_, StorageMergeTree & storage_)
-        : parts(std::move(parts_))
-        , storage(storage_)
-    {
-        /// Assume mutex is already locked, because this method is called from moveParts.
-        for (const auto & part : parts)
-        {
-            if (storage.currently_processing_in_background.count(part.part))
-                throw Exception("Tagging already tagged part " + part.part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-            storage.currently_processing_in_background.insert(part.part);
-        }
-    }
-
-    ~CurrentlyMovingPartsTagger()
-    {
-        std::lock_guard lock(storage.currently_processing_in_background_mutex);
-
-        for (const auto & part : parts)
-        {
-            if (!storage.currently_processing_in_background.count(part.part))
-                std::terminate();
-
-            storage.currently_processing_in_background.erase(part.part);
         }
     }
 };
@@ -634,7 +603,7 @@ bool StorageMergeTree::merge(
         bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, time(nullptr),
+            future_part, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
@@ -656,9 +625,8 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    MergeTreeMovingParts parts_to_move;
     {
-        MergeTreeMovingParts parts_to_move;
         std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
         for (const auto & part : parts)
@@ -681,11 +649,10 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
             parts_to_move.emplace_back(part, std::move(reservation));
 
         }
-        moving_tagger.emplace(std::move(parts_to_move), *this);
     }
 
     std::string reason;
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
+    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
 
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
@@ -696,11 +663,8 @@ bool StorageMergeTree::moveParts()
     LOG_INFO(log, "Trying to move something");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-
-    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
-    std::optional<CurrentlyMovingPartsTagger> moving_tagger;
+    MergeTreeMovingParts parts_to_move;
     {
-
         std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
 
         auto can_move = [this](const DataPartPtr & part, String *) -> bool
@@ -708,24 +672,17 @@ bool StorageMergeTree::moveParts()
             return !currently_processing_in_background.count(part);
         };
 
-        MergeTreeMovingParts parts_to_move;
-
         if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-        {
-            LOG_INFO(log, "Nothing to move");
             return false;
-        }
-
-        moving_tagger.emplace(std::move(parts_to_move), *this);
     }
-    LOG_INFO(log, "Found " << moving_tagger->parts.size() << " parts to move.");
+    LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
 
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts);
+    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
 
     std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
     {
-        LOG_WARNING(log, "Move failed. " << reason);
+        LOG_WARNING(log, "Some parts move failed: " << reason);
         return false;
     }
 
@@ -834,7 +791,8 @@ bool StorageMergeTree::tryMutatePart()
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-                                                            tagger->reserved_space.get());
+            tagger->reserved_space.get(), table_lock_holder);
+
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});

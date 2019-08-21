@@ -133,7 +133,6 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         used_disks = get_used_disks_for_table(node1, name)
 
-        print used_disks
         assert used_disks[-1] == 'external'
 
         node1.query("SYSTEM START MERGES")
@@ -143,7 +142,6 @@ def test_jbod_overflow(start_cluster, name, engine):
         time.sleep(2)
 
         disks_for_merges = node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 ORDER BY modification_time".format(name)).strip().split('\n')
-        print disks_for_merges
 
         assert all(disk == 'external' for disk in disks_for_merges)
 
@@ -172,10 +170,15 @@ def test_background_move(start_cluster, name, engine):
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
 
-        time.sleep(5)
         used_disks = get_used_disks_for_table(node1, name)
 
-        # Maximum two parts on jbod1
+        retry = 20
+        i = 0
+        while not sum(1 for x in used_disks if x == 'jbod1') <= 2 and i < retry:
+            time.sleep(0.5)
+            used_disks = get_used_disks_for_table(node1, name)
+            i += 1
+
         assert sum(1 for x in used_disks if x == 'jbod1') <= 2
 
         # first (oldest) part was moved to external
@@ -231,45 +234,6 @@ def test_alter_move(start_cluster, name, engine):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
-
-
-
-#def test_default(start_cluster):
-#    assert node1.query("create table node1_default_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d") == ""
-#    assert node1.query("select storage_policy from system.tables where name == 'node1_default_mt'") == "default\n"
-#    assert node1.query("insert into node1_default_mt values (1)") == ""
-#    assert node1.query("select disk_name from system.parts where table == 'node1_default_mt'") == "default\n"
-#
-#
-#def test_move(start_cluster):
-#    node2.query("create table move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='default_disk_with_external'")
-#    node2.query("insert into move_mt values (1)")
-#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-#
-#    # move from default to external
-#    node2.query("alter table move_mt move PART 'all_1_1_0' to disk 'external'")
-#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
-#    time.sleep(5)
-#    # Check that it really moved
-#    node2.query("detach table move_mt")
-#    node2.query("attach table move_mt")
-#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "external\n"
-#
-#    # move back by volume small, that contains only 'default' disk
-#    node2.query("alter table move_mt move PART 'all_1_1_0' to volume 'small'")
-#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-#    time.sleep(5)
-#    # Check that it really moved
-#    node2.query("detach table move_mt")
-#    node2.query("attach table move_mt")
-#    assert node2.query("select disk_name from system.parts where table == 'move_mt'") == "default\n"
-#
-#
-#def test_no_policy(start_cluster):
-#    try:
-#        node1.query("create table node1_move_mt ( d UInt64 )\n ENGINE = MergeTree\n ORDER BY d\n SETTINGS storage_policy_name='name_that_does_not_exists'")
-#    except Exception as e:
-#        assert str(e).strip().split("\n")[1].find("Unknown StoragePolicy name_that_does_not_exists") != -1
 
 
 '''

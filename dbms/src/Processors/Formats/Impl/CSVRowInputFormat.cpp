@@ -349,10 +349,9 @@ bool OPTIMIZE(1) CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumn
             const auto & current_column_type = data_types[table_column];
             const bool is_last_file_column =
                     file_column + 1 == column_indexes_for_input_fields.size();
-            const bool at_delimiter = *in.position() == delimiter;
+            const bool at_delimiter = !in.eof() && *in.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
-                                                 && (*in.position() == '\n' || *in.position() == '\r'
-                                                     || in.eof());
+                                                 && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
             auto & header = getPort().getHeader();
             out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
@@ -516,10 +515,9 @@ void CSVRowInputFormat::updateDiagnosticInfo()
 
 bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
 {
-    const bool at_delimiter = *in.position() == format_settings.csv.delimiter;
+    const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
-                                         && (*in.position() == '\n' || *in.position() == '\r'
-                                             || in.eof());
+                                         && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
     if (format_settings.csv.empty_as_default
         && (at_delimiter || at_last_column_line_end))

@@ -111,7 +111,7 @@ static void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_colu
 static void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
-    column_data.resize(arrow_column->length());
+    column_data.reserve(arrow_column->length());
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
@@ -120,7 +120,7 @@ static void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_col
         std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
 
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
-            column_data[bool_i] = chunk.Value(bool_i);
+            column_data.emplace_back(chunk.Value(bool_i));
     }
 }
 
