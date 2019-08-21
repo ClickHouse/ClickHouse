@@ -552,7 +552,10 @@ You can use the following types of syntax:
 - `ASOF JOIN ... ON`
 
     ```sql
-    SELECT expressions_list FROM table_1 ASOF LEFT JOIN table_2 ON equi_cond AND closest_match_cond
+    SELECT expressions_list
+    FROM table_1
+    ASOF LEFT JOIN table_2
+    ON equi_cond AND closest_match_cond
     ```
 
     You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. There is just `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` types of conditions are available. You cannot apply other conditions like `>` or `!=`.
