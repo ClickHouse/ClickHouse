@@ -111,7 +111,7 @@ Supported compression algorithms:
 - `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
 - `LZ4HC[(level)]` — LZ4 HC (high compression) algorithm with configurable level. Default level: 9. Setting `level <= 0` applies the default level. Possible levels: [1, 12]. Recommended level range: [4, 9].
 - `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default value: 1.
-- `Delta(delta_bytes)` — A compression approach in which raw values are replaced by the difference of two neighboring values. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. 
+- `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values.
 Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1.
 - `DoubleDelta` — Compresses values down to 1 bit (at most) using delta calculations. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 - `Gorilla` — Compresses values down to 1 bit (at most). Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
@@ -119,7 +119,7 @@ Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` i
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
 !!!warning
-    You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility..
+    You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility.
 
 Syntax example:
 
