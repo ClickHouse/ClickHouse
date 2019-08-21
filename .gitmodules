@@ -103,3 +103,6 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse-Extras/fastops
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/apache/orc
