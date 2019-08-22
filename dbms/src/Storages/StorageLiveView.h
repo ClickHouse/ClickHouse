@@ -12,23 +12,15 @@ limitations under the License. */
 #pragma once
 
 #include <Poco/Condition.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlocksBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/shared_ptr_helper.h>
 #include <Common/SipHash.h>
 #include <Storages/IStorage.h>
 #include <Storages/ProxyStorage.h>
 
+
 namespace DB
 {
-
-class IAST;
 
 struct BlocksMetadata
 {
@@ -36,9 +28,9 @@ struct BlocksMetadata
     UInt64 version;
 };
 
+class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
-using SipHashPtr = std::shared_ptr<SipHash>;
 
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
@@ -87,9 +79,9 @@ public:
     /// Background thread for temporary tables
     /// which drops this table if there are no users
     void startNoUsersThread(const UInt64 & timeout);
-    Poco::FastMutex noUsersThreadMutex;
-    bool noUsersThreadWakeUp{false};
-    Poco::Condition noUsersThreadCondition;
+    Poco::FastMutex no_users_thread_mutex;
+    bool no_users_thread_wakeup{false};
+    Poco::Condition no_users_thread_condition;
     /// Get blocks hash
     /// must be called with mutex locked
     String getBlocksHashKey()
@@ -150,105 +142,10 @@ public:
 
     Block getHeader() const;
 
-    static void writeIntoLiveView(StorageLiveView & live_view,
-                              const Block & block,
-                              const Context & context,
-                              BlockOutputStreamPtr & output)
-    {
-        /// Check if live view has any readers if not
-        /// just reset blocks to empty and do nothing else
-        /// When first reader comes the blocks will be read.
-        {
-            Poco::FastMutex::ScopedLock lock(live_view.mutex);
-            if (!live_view.hasActiveUsers())
-            {
-                live_view.reset();
-                return;
-            }
-        }
-
-        bool is_block_processed = false;
-        BlockInputStreams from;
-        BlocksPtrs mergeable_blocks;
-        BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
-
-        {
-            Poco::FastMutex::ScopedLock lock(live_view.mutex);
-
-            mergeable_blocks = live_view.getMergeableBlocks();
-            if (!mergeable_blocks || mergeable_blocks->size() >= context.getGlobalContext().getSettingsRef().max_live_view_insert_blocks_before_refresh)
-            {
-                mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
-                BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
-                InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
-                auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-                    interpreter.execute().in);
-                while (Block this_block = view_mergeable_stream->read())
-                    base_mergeable_blocks->push_back(this_block);
-                mergeable_blocks->push_back(base_mergeable_blocks);
-                live_view.setMergeableBlocks(mergeable_blocks);
-
-                /// Create from streams
-                for (auto & blocks_ : *mergeable_blocks)
-                {
-                    if (blocks_->empty())
-                        continue;
-                    auto sample_block = blocks_->front().cloneEmpty();
-                    BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-                    from.push_back(std::move(stream));
-                }
-
-                is_block_processed = true;
-            }
-        }
-
-        if (!is_block_processed)
-        {
-            auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
-            BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
-            auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams), QueryProcessingStage::FetchColumns);
-            InterpreterSelectQuery select_block(live_view.getInnerQuery(),
-                context, proxy_storage,
-                QueryProcessingStage::WithMergeableState);
-            auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-                select_block.execute().in);
-            while (Block this_block = data_mergeable_stream->read())
-                new_mergeable_blocks->push_back(this_block);
-
-            if (new_mergeable_blocks->empty())
-                return;
-
-            {
-                Poco::FastMutex::ScopedLock lock(live_view.mutex);
-
-                mergeable_blocks = live_view.getMergeableBlocks();
-                mergeable_blocks->push_back(new_mergeable_blocks);
-
-                /// Create from streams
-                for (auto & blocks_ : *mergeable_blocks)
-                {
-                    if (blocks_->empty())
-                        continue;
-                    auto sample_block = blocks_->front().cloneEmpty();
-                    BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-                    from.push_back(std::move(stream));
-                }
-            }
-        }
-
-        auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
-        auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(from), QueryProcessingStage::WithMergeableState);
-        InterpreterSelectQuery select(live_view.getInnerQuery(), context, proxy_storage, QueryProcessingStage::Complete);
-        BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-
-        /// Squashing is needed here because the view query can generate a lot of blocks
-        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-        /// and two-level aggregation is triggered).
-        data = std::make_shared<SquashingBlockInputStream>(
-            data, context.getGlobalContext().getSettingsRef().min_insert_block_size_rows, context.getGlobalContext().getSettingsRef().min_insert_block_size_bytes);
-
-        copyData(*data, *output);
-    }
+    static void writeIntoLiveView(
+        StorageLiveView & live_view,
+        const Block & block,
+        const Context & context);
 
 private:
     String select_database_name;
@@ -271,7 +168,7 @@ private:
     void noUsersThread(const UInt64 & timeout);
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called{false};
-    std::atomic<bool> startnousersthread_called{false};
+    std::atomic<bool> start_no_users_thread_called{false};
     UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
@@ -281,67 +178,6 @@ private:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
     );
-};
-
-class LiveViewBlockOutputStream : public IBlockOutputStream
-{
-public:
-    explicit LiveViewBlockOutputStream(StorageLiveView & storage_) : storage(storage_) {}
-
-    void writePrefix() override
-    {
-        new_blocks = std::make_shared<Blocks>();
-        new_blocks_metadata = std::make_shared<BlocksMetadata>();
-        new_hash = std::make_shared<SipHash>();
-    }
-
-    void writeSuffix() override
-    {
-        UInt128 key;
-        String key_str;
-
-        new_hash->get128(key.low, key.high);
-        key_str = key.toHexString();
-
-        Poco::FastMutex::ScopedLock lock(storage.mutex);
-
-        if (storage.getBlocksHashKey() != key_str)
-        {
-            new_blocks_metadata->hash = key_str;
-            new_blocks_metadata->version = storage.getBlocksVersion() + 1;
-
-            for (auto & block : *new_blocks)
-            {
-                block.insert({DataTypeUInt64().createColumnConst(
-                    block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeUInt64>(),
-                    "_version"});
-            }
-
-            (*storage.blocks_ptr) = new_blocks;
-            (*storage.blocks_metadata_ptr) = new_blocks_metadata;
-
-            storage.condition.broadcast();
-        }
-
-        new_blocks.reset();
-        new_blocks_metadata.reset();
-        new_hash.reset();
-    }
-
-    void write(const Block & block) override
-    {
-        new_blocks->push_back(block);
-        block.updateHash(*new_hash);
-    }
-
-    Block getHeader() const override { return storage.getHeader(); }
-
-private:
-    BlocksPtr new_blocks;
-    BlocksMetadataPtr new_blocks_metadata;
-    SipHashPtr new_hash;
-    StorageLiveView & storage;
 };
 
 }
