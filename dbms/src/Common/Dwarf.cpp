@@ -1,3 +1,5 @@
+#ifdef __ELF__
+
 /*
  * Copyright 2012-present Facebook, Inc.
  *
@@ -1031,3 +1033,5 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 }
 
 }
+
+#endif

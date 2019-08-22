@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -50,7 +51,7 @@ public:
         size_t size = input_rows_count;
 
         auto res_col = ColumnUInt64::create(size);
-        auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
+        auto & res_data = assert_cast<ColumnUInt64 &>(*res_col).getData();
 
         /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 

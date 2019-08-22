@@ -148,10 +148,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
 StoragesInfo StoragesInfoStream::next()
 {
-    StoragesInfo info;
-
     while (next_row < rows)
     {
+        StoragesInfo info;
 
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
@@ -198,10 +197,10 @@ StoragesInfo StoragesInfoStream::next()
         if (!info.data)
             throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
 
-        break;
+        return info;
     }
 
-    return info;
+    return {};
 }
 
 BlockInputStreams StorageSystemPartsBase::read(
