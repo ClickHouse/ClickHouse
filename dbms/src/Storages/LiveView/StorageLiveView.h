@@ -11,12 +11,11 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 #pragma once
 
-#include <Poco/Condition.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <ext/shared_ptr_helper.h>
-#include <Common/SipHash.h>
 #include <Storages/IStorage.h>
-#include <Storages/ProxyStorage.h>
+
+#include <mutex>
+#include <condition_variable>
 
 
 namespace DB
@@ -35,6 +34,8 @@ using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
+friend class LiveViewBlockInputStream;
+friend class LiveViewEventsBlockInputStream;
 friend class LiveViewBlockOutputStream;
 
 public:
@@ -55,12 +56,6 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    /// Mutex for the blocks and ready condition
-    Poco::FastMutex mutex;
-    /// New blocks ready condition to broadcast to readers
-    /// that new blocks are available
-    Poco::Condition condition;
-
     bool isTemporary() { return is_temporary; }
 
     /// Check if we have any readers
@@ -79,16 +74,16 @@ public:
     /// Background thread for temporary tables
     /// which drops this table if there are no users
     void startNoUsersThread(const UInt64 & timeout);
-    Poco::FastMutex no_users_thread_mutex;
+    std::mutex no_users_thread_mutex;
     bool no_users_thread_wakeup{false};
-    Poco::Condition no_users_thread_condition;
+    std::condition_variable no_users_thread_condition;
     /// Get blocks hash
     /// must be called with mutex locked
     String getBlocksHashKey()
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->hash;
-        return "";
+        return {};
     }
     /// Get blocks version
     /// must be called with mutex locked
@@ -156,6 +151,12 @@ private:
     Context & global_context;
     bool is_temporary {false};
     mutable Block sample_block;
+
+    /// Mutex for the blocks and ready condition
+    std::mutex mutex;
+    /// New blocks ready condition to broadcast to readers
+    /// that new blocks are available
+    std::condition_variable condition;
 
     /// Active users
     std::shared_ptr<bool> active_ptr;
