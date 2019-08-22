@@ -93,7 +93,7 @@ protected:
             columns = chunk.mutateColumns();
             if (limit_rows && num_rows > limit_rows)
                 for (auto & column : columns)
-                    column = (*column->cut(0, limit_rows)).mutate();
+                    column = (*column->cut(0, limit_rows)->convertToFullColumnIfConst()).mutate();
 
             total_merged_rows += num_rows;
             merged_rows = num_rows;
@@ -165,6 +165,13 @@ private:
 
     void updateCursor(Chunk chunk, size_t source_num)
     {
+        auto num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfConst();
+
+        chunk.setColumns(std::move(columns), num_rows);
+
         auto & shared_chunk_ptr = source_chunks[source_num];
 
         if (!shared_chunk_ptr)
