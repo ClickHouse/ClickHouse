@@ -149,6 +149,9 @@ BlockInputStreams StorageSystemNumbers::read(
             res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0,  false, true);
     }
 
+    if (*limit && num_streams > 0)
+        res.front()->addTotalRowsApprox(*limit);
+
     return res;
 }
 
