@@ -19,7 +19,6 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlocksBlockInputStream.h>
@@ -50,6 +49,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
@@ -586,6 +586,9 @@ void registerStorageLiveView(StorageFactory & factory)
 {
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
+        if (!args.local_context.getSettingsRef().allow_experimental_live_view)
+            throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
+
         return StorageLiveView::create(args.table_name, args.database_name, args.local_context, args.query, args.columns);
     });
 }
