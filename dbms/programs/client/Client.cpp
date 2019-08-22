@@ -67,6 +67,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
+#include <Common/SetOptionsDescription.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -1641,23 +1642,16 @@ public:
         }
 
         stdin_is_not_tty = !isatty(STDIN_FILENO);
-
-        namespace po = boost::program_options;
-
-        unsigned line_length = po::options_description::m_default_line_length;
-        unsigned min_description_length = line_length / 2;
         if (!stdin_is_not_tty)
         {
             if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
                 throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
-            line_length = std::max(
-                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
-                static_cast<unsigned>(terminal_size.ws_col));
-            min_description_length = std::min(min_description_length, line_length - 2);
         }
 
+        namespace po = boost::program_options;
+
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description("Main options", line_length, min_description_length);
+        po::options_description main_description = setOptionsDescription("Main options");
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
