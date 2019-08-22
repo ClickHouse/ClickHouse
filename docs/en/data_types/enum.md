@@ -94,7 +94,7 @@ ENGINE = TinyLog
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
 ```
-INSERT INTO t_enum_null Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.
