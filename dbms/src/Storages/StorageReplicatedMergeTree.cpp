@@ -2208,14 +2208,13 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
-
-            /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
             if (max_source_parts_size_for_merge > 0 &&
                 merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
             }
+            /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
             else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
                      && merges_and_mutations_queued.second < settings.max_replicated_mutations_in_queue)
             {
