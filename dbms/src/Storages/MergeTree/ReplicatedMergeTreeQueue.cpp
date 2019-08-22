@@ -956,15 +956,19 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        /** Execute merge only if there are enough free threads in background pool to do merges of that size.
-          * But if all threads are free (maximal size of merge is allowed) then execute any merge,
-          *  (because it may be ordered by OPTIMIZE or early with differrent settings).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()
+                                                                           : merger_mutator.getMaxSourcePartSizeForMutation();
+        /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
+          * then ignore value returned by getMaxSourcePartsSizeForMerge() and execute merge of any size,
+          * because it may be ordered by OPTIMIZE or early with different settings.
+          * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
+          * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
-        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-        if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
-            && sum_parts_size_in_bytes > max_source_parts_size)
+        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data.settings.max_bytes_to_merge_at_max_space_in_pool);
+
+        if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
-            String reason = "Not executing log entry for part " + entry.new_part_name
+            String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
                 + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
                 + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
             LOG_DEBUG(log, reason);

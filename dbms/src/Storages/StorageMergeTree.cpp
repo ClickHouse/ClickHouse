@@ -624,8 +624,6 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
         std::lock_guard lock(currently_merging_mutex);
 
         if (current_mutations_by_version.empty())
@@ -641,8 +639,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            auto estimated_needed_space = MergeTreeDataMergerMutator::estimateNeededDiskSpace({part});
-            if (estimated_needed_space > disk_space)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
@@ -655,7 +652,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
 
-            tagger.emplace(future_part, estimated_needed_space, *this);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this);
             break;
         }
     }
