@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
@@ -101,7 +102,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
     void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
-        insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
+        insert(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
     }
 };
 
@@ -123,7 +124,7 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
 {
     void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
-        UInt128 value = static_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
+        UInt128 value = assert_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
     }
 };
@@ -176,7 +177,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -240,7 +241,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

@@ -15,6 +15,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
+#include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
 #include <ext/range.h>
@@ -399,9 +400,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
     auto & result_data = static_cast<ColumnType &>(*result_data_ptr);
     auto result_offsets_ptr = ColumnArray::ColumnOffsets::create(rows);
-    auto & result_offsets = static_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
+    auto & result_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
     auto null_map_column = ColumnUInt8::create();
-    NullMap & null_map = static_cast<ColumnUInt8 &>(*null_map_column).getData();
+    NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
 
     Arena arena;
 
