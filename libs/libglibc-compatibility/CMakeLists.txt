@@ -24,4 +24,8 @@ add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
-install(TARGETS glibc-compatibility EXPORT global)
+install(
+    TARGETS glibc-compatibility
+    EXPORT global
+    ARCHIVE DESTINATION lib
+)
