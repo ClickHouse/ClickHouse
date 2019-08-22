@@ -30,7 +30,7 @@ $ docker pull yandex/tutorial-catboost-clickhouse
 
 This Docker image contains everything you need to run CatBoost and ClickHouse: code, runtime, libraries, environment variables, and configuration files.
 
-**3.** Make sure the Docker image has been successfully pulled:
+**2.** Make sure the Docker image has been successfully pulled:
 
 ```bash
 $ docker image ls
@@ -38,14 +38,28 @@ REPOSITORY                            TAG                 IMAGE ID            CR
 yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19 months ago       1.58GB
 ```
 
-**2.** Start a Docker container based on this image:
+**3.** Start a Docker container based on this image:
 
 ```bash
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-!!! note "Note" 
-    Example running a Jupyter Notebook with this manual materials to [http://localhost:8888](http://localhost:8888).
+**4.** Install packages:
+
+```bash
+$ sudo apt-get install dirmngr
+$ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+$ echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+$ sudo apt-get update
+
+$ sudo apt-get install -y clickhouse-server clickhouse-client
+
+$ sudo service clickhouse-server start
+$ clickhouse-client
+```
+
+For more information, see [Quick Start](https://clickhouse.yandex/#quick-start).
 
 ## 1. Create a Table {#create-table}
 
