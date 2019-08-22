@@ -50,7 +50,9 @@ Chunk RollupTransform::generate()
         auto columns = gen_chunk.getColumns();
         columns[key] = columns[key]->cloneEmpty()->cloneResized(num_rows);
 
-        rollup_chunk = merge({Chunk(std::move(columns), num_rows)}, false);
+        Chunks chunks;
+        chunks.emplace_back(std::move(columns), num_rows);
+        rollup_chunk = merge(std::move(chunks), false);
     }
 
     finalizeChunk(gen_chunk);
