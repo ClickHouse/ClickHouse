@@ -90,7 +90,7 @@ ENGINE = TinyLog
 , то в ней можно будет хранить не только `'hello'` и `'world'`, но и `NULL`.
 
 ```
-INSERT INTO t_enum_null Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 
 В оперативке столбец типа `Enum` представлен так же, как `Int8` или `Int16` соответствующими числовыми значениями.
