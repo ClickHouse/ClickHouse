@@ -4,10 +4,12 @@
 
 Чтобы применить модель CatBoost в ClickHouse:
 
-1. [Создайте таблицу для обучающей выборки](#create-a-table).
-1. [Вставьте данные в таблицу](#insert-the-data-to-the-table).
-1. [Настройте конфигурацию модели](#configure-the-model).
-1. [Протестируйте обученную модель](#test-the-trained-model).
+1. [Создайте таблицу](#create-table).
+2. [Вставьте данные в таблицу](#insert-the-data-to-the-table).
+3. [Настройте конфигурацию модели](#configure-the-model).
+4. [Запустите вывод модели из SQL](#run-the-model-inference).
+
+Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
 
 ## Подготовка к работе {#before-you-start}
 
@@ -41,7 +43,7 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 > **Примечание.** После запуска по адресу [http://localhost:8888](http://localhost:8888) будет доступен Jupyter Notebook с материалами данной инструкции.
 
-## 1. Создайте таблицу {#create-a-table}
+## 1. Создайте таблицу {#create-table}
 
 Чтобы создать таблицу в ClickHouse для обучающей выборки:
 
@@ -106,7 +108,7 @@ FROM amazon_train
 
 Опциональный шаг: Docker-контейнер содержит все необходимые файлы конфигурации.
 
-**1.** Создайте файл с конфигурацией модели (например, `config_model.xml`):
+Создайте файл с конфигурацией модели (например, `config_model.xml`):
 
 ```xml
 <models>
@@ -125,22 +127,15 @@ FROM amazon_train
 
 > **Примечание.** Чтобы посмотреть конфигурационный файл в Docker-контейнере, выполните команду `cat models/amazon_model.xml`.
 
-**2.** Добавьте следующие строки в файл `/etc/clickhouse-server/config.xml`:
+В конфигурации ClickHouse уже прописан параметр:
 
 ```xml
-<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
  
-> **Примечание.** Чтобы посмотреть конфигурационный файл ClickHouse в Docker-контейнере, выполните команду `cat ../../etc/clickhouse-server/config.xml`.
+Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.xml`.
 
-**3.** Перезапустите ClickHouse-сервер:
-
-```bash
-$ sudo service clickhouse-server restart
-```
-
-## 4. Протестируйте обученную модель {#test-the-trained-model}
+## 4. Запустите вывод модели из SQL {#run-the-model-inference}
 
 Для тестирования запустите ClickHouse-клиент `$ clickhouse client`.
 
@@ -207,4 +202,3 @@ FROM
     FROM amazon_train
 )
 ```
-

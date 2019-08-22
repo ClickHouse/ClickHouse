@@ -4,10 +4,12 @@
 
 To apply a CatBoost model in ClickHouse:
 
-1. [Create a table for the train sample](#create-a-table).
-1. [Insert the data to the table](#insert-the-data-to-the-table).
-1. [Configure the model](#configure-the-model).
-1. [Test the trained model](#test-the-trained-model).
+1. [Create a table](#create-table).
+2. [Insert the data to the table](#insert-the-data-to-the-table).
+3. [Configure the model](#configure-the-model).
+4. [Run the model inference from SQL](#run-the-model-inference).
+
+For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
 
 ## Before you start {#before-you-start}
 
@@ -41,7 +43,7 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 > **Note:** Example running a Jupyter Notebook with this manual materials to [http://localhost:8888](http://localhost:8888).
 
-## 1. Create a table {#create-a-table}
+## 1. Create a table {#create-table}
 
 To create a ClickHouse table for the train sample:
 
@@ -106,7 +108,7 @@ FROM amazon_train
 
 This step is optional: the Docker container contains all configuration files. 
 
-**1.** Create a config file (for example, `config_model.xml`) with the model configuration:
+Create a config file (for example, `config_model.xml`) with the model configuration:
 
 ```xml
 <models>
@@ -125,22 +127,15 @@ This step is optional: the Docker container contains all configuration files.
 
 > **Note:** To show contents of the config file in the Docker container, run `cat models/amazon_model.xml`.
 
-**2.** Add the following lines to the `/etc/clickhouse-server/config.xml` file:
+The ClickHouse config file should already have this setting:
 
 ```xml
-<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-> **Note:** To show contents of the ClickHouse config file in the Docker container, run `cat ../../etc/clickhouse-server/config.xml`.
+To check it, run `tail ../../etc/clickhouse-server/config.xml`.
 
-**3.** Restart ClickHouse server:
-
-```bash
-$ sudo service clickhouse-server restart
-```
-
-## 4. Test the trained model {#test-the-trained-model}
+## 4. Run the model inference from SQL {#run-the-model-inference}
 
 For test run the ClickHouse client `$ clickhouse client`.
 
@@ -163,7 +158,7 @@ FROM amazon_train
 LIMIT 10
 ```
 
-> **Note:** Function `modelEvaluate` returns tuple with per-class raw predictions for multiclass models.
+> **Note:** Function [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) returns tuple with per-class raw predictions for multiclass models.
 
 - Let's predict probability:
 
@@ -207,6 +202,3 @@ FROM
     FROM amazon_train
 )
 ```
-
-
-
