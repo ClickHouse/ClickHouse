@@ -27,7 +27,6 @@ namespace DB
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
     }
-    
     const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
             //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal>()},
             {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
@@ -63,7 +62,7 @@ namespace DB
             // 2. JSON -> String
             // Full list of types: contrib/arrow/cpp/src/arrow/type.h
     };
-    
+
 /// Inserts numeric data right into internal column data to reduce an overhead
     template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
     static void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
