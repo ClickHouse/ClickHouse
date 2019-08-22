@@ -1,7 +1,0 @@
-<yandex>
-    <merge_tree>
-        <parts_to_throw_insert>50</parts_to_throw_insert>
-        <max_replicated_merges_in_queue>8</max_replicated_merges_in_queue>
-        <max_replicated_mutations_in_queue>4</max_replicated_mutations_in_queue>
-    </merge_tree>
-</yandex>
