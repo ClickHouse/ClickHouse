@@ -44,8 +44,22 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-!!! note "Примечание" 
-    После запуска по адресу [http://localhost:8888](http://localhost:8888) будет доступен Jupyter Notebook с материалами данной инструкции.
+**4.** Установите последнии версии пакетов:
+
+```bash
+$ sudo apt-get install dirmngr
+$ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+$ echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+$ sudo apt-get update
+
+$ sudo apt-get install -y clickhouse-server clickhouse-client
+
+$ sudo service clickhouse-server start
+$ clickhouse-client
+```
+
+См. подробное описание в [Быстром старте](https://clickhouse.yandex/#quick-start).
 
 ## 1. Создайте таблицу {#create-table}
 
@@ -101,6 +115,7 @@ $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CS
 ```sql
 $ clickhouse client
 :) SELECT count() FROM amazon_train
+
 SELECT count()
 FROM amazon_train
 
@@ -166,7 +181,7 @@ LIMIT 10
 ```
 
 !!! note "Примечание" 
-    Функция `modelEvaluate` возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
+    Функция [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
 
 Спрогнозируйте вероятность:
 
