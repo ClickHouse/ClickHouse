@@ -46,7 +46,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int SYSTEM_ERROR;
 }
 
 /** Tests launcher for ClickHouse.
@@ -323,8 +322,8 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
-    using namespace DB;
     using po::value;
+    using Strings = DB::Strings;
 
     po::options_description desc = setOptionsDescription("Allowed options");
     desc.add_options()
