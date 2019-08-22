@@ -12,7 +12,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageLiveView.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {

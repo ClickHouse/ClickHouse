@@ -20,9 +20,6 @@ limitations under the License. */
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/LiveViewBlockInputStream.h>
-#include <DataStreams/LiveViewEventsBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlocksBlockInputStream.h>
@@ -30,10 +27,15 @@ limitations under the License. */
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Common/typeid_cast.h>
+#include <Common/SipHash.h>
 
-#include <Storages/StorageLiveView.h>
+#include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/LiveView/LiveViewBlockInputStream.h>
+#include <Storages/LiveView/LiveViewBlockOutputStream.h>
+#include <Storages/LiveView/LiveViewEventsBlockInputStream.h>
+#include <Storages/LiveView/ProxyStorage.h>
+
 #include <Storages/StorageFactory.h>
-#include <Storages/ProxyStorage.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -107,70 +109,6 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
 }
 
 
-class LiveViewBlockOutputStream : public IBlockOutputStream
-{
-public:
-    explicit LiveViewBlockOutputStream(StorageLiveView & storage_) : storage(storage_) {}
-
-    void writePrefix() override
-    {
-        new_blocks = std::make_shared<Blocks>();
-        new_blocks_metadata = std::make_shared<BlocksMetadata>();
-        new_hash = std::make_shared<SipHash>();
-    }
-
-    void writeSuffix() override
-    {
-        UInt128 key;
-        String key_str;
-
-        new_hash->get128(key.low, key.high);
-        key_str = key.toHexString();
-
-        Poco::FastMutex::ScopedLock lock(storage.mutex);
-
-        if (storage.getBlocksHashKey() != key_str)
-        {
-            new_blocks_metadata->hash = key_str;
-            new_blocks_metadata->version = storage.getBlocksVersion() + 1;
-
-            for (auto & block : *new_blocks)
-            {
-                block.insert({DataTypeUInt64().createColumnConst(
-                    block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
-                    std::make_shared<DataTypeUInt64>(),
-                    "_version"});
-            }
-
-            (*storage.blocks_ptr) = new_blocks;
-            (*storage.blocks_metadata_ptr) = new_blocks_metadata;
-
-            storage.condition.broadcast();
-        }
-
-        new_blocks.reset();
-        new_blocks_metadata.reset();
-        new_hash.reset();
-    }
-
-    void write(const Block & block) override
-    {
-        new_blocks->push_back(block);
-        block.updateHash(*new_hash);
-    }
-
-    Block getHeader() const override { return storage.getHeader(); }
-
-private:
-    using SipHashPtr = std::shared_ptr<SipHash>;
-
-    BlocksPtr new_blocks;
-    BlocksMetadataPtr new_blocks_metadata;
-    SipHashPtr new_hash;
-    StorageLiveView & storage;
-};
-
-
 void StorageLiveView::writeIntoLiveView(
     StorageLiveView & live_view,
     const Block & block,
@@ -182,7 +120,7 @@ void StorageLiveView::writeIntoLiveView(
     /// just reset blocks to empty and do nothing else
     /// When first reader comes the blocks will be read.
     {
-        Poco::FastMutex::ScopedLock lock(live_view.mutex);
+        std::lock_guard lock(live_view.mutex);
         if (!live_view.hasActiveUsers())
         {
             live_view.reset();
@@ -196,7 +134,7 @@ void StorageLiveView::writeIntoLiveView(
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
     {
-        Poco::FastMutex::ScopedLock lock(live_view.mutex);
+        std::lock_guard lock(live_view.mutex);
 
         mergeable_blocks = live_view.getMergeableBlocks();
         if (!mergeable_blocks || mergeable_blocks->size() >= context.getGlobalContext().getSettingsRef().max_live_view_insert_blocks_before_refresh)
@@ -242,7 +180,7 @@ void StorageLiveView::writeIntoLiveView(
             return;
 
         {
-            Poco::FastMutex::ScopedLock lock(live_view.mutex);
+            std::lock_guard lock(live_view.mutex);
 
             mergeable_blocks = live_view.getMergeableBlocks();
             mergeable_blocks->push_back(new_mergeable_blocks);
@@ -435,8 +373,8 @@ void StorageLiveView::noUsersThread(const UInt64 & timeout)
     {
         while (1)
         {
-            Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
-            if (!no_users_thread_wakeup && !no_users_thread_condition.tryWait(no_users_thread_mutex, timeout * 1000))
+            std::unique_lock lock(no_users_thread_mutex);
+            if (!no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return no_users_thread_wakeup; }))
             {
                 no_users_thread_wakeup = false;
                 if (shutdown_called)
@@ -487,14 +425,14 @@ void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
         if (no_users_thread.joinable())
         {
             {
-                Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
+                std::lock_guard lock(no_users_thread_mutex);
                 no_users_thread_wakeup = true;
-                no_users_thread_condition.signal();
+                no_users_thread_condition.notify_one();
             }
             no_users_thread.join();
         }
         {
-            Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
+            std::lock_guard lock(no_users_thread_mutex);
             no_users_thread_wakeup = false;
         }
         if (!is_dropped)
@@ -516,9 +454,9 @@ void StorageLiveView::shutdown()
 
     if (no_users_thread.joinable())
     {
-        Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
+        std::lock_guard lock(no_users_thread_mutex);
         no_users_thread_wakeup = true;
-        no_users_thread_condition.signal();
+        no_users_thread_condition.notify_one();
         /// Must detach the no users thread
         /// as we can't join it as it will result
         /// in a deadlock
@@ -536,18 +474,19 @@ void StorageLiveView::drop()
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
-    Poco::FastMutex::ScopedLock lock(mutex);
+
+    std::lock_guard lock(mutex);
     is_dropped = true;
-    condition.broadcast();
+    condition.notify_all();
 }
 
 void StorageLiveView::refresh(const Context & context)
 {
     auto alter_lock = lockAlterIntention(context.getCurrentQueryId());
     {
-        Poco::FastMutex::ScopedLock lock(mutex);
+        std::lock_guard lock(mutex);
         if (getNewBlocks())
-            condition.broadcast();
+            condition.notify_all();
     }
 }
 
@@ -562,11 +501,11 @@ BlockInputStreams StorageLiveView::read(
     /// add user to the blocks_ptr
     std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
     {
-        Poco::FastMutex::ScopedLock lock(mutex);
+        std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
         {
             if (getNewBlocks())
-                condition.broadcast();
+                condition.notify_all();
         }
     }
     return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };
@@ -598,17 +537,17 @@ BlockInputStreams StorageLiveView::watch(
 
         if (no_users_thread.joinable())
         {
-            Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
+            std::lock_guard lock(no_users_thread_mutex);
             no_users_thread_wakeup = true;
-            no_users_thread_condition.signal();
+            no_users_thread_condition.notify_one();
         }
 
         {
-            Poco::FastMutex::ScopedLock lock(mutex);
+            std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
                 if (getNewBlocks())
-                    condition.broadcast();
+                    condition.notify_all();
             }
         }
 
@@ -623,17 +562,17 @@ BlockInputStreams StorageLiveView::watch(
 
         if (no_users_thread.joinable())
         {
-            Poco::FastMutex::ScopedLock lock(no_users_thread_mutex);
+            std::lock_guard lock(no_users_thread_mutex);
             no_users_thread_wakeup = true;
-            no_users_thread_condition.signal();
+            no_users_thread_condition.notify_one();
         }
 
         {
-            Poco::FastMutex::ScopedLock lock(mutex);
+            std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
                 if (getNewBlocks())
-                    condition.broadcast();
+                    condition.notify_all();
             }
         }
 
