@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -59,7 +60,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -86,7 +87,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        data(place).count += !static_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
+        data(place).count += !assert_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -106,7 +107,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -143,7 +144,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         for (size_t i = 0; i < number_of_arguments; ++i)
-            if (is_nullable[i] && static_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
+            if (is_nullable[i] && assert_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
                 return;
 
         ++data(place).count;
@@ -166,7 +167,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
