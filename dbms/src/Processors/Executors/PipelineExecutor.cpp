@@ -590,32 +590,45 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     for (size_t i = 0; i < num_threads; ++i)
         executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
 
+    auto thread_group = CurrentThread::getGroup();
+
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
+    ThreadsData threads;
+    threads.reserve(num_threads);
+
+    bool finished_flag = false;
+
+    SCOPE_EXIT(
+            if (!finished_flag)
+            {
+                finish();
+
+                for (auto & thread : threads)
+                    thread.join();
+            }
+    );
+
     addChildlessProcessorsToStack(stack);
 
-    while (!stack.empty())
     {
-        UInt64 proc = stack.top();
-        stack.pop();
+        std::lock_guard lock(task_queue_mutex);
 
-        if (prepareProcessor(proc, stack, stack, 0, false))
+        while (!stack.empty())
         {
-            auto cur_state = graph[proc].execution_state.get();
-            task_queue.push(cur_state);
+            UInt64 proc = stack.top();
+            stack.pop();
+
+            if (prepareProcessor(proc, stack, stack, 0, false))
+            {
+                auto cur_state = graph[proc].execution_state.get();
+                task_queue.push(cur_state);
+            }
         }
     }
 
-    ThreadPool pool(num_threads);
-
-    SCOPE_EXIT(
-            finish();
-            pool.wait()
-    );
-
-    auto thread_group = CurrentThread::getGroup();
-
     for (size_t i = 0; i < num_threads; ++i)
     {
-        pool.schedule([this, thread_group, thread_num = i, num_threads]
+        threads.emplace_back([this, thread_group, thread_num = i, num_threads]
         {
             /// ThreadStatus thread_status;
 
@@ -631,7 +644,10 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         });
     }
 
-    pool.wait();
+    for (auto & thread : threads)
+        thread.join();
+
+    finished_flag = true;
 }
 
 String PipelineExecutor::dumpPipeline() const
