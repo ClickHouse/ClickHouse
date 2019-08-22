@@ -5,8 +5,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 
 #include <cmath>
+
 
 namespace DB
 {
@@ -52,7 +54,7 @@ class AggregateFunctionVarianceData
 public:
     void update(const IColumn & column, size_t row_num)
     {
-        T received = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+        T received = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
         Float64 val = static_cast<Float64>(received);
         Float64 delta = val - mean;
 
@@ -95,7 +97,7 @@ public:
 
     void publish(IColumn & to) const
     {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(m2, count));
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(m2, count));
     }
 
 private:
@@ -265,11 +267,11 @@ private:
 public:
     void update(const IColumn & column_left, const IColumn & column_right, size_t row_num)
     {
-        T left_received = static_cast<const ColumnVector<T> &>(column_left).getData()[row_num];
+        T left_received = assert_cast<const ColumnVector<T> &>(column_left).getData()[row_num];
         Float64 left_val = static_cast<Float64>(left_received);
         Float64 left_delta = left_val - left_mean;
 
-        U right_received = static_cast<const ColumnVector<U> &>(column_right).getData()[row_num];
+        U right_received = assert_cast<const ColumnVector<U> &>(column_right).getData()[row_num];
         Float64 right_val = static_cast<Float64>(right_received);
         Float64 right_delta = right_val - right_mean;
 
@@ -345,9 +347,9 @@ public:
     void publish(IColumn & to) const
     {
         if constexpr (compute_marginal_moments)
-            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
+            assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
         else
-            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
+            assert_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
     }
 
 private:

@@ -1,8 +1,8 @@
 #include "TrieDictionary.h"
-#include <iostream>
 #include <stack>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>
@@ -731,8 +731,8 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
-        const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
-        const auto & mask_column = static_cast<const ColumnVector<UInt8> &>(*columns.back());
+        const auto & ip_column = assert_cast<const ColumnFixedString &>(*columns.front());
+        const auto & mask_column = assert_cast<const ColumnVector<UInt8> &>(*columns.back());
         char buffer[48];
         for (size_t row : ext::range(0, ip_column.size()))
         {

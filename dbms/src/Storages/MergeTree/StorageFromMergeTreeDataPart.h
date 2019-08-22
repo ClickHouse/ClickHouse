@@ -40,7 +40,7 @@ public:
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(part_->storage.getColumns()), part(part_)
+        : IStorage(part_->storage.getColumns(), part_->storage.getVirtuals(), part_->storage.getIndices()), part(part_)
     {}
 
 private:

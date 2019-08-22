@@ -47,6 +47,71 @@ target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_D
 target_link_libraries(${THRIFT_LIBRARY} PRIVATE Threads::Threads)
 
 
+# === orc
+
+set(ORC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/orc/c++)
+set(ORC_INCLUDE_DIR ${ORC_SOURCE_DIR}/include)
+set(ORC_SOURCE_SRC_DIR ${ORC_SOURCE_DIR}/src)
+set(ORC_SOURCE_WRAP_DIR ${ORC_SOURCE_DIR}/wrap)
+
+set(ORC_BUILD_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src)
+set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
+
+set(GOOGLE_PROTOBUF_DIR ${ClickHouse_SOURCE_DIR}/contrib/protobuf/src/)
+set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
+
+set(PROTOBUF_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/../protobuf/cmake/protoc)
+set(PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
+
+
+add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+        COMMAND ${PROTOBUF_EXECUTABLE}
+        -I ${PROTO_DIR}
+        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+        "${PROTO_DIR}/orc_proto.proto")
+
+include_directories(SYSTEM ${ORC_INCLUDE_DIR})
+include_directories(SYSTEM ${ORC_SOURCE_SRC_DIR})
+include_directories(SYSTEM ${ORC_SOURCE_WRAP_DIR})
+include_directories(SYSTEM ${GOOGLE_PROTOBUF_DIR})
+include_directories(SYSTEM ${ORC_BUILD_SRC_DIR})
+include_directories(SYSTEM ${ORC_BUILD_INCLUDE_DIR})
+include_directories(SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+include_directories(SYSTEM ${ARROW_SRC_DIR})
+
+
+set(ORC_SRCS
+        ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc
+        ${ORC_SOURCE_SRC_DIR}/Exceptions.cc
+        ${ORC_SOURCE_SRC_DIR}/OrcFile.cc
+        ${ORC_SOURCE_SRC_DIR}/Reader.cc
+        ${ORC_SOURCE_SRC_DIR}/ByteRLE.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnReader.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc
+        ${ORC_SOURCE_SRC_DIR}/Common.cc
+        ${ORC_SOURCE_SRC_DIR}/Compression.cc
+        ${ORC_SOURCE_SRC_DIR}/Exceptions.cc
+        ${ORC_SOURCE_SRC_DIR}/Int128.cc
+        ${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc
+        ${ORC_SOURCE_SRC_DIR}/MemoryPool.cc
+        ${ORC_SOURCE_SRC_DIR}/OrcFile.cc
+        ${ORC_SOURCE_SRC_DIR}/Reader.cc
+        ${ORC_SOURCE_SRC_DIR}/RLE.cc
+        ${ORC_SOURCE_SRC_DIR}/RLEv1.cc
+        ${ORC_SOURCE_SRC_DIR}/RLEv2.cc
+        ${ORC_SOURCE_SRC_DIR}/Statistics.cc
+        ${ORC_SOURCE_SRC_DIR}/StripeStream.cc
+        ${ORC_SOURCE_SRC_DIR}/Timezone.cc
+        ${ORC_SOURCE_SRC_DIR}/TypeImpl.cc
+        ${ORC_SOURCE_SRC_DIR}/Vector.cc
+        ${ORC_SOURCE_SRC_DIR}/Writer.cc
+        ${ORC_SOURCE_SRC_DIR}/io/InputStream.cc
+        ${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc
+        ${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc
+        )
+
 
 # === arrow
 
@@ -103,6 +168,7 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/util/thread-pool.cc
   ${LIBRARY_DIR}/util/trie.cc
   ${LIBRARY_DIR}/util/utf8.cc
+  ${ORC_SRCS}
 )
 
 set(ARROW_SRCS ${ARROW_SRCS}
@@ -151,6 +217,7 @@ endif()
 
 
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
+add_dependencies(${ARROW_LIBRARY} protoc)
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} Threads::Threads)
 if (ARROW_WITH_LZ4)

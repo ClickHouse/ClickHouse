@@ -153,10 +153,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX && !command_ast->partition)
     {
         if (command_ast->clear_column)
-            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception("\"ALTER TABLE table CLEAR INDEX index\" queries are not supported yet. Use \"CLEAR INDEX index IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
         command.type = AlterCommand::DROP_INDEX;

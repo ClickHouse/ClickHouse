@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
@@ -147,14 +148,14 @@ void LinearModelData::returnWeights(IColumn & to) const
 {
     size_t size = weights.size() + 1;
 
-    ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+    ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
     ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
     size_t old_size = offsets_to.back();
     offsets_to.push_back(old_size + size);
 
     typename ColumnFloat64::Container & val_to
-            = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+            = assert_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
     val_to.reserve(old_size + size);
     for (size_t i = 0; i + 1 < size; ++i)

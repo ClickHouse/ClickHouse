@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef __ELF__
+
 #include <IO/MMapReadBufferFromFile.h>
 
 #include <string>
@@ -61,3 +63,5 @@ private:
 };
 
 }
+
+#endif

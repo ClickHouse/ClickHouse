@@ -832,38 +832,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
 
-    /// In case of reverse order let's split ranges to avoid reading much data.
-    auto split_ranges = [max_block_size](const auto & ranges, size_t rows_granularity, size_t num_marks_in_part)
-    {
-        /// Constants is just a guess.
-        const size_t min_rows_in_range = max_block_size;
-        const size_t max_num_ranges = 64;
-
-        size_t min_marks_in_range = std::max(
-            (min_rows_in_range + rows_granularity - 1) / rows_granularity,
-            (num_marks_in_part + max_num_ranges - 1) / max_num_ranges);
-
-        MarkRanges new_ranges;
-        for (auto range : ranges)
-        {
-            while (range.begin + min_marks_in_range < range.end)
-            {
-                new_ranges.emplace_back(range.begin, range.begin + min_marks_in_range);
-                range.begin += min_marks_in_range;
-            }
-            new_ranges.emplace_back(range.begin, range.end);
-        }
-
-        return new_ranges;
-    };
-
     for (size_t i = 0; i < parts.size(); ++i)
     {
         sum_marks_in_parts[i] = parts[i].getMarksCount();
         sum_marks += sum_marks_in_parts[i];
-
-        if (sorting_info->direction == -1)
-            parts[i].ranges = split_ranges(parts[i].ranges, data.settings.index_granularity, sum_marks_in_parts[i]);
 
         /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
@@ -895,6 +867,52 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
 
     if (sum_marks == 0)
         return streams;
+
+    /// Let's split ranges to avoid reading much data.
+    auto split_ranges = [rows_granularity = data.settings.index_granularity, max_block_size](const auto & ranges, int direction)
+    {
+        MarkRanges new_ranges;
+        const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+        size_t marks_in_range = 1;
+
+        if (direction == 1)
+        {
+            /// Split first few ranges to avoid reading much data.
+            bool splitted = false;
+            for (auto range : ranges)
+            {
+                while (!splitted && range.begin + marks_in_range < range.end)
+                {
+                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                    range.begin += marks_in_range;
+                    marks_in_range *= 2;
+
+                    if (marks_in_range > max_marks_in_range)
+                        splitted = true;
+                }
+                new_ranges.emplace_back(range.begin, range.end);
+            }
+        }
+        else
+        {
+            /// Split all ranges to avoid reading much data, because we have to
+            ///  store whole range in memory to reverse it.
+            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+            {
+                auto range = *it;
+                while (range.begin + marks_in_range < range.end)
+                {
+                    new_ranges.emplace_back(range.end - marks_in_range, range.end);
+                    range.end -= marks_in_range;
+                    marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+                }
+                new_ranges.emplace_back(range.begin, range.end);
+            }
+            std::reverse(new_ranges.begin(), new_ranges.end());
+        }
+
+        return new_ranges;
+    };
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
 
@@ -959,6 +977,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
                 }
                 parts.emplace_back(part);
             }
+
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, sorting_info->direction);
 
             BlockInputStreamPtr source_stream;
             if (sorting_info->direction == 1)

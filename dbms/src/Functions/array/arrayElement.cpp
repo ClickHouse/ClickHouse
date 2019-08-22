@@ -11,6 +11,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -800,7 +801,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         else
         {
             /// ColumnConst(ColumnArray(ColumnNullable(...)))
-            const auto & nullable_col = static_cast<const ColumnNullable &>(col_const_array->getData());
+            const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
             const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             source_block =
