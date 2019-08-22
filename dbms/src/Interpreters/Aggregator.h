@@ -17,6 +17,7 @@
 #include <Common/UInt128.h>
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/assert_cast.h>
 
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -270,7 +271,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
         auto ref = BaseState::getValueRef(value);
-        static_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
+        assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
     }
 };
 
@@ -318,9 +319,9 @@ struct AggregationMethodKeysFixed
             /// If we have a nullable column, get its nested column and its null map.
             if (column_nullable)
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+                ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
-                null_map = static_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
+                null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
             }
             else
             {

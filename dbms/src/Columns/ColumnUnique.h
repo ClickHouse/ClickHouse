@@ -11,6 +11,7 @@
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 
 #include <common/unaligned.h>
@@ -140,8 +141,8 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder.get()); }
-    const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
+    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -232,7 +233,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-            static_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
 }
 

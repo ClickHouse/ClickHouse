@@ -1,14 +1,15 @@
 #include "config_core.h"
 #if USE_MYSQL
 
-#    include <vector>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteHelpers.h>
-#    include <ext/range.h>
-#    include "MySQLBlockInputStream.h"
+#include <vector>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <ext/range.h>
+#include "MySQLBlockInputStream.h"
 
 
 namespace DB
@@ -41,46 +42,46 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                static_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtUInt16:
-                static_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtUInt32:
-                static_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtUInt64:
-                static_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtInt8:
-                static_cast<ColumnInt8 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 break;
             case ValueType::vtInt16:
-                static_cast<ColumnInt16 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
                 break;
             case ValueType::vtInt32:
-                static_cast<ColumnInt32 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
                 break;
             case ValueType::vtInt64:
-                static_cast<ColumnInt64 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
                 break;
             case ValueType::vtFloat32:
-                static_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 break;
             case ValueType::vtFloat64:
-                static_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
+                assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
                 break;
             case ValueType::vtString:
-                static_cast<ColumnString &>(column).insertData(value.data(), value.size());
+                assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
                 break;
             case ValueType::vtDate:
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
+                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
             case ValueType::vtDateTime:
-                static_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
+                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
                 break;
             case ValueType::vtUUID:
-                static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
         }
     }
@@ -113,7 +114,7 @@ Block MySQLBlockInputStream::readImpl()
             {
                 if (description.types[idx].second)
                 {
-                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                     insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
