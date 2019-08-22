@@ -205,7 +205,7 @@ nav:
 
 - 'Сценарии использования':
   - 'Обзор': 'solutions/index.md'
-  - 'Применение модели CatBoost в ClickHouse': 'solutions/apply-catboost-model.md'
+  - 'Применение CatBoost моделей': 'solutions/apply_catboost_model.md'
 
 - 'F.A.Q.':
   - 'Общие вопросы': 'faq/general.md'

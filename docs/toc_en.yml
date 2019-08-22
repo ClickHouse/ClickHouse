@@ -204,9 +204,9 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'Solution tutorials':
+- 'Solution Tutorials':
   - 'Overview': 'solutions/index.md'
-  - 'Applying a CatBoost model in ClickHouse': 'solutions/apply-catboost-model.md'
+  - 'Applying CatBoost Models': 'solutions/apply_catboost_model.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'
