@@ -1,4 +1,4 @@
-## ClickHouse release 19.13.3, 2019-08-22
+## ClickHouse release 19.13.3.26, 2019-08-22
 
 ### Bug Fix
 * Fix `ALTER TABLE ... UPDATE` query for tables with `enable_mixed_granularity_parts=1`. [#6543](https://github.com/yandex/ClickHouse/pull/6543) ([alesapin](https://github.com/alesapin))
