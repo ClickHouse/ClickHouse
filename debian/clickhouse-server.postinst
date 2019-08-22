@@ -20,7 +20,7 @@ OS=${OS=`lsb_release -is 2>/dev/null ||:`}
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
 
-if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ]; then
+if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ] || [ "$OS" = "ol" ]; then
     is_rh=1
 fi
 
