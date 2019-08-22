@@ -4,14 +4,21 @@ namespace DB
 {
 
 using namespace std::chrono_literals;
+
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
-    ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_)
+    ConsumerPtr consumer_,
+    Poco::Logger * log_,
+    size_t max_batch_size,
+    size_t poll_timeout_,
+    bool intermediate_commit_,
+    const std::atomic<bool> & stopped_)
     : ReadBuffer(nullptr, 0)
     , consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
+    , stopped(stopped_)
     , current(messages.begin())
 {
 }
@@ -58,7 +65,7 @@ void ReadBufferFromKafkaConsumer::commit()
             }
         }
     };
-￼
+
     PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
     if (current != messages.end())
@@ -142,7 +149,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
     ///       If we failed to poll any message once - don't try again.
     ///       Otherwise, the |poll_timeout| expectations get flawn.
-    if (stalled)
+    if (stalled || stopped)
         return false;
 
     if (current == messages.end())
