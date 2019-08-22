@@ -68,7 +68,7 @@ private:
 
         std::condition_variable cv; /// all clients of the group wait group condvar
 
-        explicit Group(Type type) : type{type} {}
+        explicit Group(Type type_) : type{type_} {}
     };
 
     mutable std::mutex mutex;

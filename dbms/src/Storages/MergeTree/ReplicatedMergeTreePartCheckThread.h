@@ -41,7 +41,7 @@ public:
     {
         ReplicatedMergeTreePartCheckThread * parent;
 
-        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent) : parent(parent)
+        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
         {
             parent->stop();
         }

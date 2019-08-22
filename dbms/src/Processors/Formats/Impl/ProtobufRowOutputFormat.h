@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
 
 #include <Core/Block.h>
@@ -35,6 +35,7 @@ public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
+        FormatFactory::WriteCallback callback,
         const FormatSchemaInfo & format_schema);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }

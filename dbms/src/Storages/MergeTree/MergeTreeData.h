@@ -501,6 +501,7 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
+    void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
@@ -600,7 +601,9 @@ public:
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
-    bool canUseAdaptiveGranularity() const
+    /// Returns true if table can create new parts with adaptive granularity
+    /// Has additional constraint in replicated version
+    virtual bool canUseAdaptiveGranularity() const
     {
         return settings.index_granularity_bytes != 0 &&
             (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
@@ -656,7 +659,7 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const MergeTreeSettings settings;
+    MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};

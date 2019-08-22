@@ -59,15 +59,15 @@ namespace CurrentMetrics
         std::atomic<Value> * what;
         Value amount;
 
-        Increment(std::atomic<Value> * what, Value amount)
-            : what(what), amount(amount)
+        Increment(std::atomic<Value> * what_, Value amount_)
+            : what(what_), amount(amount_)
         {
             *what += amount;
         }
 
     public:
-        Increment(Metric metric, Value amount = 1)
-            : Increment(&values[metric], amount) {}
+        Increment(Metric metric, Value amount_ = 1)
+            : Increment(&values[metric], amount_) {}
 
         ~Increment()
         {

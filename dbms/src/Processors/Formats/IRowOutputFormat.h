@@ -1,7 +1,9 @@
 #pragma once
 
-#include <string>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
+
+#include <string>
 
 
 namespace DB
@@ -22,8 +24,8 @@ protected:
     void finalize() override;
 
 public:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_)
-        : IOutputFormat(header, out_), types(header.getDataTypes())
+    IRowOutputFormat(const Block & header, WriteBuffer & out_, FormatFactory::WriteCallback callback)
+        : IOutputFormat(header, out_), types(header.getDataTypes()), write_single_row_callback(callback)
     {
     }
 
@@ -57,6 +59,9 @@ private:
     bool prefix_written = false;
     bool suffix_written = false;
 
+    // Callback used to indicate that another row is written.
+    FormatFactory::WriteCallback write_single_row_callback;
+
     void writePrefixIfNot()
     {
         if (!prefix_written)
@@ -76,5 +81,3 @@ private:
 };
 
 }
-
-

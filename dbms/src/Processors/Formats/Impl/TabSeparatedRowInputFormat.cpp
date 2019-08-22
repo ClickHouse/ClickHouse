@@ -42,8 +42,8 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    ReadBuffer & in_, Block header, bool with_names, bool with_types, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, std::move(params)), with_names(with_names), with_types(with_types), format_settings(format_settings)
+    ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();

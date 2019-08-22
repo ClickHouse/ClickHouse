@@ -28,8 +28,8 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors & processors)
-    : processors(processors)
+PipelineExecutor::PipelineExecutor(Processors & processors_)
+    : processors(processors_)
     , cancelled(false)
     , finished(false)
     , num_processing_executors(0)

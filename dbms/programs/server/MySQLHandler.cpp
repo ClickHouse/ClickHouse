@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <ext/scope_guard.h>
-#include <openssl/rsa.h>
 #include <Columns/ColumnVector.h>
 #include <Common/config_version.h>
 #include <Common/NetException.h>
@@ -37,14 +36,15 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id)
+MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_context(server.context())
-    , connection_id(connection_id)
-    , public_key(public_key)
-    , private_key(private_key)
+    , connection_id(connection_id_)
+    , public_key(public_key_)
+    , private_key(private_key_)
+    , auth_plugin(new Authentication::Native41())
 {
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -62,9 +62,7 @@ void MySQLHandler::run()
 
     try
     {
-        String scramble = generateScramble();
-
-        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, Authentication::Native, scramble + '\0');
+        Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, auth_plugin->getName(), auth_plugin->getAuthPluginData());
         packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -96,10 +94,21 @@ void MySQLHandler::run()
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))
             throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
-        if (!(client_capability_flags & CLIENT_PLUGIN_AUTH))
-            throw Exception("Required capability: CLIENT_PLUGIN_AUTH.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
-        authenticate(handshake_response, scramble);
+        authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+
+        try
+        {
+            if (!handshake_response.database.empty())
+                connection_context.setCurrentDatabase(handshake_response.database);
+            connection_context.setCurrentQueryId("");
+        }
+        catch (const Exception & exc)
+        {
+            log->log(exc);
+            packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+        }
+
         OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_sender->sendPacket(ok_packet, true);
 
@@ -216,121 +225,24 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
     }
 }
 
-String MySQLHandler::generateScramble()
+void MySQLHandler::authenticate(const String & user_name, const String & auth_plugin_name, const String & initial_auth_response)
 {
-    String scramble(MySQLProtocol::SCRAMBLE_LENGTH, 0);
-    Poco::RandomInputStream generator;
-    for (size_t i = 0; i < scramble.size(); i++)
-    {
-        generator >> scramble[i];
-    }
-    return scramble;
-}
+    // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
+    auto user = connection_context.getUser(user_name);
+    if (user->password_double_sha1_hex.empty())
+        auth_plugin = std::make_unique<Authentication::Sha256Password>(public_key, private_key, log);
 
-void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, const String & scramble)
-{
-
-    String auth_response;
-    AuthSwitchResponse response;
-    if (handshake_response.auth_plugin_name != Authentication::SHA256)
-    {
-        /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
-         *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin.
-         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
-         */
-        packet_sender->sendPacket(AuthSwitchRequest(Authentication::SHA256, scramble + '\0'), true);
-        if (in->eof())
-            throw Exception(
-                "Client doesn't support authentication method " + String(Authentication::SHA256) + " used by ClickHouse",
-                ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
-        packet_sender->receivePacket(response);
-        auth_response = response.value;
-        LOG_TRACE(log, "Authentication method mismatch.");
-    }
-    else
-    {
-        auth_response = handshake_response.auth_response;
-        LOG_TRACE(log, "Authentication method match.");
-    }
-
-    if (auth_response == "\1")
-    {
-        LOG_TRACE(log, "Client requests public key.");
-
-        BIO * mem = BIO_new(BIO_s_mem());
-        SCOPE_EXIT(BIO_free(mem));
-        if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
-        {
-            throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
-        }
-        char * pem_buf = nullptr;
-        long pem_size = BIO_get_mem_data(mem, &pem_buf);
-        String pem(pem_buf, pem_size);
-
-        LOG_TRACE(log, "Key: " << pem);
-
-        AuthMoreData data(pem);
-        packet_sender->sendPacket(data, true);
-        packet_sender->receivePacket(response);
-        auth_response = response.value;
-    }
-    else
-    {
-        LOG_TRACE(log, "Client didn't request public key.");
-    }
-
-    String password;
-
-    /** Decrypt password, if it's not empty.
-     *  The original intention was that the password is a string[NUL] but this never got enforced properly so now we have to accept that
-     *  an empty packet is a blank password, thus the check for auth_response.empty() has to be made too.
-     *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
-     */
-    if (!secure_connection && !auth_response.empty() && auth_response != String("\0", 1))
-    {
-        LOG_TRACE(log, "Received nonempty password");
-        auto ciphertext = reinterpret_cast<unsigned char *>(auth_response.data());
-
-        unsigned char plaintext[RSA_size(&private_key)];
-        int plaintext_size = RSA_private_decrypt(auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-        if (plaintext_size == -1)
-        {
-            throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
-        }
-
-        password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; ++i)
-        {
-            password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
-        }
-    }
-    else if (secure_connection)
-    {
-        password = auth_response;
-    }
-    else
-    {
-        LOG_TRACE(log, "Received empty password");
-    }
-
-    if (!password.empty() && password.back() == 0)
-    {
-        password.pop_back();
-    }
-
-    try
-    {
-        connection_context.setUser(handshake_response.username, password, socket().address(), "");
-        if (!handshake_response.database.empty()) connection_context.setCurrentDatabase(handshake_response.database);
-        connection_context.setCurrentQueryId("");
-        LOG_INFO(log, "Authentication for user " << handshake_response.username << " succeeded.");
+    try {
+        std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
+        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().address());
     }
     catch (const Exception & exc)
     {
-        LOG_ERROR(log, "Authentication for user " << handshake_response.username << " failed.");
+        LOG_ERROR(log, "Authentication for user " << user_name << " failed.");
         packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         throw;
     }
+    LOG_INFO(log, "Authentication for user " << user_name << " succeeded.");
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)

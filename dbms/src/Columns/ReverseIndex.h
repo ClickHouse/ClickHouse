@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include <common/unaligned.h>
 
@@ -235,8 +236,8 @@ template <typename IndexType, typename ColumnType>
 class ReverseIndex
 {
 public:
-    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip, UInt64 base_index)
-            : num_prefix_rows_to_skip(num_prefix_rows_to_skip), base_index(base_index), saved_hash_ptr(nullptr) {}
+    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
+            : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 

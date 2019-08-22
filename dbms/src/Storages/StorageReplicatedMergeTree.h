@@ -172,6 +172,9 @@ public:
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
+    /// Checks ability to use granularity
+    bool canUseAdaptiveGranularity() const override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -285,6 +288,9 @@ private:
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
+    /// True if replica was created for existing table with fixed granularity
+    bool other_replicas_fixed_granularity = false;
+
     /** Creates the minimum set of nodes in ZooKeeper.
       */
     void createTableIfNotExists();
@@ -376,7 +382,7 @@ private:
 
     bool executeFetch(LogEntry & entry);
 
-    void executeClearColumnInPartition(const LogEntry & entry);
+    void executeClearColumnOrIndexInPartition(const LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
 
@@ -464,10 +470,15 @@ private:
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
+      *
+      * NOTE: This method must be called without table lock held.
+      * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
+      * TODO: There are wrong usages of this method that are not fixed yet.
       */
     void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
 
     /** Wait until the specified replica executes the specified action from the log.
+      * NOTE: See comment about locks above.
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
@@ -500,11 +511,15 @@ private:
     std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
     // Partition helpers
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & query_context);
+    void clearColumnOrIndexInPartition(const ASTPtr & partition, LogEntry && entry, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
+
+    /// Check granularity of already existing replicated table in zookeeper if it exists
+    /// return true if it's fixed
+    bool checkFixedGranualrityInZookeeper();
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

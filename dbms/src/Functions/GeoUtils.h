@@ -91,8 +91,8 @@ public:
     using Box = boost::geometry::model::box<Point>;
     using Segment = boost::geometry::model::segment<Point>;
 
-    explicit PointInPolygonWithGrid(const Polygon & polygon, UInt16 grid_size = 8)
-            : grid_size(std::max<UInt16>(1, grid_size)), polygon(polygon) {}
+    explicit PointInPolygonWithGrid(const Polygon & polygon_, UInt16 grid_size_ = 8)
+            : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_) {}
 
     void init();
 
@@ -510,7 +510,7 @@ public:
     using Polygon = boost::geometry::model::polygon<Point, false>;
     using Box = boost::geometry::model::box<Point>;
 
-    explicit PointInPolygon(const Polygon & polygon) : polygon(polygon) {}
+    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_) {}
 
     void init()
     {

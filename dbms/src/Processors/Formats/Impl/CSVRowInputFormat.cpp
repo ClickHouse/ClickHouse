@@ -18,10 +18,10 @@ namespace ErrorCodes
 
 
 CSVRowInputFormat::CSVRowInputFormat(
-    ReadBuffer & in_, Block header, Params params, bool with_names_, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, std::move(params))
+    ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , with_names(with_names_)
-    , format_settings(format_settings)
+    , format_settings(format_settings_)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
@@ -40,7 +40,7 @@ CSVRowInputFormat::CSVRowInputFormat(
         /// If input_format_null_as_default=1 we need ColumnNullable of type DataTypeNullable(nested_type)
         /// to parse value as nullable before inserting it in corresponding column of not-nullable type.
         /// Constructing temporary column for each row is slow, so we prepare it here
-        if (format_settings.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
+        if (format_settings_.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
         {
             column_idx_to_nullable_column_idx[i] = nullable_columns.size();
             nullable_types.emplace_back(std::make_shared<DataTypeNullable>(column_info.type));
@@ -349,10 +349,9 @@ bool OPTIMIZE(1) CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumn
             const auto & current_column_type = data_types[table_column];
             const bool is_last_file_column =
                     file_column + 1 == column_indexes_for_input_fields.size();
-            const bool at_delimiter = *in.position() == delimiter;
+            const bool at_delimiter = !in.eof() && *in.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
-                                                 && (*in.position() == '\n' || *in.position() == '\r'
-                                                     || in.eof());
+                                                 && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
             auto & header = getPort().getHeader();
             out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
@@ -516,10 +515,9 @@ void CSVRowInputFormat::updateDiagnosticInfo()
 
 bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
 {
-    const bool at_delimiter = *in.position() == format_settings.csv.delimiter;
+    const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
-                                         && (*in.position() == '\n' || *in.position() == '\r'
-                                             || in.eof());
+                                         && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
     if (format_settings.csv.empty_as_default
         && (at_delimiter || at_last_column_line_end))

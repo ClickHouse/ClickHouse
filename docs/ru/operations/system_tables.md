@@ -61,16 +61,26 @@ user String — имя пользователя, которого использ
 ## system.columns
 
 Содержит информацию о столбцах всех таблиц.
-С помощью этой таблицы можно получить информацию аналогично запросу `DESCRIBE TABLE`, но для многих таблиц сразу.
 
-```
-database String           - имя базы данных, в которой находится таблица
-table String              - имя таблицы
-name String               - имя столбца
-type String               - тип столбца
-default_type String       - тип (DEFAULT, MATERIALIZED, ALIAS) выражения для значения по умолчанию, или пустая строка, если оно не описано
-default_expression String - выражение для значения по умолчанию, или пустая строка, если оно не описано
-```
+С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table), но для многих таблиц сразу.
+
+Таблица `system.columns` содержит столбцы (тип столбца указан в скобках):
+
+- `database` (String) — имя базы данных.
+- `table` (String) — имя таблицы.
+- `name` (String) — имя столбца.
+- `type` (String) — тип столбца.
+- `default_kind` (String) — тип выражения (`DEFAULT`, `MATERIALIZED`, `ALIAS`) значения по умолчанию, или пустая строка.
+- `default_expression` (String) — выражение для значения по умолчанию или пустая строка.
+- `data_compressed_bytes` (UInt64) — размер сжатых данных в байтах.
+- `data_uncompressed_bytes` (UInt64) — размер распакованных данных в байтах.
+- `marks_bytes` (UInt64) — размер засечек в байтах.
+- `comment` (String) — комментарий к столбцу или пустая строка.
+- `is_in_partition_key` (UInt8) — флаг, показывающий включение столбца в ключ партиционирования.
+- `is_in_sorting_key` (UInt8) — флаг, показываюший включение столбца в ключ сортировки.
+- `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
+- `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
+
 ## system.databases
 
 Таблица содержит один столбец name типа String - имя базы данных.
@@ -79,7 +89,7 @@ default_expression String - выражение для значения по ум
 
 ## system.detached_parts {#system_tables-detached_parts}
 
-Сожелржит информацию об отсоединённых кусках таблиц семейства [MergeTree](table_engines/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
+Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](table_engines/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
 Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
 Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
@@ -572,11 +582,27 @@ WHERE changed
 
 ## system.tables
 
-Таблица содержит столбцы database, name, engine типа String.
-Также таблица содержит три виртуальных столбца: metadata_modification_time типа DateTime, create_table_query и engine_full типа String.
-Для каждой таблицы, о которой знает сервер, будет присутствовать соответствующая запись в таблице system.tables.
-Эта системная таблица используется для реализации запросов SHOW TABLES.
+Содержит метаданные каждой таблицы, о которой знает сервер. Отсоединённые таблицы не отображаются в `system.tables`.
 
+Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
+
+- `database String` — имя базы данных, в которой находится таблица.
+- `name` (String) — имя таблицы.
+- `engine` (String) — движок таблицы (без параметров).
+- `is_temporary` (UInt8) — флаг, указывающий на то, временная это таблица или нет.
+- `data_path` (String) — путь к данным таблицы в файловой системе.
+- `metadata_path` (String) — путь к табличным метаданным в файловой системе.
+- `metadata_modification_time` (DateTime) — время последней модификации табличных метаданных.
+- `dependencies_database` (Array(String)) — зависимости базы данных.
+- `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](table_engines/materializedview.md), созданные на базе текущей таблицы).
+- `create_table_query` (String) — запрос, которым создавалась таблица.
+- `engine_full` (String) — параметры табличного движка.
+- `partition_key` (String) — ключ партиционирования таблицы.
+- `sorting_key` (String) — ключ сортировки таблицы.
+- `primary_key` (String) - первичный ключ таблицы.
+- `sampling_key` (String) — ключ сэмплирования таблицы.
+
+Таблица `system.tables` используется при выполнении запроса `SHOW TABLES`.
 
 ## system.zookeeper
 

@@ -26,6 +26,7 @@ def main():
         'bootstrap_servers': f'{args.server}:{args.port}',
         'client_id': args.client,
         'group_id': args.group,
+        'auto_offset_reset': 'earliest',
     }
     client = kafka.KafkaConsumer(**config)
 

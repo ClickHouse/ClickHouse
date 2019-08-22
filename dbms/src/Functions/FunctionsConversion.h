@@ -32,6 +32,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -1485,8 +1486,8 @@ class PreparedFunctionCast : public PreparedFunctionImpl
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
 
-    explicit PreparedFunctionCast(WrapperType && wrapper_function, const char * name)
-            : wrapper_function(std::move(wrapper_function)), name(name) {}
+    explicit PreparedFunctionCast(WrapperType && wrapper_function_, const char * name_)
+            : wrapper_function(std::move(wrapper_function_)), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -1520,10 +1521,10 @@ public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
-    FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
-            , const DataTypes & argument_types, const DataTypePtr & return_type)
-            : context(context), name(name), monotonicity_for_range(monotonicity_for_range)
-            , argument_types(argument_types), return_type(return_type)
+    FunctionCast(const Context & context_, const char * name_, MonotonicityForRange && monotonicity_for_range_
+            , const DataTypes & argument_types_, const DataTypePtr & return_type_)
+            : context(context_), name(name_), monotonicity_for_range(monotonicity_for_range_)
+            , argument_types(argument_types_), return_type(return_type_)
     {
     }
 
@@ -2053,7 +2054,7 @@ private:
                 if (!skip_not_null_check)
                 {
                     const auto & col = block.getByPosition(arguments[0]).column;
-                    const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+                    const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
                     const auto & null_map = nullable_col.getNullMapData();
 
                     if (!memoryIsZero(null_map.data(), null_map.size()))
@@ -2164,7 +2165,7 @@ public:
     static constexpr auto name = "CAST";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
 
-    FunctionBuilderCast(const Context & context) : context(context) {}
+    FunctionBuilderCast(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 

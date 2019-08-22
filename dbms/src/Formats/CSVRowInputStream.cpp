@@ -92,8 +92,8 @@ static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, siz
 }
 
 
-CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings_)
+    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings_)
 {
     const auto num_columns = header.columns();
 
@@ -348,10 +348,9 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
             const auto & current_column_type = data_types[table_column];
             const bool is_last_file_column =
                     file_column + 1 == column_indexes_for_input_fields.size();
-            const bool at_delimiter = *istr.position() == delimiter;
+            const bool at_delimiter = !istr.eof() && *istr.position() == delimiter;
             const bool at_last_column_line_end = is_last_file_column
-                    && (*istr.position() == '\n' || *istr.position() == '\r'
-                        || istr.eof());
+                    && (istr.eof() || *istr.position() == '\n' || *istr.position() == '\r');
 
             out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
                 << "name: " << header.safeGetByPosition(table_column).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(table_column).name.size(), ' ')
@@ -514,10 +513,9 @@ void CSVRowInputStream::updateDiagnosticInfo()
 
 bool CSVRowInputStream::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
 {
-    const bool at_delimiter = *istr.position() == format_settings.csv.delimiter;
+    const bool at_delimiter = !istr.eof() || *istr.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
-                                         && (*istr.position() == '\n' || *istr.position() == '\r'
-                                             || istr.eof());
+                                         && (istr.eof() || *istr.position() == '\n' || *istr.position() == '\r');
 
     if (format_settings.csv.empty_as_default
         && (at_delimiter || at_last_column_line_end))

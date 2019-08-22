@@ -38,10 +38,6 @@
 #include <Interpreters/Compiler.h>
 #include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -659,6 +655,10 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
+std::shared_ptr<const User> Context::getUser(const String & user_name)
+{
+    return shared->users_manager->getUser(user_name);
+}
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
@@ -1189,13 +1189,13 @@ void Context::setCurrentQueryId(const String & query_id)
         random.words.b = thread_local_rng();
 
         /// Use protected constructor.
-        struct UUID : Poco::UUID
+        struct qUUID : Poco::UUID
         {
-            UUID(const char * bytes, Poco::UUID::Version version)
+            qUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
 
-        query_id_to_set = UUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+        query_id_to_set = qUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 
     client_info.current_query_id = query_id_to_set;
@@ -1701,6 +1701,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     return shared->system_logs->part_log;
 }
 
+
 std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
@@ -1711,6 +1712,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
     return shared->system_logs->trace_log;
 }
 
+
 std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
@@ -1719,6 +1721,17 @@ std::shared_ptr<TextLog> Context::getTextLog()
         return {};
 
     return shared->system_logs->text_log;
+}
+
+
+std::shared_ptr<MetricLog> Context::getMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->metric_log)
+        return {};
+
+    return shared->system_logs->metric_log;
 }
 
 

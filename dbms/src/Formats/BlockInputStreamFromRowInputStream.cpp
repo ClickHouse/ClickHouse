@@ -76,15 +76,15 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             try
             {
                 ++total_rows;
-                RowReadExtension info;
-                if (!row_input->read(columns, info))
+                RowReadExtension info_;
+                if (!row_input->read(columns, info_))
                     break;
                 if (read_virtual_columns_callback)
                     read_virtual_columns_callback();
 
-                for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
+                for (size_t column_idx = 0; column_idx < info_.read_columns.size(); ++column_idx)
                 {
-                    if (!info.read_columns[column_idx])
+                    if (!info_.read_columns[column_idx])
                     {
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)

@@ -1,9 +1,6 @@
 # Formats for input and output data {#formats}
 
-ClickHouse can accept and return data in various formats. A format supported
-for input can be used to parse the data provided to `INSERT`s, to perform
-`SELECT`s from a file-backed table such as File, URL or HDFS, or to read an
-external dictionary. A format supported for output can be used to arrange the
+ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
@@ -149,7 +146,7 @@ SELECT * FROM t_null FORMAT TSKV
 x=1	y=\N
 ```
 
-When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. It is used in some departments of Yandex.
+When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. Nevertheless, it is no worse than JSONEachRow in terms of efficiency.
 
 Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
 
@@ -388,7 +385,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+If you have a table with [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -396,13 +393,13 @@ For example, consider the following table:
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+As you can see in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column (`n.s` and `n.i` for our table). You can insert data in the following way:
 
 ```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ```json
 {
@@ -413,7 +410,7 @@ To insert data as hierarchical JSON object set [input_format_import_nested_json=
 }
 ```
 
-Without this setting ClickHouse throws the exception.
+Without this setting, ClickHouse throws an exception.
 
 ```sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'

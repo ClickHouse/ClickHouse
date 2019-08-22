@@ -17,6 +17,7 @@
 #include <Common/UInt128.h>
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/assert_cast.h>
 
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -270,7 +271,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
         auto ref = BaseState::getValueRef(value);
-        static_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
+        assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
     }
 };
 
@@ -318,9 +319,9 @@ struct AggregationMethodKeysFixed
             /// If we have a nullable column, get its nested column and its null map.
             if (column_nullable)
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
+                ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
-                null_map = static_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
+                null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
             }
             else
             {
@@ -842,7 +843,6 @@ public:
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);
 
     /** Convert the aggregation data structure into a block.
@@ -1003,7 +1003,6 @@ protected:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1014,10 +1013,16 @@ protected:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        StringRefs & keys,
         AggregateDataPtr overflow_row) const;
+
+    template <typename Method>
+    void executeImplBatch(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     void executeWithoutKeyImpl(
@@ -1042,7 +1047,6 @@ public:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1052,9 +1056,7 @@ public:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        StringRefs & keys,
         AggregateDataPtr overflow_row) const;
 
     template <typename AggregateFunctionsList>
@@ -1179,7 +1181,6 @@ protected:
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,
-        StringRefs & keys,
         const Block & source,
         std::vector<Block> & destinations) const;
 
