@@ -37,6 +37,7 @@ Chunk RollupTransform::generate()
             rollup_chunk = std::move(consumed_chunks.front());
 
         consumed_chunks.clear();
+        last_removed_key = keys.size();
     }
 
     auto gen_chunk = std::move(rollup_chunk);
