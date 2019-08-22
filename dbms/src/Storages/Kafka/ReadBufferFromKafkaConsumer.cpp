@@ -26,6 +26,41 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 
 void ReadBufferFromKafkaConsumer::commit()
 {
+    auto PrintOffsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
+    {
+        for (const auto & topic_part : offsets)
+        {
+            auto print_special_offset = [&topic_part]
+            {
+                switch (topic_part.get_offset())
+                {
+                    case cppkafka::TopicPartition::OFFSET_BEGINNING: return "BEGINNING";
+                    case cppkafka::TopicPartition::OFFSET_END: return "END";
+                    case cppkafka::TopicPartition::OFFSET_STORED: return "STORED";
+                    case cppkafka::TopicPartition::OFFSET_INVALID: return "INVALID";
+                    default: return "";
+                }
+            };
+
+            if (topic_part.get_offset() < 0)
+            {
+                LOG_TRACE(
+                    log,
+                    prefix << " " << print_special_offset() << " (topic: " << topic_part.get_topic()
+                           << ", partition: " << topic_part.get_partition() << ")");
+            }
+            else
+            {
+                LOG_TRACE(
+                    log,
+                    prefix << " " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
+                           << ", partition: " << topic_part.get_partition() << ")");
+            }
+        }
+    };
+￼
+    PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
+
     if (current != messages.end())
     {
         /// Since we can poll more messages than we already processed,
@@ -41,14 +76,7 @@ void ReadBufferFromKafkaConsumer::commit()
         consumer->async_commit();
     }
 
-    const auto & offsets = consumer->get_offsets_committed(consumer->get_assignment());
-    for (const auto & topic_part : offsets)
-    {
-        LOG_TRACE(
-            log,
-            "Committed offset " << topic_part.get_offset() << " (topic: " << topic_part.get_topic()
-                                << ", partition: " << topic_part.get_partition() << ")");
-    }
+    PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
 
     stalled = false;
 }
