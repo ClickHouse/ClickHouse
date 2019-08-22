@@ -53,7 +53,7 @@ protected:
 
         /// Create the result.
         Block block = getSampleBlock();
-        MutableColumns columns = block.cloneEmptyColumns();
+        MutableColumns new_columns = block.cloneEmptyColumns();
 
         while (StoragesInfo info = stream.next())
         {
@@ -61,19 +61,19 @@ protected:
             for (auto & p : parts)
             {
                 size_t i = 0;
-                columns[i++]->insert(info.database);
-                columns[i++]->insert(info.table);
-                columns[i++]->insert(p.valid_name ? p.partition_id : Field());
-                columns[i++]->insert(p.dir_name);
-                columns[i++]->insert(p.valid_name ? p.prefix : Field());
-                columns[i++]->insert(p.valid_name ? p.min_block : Field());
-                columns[i++]->insert(p.valid_name ? p.max_block : Field());
-                columns[i++]->insert(p.valid_name ? p.level : Field());
+                new_columns[i++]->insert(info.database);
+                new_columns[i++]->insert(info.table);
+                new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[i++]->insert(p.dir_name);
+                new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
+                new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.max_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.level : Field());
             }
         }
 
         return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
-             block.cloneWithColumns(std::move(columns))));
+             block.cloneWithColumns(std::move(new_columns))));
     }
 };
 

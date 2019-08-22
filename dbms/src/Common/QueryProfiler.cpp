@@ -11,12 +11,11 @@
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event QueryProfilerCannotWriteTrace;
     extern const Event QueryProfilerSignalOverruns;
 }
 
@@ -27,36 +26,6 @@ extern LazyPipe trace_pipe;
 
 namespace
 {
-    /** Write to file descriptor but drop the data if write would block or fail.
-      * To use within signal handler. Motivating example: a signal handler invoked during execution of malloc
-      *  should not block because some mutex (or even worse - a spinlock) may be held.
-      */
-    class WriteBufferDiscardOnFailure : public WriteBufferFromFileDescriptor
-    {
-    protected:
-        void nextImpl() override
-        {
-            size_t bytes_written = 0;
-            while (bytes_written != offset())
-            {
-                ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
-
-                if ((-1 == res || 0 == res) && errno != EINTR)
-                {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerCannotWriteTrace);
-                    break;  /// Discard
-                }
-
-                if (res > 0)
-                    bytes_written += res;
-            }
-        }
-
-    public:
-        using WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor;
-        ~WriteBufferDiscardOnFailure() override {}
-    };
-
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
@@ -90,7 +59,7 @@ namespace
                                     sizeof(TimerType) + // timer type
                                     sizeof(UInt32); // thread_number
         char buffer[buf_size];
-        WriteBufferDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
+        WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
@@ -127,9 +96,9 @@ namespace ErrorCodes
 }
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
     : log(&Logger::get("QueryProfiler"))
-    , pause_signal(pause_signal)
+    , pause_signal(pause_signal_)
 {
 #if USE_INTERNAL_UNWIND_LIBRARY
     /// Sanity check.
@@ -204,11 +173,13 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
+#if USE_INTERNAL_UNWIND_LIBRARY
     if (timer_id != nullptr && timer_delete(timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
         LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+#endif
 }
 
 template class QueryProfilerBase<QueryProfilerReal>;

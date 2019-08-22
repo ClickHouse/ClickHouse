@@ -20,7 +20,7 @@ public:
       * with_types - on the next line header with type names
       */
     TabSeparatedRowInputFormat(
-        ReadBuffer & in_, Block header, bool with_names, bool with_types, Params params, const FormatSettings & format_settings);
+        ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 

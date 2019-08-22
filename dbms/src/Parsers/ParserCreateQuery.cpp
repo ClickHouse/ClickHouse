@@ -39,7 +39,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto func = std::make_shared<ASTFunction>();
-    getIdentifierName(name, func->name);
+    tryGetIdentifierNameInto(name, func->name);
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -74,7 +74,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
-        getIdentifierName(ident, func->name);
+        tryGetIdentifierNameInto(ident, func->name);
         node = func;
         return true;
     }
@@ -91,6 +91,12 @@ bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
+bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -309,7 +315,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
+    ParserKeyword s_with("WITH");
     ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_live("LIVE");
+    ParserKeyword s_channel("CHANNEL");
     ParserKeyword s_populate("POPULATE");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
@@ -320,6 +329,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
+    ParserNameList names_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -331,11 +341,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr as_table;
     ASTPtr as_table_function;
     ASTPtr select;
+    ASTPtr tables;
+
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
     bool is_view = false;
     bool is_materialized_view = false;
+    bool is_live_view = false;
+    bool is_live_channel = false;
     bool is_populate = false;
     bool is_temporary = false;
     bool replace_view = false;
@@ -384,8 +398,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->if_not_exists = if_not_exists;
             query->cluster = cluster_str;
 
-            getIdentifierName(database, query->database);
-            getIdentifierName(table, query->table);
+            tryGetIdentifierNameInto(database, query->database);
+            tryGetIdentifierNameInto(table, query->table);
 
             return true;
         }
@@ -429,6 +443,79 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         storage_p.parse(pos, storage, expected);
                 }
             }
+        }
+    }
+    else if (s_live.ignore(pos, expected))
+    {
+        if (s_channel.ignore(pos, expected))
+           is_live_channel = true;
+        else if (s_view.ignore(pos, expected))
+           is_live_view = true;
+        else
+           return false;
+
+        if (s_if_not_exists.ignore(pos, expected))
+           if_not_exists = true;
+
+        if (!name_p.parse(pos, table, expected))
+            return false;
+
+        if (s_dot.ignore(pos, expected))
+        {
+            database = table;
+            if (!name_p.parse(pos, table, expected))
+                return false;
+        }
+
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+
+        if (!is_live_channel)
+        {
+            // TO [db.]table
+            if (ParserKeyword{"TO"}.ignore(pos, expected))
+            {
+                if (!name_p.parse(pos, to_table, expected))
+                    return false;
+
+                if (s_dot.ignore(pos, expected))
+                {
+                    to_database = to_table;
+                    if (!name_p.parse(pos, to_table, expected))
+                        return false;
+                }
+            }
+        }
+
+        /// Optional - a list of columns can be specified. It must fully comply with SELECT.
+        if (s_lparen.ignore(pos, expected))
+        {
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
+                return false;
+
+            if (!s_rparen.ignore(pos, expected))
+                return false;
+        }
+
+        if (is_live_channel)
+        {
+            if (s_with.ignore(pos, expected))
+            {
+                if (!names_p.parse(pos, tables, expected))
+                    return false;
+            }
+        }
+        else
+        {
+            /// AS SELECT ...
+            if (!s_as.ignore(pos, expected))
+                return false;
+
+            if (!select_p.parse(pos, select, expected))
+                return false;
         }
     }
     else if (is_temporary)
@@ -538,22 +625,25 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->if_not_exists = if_not_exists;
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
+    query->is_live_view = is_live_view;
+    query->is_live_channel = is_live_channel;
     query->is_populate = is_populate;
     query->temporary = is_temporary;
     query->replace_view = replace_view;
 
-    getIdentifierName(database, query->database);
-    getIdentifierName(table, query->table);
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
     query->cluster = cluster_str;
 
-    getIdentifierName(to_database, query->to_database);
-    getIdentifierName(to_table, query->to_table);
+    tryGetIdentifierNameInto(to_database, query->to_database);
+    tryGetIdentifierNameInto(to_table, query->to_table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->set(query->tables, tables);
 
-    getIdentifierName(as_database, query->as_database);
-    getIdentifierName(as_table, query->as_table);
+    tryGetIdentifierNameInto(as_database, query->as_database);
+    tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
 
     return true;

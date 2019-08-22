@@ -408,6 +408,8 @@ void MergeTreeDataPart::remove() const
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
+        std::shared_lock<std::shared_mutex> lock(columns_lock);
+
         for (const auto & [file, _] : checksums.files)
         {
             String path_to_remove = to + "/" + file;

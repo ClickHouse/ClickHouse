@@ -14,13 +14,13 @@ namespace DB
 using namespace MySQLProtocol;
 
 
-MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings)
-    : IOutputFormat(header, out_)
-    , context(context)
-    , packet_sender(out, const_cast<uint8_t &>(context.mysql.sequence_id)) /// TODO: fix it
-    , format_settings(settings)
+MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const Context & context_, const FormatSettings & settings_)
+    : IOutputFormat(header_, out_)
+    , context(context_)
+    , packet_sender(out, const_cast<uint8_t &>(context_.mysql.sequence_id)) /// TODO: fix it
+    , format_settings(settings_)
 {
-    packet_sender.max_packet_size = context.mysql.max_packet_size;
+    packet_sender.max_packet_size = context_.mysql.max_packet_size;
 }
 
 void MySQLOutputFormat::initialize()
@@ -107,10 +107,12 @@ void MySQLOutputFormat::flush()
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "MySQLWire", [](WriteBuffer & buf, const Block & sample, const Context & context, const FormatSettings & settings)
-        {
-            return std::make_shared<MySQLOutputFormat>(buf, sample, context, settings);
-        });
+        "MySQLWire",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const Context & context,
+           FormatFactory::WriteCallback,
+           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, context, settings); });
 }
 
 }

@@ -1,14 +1,13 @@
-#include "config_formats.h"
-#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
+#include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <capnp/serialize.h> // Y_IGNORE
-#include <capnp/dynamic.h> // Y_IGNORE
-#include <capnp/common.h> // Y_IGNORE
+#include <capnp/serialize.h>
+#include <capnp/dynamic.h>
+#include <capnp/common.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
@@ -178,8 +177,8 @@ void CapnProtoRowInputFormat::createActions(const NestedFieldList & sorted_field
     }
 }
 
-CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSchemaInfo & info)
-    : IRowInputFormat(std::move(header), in_, std::move(params)), parser(std::make_shared<SchemaParser>())
+CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info)
+    : IRowInputFormat(std::move(header), in_, std::move(params_)), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
 

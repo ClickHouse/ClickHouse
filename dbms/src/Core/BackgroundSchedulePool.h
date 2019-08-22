@@ -49,7 +49,7 @@ public:
 
     size_t getNumberOfThreads() const { return size; }
 
-    BackgroundSchedulePool(size_t size);
+    BackgroundSchedulePool(size_t size_);
     ~BackgroundSchedulePool();
 
 private:

@@ -18,7 +18,7 @@ class PrettyBlockOutputFormat : public IOutputFormat
 {
 public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 

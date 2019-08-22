@@ -1,4 +1,6 @@
-option (ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Michael Parakhin" ${NOT_UNBUNDLED})
+if (NOT ARCH_ARM AND NOT OS_FREEBSD)
+    option (ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${NOT_UNBUNDLED})
+endif ()
 
 if (ENABLE_FASTOPS)
     if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/fastops/fastops/fastops.h")
@@ -12,4 +14,4 @@ else ()
     set(USE_FASTOPS 0)
 endif ()
 
-message (STATUS "Using fastops")
+message (STATUS "Using fastops=${USE_FASTOPS}: ${FASTOPS_INCLUDE_DIR} : ${FASTOPS_LIBRARY}")

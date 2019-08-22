@@ -1,5 +1,4 @@
-#include "config_formats.h"
-#include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
+#include "ProtobufRowInputFormat.h"
 
 #if USE_PROTOBUF
 #include <Core/Block.h>
@@ -11,10 +10,10 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSchemaInfo & info)
-    : IRowInputFormat(header, in_, params)
-    ,  data_types(header.getDataTypes())
-    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_)
+    : IRowInputFormat(header_, in_, params_)
+    ,  data_types(header_.getDataTypes())
+    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames())
 {
 }
 

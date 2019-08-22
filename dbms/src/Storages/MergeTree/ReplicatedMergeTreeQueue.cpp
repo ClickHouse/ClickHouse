@@ -1014,8 +1014,8 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partiti
 }
 
 
-ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue)
-    : entry(entry_), queue(queue)
+ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_)
+    : entry(entry_), queue(queue_)
 {
     entry->currently_executing = true;
     ++entry->num_tries;
@@ -1281,9 +1281,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     }
 
     if (!finished.empty())
+    {
         zookeeper->set(replica_path + "/mutation_pointer", finished.back()->znode_name);
 
-    {
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
@@ -1452,7 +1452,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(queue.zookeeper_path + "/block_numbers/" + partition));
 
-        struct BlockInfo
+        struct BlockInfo_
         {
             String partition;
             Int64 number;
@@ -1460,7 +1460,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
             std::future<Coordination::GetResponse> contents_future;
         };
 
-        std::vector<BlockInfo> block_infos;
+        std::vector<BlockInfo_> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
             Strings partition_block_numbers = lock_futures[i].get().names;
@@ -1472,13 +1472,13 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
                 {
                     Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
                     String zk_path = queue.zookeeper_path + "/block_numbers/" + partitions[i] + "/" + entry;
-                    block_infos.push_back(
-                        BlockInfo{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+                    block_infos.emplace_back(
+                        BlockInfo_{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
                 }
             }
         }
 
-        for (BlockInfo & block : block_infos)
+        for (auto & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
             if (!resp.error && lock_holder_paths.count(resp.data))
@@ -1655,7 +1655,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
-    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate()).
+    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
     /// This means that if we have loaded the mutation with version number X then all mutations with
     /// the version numbers less than X are also loaded and if there is no merge or mutation assigned to
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to

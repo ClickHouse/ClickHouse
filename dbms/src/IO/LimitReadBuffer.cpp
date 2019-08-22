@@ -36,8 +36,8 @@ bool LimitReadBuffer::nextImpl()
 }
 
 
-LimitReadBuffer::LimitReadBuffer(ReadBuffer & in, UInt64 limit, bool throw_exception, std::string exception_message)
-    : ReadBuffer(in.position(), 0), in(in), limit(limit), throw_exception(throw_exception), exception_message(std::move(exception_message))
+LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_, std::string exception_message_)
+    : ReadBuffer(in_.position(), 0), in(in_), limit(limit_), throw_exception(throw_exception_), exception_message(std::move(exception_message_))
 {
     size_t remaining_bytes_in_buffer = in.buffer().end() - in.position();
     if (remaining_bytes_in_buffer > limit)

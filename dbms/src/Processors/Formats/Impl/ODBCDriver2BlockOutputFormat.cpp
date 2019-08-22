@@ -12,8 +12,8 @@
 namespace DB
 {
 ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IOutputFormat(header, out_), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings(format_settings_)
 {
 }
 
@@ -107,7 +107,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & format_settings)
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, FormatFactory::WriteCallback, const FormatSettings & format_settings)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
         });
