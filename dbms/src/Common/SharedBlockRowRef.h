@@ -79,34 +79,13 @@ struct SharedBlockRowRef
     bool empty() const { return columns == nullptr; }
     size_t size() const { return empty() ? 0 : columns->size(); }
 
-    /// gets pointers to all columns of block, which were used for ORDER BY
-    static ColumnRawPtrs getBlockColumns(const Block & block, const SortDescription description)
-    {
-        size_t size = description.size();
-        ColumnRawPtrs res;
-        res.reserve(size);
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            const IColumn * column = !description[i].column_name.empty()
-                                     ? block.getByName(description[i].column_name).column.get()
-                                     : block.safeGetByPosition(description[i].column_number).column.get();
-            res.emplace_back(column);
-        }
-
-        return res;
-    }
-
-
-    static void setSharedBlockRowRef(SharedBlockRowRef & row_ref, SharedBlockPtr & shared_block, ColumnRawPtrs * columns,
-                              size_t row_num)
+    static void setSharedBlockRowRef(SharedBlockRowRef & row_ref,
+        SharedBlockPtr & shared_block,ColumnRawPtrs * columns, size_t row_num)
     {
         row_ref.row_num = row_num;
         row_ref.columns = columns;
         row_ref.shared_block = shared_block;
     }
 };
-
-
 
 }

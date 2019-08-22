@@ -719,7 +719,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
-    if (!query.distinct && !query.limitBy())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -2238,7 +2238,13 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        SortDescription sort_descr  = getSortDescription(query, context);
+        SortDescription sort_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            sort_descr = getSortDescription(query, context);
+        }
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
             stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, false, query.limit_with_ties, sort_descr);

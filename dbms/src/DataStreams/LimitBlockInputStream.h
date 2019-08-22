@@ -18,7 +18,7 @@ public:
       * If always_read_till_end = true - reads all the data to the end, but ignores them. This is necessary in rare cases:
       *  when otherwise, due to the cancellation of the request, we would not have received the data for GROUP BY WITH TOTALS from the remote server.
       * If use_limit_as_total_rows_approx = true, then addTotalRowsApprox is called to use the limit in progress & stats
-      * with_ties = true, when query has WITH TIES modifier. If so,description should be provided
+      * with_ties = true, when query has WITH TIES modifier. If so, description should be provided
       * description lets us know which row we should check for equality
       */
     LimitBlockInputStream(
