@@ -30,7 +30,8 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml', 'configs/users.xml'],
+                                config_dir='configs',
+                                main_configs=['configs/kafka.xml'],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
@@ -639,16 +640,16 @@ def test_kafka_commit_on_block_write(kafka_cluster):
     kafka_thread.start()
 
     while int(instance.query('SELECT count() FROM test.view')) == 0:
-        pass
+        time.sleep(1)
+
+    cancel.set()
 
     instance.query('''
         DROP TABLE test.kafka;
     ''')
 
-    cancel.set()
-
     while int(instance.query("SELECT count() FROM system.tables WHERE database='test' AND name='kafka'")) == 1:
-        pass
+        time.sleep(1)
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -661,7 +662,7 @@ def test_kafka_commit_on_block_write(kafka_cluster):
     ''')
 
     while int(instance.query('SELECT uniqExact(key) FROM test.view')) < i[0]:
-        pass
+        time.sleep(1)
 
     result = instance.query('SELECT count() == uniqExact(key) FROM test.view')
 
@@ -670,7 +671,9 @@ def test_kafka_commit_on_block_write(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    assert(result == '1', 'Messages from kafka get duplicated!')
+    kafka_thread.join()
+
+    assert result == '1', 'Messages from kafka get duplicated!'
 
 
 if __name__ == '__main__':
