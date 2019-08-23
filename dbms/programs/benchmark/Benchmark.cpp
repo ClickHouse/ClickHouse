@@ -32,7 +32,7 @@
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
-#include <Common/TerminalDisplaying.h>
+#include <Common/TerminalSize.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -440,7 +440,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     {
         using boost::program_options::value;
 
-        boost::program_options::options_description desc = setOptionsDescription("Allowed options", getTerminalWidth());
+        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")

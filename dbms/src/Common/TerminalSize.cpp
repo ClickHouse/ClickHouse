@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <Common/Exception.h>
-#include <Common/TerminalDisplaying.h>
+#include <Common/TerminalSize.h>
 
 namespace po = boost::program_options;
 
@@ -25,7 +25,7 @@ unsigned short int getTerminalWidth()
     return 0;
 }
 
-po::options_description setOptionsDescription(const std::string & caption, unsigned short terminal_width)
+po::options_description createOptionsDescription(const std::string &caption, unsigned short terminal_width)
 {
     unsigned line_length = po::options_description::m_default_line_length;
     unsigned min_description_length = line_length / 2;
