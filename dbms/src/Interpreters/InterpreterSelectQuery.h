@@ -222,7 +222,7 @@ private:
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
-    [[noreturn]] void executeWithFill(QueryPipeline & pipeline);
+    void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
     void executeLimitBy(QueryPipeline & pipeline);
