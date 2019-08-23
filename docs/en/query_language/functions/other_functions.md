@@ -314,6 +314,49 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
+## neighbour(column, offset\[, default_value\])
+
+Returns value for `column`, in `offset` distance from current row.
+This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
+
+The result of the function depends on the affected data blocks and the order of data in the block.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+If `offset` value is outside block bounds, a default value for `column` returned. If `default_value` is given, then it will be used.
+This function can be used to compute year-over-year metric value:
+
+``` sql
+WITH toDate('2018-01-01') AS start_date
+SELECT
+    toStartOfMonth(start_date + (number * 32)) AS month,
+    toInt32(month) % 100 AS money,
+    neighbour(money, -12) AS prev_year,
+    round(prev_year / money, 2) AS year_over_year
+FROM numbers(16)
+```
+
+```
+┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
+│ 2018-01-01 │    32 │         0 │              0 │
+│ 2018-02-01 │    63 │         0 │              0 │
+│ 2018-03-01 │    91 │         0 │              0 │
+│ 2018-04-01 │    22 │         0 │              0 │
+│ 2018-05-01 │    52 │         0 │              0 │
+│ 2018-06-01 │    83 │         0 │              0 │
+│ 2018-07-01 │    13 │         0 │              0 │
+│ 2018-08-01 │    44 │         0 │              0 │
+│ 2018-09-01 │    75 │         0 │              0 │
+│ 2018-10-01 │     5 │         0 │              0 │
+│ 2018-11-01 │    36 │         0 │              0 │
+│ 2018-12-01 │    66 │         0 │              0 │
+│ 2019-01-01 │    97 │        32 │           0.33 │
+│ 2019-02-01 │    28 │        63 │           2.25 │
+│ 2019-03-01 │    56 │        91 │           1.62 │
+│ 2019-04-01 │    87 │        22 │           0.25 │
+└────────────┴───────┴───────────┴────────────────┘
+```
+
+
 ## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
