@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+import re
+
+HAYSTACKS = [
+    "hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay needle",
+    "needle hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay hay",
+    "hay hay hay hay hay hay hay hay hay needle hay hay hay hay hay hay hay hay hay",
+]
+
+NEEDLE = "needle"
+
+HAY_RE = re.compile(r'\bhay\b', re.IGNORECASE)
+NEEDLE_RE = re.compile(r'\bneedle\b', re.IGNORECASE)
+
+def replace_follow_case(replacement):
+    def func(match):
+        g = match.group()
+        if g.islower(): return replacement.lower()
+        if g.istitle(): return replacement.title()
+        if g.isupper(): return replacement.upper()
+        return replacement
+    return func
+
+def replace_separators(query, new_sep):
+    SEP_RE = re.compile('\\s+')
+    result = SEP_RE.sub(new_sep, query)
+    return result
+
+def enlarge_haystack(query, times, separator=''):
+    return HAY_RE.sub(replace_follow_case(('hay' + separator) * times), query)
+
+def small_needle(query):
+    return NEEDLE_RE.sub(replace_follow_case('n'), query)
+
+def remove_needle(query):
+    return NEEDLE_RE.sub('', query)
+
+def replace_needle(query, new_needle):
+    return NEEDLE_RE.sub(new_needle, query)
+
+# with str.lower, str.uppert, str.title and such
+def transform_needle(query, string_transformation_func):
+    def replace_with_transformation(match):
+        g = match.group()
+        return string_transformation_func(g)
+
+    return NEEDLE_RE.sub(replace_with_transformation, query)
+
+
+def create_cases(table_row_template, table_query_template, const_query_template):
+    const_queries = []
+    table_rows = []
+    table_queries = set()
+
+    def add_case(haystack, needle, match):
+        match = int(match)
+        const_queries.append(const_query_template.format(haystack=haystack, needle=needle, match=match))
+        table_queries.add(table_query_template.format(haystack=haystack, needle=needle, match=match))
+        table_rows.append(table_row_template.format(haystack=haystack, needle=needle, match=match))
+
+    # Negative cases
+    add_case(remove_needle(HAYSTACKS[0]), NEEDLE, False)
+    for haystack in HAYSTACKS:
+        add_case(transform_needle(haystack, str.title), NEEDLE, False)
+        sep = ''
+        h = replace_separators(haystack, sep)
+        add_case(h, NEEDLE, False)
+        add_case(small_needle(h), small_needle(NEEDLE), False)
+        add_case(enlarge_haystack(h, 10, sep), NEEDLE, False)
+
+    # positive cases
+    for haystack in HAYSTACKS:
+        add_case(transform_needle(haystack, str.title), transform_needle(NEEDLE, str.title), True)
+        add_case(transform_needle(haystack, str.upper), transform_needle(NEEDLE, str.upper), True)
+
+        # Not checking all separators since some (like ' and \n) cause issues when coupled with
+        # re-based replacement and quoting in query
+        # other are rare in practice and checking all separators makes this test too lengthy.
+
+        # r'\\\\' turns into a single '\' in query
+        #separators = list(''' \t`~!@#$%^&*()-=+|]}[{";:/?.>,<''') + [r'\\\\']
+        separators = list(''' \t;:?.,''') + [r'\\\\']
+        for sep in separators:
+            h = replace_separators(haystack, sep)
+            add_case(h, NEEDLE, True)
+            add_case(small_needle(h), small_needle(NEEDLE), True)
+            add_case(enlarge_haystack(h, 200, sep), NEEDLE, True)
+            add_case(replace_needle(h, 'иголка'), replace_needle(NEEDLE, 'иголка'), True)
+            add_case(replace_needle(h, '指针'), replace_needle(NEEDLE, '指针'), True)
+
+    return table_rows, table_queries, const_queries
+
+def main():
+
+    def query(x):
+        print x
+
+    CONST_QUERY = """SELECT hasToken('{haystack}', '{needle}'), ' expecting ', {match};"""
+    #SELECT hasToken(haystack, '{needle}') FROM ht WHERE needle = '{needle}' AND match = {match};"""
+    TABLE_QUERY = """WITH '{needle}' as n SELECT haystack, needle, hasToken(haystack, n) as result FROM ht WHERE needle = n AND result != match;"""
+    TABLE_ROW = """('{haystack}', '{needle}', {match})"""
+
+    rows, table_queries, const_queries = create_cases(TABLE_ROW, TABLE_QUERY, CONST_QUERY)
+    for q in const_queries:
+        query(q)
+
+    query("""DROP TABLE IF EXISTS ht;
+    CREATE TABLE IF NOT EXISTS
+    ht
+(
+    haystack String,
+    needle String,
+    match UInt8
+)
+ENGINE MergeTree()
+ORDER BY haystack;
+INSERT INTO ht VALUES {values};""".format(values=", ".join(rows)))
+    for q in sorted(table_queries):
+        query(q)
+
+if __name__ == '__main__':
+    main()
