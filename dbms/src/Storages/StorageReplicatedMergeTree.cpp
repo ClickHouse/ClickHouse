@@ -3408,6 +3408,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 dropPartition(query, command.partition, command.detach, query_context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                dropDetached(command.partition, command.part, query_context);
+                break;
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, query_context);
                 break;
@@ -3607,66 +3611,16 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
     assertNotReadonly();
 
-    String partition_id;
-
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, query_context);
-
-    String source_dir = "detached/";
-
-    /// Let's compose a list of parts that should be added.
-    Strings parts;
-    if (attach_part)
-    {
-        parts.push_back(partition_id);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts(format_version);
-
-        std::set<String> part_names;
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-        {
-            String name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
-                continue;
-            if (part_info.partition_id != partition_id)
-                continue;
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-            part_names.insert(name);
-        }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
-
-        /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
-        for (const auto & name : part_names)
-        {
-            String containing_part = active_parts.getContainingPart(name);
-            if (!containing_part.empty() && containing_part != name)
-                Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
-        }
-    }
-
-    /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
-    LOG_DEBUG(log, "Checking parts");
-    std::vector<MutableDataPartPtr> loaded_parts;
-    for (const String & part : parts)
-    {
-        LOG_DEBUG(log, "Checking part " << part);
-        loaded_parts.push_back(loadPartAndFixMetadata(source_dir + part));
-    }
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
-    for (auto & part : loaded_parts)
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        String old_name = part->name;
-        output.writeExistingPart(part);
-        LOG_DEBUG(log, "Attached part " << old_name << " as " << part->name);
+        String old_name = loaded_parts[i]->name;
+        output.writeExistingPart(loaded_parts[i]);
+        renamed_parts.old_and_new_names[i].first.clear();
+        LOG_DEBUG(log, "Attached part " << old_name << " as " << loaded_parts[i]->name);
     }
 }
 

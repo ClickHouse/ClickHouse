@@ -947,6 +947,10 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 dropPartition(command.partition, command.detach, context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                dropDetached(command.partition, command.part, context);
+                break;
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, context);
                 break;
@@ -1011,6 +1015,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 
         /// TODO: should we include PreComitted parts like in Replicated case?
         auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
         if (detach)
@@ -1034,51 +1039,14 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
-    String partition_id;
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
 
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, context);
-
-    String source_dir = "detached/";
-
-    /// Let's make a list of parts to add.
-    Strings parts;
-    if (attach_part)
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        parts.push_back(partition_id);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts(format_version);
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-        {
-            const String & name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-                || part_info.partition_id != partition_id)
-            {
-                continue;
-            }
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-        }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
-    }
-
-    for (const auto & source_part_name : parts)
-    {
-        String source_path = source_dir + source_part_name;
-
-        LOG_DEBUG(log, "Checking data");
-        MutableDataPartPtr part = loadPartAndFixMetadata(source_path);
-
-        LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
-        renameTempPartAndAdd(part, &increment);
-
+        LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
+        renameTempPartAndAdd(loaded_parts[i], &increment);
+        renamed_parts.old_and_new_names[i].first.clear();
         LOG_INFO(log, "Finished attaching part");
     }
 
@@ -1157,6 +1125,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         throw;
     }
 }
+
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {

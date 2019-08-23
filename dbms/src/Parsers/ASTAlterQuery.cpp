@@ -139,6 +139,12 @@ void ASTAlterCommand::formatImpl(
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::ATTACH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH "
