@@ -48,7 +48,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **子句**
 
-- `ENGINE` - 引擎名和参数。 `ENGINE = MergeTree()`。 `MergeTree` 引擎不需要其他参数。
+- `ENGINE` - 引擎名和参数。 `ENGINE = MergeTree()`. `MergeTree` 引擎没有参数。
 
 - `PARTITION BY` — [分区键](custom_partitioning_key.md) 。
 
