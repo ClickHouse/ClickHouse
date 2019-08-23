@@ -8,7 +8,9 @@ nav:
   - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
 
 - '入门指南':
-  - '部署运行': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - '安装': 'getting_started/install.md'
+  - '教程': 'getting_started/tutorial.md'
   - '示例数据集':
     - '航班飞行数据': 'getting_started/example_datasets/ontime.md'
     - '纽约市出租车数据': 'getting_started/example_datasets/nyc_taxi.md'

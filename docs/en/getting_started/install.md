@@ -1,4 +1,4 @@
-# Getting Started
+# Installation
 
 ## System Requirements
 
@@ -10,7 +10,7 @@ Though pre-built binaries are typically compiled to leverage SSE 4.2 instruction
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-## Installation
+## Available Installation Options
 
 ### From DEB Packages
 
@@ -148,4 +148,4 @@ SELECT 1
 To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.yandex/tutorial.html).
 
 
-[Original article](https://clickhouse.yandex/docs/en/getting_started/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/getting_started/install/) <!--hide-->
