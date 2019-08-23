@@ -24,7 +24,7 @@ ${LIBCXXABI_SOURCE_DIR}/src/stdlib_new_delete.cpp
 
 add_library(cxxabi ${SRCS})
 
-target_include_directories(cxxabi PUBLIC ${LIBCXXABI_SOURCE_DIR}/include)
+target_include_directories(cxxabi PUBLIC $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/include>)
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 
