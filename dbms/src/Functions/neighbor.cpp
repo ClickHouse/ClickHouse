@@ -107,21 +107,79 @@ public:
         if (default_is_constant)
             default_column_casted = assert_cast<const ColumnConst &>(*default_column_casted).getDataColumnPtr();
 
-        auto column = result_type->createColumn();
-
-        for (size_t row = 0; row < input_rows_count; ++row)
+        if (offset_is_constant)
         {
-            Int64 src_idx = row + offset_column->getInt(offset_is_constant ? 0 : row);
+            /// Optimization for the case when we can copy many values at once.
 
-            if (src_idx >= 0 && src_idx < Int64(input_rows_count))
-                column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
-            else if (has_defaults)
-                column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
+            Int64 offset = offset_column->getInt(0);
+
+            auto result_column = result_type->createColumn();
+
+            auto insert_range_from = [&](bool is_const, const ColumnPtr & src, Int64 begin, Int64 size)
+            {
+                /// Saturation of bounds.
+                if (begin < 0)
+                {
+                    size += begin;
+                    begin = 0;
+                }
+                if (size <= 0)
+                    return;
+                if (size > Int64(input_rows_count))
+                    size = input_rows_count;
+
+                if (!src)
+                {
+                    for (Int64 i = 0; i < size; ++i)
+                        result_column->insertDefault();
+                }
+                else if (is_const)
+                {
+                    for (Int64 i = 0; i < size; ++i)
+                        result_column->insertFrom(*src, 0);
+                }
+                else
+                {
+                    result_column->insertRangeFrom(*src, begin, size);
+                }
+            };
+
+            if (offset == 0)
+            {
+                /// Degenerate case, just copy source column as is.
+                block.getByPosition(result).column = source_column_casted; /// TODO
+            }
+            else if (offset > 0)
+            {
+                insert_range_from(source_is_constant, source_column_casted, offset, Int64(input_rows_count) - offset);
+                insert_range_from(default_is_constant, default_column_casted, Int64(input_rows_count) - offset, offset);
+                block.getByPosition(result).column = std::move(result_column);
+            }
             else
-                column->insertDefault();
+            {
+                insert_range_from(default_is_constant, default_column_casted, 0, -offset);
+                insert_range_from(source_is_constant, source_column_casted, 0, Int64(input_rows_count) + offset);
+                block.getByPosition(result).column = std::move(result_column);
+            }
         }
+        else
+        {
+            auto result_column = result_type->createColumn();
 
-        block.getByPosition(result).column = std::move(column);
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                Int64 src_idx = row + offset_column->getInt(offset_is_constant ? 0 : row);
+
+                if (src_idx >= 0 && src_idx < Int64(input_rows_count))
+                    result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
+                else if (has_defaults)
+                    result_column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
+                else
+                    result_column->insertDefault();
+            }
+
+            block.getByPosition(result).column = std::move(result_column);
+        }
     }
 
 private:
