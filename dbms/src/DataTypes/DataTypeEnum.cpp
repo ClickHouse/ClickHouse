@@ -234,7 +234,7 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     if (value_index)
         return;
