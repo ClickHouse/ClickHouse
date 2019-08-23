@@ -291,7 +291,7 @@ SELECT
 ## rowNumberInAllBlocks()
 Возвращает порядковый номер строки в блоке данных. Функция учитывает только задействованные блоки данных.
 
-## neighbour(column, offset\[, default_value\])
+## neighbor(column, offset\[, default_value\])
 
 Функция позволяет получить доступ к значению в колонке `column`, находящемуся на смещении `offset` относительно текущей строки.
 Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() и LAG().
@@ -307,7 +307,7 @@ WITH toDate('2018-01-01') AS start_date
 SELECT
     toStartOfMonth(start_date + (number * 32)) AS month,
     toInt32(month) % 100 AS money,
-    neighbour(money, -12) AS prev_year,
+    neighbor(money, -12) AS prev_year,
     round(prev_year / money, 2) AS year_over_year
 FROM numbers(16)
 ```
