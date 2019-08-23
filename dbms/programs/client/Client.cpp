@@ -1664,7 +1664,7 @@ public:
               * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
               * as the password.
               */
-            ("password", po::value<std::string>()->implicit_value("\n","\\n"), "password")
+            ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
