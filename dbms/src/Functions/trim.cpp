@@ -85,7 +85,7 @@ private:
             char_data += num_chars;
         }
 
-        if constexpr (mode::trim_left)
+        if constexpr (mode::trim_right)
         {
             const char * found = find_last_not_symbols_or_null<' '>(char_data, char_end);
             if (found)
