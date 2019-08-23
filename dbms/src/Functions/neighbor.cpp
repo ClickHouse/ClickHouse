@@ -46,6 +46,8 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool useDefaultImplementationForConstants() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();
@@ -68,183 +70,58 @@ public:
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
-        {
-            DataTypes types = {arguments[0], arguments[2]};
-            try
-            {
-                return getLeastSupertype(types);
-            }
-            catch (const Exception &)
-            {
-                throw Exception(
-                    "Illegal types of arguments (" + types[0]->getName() + ", " + types[1]->getName()
-                        + ")"
-                          " of function "
-                        + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-        }
+            return getLeastSupertype({arguments[0], arguments[2]});
 
         return arguments[0];
     }
 
-    static void insertDefaults(const MutableColumnPtr & target, size_t row_count, ColumnPtr & default_values_column, size_t offset)
-    {
-        if (row_count == 0)
-        {
-            return;
-        }
-        if (default_values_column)
-        {
-            if (isColumnConst(*default_values_column))
-            {
-                const IColumn & constant_content = assert_cast<const ColumnConst &>(*default_values_column).getDataColumn();
-                for (size_t row = 0; row < row_count; ++row)
-                {
-                    target->insertFrom(constant_content, 0);
-                }
-            }
-            else
-            {
-                target->insertRangeFrom(*default_values_column, offset, row_count);
-            }
-        }
-        else
-        {
-            for (size_t row = 0; row < row_count; ++row)
-            {
-                target->insertDefault();
-            }
-        }
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnWithTypeAndName & source_column_name_and_type = block.getByPosition(arguments[0]);
         const DataTypePtr & result_type = block.getByPosition(result).type;
 
-        ColumnPtr source_column = source_column_name_and_type.column;
+        const ColumnWithTypeAndName & source_elem = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
+        bool has_defaults = arguments.size() == 3;
 
-        // adjust source and default values columns to resulting data type
-        if (!source_column_name_and_type.type->equals(*result_type))
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type, context);
+        ColumnPtr offset_column = offset_elem.column;
+
+        ColumnPtr default_column_casted;
+        if (has_defaults)
         {
-            source_column = castColumn(source_column_name_and_type, result_type, context);
+            const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
+            default_column_casted = castColumn(default_elem, result_type, context);
         }
 
-        ColumnPtr default_values_column;
+        bool source_is_constant = isColumnConst(*source_column_casted);
+        bool offset_is_constant = isColumnConst(*offset_column);
 
-        /// Has argument with default value: neighbor(source, offset, default)
-        if (arguments.size() == 3)
+        bool default_is_constant = false;
+        if (has_defaults)
+             default_is_constant = isColumnConst(*default_column_casted);
+
+        if (source_is_constant)
+            source_column_casted = assert_cast<const ColumnConst &>(*source_column_casted).getDataColumnPtr();
+        if (offset_is_constant)
+            offset_column = assert_cast<const ColumnConst &>(*offset_column).getDataColumnPtr();
+        if (default_is_constant)
+            default_column_casted = assert_cast<const ColumnConst &>(*default_column_casted).getDataColumnPtr();
+
+        auto column = result_type->createColumn();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            default_values_column = block.getByPosition(arguments[2]).column;
+            Int64 src_idx = row + offset_column->getInt(offset_is_constant ? 0 : row);
 
-            if (!block.getByPosition(arguments[2]).type->equals(*result_type))
-                default_values_column = castColumn(block.getByPosition(arguments[2]), result_type, context);
-        }
-
-        const auto & offset_structure = block.getByPosition(arguments[1]);
-        ColumnPtr offset_column = offset_structure.column;
-
-        auto is_constant_offset = isColumnConst(*offset_structure.column);
-
-        // since we are working with both signed and unsigned - we'll try to use Int64 for handling all of them
-        const DataTypePtr desired_type = std::make_shared<DataTypeInt64>();
-        if (!block.getByPosition(arguments[1]).type->equals(*desired_type))
-        {
-            offset_column = castColumn(offset_structure, desired_type, context);
-        }
-
-        if (isColumnConst(*source_column))
-        {
-            /// NOTE Inconsistency when default_values are specified.
-            auto column = result_type->createColumnConst(input_rows_count, (*source_column)[0]);
-            block.getByPosition(result).column = std::move(column);
-        }
-        else
-        {
-            auto column = result_type->createColumn();
-            column->reserve(input_rows_count);
-            // with constant offset - insertRangeFrom
-            if (is_constant_offset)
-            {
-                Int64 offset_value = offset_column->getInt(0);
-
-                auto offset_value_casted = static_cast<size_t>(std::abs(offset_value));
-                size_t default_value_count = std::min(offset_value_casted, input_rows_count);
-                if (offset_value > 0)
-                {
-                    // insert shifted value
-                    if (offset_value_casted <= input_rows_count)
-                    {
-                        column->insertRangeFrom(*source_column, offset_value_casted, input_rows_count - offset_value_casted);
-                    }
-                    insertDefaults(column, default_value_count, default_values_column, input_rows_count - default_value_count);
-                }
-                else if (offset_value < 0)
-                {
-                    // insert defaults up to offset_value
-                    insertDefaults(column, default_value_count, default_values_column, 0);
-                    column->insertRangeFrom(*source_column, 0, input_rows_count - default_value_count);
-                }
-                else
-                {
-                    // populate column with source values, when offset is equal to zero
-                    column->insertRangeFrom(*source_column, 0, input_rows_count);
-                }
-            }
+            if (src_idx >= 0 && src_idx < Int64(input_rows_count))
+                column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
+            else if (has_defaults)
+                column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
             else
-            {
-                // with dynamic offset - handle row by row
-                for (size_t row = 0; row < input_rows_count; ++row)
-                {
-                    Int64 offset_value = offset_column->getInt(row);
-                    if (offset_value == 0)
-                    {
-                        column->insertFrom(*source_column, row);
-                    }
-                    else if (offset_value > 0)
-                    {
-                        size_t real_offset = row + offset_value;
-                        if (real_offset > input_rows_count)
-                        {
-                            if (default_values_column)
-                            {
-                                column->insertFrom(*default_values_column, row);
-                            }
-                            else
-                            {
-                                column->insertDefault();
-                            }
-                        }
-                        else
-                        {
-                            column->insertFrom(*source_column, real_offset);
-                        }
-                    }
-                    else
-                    {
-                        // out of range
-                        auto offset_value_casted = static_cast<size_t>(std::abs(offset_value));
-                        if (offset_value_casted > row)
-                        {
-                            if (default_values_column)
-                            {
-                                column->insertFrom(*default_values_column, row);
-                            }
-                            else
-                            {
-                                column->insertDefault();
-                            }
-                        }
-                        else
-                        {
-                            column->insertFrom(*source_column, row - offset_value_casted);
-                        }
-                    }
-                }
-            }
-            block.getByPosition(result).column = std::move(column);
+                column->insertDefault();
         }
+
+        block.getByPosition(result).column = std::move(column);
     }
 
 private:
