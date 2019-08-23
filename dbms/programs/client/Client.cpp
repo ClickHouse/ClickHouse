@@ -67,7 +67,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
-#include <Common/TerminalDisplaying.h>
+#include <Common/TerminalSize.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -1649,7 +1649,7 @@ public:
         namespace po = boost::program_options;
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description = setOptionsDescription("Main options", terminal_width);
+        po::options_description main_description = createOptionsDescription("Main options", terminal_width);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
@@ -1695,7 +1695,7 @@ public:
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
-        po::options_description external_description = setOptionsDescription("External tables options", terminal_width);
+        po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
         external_description.add_options()
             ("file", po::value<std::string>(), "data file or - for stdin")
             ("name", po::value<std::string>()->default_value("_data"), "name of the table")

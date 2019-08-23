@@ -35,7 +35,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
-#include <Common/TerminalDisplaying.h>
+#include <Common/TerminalSize.h>
 
 
 namespace DB
@@ -410,7 +410,7 @@ void LocalServer::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options
     stopOptionsProcessing();
 
-    po::options_description description = setOptionsDescription("Main options", getTerminalWidth());
+    po::options_description description = createOptionsDescription("Main options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
