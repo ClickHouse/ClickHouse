@@ -12,8 +12,9 @@
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-
 #include <Compression/CompressionFactory.h>
+#include <Common/TerminalDisplaying.h>
+
 
 namespace DB
 {
@@ -59,7 +60,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
-    boost::program_options::options_description desc("Allowed options");
+    boost::program_options::options_description desc = setOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("decompress,d", "decompress")

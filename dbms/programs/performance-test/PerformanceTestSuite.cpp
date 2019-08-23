@@ -28,7 +28,7 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
-#include <Common/SetOptionsDescription.h>
+#include <Common/TerminalDisplaying.h>
 
 #include "TestStopConditions.h"
 #include "TestStats.h"
@@ -325,7 +325,7 @@ try
     using po::value;
     using Strings = DB::Strings;
 
-    po::options_description desc = setOptionsDescription("Allowed options");
+    po::options_description desc = setOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")

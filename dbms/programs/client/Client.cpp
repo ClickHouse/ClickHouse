@@ -67,7 +67,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
-#include <Common/SetOptionsDescription.h>
+#include <Common/TerminalDisplaying.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -131,7 +131,7 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
-    winsize terminal_size {};            /// Terminal size is needed to render progress bar.
+    unsigned short int terminal_width;   /// Terminal width is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
@@ -1466,7 +1466,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1642,16 +1642,14 @@ public:
         }
 
         stdin_is_not_tty = !isatty(STDIN_FILENO);
+
         if (!stdin_is_not_tty)
-        {
-            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
-                throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
-        }
+            terminal_width = getTerminalWidth();
 
         namespace po = boost::program_options;
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description = setOptionsDescription("Main options");
+        po::options_description main_description = setOptionsDescription("Main options", terminal_width);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
@@ -1697,7 +1695,7 @@ public:
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
-        po::options_description external_description("External tables options");
+        po::options_description external_description = setOptionsDescription("External tables options", terminal_width);
         external_description.add_options()
             ("file", po::value<std::string>(), "data file or - for stdin")
             ("name", po::value<std::string>()->default_value("_data"), "name of the table")
