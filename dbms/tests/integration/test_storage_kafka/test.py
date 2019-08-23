@@ -606,7 +606,7 @@ def test_kafka_produce_consume(kafka_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(120)
 def test_kafka_commit_on_block_write(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
