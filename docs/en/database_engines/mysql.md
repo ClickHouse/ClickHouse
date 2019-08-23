@@ -1,10 +1,10 @@
 # MySQL
 
-Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries with tables to exchange data between ClickHouse and MySQL.
+允许连接到远程MySQL服务器上的数据库，并使用表执行“INSERT”和“SELECT”查询，以在ClickHouse和MySQL之间交换数据。
 
-The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
+`MySQL`数据库引擎将查询转换为MySQL服务器，因此您可以执行诸如`SHOW TABLES`或`SHOW CREATE TABLE`之类的操作。
 
-You cannot perform the following queries:
+您无法执行以下查询：
 
 - `ATTACH`/`DETACH`
 - `DROP`
@@ -13,22 +13,22 @@ You cannot perform the following queries:
 - `ALTER`
 
 
-## Creating a Database
+## 创建一个数据库
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', 'database', 'user', 'password')
 ```
 
-**Engine Parameters**
+**数据库引擎相关参数**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
+- `host:port` — MySQL服务器地址。
+- `database` — MySQL中数据库名。
+- `user` — MySQL用户。
+- `password` — 用户密码。
 
 
-## Data Types Support
+## 支持的数据类型
 
 MySQL | ClickHouse
 ------|------------
@@ -46,14 +46,14 @@ DATE | [Date](../data_types/date.md)
 DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md)
 BINARY | [FixedString](../data_types/fixedstring.md)
 
-All other MySQL data types are converted into [String](../data_types/string.md).
+其他的MySQL数据类型全部都转换为 [String](../data_types/string.md)。
 
-[Nullable](../data_types/nullable.md) is supported.
+支持 [Nullable](../data_types/nullable.md) 类型。
 
 
-## Examples of Use
+## 使用示例
 
-Table in MySQL:
+MySQL中的表:
 
 ```
 mysql> USE test;
@@ -77,7 +77,7 @@ mysql> select * from mysql_table;
 1 row in set (0,00 sec)
 ```
 
-Database in ClickHouse, exchanging data with the MySQL server:
+ClickHouse中的数据库，与MySQL服务器交换数据：
 
 ```sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
