@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/RowInputStreamWithDiagnosticInfo.h>
+#include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/TemplateBlockOutputStream.h>
+#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 
@@ -11,13 +11,16 @@
 namespace DB
 {
 
-class TemplateRowInputStream : public RowInputStreamWithDiagnosticInfo
+class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
     using ColumnFormat = ParsedTemplateFormat::ColumnFormat;
 public:
-    TemplateRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & settings_, bool ignore_spaces_);
+    TemplateRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
+            const FormatSettings & settings_, bool ignore_spaces_);
 
-    bool read(MutableColumns & columns, RowReadExtension & extra) override;
+    String getName() const override { return "TemplateRowInputFormat"; }
+
+    bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
 
     void readPrefix() override;
 
@@ -38,7 +41,7 @@ private:
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
 
-    void skipToNextDelimiterOrEof(const String& delimeter);
+    void skipToNextDelimiterOrEof(const String & delimiter);
 
 private:
     PeekableReadBuffer buf;

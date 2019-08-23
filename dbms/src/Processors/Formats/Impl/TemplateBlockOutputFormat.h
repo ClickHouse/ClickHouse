@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Common/Stopwatch.h>
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <IO/Progress.h>
-#include <Common/Stopwatch.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 
 namespace DB
@@ -35,25 +34,25 @@ struct ParsedTemplateFormat
     size_t columnsCount() const;
 };
 
-class TemplateBlockOutputStream : public IBlockOutputStream
+class TemplateBlockOutputFormat : public IOutputFormat
 {
     using ColumnFormat = ParsedTemplateFormat::ColumnFormat;
 public:
-    TemplateBlockOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings_);
-    Block getHeader() const override { return header; }
+    TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
-    void write(const Block & block) override;
-    void writePrefix() override;
-    void writeSuffix() override;
+    String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void flush() override;
+    void doWritePrefix() override;
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
-    void setTotals(const Block & totals_) override { totals = totals_; }
-    void setExtremes(const Block & extremes_) override { extremes = extremes_; }
     void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
 
-private:
+protected:
+    void consume(Chunk chunk) override;
+    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
+    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void finalize() override;
+
     enum class OutputPart : size_t
     {
         Data,
@@ -68,26 +67,26 @@ private:
     };
 
     OutputPart stringToOutputPart(const String & part);
-    void writeRow(const Block & block, size_t row_num);
+    void writeRow(const Chunk & chunk, size_t row_num);
     void serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat format);
     template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
 
-private:
-    WriteBuffer & ostr;
-    Block header;
+protected:
     const FormatSettings settings;
+    DataTypes types;
 
     ParsedTemplateFormat format;
     ParsedTemplateFormat row_format;
 
     size_t rows_before_limit = 0;
     bool rows_before_limit_set = false;
-    Block totals;
-    Block extremes;
+    Chunk totals;
+    Chunk extremes;
     Progress progress;
     Stopwatch watch;
 
     size_t row_count = 0;
+    bool need_write_prefix = true;
 };
 
 }
