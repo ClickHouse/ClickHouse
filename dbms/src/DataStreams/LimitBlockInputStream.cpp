@@ -143,7 +143,7 @@ Block LimitBlockInputStream::readImpl()
         }
     }
 
-    if (start + length == rows)
+    if (length == rows)
         return *ptr;
 
     for (size_t i = 0; i < ptr->columns(); ++i)
