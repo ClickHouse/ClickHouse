@@ -12,7 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Returns the host.
+Extracts the host from a URL.
 
 ```
 domain(url)
@@ -55,7 +55,7 @@ Returns the domain and removes no more than one 'www.' from the beginning of it,
 
 ### topLevelDomain
 
-Returns the the top-level domain.
+Extracts the the top-level domain from a URL.
 
 ```
 topLevelDomain(url)
