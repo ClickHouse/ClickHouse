@@ -147,7 +147,7 @@ public:
             if (offset == 0)
             {
                 /// Degenerate case, just copy source column as is.
-                block.getByPosition(result).column = source_column_casted; /// TODO
+                block.getByPosition(result).column = source_is_constant ? ColumnConst::create(source_column_casted, input_rows_count) : source_column_casted;
             }
             else if (offset > 0)
             {
