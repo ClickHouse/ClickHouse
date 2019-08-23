@@ -717,7 +717,7 @@ public:
     {
         if (std::any_of(reinterpret_cast<const UInt8 *>(needle_), reinterpret_cast<const UInt8 *>(needle_) + needle_size_, isTokenSeparator))
         {
-            throw Exception{"needle must not contain whitespace characters", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
         }
 
     }
