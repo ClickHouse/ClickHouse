@@ -252,11 +252,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-class ParserColumnAndIndexDeclaraion : public IParserBase
+class ParserConstraintDeclaration : public IParserBase
 {
 protected:
-    const char * getName() const override { return "column or index declaration"; }
+    const char * getName() const override { return "constraint declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserTablePropertyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "table propery (column, index, constraint) declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -268,8 +274,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserConstraintDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "constraint declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
-class ParserColumnsOrIndicesDeclarationList : public IParserBase
+
+class ParserTablePropertiesDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const override { return "columns or indices declaration list"; }

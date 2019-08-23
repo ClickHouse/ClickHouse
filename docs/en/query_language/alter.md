@@ -166,6 +166,22 @@ are available:
 These commands are lightweight in a sense that they only change metadata or remove files.
 Also, they are replicated (syncing indices metadata through ZooKeeper).
 
+### Manipulations with constraints
+
+See more on [constraints](create.md#constraints)
+
+Constraints could be added or deleted using following syntax:
+```
+ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
+```
+
+Queries will add or remove metadata about constraints from table so they are processed immediately.
+
+Constraint check *will not be executed* on existing table if it was added. For now, we recommend to create new table and use `INSERT SELECT` query to fill new table.
+
+All changes on distributed tables are broadcasting to ZooKeeper so will be applied on other replicas.
+
 ### Manipulations With Partitions and Parts {#alter_manipulations-with-partitions}
 
 The following operations with [partitions](../operations/table_engines/custom_partitioning_key.md) are available:

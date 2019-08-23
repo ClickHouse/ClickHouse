@@ -193,6 +193,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & table_name_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -205,7 +206,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
-            columns_, indices_,
+            columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, true, attach,
@@ -426,6 +427,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_order_by_ast = order_by_ast;
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
@@ -455,6 +457,9 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.skip_indices_changed)
             new_indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
 
+        if (metadata_diff.constraints_changed)
+            new_constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+
         if (metadata_diff.ttl_table_changed)
         {
             ParserExpression parser;
@@ -480,11 +485,11 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         };
     }
 
-    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, storage_modifier);
+    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 }
 
@@ -1519,10 +1524,11 @@ void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogE
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
 
     size_t modified_parts = 0;
     auto parts = getDataParts();
@@ -3172,10 +3178,11 @@ void StorageReplicatedMergeTree::alter(
 
         ColumnsDescription new_columns = getColumns();
         IndicesDescription new_indices = getIndices();
+        ConstraintsDescription new_constraints = getConstraints();
         ASTPtr new_order_by_ast = order_by_ast;
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
-        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != getColumns().toString())
@@ -3191,6 +3198,10 @@ void StorageReplicatedMergeTree::alter(
         String new_indices_str = new_indices.toString();
         if (new_indices_str != getIndices().toString())
             new_metadata.skip_indices = new_indices_str;
+
+        String new_constraints_str = new_constraints.toString();
+        if (new_constraints_str != getConstraints().toString())
+            new_metadata.constraints = new_constraints_str;
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())

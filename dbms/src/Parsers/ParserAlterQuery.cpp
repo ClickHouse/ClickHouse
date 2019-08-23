@@ -34,6 +34,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_clear_index("CLEAR INDEX");
     ParserKeyword s_materialize_index("MATERIALIZE INDEX");
 
+    ParserKeyword s_add_constraint("ADD CONSTRAINT");
+    ParserKeyword s_drop_constraint("DROP CONSTRAINT");
+
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
     ParserKeyword s_suspend("SUSPEND");
@@ -68,6 +71,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserStringLiteral parser_string_literal;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
+    ParserConstraintDeclaration parser_constraint_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
@@ -261,6 +265,27 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_partition.parse(pos, command->partition, expected))
                     return false;
             }
+        }
+        else if (s_add_constraint.ignore(pos, expected))
+        {
+            if (s_if_not_exists.ignore(pos, expected))
+                command->if_not_exists = true;
+
+            if (!parser_constraint_decl.parse(pos, command->constraint_decl, expected))
+                return false;
+
+            command->type = ASTAlterCommand::ADD_CONSTRAINT;
+        }
+        else if (s_drop_constraint.ignore(pos, expected))
+        {
+            if (s_if_exists.ignore(pos, expected))
+                command->if_exists = true;
+
+            if (!parser_name.parse(pos, command->constraint, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_CONSTRAINT;
+            command->detach = false;
         }
         else if (s_detach_partition.ignore(pos, expected))
         {

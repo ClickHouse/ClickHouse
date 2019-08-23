@@ -322,6 +322,7 @@ public:
                   const String & full_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
+                  const ConstraintsDescription & constraints_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,
@@ -785,9 +786,10 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setPrimaryKeyIndicesAndColumns(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
+    void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,
-                                        const IndicesDescription & indices_description, bool only_check = false);
+                                        const IndicesDescription & indices_description,
+                                        const ConstraintsDescription & constraints_description, bool only_check = false);
 
     void initPartitionKey();
 
