@@ -227,6 +227,7 @@ Block FillingBlockInputStream::readImpl()
             if (!filling_row.getFillDescription(i).fill_from.isNull() &&
                 less(filling_row.getFillDescription(i).fill_from, (*old_fill_columns[i])[0], filling_row.getDirection(i)))
             {
+                /// Insert filling row, if it's less than first row in block, because of set 'fill_from' value.
                 filling_row.initFromDefaults(i);
                 insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
                 break;
