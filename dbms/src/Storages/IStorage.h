@@ -12,6 +12,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Storages/ConstraintsDescription.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -107,6 +108,9 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getVirtuals() const;
     const IndicesDescription & getIndices() const;
 
+    const ConstraintsDescription & getConstraints() const;
+    void setConstraints(ConstraintsDescription constraints_);
+
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
     virtual NameAndTypePair getColumn(const String & column_name) const;
@@ -143,6 +147,7 @@ private:
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};
     IndicesDescription indices;
+    ConstraintsDescription constraints;
 
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of

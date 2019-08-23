@@ -238,6 +238,7 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory);
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
@@ -288,6 +289,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
+    registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
 

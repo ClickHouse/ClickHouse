@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include "IFunction.h"
 #include <Common/intExp.h>
+#include <Common/assert_cast.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -515,7 +516,7 @@ public:
             if (!isColumnConst(scale_column))
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-            Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
+            Field scale_field = assert_cast<const ColumnConst &>(scale_column).getField();
             if (scale_field.getType() != Field::Types::UInt64
                 && scale_field.getType() != Field::Types::Int64)
                 throw Exception("Scale argument for rounding functions must have integer type.", ErrorCodes::ILLEGAL_COLUMN);

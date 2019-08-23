@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>

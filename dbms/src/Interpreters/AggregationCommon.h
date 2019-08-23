@@ -7,6 +7,7 @@
 #include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
+#include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <common/StringRef.h>
 #include <Columns/IColumn.h>
@@ -90,10 +91,10 @@ static inline T ALWAYS_INLINE packFixed(
             {
                 switch ((*low_cardinality_sizes)[j])
                 {
-                    case sizeof(UInt8): index = static_cast<const ColumnUInt8 *>(positions)->getElement(i); break;
-                    case sizeof(UInt16): index = static_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
-                    case sizeof(UInt32): index = static_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
-                    case sizeof(UInt64): index = static_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
+                    case sizeof(UInt8): index = assert_cast<const ColumnUInt8 *>(positions)->getElement(i); break;
+                    case sizeof(UInt16): index = assert_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
+                    case sizeof(UInt32): index = assert_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
+                    case sizeof(UInt64): index = assert_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
                     default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
                 }
             }
