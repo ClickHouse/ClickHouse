@@ -252,6 +252,16 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     return res;
 }
 
+ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & constraint : constraints.constraints)
+        res->children.push_back(constraint->clone());
+
+    return res;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns_ast, const Context & context)
 {
     /// First, deduce implicit types.
@@ -376,6 +386,8 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 {
     ColumnsDescription columns;
     IndicesDescription indices;
+    ConstraintsDescription constraints;
+
 
     if (create.columns_list)
     {
@@ -385,11 +397,16 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
             for (const auto & index : create.columns_list->indices->children)
                 indices.indices.push_back(
                     std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+        if (create.columns_list->constraints)
+            for (const auto & constraint : create.columns_list->constraints->children)
+                constraints.constraints.push_back(
+                        std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
     }
     else if (!create.as_table.empty())
     {
         columns = as_storage->getColumns();
         indices = as_storage->getIndices();
+        constraints = as_storage->getConstraints();
     }
     else if (create.select)
     {
@@ -401,6 +418,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(columns);
     ASTPtr new_indices = formatIndices(indices);
+    ASTPtr new_constraints = formatConstraints(constraints);
 
     if (!create.columns_list)
     {
@@ -417,6 +435,11 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
         create.columns_list->replace(create.columns_list->indices, new_indices);
     else if (new_indices)
         create.columns_list->set(create.columns_list->indices, new_indices);
+
+    if (new_constraints && create.columns_list->constraints)
+        create.columns_list->replace(create.columns_list->constraints, new_constraints);
+    else if (new_constraints)
+        create.columns_list->set(create.columns_list->constraints, new_constraints);
 
     /// Check for duplicates
     std::set<String> all_columns;

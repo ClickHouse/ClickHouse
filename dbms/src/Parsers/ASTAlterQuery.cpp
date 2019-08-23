@@ -133,6 +133,17 @@ void ASTAlterCommand::formatImpl(
             partition->formatImpl(settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::ADD_CONSTRAINT)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT" << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        constraint_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_CONSTRAINT)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        constraint->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (detach ? "DETACH" : "DROP") << " PARTITION "

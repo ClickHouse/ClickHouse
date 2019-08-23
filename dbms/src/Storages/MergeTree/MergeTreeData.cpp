@@ -96,6 +96,7 @@ MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -122,7 +123,8 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    setPrimaryKeyIndicesAndColumns(order_by_ast_, primary_key_ast_, columns_, indices_);
+    setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
+    setConstraints(constraints_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -231,9 +233,10 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKeyIndicesAndColumns(
+void MergeTreeData::setProperties(
     const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
-    const ColumnsDescription & new_columns, const IndicesDescription & indices_description, bool only_check)
+    const ColumnsDescription & new_columns, const IndicesDescription & indices_description,
+    const ConstraintsDescription & constraints_description, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -401,6 +404,8 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
         setIndices(indices_description);
         skip_indices = std::move(new_indices);
+
+        setConstraints(constraints_description);
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
@@ -1221,11 +1226,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
-
+    commands.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
     if (getIndices().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
@@ -1307,8 +1312,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
     }
 
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
-            new_columns, new_indices, /* only_check = */ true);
+    setProperties(new_order_by_ast, new_primary_key_ast,
+            new_columns, new_indices, new_constraints, /* only_check = */ true);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
 

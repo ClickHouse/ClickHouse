@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -153,6 +154,32 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
+    {
+        AlterCommand command;
+        command.constraint_decl = command_ast->constraint_decl;
+        command.type = AlterCommand::ADD_CONSTRAINT;
+
+        const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
+
+        command.constraint_name = ast_constraint_decl.name;
+
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT && !command_ast->partition)
+    {
+        if (command_ast->clear_column)
+            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
+        AlterCommand command;
+        command.if_exists = command_ast->if_exists;
+        command.type = AlterCommand::DROP_CONSTRAINT;
+        command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
+
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::DROP_INDEX && !command_ast->partition)
     {
         if (command_ast->clear_column)
@@ -178,7 +205,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 
 void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
+                         ConstraintsDescription & constraints_description,
+                         ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -302,6 +330,45 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
 
         indices_description.indices.erase(erase_it);
     }
+    else if (type == ADD_CONSTRAINT)
+    {
+        if (std::any_of(
+                constraints_description.constraints.cbegin(),
+                constraints_description.constraints.cend(),
+                [this](const ASTPtr & constraint_ast)
+                {
+                    return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
+                }))
+        {
+            if (if_not_exists)
+                return;
+            throw Exception("Cannot add constraint " + constraint_name + ": constraint with this name already exists",
+                        ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        auto insert_it = constraints_description.constraints.end();
+
+        constraints_description.constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
+    }
+    else if (type == DROP_CONSTRAINT)
+    {
+        auto erase_it = std::find_if(
+                constraints_description.constraints.begin(),
+                constraints_description.constraints.end(),
+                [this](const ASTPtr & constraint_ast)
+                {
+                    return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
+                });
+
+        if (erase_it == constraints_description.constraints.end())
+        {
+            if (if_exists)
+                return;
+            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+        constraints_description.constraints.erase(erase_it);
+    }
     else if (type == MODIFY_TTL)
     {
         ttl_table_ast = ttl;
@@ -321,20 +388,23 @@ bool AlterCommand::isMutable() const
 }
 
 void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
+                          ConstraintsDescription & constraints_description,
+                          ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
 {
     auto new_columns_description = columns_description;
     auto new_indices_description = indices_description;
+    auto new_constraints_description = constraints_description;
     auto new_order_by_ast = order_by_ast;
     auto new_primary_key_ast = primary_key_ast;
     auto new_ttl_table_ast = ttl_table_ast;
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+            command.apply(new_columns_description, new_indices_description, new_constraints_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);
+    constraints_description = std::move(new_constraints_description);
     order_by_ast = std::move(new_order_by_ast);
     primary_key_ast = std::move(new_primary_key_ast);
     ttl_table_ast = std::move(new_ttl_table_ast);
@@ -522,10 +592,11 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
 {
     auto out_columns_description = columns_description;
     IndicesDescription indices_description;
+    ConstraintsDescription constraints_description;
     ASTPtr out_order_by;
     ASTPtr out_primary_key;
     ASTPtr out_ttl_table;
-    apply(out_columns_description, indices_description, out_order_by, out_primary_key, out_ttl_table);
+    apply(out_columns_description, indices_description, constraints_description, out_order_by, out_primary_key, out_ttl_table);
 
     if (out_order_by)
         throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
@@ -533,6 +604,8 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
         throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
     if (!indices_description.indices.empty())
         throw Exception("Storage doesn't support modifying indices", ErrorCodes::NOT_IMPLEMENTED);
+    if (!constraints_description.constraints.empty())
+        throw Exception("Storage doesn't support modifying constraints", ErrorCodes::NOT_IMPLEMENTED);
     if (out_ttl_table)
         throw Exception("Storage doesn't support modifying TTL expression", ErrorCodes::NOT_IMPLEMENTED);
 

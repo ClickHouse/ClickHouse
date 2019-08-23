@@ -51,6 +51,7 @@ StorageMergeTree::StorageMergeTree(
     const String & table_name_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -64,7 +65,7 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
-            columns_, indices_,
+            columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, false, attach),
@@ -252,8 +253,9 @@ void StorageMergeTree::alter(
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
+        auto new_constraints = getConstraints();
         params.apply(new_columns);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
         setColumns(std::move(new_columns));
         return;
     }
@@ -262,15 +264,14 @@ void StorageMergeTree::alter(
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
     checkAlter(params, context);
-
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
@@ -289,11 +290,10 @@ void StorageMergeTree::alter(
         if (new_ttl_table_ast.get() != ttl_table_ast.get())
             storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
     };
-
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
@@ -845,10 +845,11 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
