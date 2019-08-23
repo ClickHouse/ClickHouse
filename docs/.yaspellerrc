@@ -16,8 +16,7 @@
   "lang": "en,ru",
   "report": ["console"],
   "dictionary": [
-    "ClickHouse",
-    "clickhouse",
+    "(C|c)lick(H|h)ouse",
     "CatBoost",
     "(Ш|ш)ард(ы|ов|а|у|е|ам|ирование|ированы|ах)?",
     "логир(ование|уются|ования)?",
