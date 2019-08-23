@@ -2493,7 +2493,22 @@ void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeWithFill(QueryPipeline &)
 {
-    throw Exception("Unsupported WITH FILL with processors", ErrorCodes::NOT_IMPLEMENTED);
+    auto & query = getSelectQuery();
+    if (query.orderBy())
+    {
+        SortDescription order_descr = getSortDescription(query, context);
+        SortDescription fill_descr;
+        for (auto & desc : order_descr)
+        {
+            if (desc.with_fill)
+                fill_descr.push_back(desc);
+        }
+
+        if (fill_descr.empty())
+            return;
+
+        throw Exception("Unsupported WITH FILL with processors", ErrorCodes::NOT_IMPLEMENTED);
+    }
 }
 
 
