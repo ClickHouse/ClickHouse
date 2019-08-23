@@ -24,6 +24,10 @@ add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
+if (USE_STATIC_LIBRARIES=0 AND MAKE_STATIC_LIBRARIES=OFF)
+    target_compile_options(PRIVATE -fPIC)
+endif ()
+
 install(
     TARGETS glibc-compatibility
     EXPORT global

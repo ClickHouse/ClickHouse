@@ -2,6 +2,7 @@ foreach(policy
         CMP0023
         CMP0048 # CMake 3.0
         CMP0074 # CMake 3.12
+        CMP0077
     )
     if(POLICY ${policy})
         cmake_policy(SET ${policy} NEW)
@@ -325,10 +326,6 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-#if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-#    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
-#endif ()
-
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
@@ -394,7 +391,9 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 include (cmake/print_flags.cmake)
 
-install (EXPORT global DESTINATION cmake)
+if (MAKE_STATIC_LIBRARIES AND NOT_UNBUNDLED)
+    install (EXPORT global DESTINATION cmake)
+endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
