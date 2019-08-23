@@ -10,7 +10,7 @@ class FillingRow
 public:
     FillingRow(const SortDescription & sort_description);
 
-    /// Generates next row according to fill from, to and step values.
+    /// Generates next row according to fill 'from', 'to' and 'step' values.
     /// Returns true, if generated row less than to_row in terms of sorting order.
     bool next(const FillingRow & to_row);
 
