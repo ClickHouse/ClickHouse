@@ -2081,7 +2081,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr /* sorting_info */)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
 {
     /// TODO: Implement optimization using sorting_info
 
@@ -2096,6 +2096,32 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 //    limits.mode = IBlockInputStream::LIMITS_TOTAL;
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
+    if (sorting_info)
+    {
+        /* Case of sorting with optimization using sorting key.
+         * We have several threads, each of them reads batch of parts in direct
+         *  or reverse order of sorting key using one input stream per part
+         *  and then merge them into one sorted stream.
+         * At this stage we merge per-thread streams into one.
+         */
+
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+
+        if (!need_finish_sorting)
+        {
+            if (pipeline.getNumStreams() > 1)
+            {
+                auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline.getHeader(),
+                pipeline.getNumStreams(),
+                sorting_info->prefix_order_descr,
+                settings.max_block_size, limit);
+
+                pipeline.addPipe({ std::move(transform) });
+            }
+            return;
+        }
+    }
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
