@@ -142,7 +142,7 @@ nav:
     - 'Функции для реализации оператора IN.': 'query_language/functions/in_functions.md'
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
-    - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
+    - 'Функции c Nullable аргументами': 'query_language/functions/functions_for_nulls.md'
     - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':

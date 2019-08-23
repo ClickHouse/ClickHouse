@@ -20,7 +20,7 @@
 !!! note "Примечание"
     [Docker](https://www.docker.com) – это программная платформа для создания контейнеров, которые изолируют установку CatBoost и ClickHouse от остальной части системы.
 
-Перед применением модели CatBoost в ClickHouse:
+Перед применением модели CatBoost:
 
 **1.** Скачайте [Docker-образ](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) из реестра:
 
@@ -44,7 +44,21 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-**4.** Установите последнии версии пакетов:
+**4.** Удалите старые версии СlickHouse:
+
+```bash
+$ sudo apt-get purge clickhouse-server-base
+$ sudo apt-get purge clickhouse-server-common
+$ sudo apt-get autoremove
+```
+
+**5.** Проверьте успешность удаления:
+
+```bash
+dpkg -l | grep clickhouse-server
+```
+
+**6.** Установите последние версии пакетов:
 
 ```bash
 $ sudo apt-get install dirmngr

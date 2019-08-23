@@ -130,7 +130,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## graphite {#server_settings-graphite}
 
-Отправка даных в [Graphite](https://github.com/graphite-project).
+Отправка данных в [Graphite](https://github.com/graphite-project).
 
 Настройки:
 
@@ -213,7 +213,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 **Пример**
 
-Показывает `https://tabix.io/` при обращенинии к `http://localhost:http_port`.
+Показывает `https://tabix.io/` при обращении к `http://localhost:http_port`.
 
 ```xml
 <http_server_default_response>
@@ -305,11 +305,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## logger {#server_settings-logger}
 
-Настройки логгирования.
+Настройки логирования.
 
 Ключи:
 
-- level - Уровень логгирования. Допустимые значения: ``trace``, ``debug``, ``information``, ``warning``, ``error``.
+- level - Уровень логирования. Допустимые значения: ``trace``, ``debug``, ``information``, ``warning``, ``error``.
 - log - Файл лога. Содержит все записи согласно ``level``.
 - errorlog - Файл лога ошибок.
 - size - Размер файла. Действует для ``log`` и ``errorlog``. Как только файл достиг размера ``size``, ClickHouse архивирует и переименовывает его, а на его месте создает новый файл лога.
@@ -407,7 +407,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 По умолчанию - `maximum`.
 
-Рекомендуется использовать в Mac OS X, поскольу функция `getrlimit()` возвращает некорректное значение.
+Рекомендуется использовать в Mac OS X, поскольку функция `getrlimit()` возвращает некорректное значение.
 
 **Пример**
 
@@ -458,25 +458,25 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Ключи настроек сервера/клиента:
 
-- privateKeyFile - Путь к файлу с секретным ключем сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
+- privateKeyFile - Путь к файлу с секретным ключом сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
 - certificateFile - Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если ``privateKeyFile`` содержит сертификат.
 - caConfig - Путь к файлу или каталогу, которые содержат доверенные корневые сертификаты.
 - verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
-- verificationDepth - Максимальная длина верификационой цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
+- verificationDepth - Максимальная длина верификационной цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
 - loadDefaultCAFile - Признак того, что будут использоваться встроенные CA-сертификаты для OpenSSL. Допустимые значения: ``true``, ``false``.  |
 - cipherList - Поддерживаемые OpenSSL-шифры. Например, ``ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
 - cacheSessions - Включение/выключение кеширования сессии. Использовать обязательно вместе с ``sessionIdContext``. Допустимые значения: ``true``, ``false``.
 - sessionIdContext - Уникальный набор произвольных символов, которые сервер добавляет к каждому сгенерированному идентификатору. Длина строки не должна превышать ``SSL_MAX_SSL_SESSION_ID_LENGTH``. Рекомендуется к использованию всегда, поскольку позволяет избежать проблем как в случае, если сервер кеширует сессию, так и если клиент затребовал кеширование. По умолчанию ``${application.name}``.
 - sessionCacheSize - Максимальное количество сессий, которые кэширует сервер. По умолчанию - 1024\*20. 0 - неограниченное количество сессий.
-- sessionTimeout - Время кеширования сессии на севрере.
+- sessionTimeout - Время кеширования сессии на сервере.
 - extendedVerification - Автоматическая расширенная проверка сертификатов после завершении сессии. Допустимые значения: ``true``, ``false``.
 - requireTLSv1 - Требование соединения TLSv1. Допустимые значения: ``true``, ``false``.
 - requireTLSv1_1 - Требование соединения TLSv1.1. Допустимые значения: ``true``, ``false``.
 - requireTLSv1_2 - Требование соединения TLSv1.2. Допустимые значения: ``true``, ``false``.
 - fips - Активация режима OpenSSL FIPS. Поддерживается, если версия OpenSSL, с которой собрана библиотека поддерживает fips.
 - privateKeyPassphraseHandler - Класс (подкласс PrivateKeyPassphraseHandler)запрашивающий кодовую фразу доступа к секретному ключу. Например, ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтвеждения невалидных сертификатов. Например, ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
-- disableProtocols - Запрещенные к искользованию протоколы.
+- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтверждения не валидных сертификатов. Например, ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
+- disableProtocols - Запрещенные к использованию протоколы.
 - preferServerCiphers - Предпочтение серверных шифров на клиенте.
 
 **Пример настройки:**
@@ -512,11 +512,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## part_log {#server_settings-part-log}
 
-Логгирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
 Запросы логгируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
-При настройке логгирования используются следующие параметры:
+При настройке логирования используются следующие параметры:
 
 - `database` — имя базы данных;
 - `table` — имя таблицы;
@@ -650,7 +650,7 @@ TCP порт для защищённого обмена данными с кли
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
-Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
+Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 
 Несжатый кеш выгодно использовать для очень коротких запросов в отдельных случаях.
 
