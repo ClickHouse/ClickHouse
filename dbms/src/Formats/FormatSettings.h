@@ -27,7 +27,9 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
+        bool null_as_default = false;
     };
 
     CSV csv;

@@ -26,7 +26,7 @@ private:
     using Result = typename function_traits<F>::result;
 
     std::map<Key, Result> cache;
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
 public:
     template <typename... Args>
@@ -64,6 +64,12 @@ public:
             Key key{std::forward<Args>(args)...};
             cache[key] = std::move(res);
         }
+    }
+
+    size_t size() const
+    {
+        std::lock_guard lock(mutex);
+        return cache.size();
     }
 
     void drop()

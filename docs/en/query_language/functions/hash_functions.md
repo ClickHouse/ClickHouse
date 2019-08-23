@@ -1,16 +1,16 @@
 # Hash functions
 
-Hash functions can be used for deterministic pseudo-random shuffling of elements.
+Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
 ## halfMD5 {#hash_functions-halfmd5}
 
-[Interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes. Then from the resulting string, takes the first 8 bytes of the hash and interprets them as `UInt64` in big-endian byte order.
+[Interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
 ```
 halfMD5(par1, ...)
 ```
 
-The function works relatively slow (5 million short strings per second per processor core).
+The function is relatively slow (5 million short strings per second per processor core).
 Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
 **Parameters**
@@ -19,7 +19,7 @@ The function takes a variable number of input parameters. Parameters can be any 
 
 **Returned Value**
 
-Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+A [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Example**
 
@@ -40,15 +40,20 @@ If you want to get the same result as output by the md5sum utility, use lower(he
 
 ## sipHash64 {#hash_functions-siphash64}
 
-Produces 64-bit [SipHash](https://131002.net/siphash/) hash value.
+Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
 
 ```
 sipHash64(par1,...)
 ```
 
-This function [interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes.
-
 This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) function.
+
+Function [interprets](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes by the following algorithm:
+
+1. After hashing all the input parameters, the function gets the array of hashes.
+2. Function takes the first and the second elements and calculates a hash for the array of them.
+3. Then the function takes the hash value, calculated at the previous step, and the third element of the initial hash array, and calculates a hash for the array of them.
+4. The previous step is repeated for all the remaining elements of the initial hash array.
 
 **Parameters**
 
@@ -56,7 +61,7 @@ The function takes a variable number of input parameters. Parameters can be any 
 
 **Returned Value**
 
-Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+A [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Example**
 
@@ -69,7 +74,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash128
+## sipHash128 {#hash_functions-siphash128}
 
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
@@ -77,13 +82,13 @@ Differs from sipHash64 in that the final xor-folding state is only done up to 12
 
 ## cityHash64
 
-Produces 64-bit hash value.
+Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
 
 ```
 cityHash64(par1,...)
 ```
 
-This is the fast non-cryptographic hash function. It uses [CityHash](https://github.com/google/cityhash) algorithm for string parameters and implementation-specific fast non-cryptographic hash function for the parameters with other data types. To get the final result, the function uses the CityHash combinator.
+This is a fast non-cryptographic hash function. It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types. The function uses the CityHash combinator to get the final results.
 
 **Parameters**
 
@@ -91,7 +96,7 @@ The function takes a variable number of input parameters. Parameters can be any 
 
 **Returned Value**
 
-Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+A [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Examples**
 
@@ -100,7 +105,7 @@ Call example:
 ```sql
 SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
 ```
-```
+```text
 ┌─────────────CityHash─┬─type───┐
 │ 12072650598913549138 │ UInt64 │
 └──────────────────────┴────────┘
@@ -108,8 +113,8 @@ SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 The following example shows how to compute the checksum of the entire table with accuracy up to the row order:
 
-```
-SELECT sum(cityHash64(*)) FROM table
+```sql
+SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
 
@@ -157,7 +162,7 @@ The function takes a variable number of input parameters. Parameters can be any 
 
 **Returned Value**
 
-Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+A [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Example**
 
@@ -172,15 +177,15 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash {#hash_functions-javahash}
 
-Calculates JavaHash from a string.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452)
+ from a string.
 Accepts a String-type argument. Returns Int32.
-For more information, see the link: [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452)
 
 ## hiveHash
 
 Calculates HiveHash from a string.
 Accepts a String-type argument. Returns Int32.
-Same as for [JavaHash](#hash_functions-javahash), except that the return value never has a negative number.
+This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
 ## metroHash64
 
@@ -196,7 +201,7 @@ The function takes a variable number of input parameters. Parameters can be any 
 
 **Returned Value**
 
-Hash value having the [UInt64](../../data_types/int_uint.md) data type.
+A [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Example**
 
@@ -259,8 +264,8 @@ Both functions take a variable number of input parameters. Parameters can be any
 
 **Returned Value**
 
-- The `murmurHash3_32` function returns hash value having the [UInt32](../../data_types/int_uint.md) data type.
-- The `murmurHash3_64` function returns hash value having the [UInt64](../../data_types/int_uint.md) data type.
+- The `murmurHash3_32` function returns a [UInt32](../../data_types/int_uint.md) data type hash value.
+- The `murmurHash3_64` function returns a [UInt64](../../data_types/int_uint.md) data type hash value.
 
 **Example**
 
@@ -283,11 +288,11 @@ murmurHash3_128( expr )
 
 **Parameters**
 
-- `expr` — [Expressions](../syntax.md#syntax-expressions) returning [String](../../data_types/string.md)-typed value.
+- `expr` — [Expressions](../syntax.md#syntax-expressions) returning a [String](../../data_types/string.md)-type value.
 
 **Returned Value**
 
-Hash value having [FixedString(16) data type](../../data_types/fixedstring.md).
+A [FixedString(16)](../../data_types/fixedstring.md) data type hash value.
 
 **Example**
 

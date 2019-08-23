@@ -30,9 +30,20 @@ IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : 
     setColumns(std::move(columns_));
 }
 
+IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
+{
+    setColumns(std::move(columns_));
+    setIndices(std::move(indices_));
+}
+
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
+}
+
+const ColumnsDescription & IStorage::getVirtuals() const
+{
+    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
@@ -145,9 +156,12 @@ namespace
     }
 }
 
-void IStorage::check(const Names & column_names) const
+void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
-    const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
+    if (include_virtuals)
+        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+
     const String list_of_columns = listOfColumns(available_columns);
 
     if (column_names.empty())

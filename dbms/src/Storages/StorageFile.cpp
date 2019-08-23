@@ -192,8 +192,8 @@ BlockInputStreams StorageFile::read(
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
-    const ColumnsDescription & columns = getColumns();
-    auto column_defaults = columns.getDefaults();
+    const ColumnsDescription & columns_ = getColumns();
+    auto column_defaults = columns_.getDefaults();
     if (column_defaults.empty())
         return {block_input};
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
@@ -303,7 +303,7 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (auto opt_name = getIdentifierName(engine_args[1]))
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
             {
                 if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;

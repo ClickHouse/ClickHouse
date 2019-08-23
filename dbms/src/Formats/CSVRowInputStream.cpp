@@ -7,6 +7,8 @@
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <DataTypes/DataTypeNothing.h>
 
+#include <DataTypes/DataTypeNullable.h>
+
 
 namespace DB
 {
@@ -87,13 +89,14 @@ static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, siz
 }
 
 
-CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings)
-        : RowInputStreamWithDiagnosticInfo(istr_, header_), with_names(with_names_), format_settings(format_settings)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings_)
+        : RowInputStreamWithDiagnosticInfo(istr_, header_), with_names(with_names_), format_settings(format_settings_)
 {
     const auto num_columns = header.columns();
 
     data_types.resize(num_columns);
     column_indexes_by_names.reserve(num_columns);
+    column_idx_to_nullable_column_idx.resize(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -101,6 +104,16 @@ CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, 
 
         data_types[i] = column_info.type;
         column_indexes_by_names.emplace(column_info.name, i);
+
+        /// If input_format_null_as_default=1 we need ColumnNullable of type DataTypeNullable(nested_type)
+        /// to parse value as nullable before inserting it in corresponding column of not-nullable type.
+        /// Constructing temporary column for each row is slow, so we prepare it here
+        if (format_settings.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
+        {
+            column_idx_to_nullable_column_idx[i] = nullable_columns.size();
+            nullable_types.emplace_back(std::make_shared<DataTypeNullable>(column_info.type));
+            nullable_columns.emplace_back(nullable_types.back()->createColumn());
+        }
     }
 }
 
@@ -208,38 +221,16 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & table_column = column_indexes_for_input_fields[file_column];
-        const bool is_last_file_column =
-                file_column + 1 == column_indexes_for_input_fields.size();
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
 
         if (table_column)
         {
-            const auto & type = data_types[*table_column];
-            const bool at_delimiter = *istr.position() == delimiter;
-            const bool at_last_column_line_end = is_last_file_column
-                    && (*istr.position() == '\n' || *istr.position() == '\r'
-                        || istr.eof());
-
-            if (format_settings.csv.empty_as_default
-                    && (at_delimiter || at_last_column_line_end))
-            {
-                /// Treat empty unquoted column value as default value, if
-                /// specified in the settings. Tuple columns might seem
-                /// problematic, because they are never quoted but still contain
-                /// commas, which might be also used as delimiters. However,
-                /// they do not contain empty unquoted fields, so this check
-                /// works for tuples as well.
-                read_columns[*table_column] = false;
+            skipWhitespacesAndTabs(istr);
+            read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
+                                                    is_last_file_column, *table_column);
+            if (!read_columns[*table_column])
                 have_default_columns = true;
-            }
-            else
-            {
-                /// Read the column normally.
-                read_columns[*table_column] = true;
-                skipWhitespacesAndTabs(istr);
-                type->deserializeAsTextCSV(*columns[*table_column], istr,
-                    format_settings);
-                skipWhitespacesAndTabs(istr);
-            }
+            skipWhitespacesAndTabs(istr);
         }
         else
         {
@@ -371,14 +362,8 @@ CSVRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColumn & colum
     if (column_indexes_for_input_fields[input_position])
     {
         const bool is_last_file_column = input_position + 1 == column_indexes_for_input_fields.size();
-        const bool at_delimiter = *istr.position() == format_settings.csv.delimiter;
-        const bool at_last_column_line_end = is_last_file_column
-                                             && (*istr.position() == '\n' || *istr.position() == '\r' || istr.eof());
-
-        if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
+        if (!readField(column, type, is_last_file_column, *column_indexes_for_input_fields[input_position]))
             column.insertDefault();
-        else
-            type->deserializeAsTextCSV(column, istr, format_settings);
     }
     else
     {
@@ -388,6 +373,44 @@ CSVRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColumn & colum
 
     curr_pos = istr.position();
     skipWhitespacesAndTabs(istr);
+}
+
+bool CSVRowInputStream::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
+{
+    const bool at_delimiter = !istr.eof() || *istr.position() == format_settings.csv.delimiter;
+    const bool at_last_column_line_end = is_last_file_column
+                                         && (istr.eof() || *istr.position() == '\n' || *istr.position() == '\r');
+
+    if (format_settings.csv.empty_as_default
+        && (at_delimiter || at_last_column_line_end))
+    {
+        /// Treat empty unquoted column value as default value, if
+        /// specified in the settings. Tuple columns might seem
+        /// problematic, because they are never quoted but still contain
+        /// commas, which might be also used as delimiters. However,
+        /// they do not contain empty unquoted fields, so this check
+        /// works for tuples as well.
+        return false;
+    }
+    else if (column_idx_to_nullable_column_idx[column_idx])
+    {
+        /// If value is null but type is not nullable then use default value instead.
+        const size_t nullable_idx = *column_idx_to_nullable_column_idx[column_idx];
+        auto & tmp_col = *nullable_columns[nullable_idx];
+        nullable_types[nullable_idx]->deserializeAsTextCSV(tmp_col, istr, format_settings);
+        Field value = tmp_col[0];
+        tmp_col.popBack(1);     /// do not store copy of values in memory
+        if (value.isNull())
+            return false;
+        column.insert(value);
+        return true;
+    }
+    else
+    {
+        /// Read the column normally.
+        type->deserializeAsTextCSV(column, istr, format_settings);
+        return true;
+    }
 }
 
 

@@ -61,7 +61,7 @@ void evaluateMissingDefaults(Block & block,
 
     auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
     auto expression_analyzer = ExpressionAnalyzer{default_expr_list, syntax_result, context};
-    auto required_source_columns = expression_analyzer.getRequiredSourceColumns();
+    auto required_source_columns = syntax_result->requiredSourceColumns();
     auto rows_was = copy_block.rows();
 
     // Delete all not needed columns in DEFAULT expression.

@@ -43,8 +43,8 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 
 TabSeparatedRowInputStream::TabSeparatedRowInputStream(
-    ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
-    : RowInputStreamWithDiagnosticInfo(istr_, header_), with_names(with_names_), with_types(with_types_), format_settings(format_settings)
+    ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : RowInputStreamWithDiagnosticInfo(istr_, header_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     const auto num_columns = header.columns();
 

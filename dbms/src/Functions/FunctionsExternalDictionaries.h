@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -74,7 +75,7 @@ public:
         return std::make_shared<FunctionDictHas>(context.getExternalDictionaries());
     }
 
-    FunctionDictHas(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictHas(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -168,7 +169,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnUInt8::create(key_col_with_type.column->size());
@@ -219,7 +220,7 @@ public:
         return std::make_shared<FunctionDictGetString>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetString(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -354,7 +355,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnString::create();
@@ -414,7 +415,7 @@ public:
         return std::make_shared<FunctionDictGetStringOrDefault>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -729,8 +730,8 @@ public:
         return std::make_shared<FunctionDictGet>(context.getExternalDictionaries(), dec_scale);
     }
 
-    FunctionDictGet(const ExternalDictionaries & dictionaries, UInt32 dec_scale = 0)
-        : dictionaries(dictionaries)
+    FunctionDictGet(const ExternalDictionaries & dictionaries_, UInt32 dec_scale = 0)
+        : dictionaries(dictionaries_)
         , decimal_scale(dec_scale)
     {}
 
@@ -891,7 +892,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             typename ColVec::MutablePtr out;
@@ -1000,8 +1001,8 @@ public:
         return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionaries(), dec_scale);
     }
 
-    FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries, UInt32 dec_scale = 0)
-        : dictionaries(dictionaries)
+    FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries_, UInt32 dec_scale = 0)
+        : dictionaries(dictionaries_)
         , decimal_scale(dec_scale)
     {}
 
@@ -1290,7 +1291,7 @@ public:
         return std::make_shared<FunctionDictGetNoType>(context.getExternalDictionaries(), context);
     }
 
-    FunctionDictGetNoType(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+    FunctionDictGetNoType(const ExternalDictionaries & dictionaries_, const Context & context_) : dictionaries(dictionaries_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1439,7 +1440,7 @@ public:
         return std::make_shared<FunctionDictGetNoTypeOrDefault>(context.getExternalDictionaries(), context);
     }
 
-    FunctionDictGetNoTypeOrDefault(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+    FunctionDictGetNoTypeOrDefault(const ExternalDictionaries & dictionaries_, const Context & context_) : dictionaries(dictionaries_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1582,7 +1583,7 @@ public:
         return std::make_shared<FunctionDictGetHierarchy>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -1739,7 +1740,7 @@ public:
         return std::make_shared<FunctionDictIsIn>(context.getExternalDictionaries());
     }
 
-    FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictIsIn(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 

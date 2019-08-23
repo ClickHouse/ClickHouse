@@ -167,7 +167,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 }
 
 
-FieldVisitorHash::FieldVisitorHash(SipHash & hash) : hash(hash) {}
+FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
 void FieldVisitorHash::operator() (const Null &) const
 {

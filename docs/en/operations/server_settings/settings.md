@@ -322,8 +322,8 @@ Writing to the syslog is also supported. Config example:
 
 Keys:
 
-- user_syslog — Required setting if you want to write to the syslog.
-- address — The host[:порт] of syslogd. If omitted, the local daemon is used.
+- use_syslog — Required setting if you want to write to the syslog.
+- address — The host[:port] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
 - facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
@@ -555,11 +555,9 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 ```
 
 
-## remote_servers
+## remote_servers {#server_settings_remote_servers}
 
-Configuration of clusters used by the Distributed table engine.
-
-For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md)".
+Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
 **Example**
 
@@ -569,6 +567,9 @@ For more information, see the section "[Table engines/Distributed](../../operati
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
+**See Also**
+
+- [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 

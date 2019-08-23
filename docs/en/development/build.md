@@ -55,7 +55,7 @@ sudo apt-get install gcc-8 g++-8
 
 ### Install from Sources
 
-Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 8 for Builds
 

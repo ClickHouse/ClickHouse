@@ -85,7 +85,7 @@ struct Token
     size_t size() const { return end - begin; }
 
     Token() = default;
-    Token(TokenType type, const char * begin, const char * end) : type(type), begin(begin), end(end) {}
+    Token(TokenType type_, const char * begin_, const char * end_) : type(type_), begin(begin_), end(end_) {}
 
     bool isSignificant() const { return type != TokenType::Whitespace && type != TokenType::Comment; }
     bool isError() const { return type > TokenType::EndOfStream; }
@@ -96,8 +96,8 @@ struct Token
 class Lexer
 {
 public:
-    Lexer(const char * begin, const char * end, size_t max_query_size = 0)
-            : begin(begin), pos(begin), end(end), max_query_size(max_query_size) {}
+    Lexer(const char * begin_, const char * end_, size_t max_query_size_ = 0)
+            : begin(begin_), pos(begin_), end(end_), max_query_size(max_query_size_) {}
     Token nextToken();
 
 private:

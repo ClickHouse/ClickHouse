@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -139,6 +140,7 @@ class AggregateFunctionWindowFunnel final
 private:
     UInt64 window;
     UInt8 events_size;
+    UInt8 strict;
 
 
     // Loop through the entire events_list, update the event timestamp value
@@ -165,6 +167,10 @@ private:
 
             if (event_idx == 0)
                 events_timestamp[0] = timestamp;
+            else if (strict && events_timestamp[event_idx] >= 0)
+            {
+                return event_idx + 1;
+            }
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
             {
                 events_timestamp[event_idx] = events_timestamp[event_idx - 1];
@@ -191,8 +197,17 @@ public:
     {
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
-    }
 
+        strict = 0;
+        for (size_t i = 1; i < params.size(); ++i)
+        {
+            String option = params.at(i).safeGet<String>();
+            if (option.compare("strict") == 0)
+                strict = 1;
+            else
+                throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
+        }
+    }
 
     DataTypePtr getReturnType() const override
     {
@@ -201,11 +216,11 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
         for (auto i = events_size; i > 0; --i)
         {
-            auto event = static_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
+            auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
                 this->data(place).add(timestamp, i);
         }
@@ -228,7 +243,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
+        assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }
 
     const char * getHeaderFilePath() const override

@@ -127,7 +127,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA = 117;
     extern const int ENGINE_REQUIRED = 119;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE = 120;
-    extern const int UNKNOWN_SET_DATA_VARIANT = 121;
+    extern const int UNSUPPORTED_JOIN_KEYS = 121;
     extern const int INCOMPATIBLE_COLUMNS = 122;
     extern const int UNKNOWN_TYPE_OF_AST_NODE = 123;
     extern const int INCORRECT_ELEMENT_OF_SET = 124;
@@ -434,7 +434,17 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER = 457;
     extern const int CANNOT_UNLINK = 458;
     extern const int CANNOT_SET_THREAD_PRIORITY = 459;
-    extern const int INVALID_TEMPLATE_FORMAT = 460;
+    extern const int CANNOT_CREATE_TIMER = 460;
+    extern const int CANNOT_SET_TIMER_PERIOD = 461;
+    extern const int CANNOT_DELETE_TIMER = 462;
+    extern const int CANNOT_FCNTL = 463;
+    extern const int CANNOT_PARSE_ELF = 464;
+    extern const int CANNOT_PARSE_DWARF = 465;
+    extern const int INSECURE_PATH = 466;
+    extern const int CANNOT_PARSE_BOOL = 467;
+    extern const int CANNOT_PTHREAD_ATTR = 468;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 469;
+    extern const int INVALID_TEMPLATE_FORMAT = 470;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

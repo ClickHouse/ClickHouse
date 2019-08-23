@@ -65,6 +65,7 @@ private:
     Files_t files;
 
     FileChecker file_checker;
+    mutable std::shared_mutex rwlock;
 
     Logger * log;
 
