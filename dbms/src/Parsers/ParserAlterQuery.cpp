@@ -89,53 +89,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else
             return false;
     }
-    else if (is_live_channel)
-    {
-        if (s_add.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_ADD;
-        }
-        else if (s_drop.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_DROP;
-        }
-        else if (s_suspend.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_SUSPEND;
-        }
-        else if (s_resume.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_RESUME;
-        }
-        else if (s_refresh.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_REFRESH;
-        }
-        else if (s_modify.ignore(pos, expected))
-        {
-            if (!values_p.parse(pos, command->values, expected))
-                return false;
-
-            command->type = ASTAlterCommand::LIVE_CHANNEL_MODIFY;
-        }
-        else
-            return false;
-    }
     else
     {
         if (s_add_column.ignore(pos, expected))
@@ -466,7 +419,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(is_live_view, is_live_channel);
+    ParserAlterCommand p_command(is_live_view);
 
     do
     {
@@ -516,29 +469,19 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
-    ParserKeyword s_alter_live_channel("ALTER LIVE CHANNEL");
 
     bool is_live_view = false;
-    bool is_live_channel = false;
 
     if (!s_alter_table.ignore(pos, expected))
     {
         if (!s_alter_live_view.ignore(pos, expected))
-        {
-            if (!s_alter_live_channel.ignore(pos, expected))
-                return false;
-            else
-                is_live_channel = true;
-        }
+            return false;
         else
             is_live_view = true;
     }
 
     if (is_live_view)
         query->is_live_view = true;
-
-    if (is_live_channel)
-        query->is_live_channel = true;
 
     if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
         return false;
@@ -551,7 +494,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     query->cluster = cluster_str;
 
-    ParserAlterCommandList p_command_list(is_live_view, is_live_channel);
+    ParserAlterCommandList p_command_list(is_live_view);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
         return false;

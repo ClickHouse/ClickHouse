@@ -220,9 +220,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         if (is_live_view)
             what = "LIVE VIEW";
-        if (is_live_channel)
-            what = "LIVE CHANNEL";
-
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")

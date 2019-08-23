@@ -57,7 +57,6 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
-    bool is_live_channel{false};
     bool is_populate{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;

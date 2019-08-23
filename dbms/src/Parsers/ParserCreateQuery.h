@@ -321,7 +321,7 @@ protected:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Or:
-  * CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [[TEMPORARY] LIVE [CHANNEL] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+  * CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {
