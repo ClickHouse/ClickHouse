@@ -160,7 +160,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/,  const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
         static const Poco::UTF8Encoding utf8;
 
@@ -377,7 +377,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/,  const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -570,7 +570,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/,  const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -722,7 +722,7 @@ public:
 
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * haystack,  const UInt8 * haystack_end, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
     {
         // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
         if (isToken(haystack, haystack_end, pos))
