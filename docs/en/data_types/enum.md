@@ -1,13 +1,13 @@
 # Enum
 
-Enumerated type storing pairs of the `'string' = integer` format.
+Enumerated type storing pairs in `'string' = integer` format.
 
 ClickHouse supports:
 
-- 8-bit `Enum`. It can contain up to 256 values with enumeration of `[-128, 127]`.
-- 16-bit `Enum`. It can contain up to 65536 values with enumeration of `[-32768, 32767]`.
+- 8-bit `Enum`. It can contain up to 256 enumerated values between `[-128, 127]`.
+- 16-bit `Enum`. It can contain up to 65Об536 enumerated values between `[-32768, 32767]`.
 
-ClickHouse automatically chooses a type for `Enum` at data insertion. Also, you can use `Enum8` or `Enum16` types to be sure in size of storage.
+ClickHouse automatically chooses the `Enum` type when data is inserted. You can also use `Enum8` or `Enum16` types to lock in the storage size.
 
 ## Usage examples
 
@@ -21,7 +21,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-This column `x` can only store the values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception. ClickHouse automatically chooses the 8-bit size for enumeration of this `Enum`.
+Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception. ClickHouse automatically chooses 8-bit when enumerating this `Enum`.
 
 ```sql
 :) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
