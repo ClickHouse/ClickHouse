@@ -66,7 +66,6 @@ public:
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - can not be Nullable",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
         {
@@ -99,10 +98,10 @@ public:
         {
             if (isColumnConst(*default_values_column))
             {
-                Field constant_value = (*default_values_column)[0];
-                for (size_t row = 0; row < row_count; row++)
+                const IColumn & constant_content = assert_cast<const ColumnConst &>(*default_values_column).getDataColumn();
+                for (size_t row = 0; row < row_count; ++row)
                 {
-                    target->insert(constant_value);
+                    target->insertFrom(constant_content, 0);
                 }
             }
             else
@@ -112,7 +111,7 @@ public:
         }
         else
         {
-            for (size_t row = 0; row < row_count; row++)
+            for (size_t row = 0; row < row_count; ++row)
             {
                 target->insertDefault();
             }
@@ -121,36 +120,32 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        auto offset_structure = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & source_column_name_and_type = block.getByPosition(arguments[0]);
+        const DataTypePtr & result_type = block.getByPosition(result).type;
 
-        ColumnPtr & offset_column = offset_structure.column;
+        ColumnPtr source_column = source_column_name_and_type.column;
 
-        auto is_constant_offset = isColumnConst(*offset_structure.column);
-        ColumnPtr default_values_column = nullptr;
-        if (arguments.size() == 3)
-        {
-            default_values_column = block.getByPosition(arguments[2]).column;
-        }
-
-        ColumnWithTypeAndName & source_column_name_and_type = block.getByPosition(arguments[0]);
-        DataTypes types = {source_column_name_and_type.type};
-        if (default_values_column)
-        {
-            types.push_back(block.getByPosition(arguments[2]).type);
-        }
-        const DataTypePtr & result_type = getLeastSupertype(types);
-        auto source_column = source_column_name_and_type.column;
-
-        // adjust source and default values columns to resulting datatype
+        // adjust source and default values columns to resulting data type
         if (!source_column_name_and_type.type->equals(*result_type))
         {
             source_column = castColumn(source_column_name_and_type, result_type, context);
         }
 
-        if (default_values_column && !block.getByPosition(arguments[2]).type->equals(*result_type))
+        ColumnPtr default_values_column;
+
+        /// Has argument with default value: neighbor(source, offset, default)
+        if (arguments.size() == 3)
         {
-            default_values_column = castColumn(block.getByPosition(arguments[2]), result_type, context);
+            default_values_column = block.getByPosition(arguments[2]).column;
+
+            if (!block.getByPosition(arguments[2]).type->equals(*result_type))
+                default_values_column = castColumn(block.getByPosition(arguments[2]), result_type, context);
         }
+
+        const auto & offset_structure = block.getByPosition(arguments[1]);
+        ColumnPtr offset_column = offset_structure.column;
+
+        auto is_constant_offset = isColumnConst(*offset_structure.column);
 
         // since we are working with both signed and unsigned - we'll try to use Int64 for handling all of them
         const DataTypePtr desired_type = std::make_shared<DataTypeInt64>();
@@ -161,6 +156,7 @@ public:
 
         if (isColumnConst(*source_column))
         {
+            /// NOTE Inconsistency when default_values are specified.
             auto column = result_type->createColumnConst(input_rows_count, (*source_column)[0]);
             block.getByPosition(result).column = std::move(column);
         }
@@ -199,7 +195,7 @@ public:
             else
             {
                 // with dynamic offset - handle row by row
-                for (size_t row = 0; row < input_rows_count; row++)
+                for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     Int64 offset_value = offset_column->getInt(row);
                     if (offset_value == 0)
