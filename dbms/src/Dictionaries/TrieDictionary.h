@@ -23,11 +23,11 @@ class TrieDictionary final : public IDictionaryBase
 {
 public:
     TrieDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_);
 
     ~TrieDictionary() override;
 

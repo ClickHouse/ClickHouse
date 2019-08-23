@@ -15,6 +15,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
+#include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
 #include <ext/range.h>
@@ -35,7 +36,7 @@ class FunctionArrayIntersect : public IFunction
 public:
     static constexpr auto name = "arrayIntersect";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIntersect>(context); }
-    FunctionArrayIntersect(const Context & context) : context(context) {}
+    FunctionArrayIntersect(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 
@@ -81,8 +82,8 @@ private:
         const DataTypePtr & data_type;
         ColumnPtr & result;
 
-        NumberExecutor(const UnpackedArrays & arrays, const DataTypePtr & data_type, ColumnPtr & result)
-            : arrays(arrays), data_type(data_type), result(result) {}
+        NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
+            : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <typename T, size_t>
         void operator()();
@@ -399,9 +400,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
     auto & result_data = static_cast<ColumnType &>(*result_data_ptr);
     auto result_offsets_ptr = ColumnArray::ColumnOffsets::create(rows);
-    auto & result_offsets = static_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
+    auto & result_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
     auto null_map_column = ColumnUInt8::create();
-    NullMap & null_map = static_cast<ColumnUInt8 &>(*null_map_column).getData();
+    NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
 
     Arena arena;
 

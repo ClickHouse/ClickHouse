@@ -28,8 +28,8 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors & processors)
-    : processors(processors)
+PipelineExecutor::PipelineExecutor(Processors & processors_)
+    : processors(processors_)
     , cancelled(false)
     , finished(false)
     , num_processing_executors(0)
@@ -185,9 +185,12 @@ void PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
         graph.emplace_back(processor.get(), graph.size());
     }
 
-    processors.insert(processors.end(), new_processors.begin(), new_processors.end());
-    UInt64 num_processors = processors.size();
+    {
+        std::lock_guard guard(processors_mutex);
+        processors.insert(processors.end(), new_processors.begin(), new_processors.end());
+    }
 
+    UInt64 num_processors = processors.size();
     for (UInt64 node = 0; node < num_processors; ++node)
     {
         if (addEdges(node))
@@ -372,6 +375,16 @@ void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task, bool processi
         lock.unlock();
         task->condvar.notify_all();
     }
+}
+
+void PipelineExecutor::cancel()
+{
+    cancelled = true;
+    finish();
+
+    std::lock_guard guard(processors_mutex);
+    for (auto & processor : processors)
+        processor->cancel();
 }
 
 void PipelineExecutor::finish()

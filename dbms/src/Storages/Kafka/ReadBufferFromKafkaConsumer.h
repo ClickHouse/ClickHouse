@@ -10,7 +10,7 @@
 namespace DB
 {
 
-using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
+using ConsumerBufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
@@ -24,12 +24,14 @@ public:
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
-    auto pollTimeout() { return poll_timeout; }
+    auto pollTimeout() const { return poll_timeout; }
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
     String currentKey() const { return current[-1].get_key(); }
     auto currentOffset() const { return current[-1].get_offset(); }
+    auto currentPartition() const { return current[-1].get_partition(); }
+    auto currentTimestamp() const { return current[-1].get_timestamp(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;

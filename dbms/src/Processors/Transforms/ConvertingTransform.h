@@ -29,10 +29,10 @@ public:
     };
 
     ConvertingTransform(
-        Block source_header,
-        Block result_header,
-        MatchColumnsMode mode,
-        const Context & context);
+        Block source_header_,
+        Block result_header_,
+        MatchColumnsMode mode_,
+        const Context & context_);
 
     String getName() const override { return "Converting"; }
 

@@ -17,10 +17,12 @@ TTLBlockInputStream::TTLBlockInputStream(
     const BlockInputStreamPtr & input_,
     const MergeTreeData & storage_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
-    time_t current_time_)
+    time_t current_time_,
+    bool force_)
     : storage(storage_)
     , data_part(data_part_)
     , current_time(current_time_)
+    , force(force_)
     , old_ttl_infos(data_part->ttl_infos)
     , log(&Logger::get(storage.getLogName() + " (TTLBlockInputStream)"))
     , date_lut(DateLUT::instance())
@@ -60,6 +62,10 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
+bool TTLBlockInputStream::isTTLExpired(time_t ttl)
+{
+    return (ttl && (ttl <= current_time));
+}
 
 Block TTLBlockInputStream::readImpl()
 {
@@ -70,13 +76,13 @@ Block TTLBlockInputStream::readImpl()
     if (storage.hasTableTTL())
     {
         /// Skip all data if table ttl is expired for part
-        if (old_ttl_infos.table_ttl.max <= current_time)
+        if (isTTLExpired(old_ttl_infos.table_ttl.max))
         {
             rows_removed = data_part->rows_count;
             return {};
         }
 
-        if (old_ttl_infos.table_ttl.min <= current_time)
+        if (force || isTTLExpired(old_ttl_infos.table_ttl.min))
             removeRowsWithExpiredTableTTL(block);
     }
 
@@ -96,15 +102,15 @@ void TTLBlockInputStream::readSuffixImpl()
     data_part->empty_columns = std::move(empty_columns);
 
     if (rows_removed)
-        LOG_INFO(log, "Removed " << rows_removed << " rows with expired ttl from part " << data_part->name);
+        LOG_INFO(log, "Removed " << rows_removed << " rows with expired TTL from part " << data_part->name);
 }
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
     storage.ttl_table_entry.expression->execute(block);
 
-    const auto & current = block.getByName(storage.ttl_table_entry.result_column);
-    const IColumn * ttl_column = current.column.get();
+    const IColumn * ttl_column =
+        block.getByName(storage.ttl_table_entry.result_column).column.get();
 
     const auto & column_names = header.getNames();
     MutableColumns result_columns;
@@ -112,15 +118,14 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 
     for (auto it = column_names.begin(); it != column_names.end(); ++it)
     {
-        auto & column_with_type = block.getByName(*it);
-        const IColumn * values_column = column_with_type.column.get();
+        const IColumn * values_column = block.getByName(*it).column.get();
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
-            if (cur_ttl > current_time)
+            if (!isTTLExpired(cur_ttl))
             {
                 new_ttl_infos.table_ttl.update(cur_ttl);
                 result_column->insertFrom(*values_column, i);
@@ -148,10 +153,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
         auto & new_ttl_info = new_ttl_infos.columns_ttl[name];
 
-        if (old_ttl_info.min > current_time)
+        /// Nothing to do
+        if (!force && !isTTLExpired(old_ttl_info.min))
             continue;
 
-        if (old_ttl_info.max <= current_time)
+        /// Later drop full column
+        if (isTTLExpired(old_ttl_info.max))
             continue;
 
         if (!block.has(ttl_entry.result_column))
@@ -166,14 +173,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
 
-        const auto & current = block.getByName(ttl_entry.result_column);
-        const IColumn * ttl_column = current.column.get();
+        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
-
-            if (cur_ttl <= current_time)
+            if (isTTLExpired(cur_ttl))
             {
                 if (default_column)
                     result_column->insertFrom(*default_column, i);

@@ -25,8 +25,8 @@ private:
 
 public:
     LimitTransform(
-        const Block & header, size_t limit, size_t offset,
-        bool always_read_till_end = false);
+        const Block & header_, size_t limit_, size_t offset_,
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "Limit"; }
 

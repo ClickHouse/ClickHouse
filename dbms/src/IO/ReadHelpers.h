@@ -426,6 +426,9 @@ template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>

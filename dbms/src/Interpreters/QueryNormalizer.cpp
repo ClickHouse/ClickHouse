@@ -4,7 +4,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/AnalyzedJoin.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -75,7 +74,7 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
     if (functionIsInOrGlobalInOperator(func_name))
     {
         auto & ast = func_arguments->children.at(1);
-        if (auto opt_name = getIdentifierName(ast))
+        if (auto opt_name = tryGetIdentifierName(ast))
             if (!aliases.count(*opt_name))
                 setIdentifierSpecial(ast);
     }
@@ -103,8 +102,24 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name);
-    if (IdentifierSemantic::canBeAlias(node) && it_alias != data.aliases.end() && current_alias != node.name)
+    if (it_alias != data.aliases.end() && current_alias != node.name)
     {
+        if (!IdentifierSemantic::canBeAlias(node))
+        {
+            /// This means that column had qualified name, which was translated (so, canBeAlias() returns false).
+            /// But there is an alias with the same name. So, let's use original name for that column.
+            /// If alias wasn't set, use original column name as alias.
+            /// That helps to avoid result set with columns which have same names but different values.
+            if (node.alias.empty())
+            {
+                node.name.swap(node.alias);
+                node.restoreCompoundName();
+                node.name.swap(node.alias);
+            }
+
+            return;
+        }
+
         auto & alias_node = it_alias->second;
 
         /// Let's replace it with the corresponding tree node.

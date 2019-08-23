@@ -46,6 +46,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/addTypeConversionToAST.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -440,7 +442,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary)
+    if (create.temporary && !create.is_live_view)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -463,6 +465,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
+        if (as_create.is_live_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Live View",
+                ErrorCodes::INCORRECT_QUERY);
+
         create.set(create.storage, as_create.storage->ptr());
     }
 }
@@ -480,7 +487,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty())
+    if (create.temporary && !create.database.empty() && !create.is_live_view)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
@@ -503,7 +510,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_database.empty())
         create.to_database = current_database;
 
-    if (create.select && (create.is_view || create.is_materialized_view))
+    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
     {
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
@@ -518,33 +525,44 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     StoragePtr as_storage;
     TableStructureReadLockHolder as_storage_lock;
+
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
         as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
 
-    /// Set and retrieve list of columns.
-    ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+    ColumnsDescription columns;
+    StoragePtr res;
 
-    /// Check low cardinality types in creating table if it was not allowed in setting
-    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
+    if (create.as_table_function)
     {
-        for (const auto & name_and_type_pair : columns.getAllPhysical())
+        const auto & table_function = create.as_table_function->as<ASTFunction &>();
+        const auto & factory = TableFunctionFactory::instance();
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+    }
+    else
+    {
+        /// Set and retrieve list of columns.
+        columns = setColumns(create, as_select_sample, as_storage);
+
+        /// Check low cardinality types in creating table if it was not allowed in setting
+        if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
         {
-            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
+            for (const auto & name_and_type_pair : columns.getAllPhysical())
             {
-                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+                if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
+                {
+                    if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
+                        throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                            ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+                }
             }
         }
+
+        /// Set the table engine if it was not specified explicitly.
+        setEngine(create);
     }
-
-    /// Set the table engine if it was not specified explicitly.
-    setEngine(create);
-
-    StoragePtr res;
 
     {
         std::unique_ptr<DDLGuard> guard;
@@ -552,7 +570,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         String data_path;
         DatabasePtr database;
 
-        if (!create.temporary)
+        if (!create.temporary || create.is_live_view)
         {
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
@@ -585,17 +603,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
 
-        res = StorageFactory::instance().get(create,
-            data_path,
-            table_name,
-            database_name,
-            context,
-            context.getGlobalContext(),
-            columns,
-            create.attach,
-            false);
+        if (!create.as_table_function)
+        {
+            res = StorageFactory::instance().get(create,
+                data_path,
+                table_name,
+                database_name,
+                context,
+                context.getGlobalContext(),
+                columns,
+                create.attach,
+                false);
+        }
 
-        if (create.temporary)
+        if (create.temporary && !create.is_live_view)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
@@ -614,7 +635,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
 

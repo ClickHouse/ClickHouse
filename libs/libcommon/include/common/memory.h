@@ -1,7 +1,7 @@
 #pragma once
 
 #include <new>
-#include <common/likely.h>
+#include "likely.h"
 
 #if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
@@ -15,10 +15,26 @@
     #define USE_JEMALLOC 0
     #include <cstdlib>
 #endif
+#else
+#include <cstdlib>
 #endif
 
-#define ALWAYS_INLINE inline __attribute__((__always_inline__))
-#define NO_INLINE __attribute__((__noinline__))
+// Also defined in Core/Defines.h
+#if !defined(ALWAYS_INLINE)
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE inline __forceinline
+#else
+    #define ALWAYS_INLINE inline __attribute__((__always_inline__))
+#endif
+#endif
+
+#if !defined(NO_INLINE)
+#if defined(_MSC_VER)
+    #define NO_INLINE static __declspec(noinline)
+#else
+    #define NO_INLINE __attribute__((__noinline__))
+#endif
+#endif
 
 namespace Memory
 {

@@ -1,4 +1,264 @@
-## ClickHouse release 19.9.4.1, 2019-07-05
+## ClickHouse release 19.13.3.26, 2019-08-22
+
+### Bug Fix
+* Fix `ALTER TABLE ... UPDATE` query for tables with `enable_mixed_granularity_parts=1`. [#6543](https://github.com/yandex/ClickHouse/pull/6543) ([alesapin](https://github.com/alesapin))
+* Fix NPE when using IN clause with a subquery with a tuple. [#6125](https://github.com/yandex/ClickHouse/issues/6125) [#6550](https://github.com/yandex/ClickHouse/pull/6550) ([tavplubix](https://github.com/tavplubix))
+* Fixed an issue that if a stale replica becomes alive, it may still have data parts that were removed by DROP PARTITION. [#6522](https://github.com/yandex/ClickHouse/issues/6522) [#6523](https://github.com/yandex/ClickHouse/pull/6523) ([tavplubix](https://github.com/tavplubix))
+* Fixed issue with parsing CSV [#6426](https://github.com/yandex/ClickHouse/issues/6426) [#6559](https://github.com/yandex/ClickHouse/pull/6559) ([tavplubix](https://github.com/tavplubix))
+* Fixed data race in system.parts table and ALTER query. This fixes [#6245](https://github.com/yandex/ClickHouse/issues/6245). [#6513](https://github.com/yandex/ClickHouse/pull/6513) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed wrong code in mutations that may lead to memory corruption. Fixed segfault with read of address `0x14c0` that may happed due to concurrent `DROP TABLE` and `SELECT` from `system.parts` or `system.parts_columns`. Fixed race condition in preparation of mutation queries. Fixed deadlock caused by `OPTIMIZE` of Replicated tables and concurrent modification operations like ALTERs. [#6514](https://github.com/yandex/ClickHouse/pull/6514) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+## ClickHouse release 19.13.2.19, 2019-08-14
+
+### New Feature
+* Sampling profiler on query level. [Example](https://gist.github.com/alexey-milovidov/92758583dd41c24c360fdb8d6a4da194). [#4247](https://github.com/yandex/ClickHouse/issues/4247) ([laplab](https://github.com/laplab)) [#6124](https://github.com/yandex/ClickHouse/pull/6124) ([alexey-milovidov](https://github.com/alexey-milovidov)) [#6250](https://github.com/yandex/ClickHouse/pull/6250) [#6283](https://github.com/yandex/ClickHouse/pull/6283) [#6386](https://github.com/yandex/ClickHouse/pull/6386) 
+* Allow to specify a list of columns with `COLUMNS('regexp')` expression that works like a more sophisticated variant of `*` asterisk. [#5951](https://github.com/yandex/ClickHouse/pull/5951)  ([mfridental](https://github.com/mfridental)), ([alexey-milovidov](https://github.com/alexey-milovidov))
+* `CREATE TABLE AS table_function()` is now possible [#6057](https://github.com/yandex/ClickHouse/pull/6057) ([dimarub2000](https://github.com/dimarub2000))
+* Adam optimizer for stochastic gradient descent is used by default in `stochasticLinearRegression()` and `stochasticLogisticRegression()` aggregate functions, because it shows good quality without almost any tuning. [#6000](https://github.com/yandex/ClickHouse/pull/6000) ([Quid37](https://github.com/Quid37))
+* Added functions for working with the сustom week number [#5212](https://github.com/yandex/ClickHouse/pull/5212) ([Andy Yang](https://github.com/andyyzh))
+* `RENAME` queries now work with all storages. [#5953](https://github.com/yandex/ClickHouse/pull/5953) ([Ivan](https://github.com/abyss7))
+* Now client receive logs from server with any desired level by setting `send_logs_level` regardless to the log level specified in server settings. [#5964](https://github.com/yandex/ClickHouse/pull/5964) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+
+### Backward Incompatible Change
+* The setting `input_format_defaults_for_omitted_fields` is enabled by default. Inserts in Distibuted tables need this setting to be the same on cluster (you need to set it before rolling update). It enables calculation of complex default expressions for omitted fields in `JSONEachRow` and `CSV*` formats. It should be the expected behaviour but may lead to negligible performance difference. [#6043](https://github.com/yandex/ClickHouse/pull/6043) ([Artem Zuikov](https://github.com/4ertus2)), [#5625](https://github.com/yandex/ClickHouse/pull/5625) ([akuzm](https://github.com/akuzm)) 
+
+### Experimental features
+* New query processing pipeline. Use `experimental_use_processors=1` option to enable it. Use for your own trouble. [#4914](https://github.com/yandex/ClickHouse/pull/4914) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+
+### Bug Fix
+* Kafka integration has been fixed in this version.
+* Fixed `DoubleDelta` encoding of `Int64` for large `DoubleDelta` values, improved `DoubleDelta` encoding for random data for `Int32`. [#5998](https://github.com/yandex/ClickHouse/pull/5998) ([Vasily Nemkov](https://github.com/Enmk))
+* Fixed overestimation of `max_rows_to_read` if the setting `merge_tree_uniform_read_distribution` is set to 0. [#6019](https://github.com/yandex/ClickHouse/pull/6019) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Improvement
+* Throws an exception if `config.d` file doesn't have the corresponding root element as the config file [#6123](https://github.com/yandex/ClickHouse/pull/6123) ([dimarub2000](https://github.com/dimarub2000))
+
+### Performance Improvement
+* Optimize `count()`. Now it uses the smallest column (if possible). [#6028](https://github.com/yandex/ClickHouse/pull/6028) ([Amos Bird](https://github.com/amosbird))
+
+### Build/Testing/Packaging Improvement
+* Report memory usage in performance tests. [#5899](https://github.com/yandex/ClickHouse/pull/5899) ([akuzm](https://github.com/akuzm))
+* Fix build with external `libcxx` [#6010](https://github.com/yandex/ClickHouse/pull/6010) ([Ivan](https://github.com/abyss7))
+* Fix shared build with `rdkafka` library [#6101](https://github.com/yandex/ClickHouse/pull/6101) ([Ivan](https://github.com/abyss7))
+
+## ClickHouse release 19.11.8.46, 2019-08-22
+
+### Bug Fix
+* Fix `ALTER TABLE ... UPDATE` query for tables with `enable_mixed_granularity_parts=1`. [#6543](https://github.com/yandex/ClickHouse/pull/6543) ([alesapin](https://github.com/alesapin))
+* Fix NPE when using IN clause with a subquery with a tuple. [#6125](https://github.com/yandex/ClickHouse/issues/6125) [#6550](https://github.com/yandex/ClickHouse/pull/6550) ([tavplubix](https://github.com/tavplubix))
+* Fixed an issue that if a stale replica becomes alive, it may still have data parts that were removed by DROP PARTITION. [#6522](https://github.com/yandex/ClickHouse/issues/6522) [#6523](https://github.com/yandex/ClickHouse/pull/6523) ([tavplubix](https://github.com/tavplubix))
+* Fixed issue with parsing CSV [#6426](https://github.com/yandex/ClickHouse/issues/6426) [#6559](https://github.com/yandex/ClickHouse/pull/6559) ([tavplubix](https://github.com/tavplubix))
+* Fixed data race in system.parts table and ALTER query. This fixes [#6245](https://github.com/yandex/ClickHouse/issues/6245). [#6513](https://github.com/yandex/ClickHouse/pull/6513) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed wrong code in mutations that may lead to memory corruption. Fixed segfault with read of address `0x14c0` that may happed due to concurrent `DROP TABLE` and `SELECT` from `system.parts` or `system.parts_columns`. Fixed race condition in preparation of mutation queries. Fixed deadlock caused by `OPTIMIZE` of Replicated tables and concurrent modification operations like ALTERs. [#6514](https://github.com/yandex/ClickHouse/pull/6514) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+## ClickHouse release 19.11.7.40, 2019-08-14
+
+### Bug fix
+* Kafka integration has been fixed in this version.
+* Fix segfault when using `arrayReduce` for constant arguments. [#6326](https://github.com/yandex/ClickHouse/pull/6326) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed `toFloat()` monotonicity. [#6374](https://github.com/yandex/ClickHouse/pull/6374) ([dimarub2000](https://github.com/dimarub2000))
+* Fix segfault with enabled `optimize_skip_unused_shards` and missing sharding key. [#6384](https://github.com/yandex/ClickHouse/pull/6384) ([CurtizJ](https://github.com/CurtizJ))
+* Fixed logic of `arrayEnumerateUniqRanked` function. [#6423](https://github.com/yandex/ClickHouse/pull/6423) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Removed extra verbose logging from MySQL handler. [#6389](https://github.com/yandex/ClickHouse/pull/6389) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix wrong behavior and possible segfaults in `topK` and `topKWeighted` aggregated functions. [#6404](https://github.com/yandex/ClickHouse/pull/6404) ([CurtizJ](https://github.com/CurtizJ))
+* Do not expose virtual columns in `system.columns` table. This is required for backward compatibility. [#6406](https://github.com/yandex/ClickHouse/pull/6406) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix bug with memory allocation for string fields in complex key cache dictionary. [#6447](https://github.com/yandex/ClickHouse/pull/6447) ([alesapin](https://github.com/alesapin))
+* Fix bug with enabling adaptive granularity when creating new replica for `Replicated*MergeTree` table. [#6452](https://github.com/yandex/ClickHouse/pull/6452) ([alesapin](https://github.com/alesapin))
+* Fix infinite loop when reading Kafka messages. [#6354](https://github.com/yandex/ClickHouse/pull/6354) ([abyss7](https://github.com/abyss7))
+* Fixed the possibility of a fabricated query to cause server crash due to stack overflow in SQL parser and possibility of stack overflow in `Merge` and `Distributed` tables [#6433](https://github.com/yandex/ClickHouse/pull/6433) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed Gorilla encoding error on small sequences. [#6444](https://github.com/yandex/ClickHouse/pull/6444) ([Enmk](https://github.com/Enmk))
+
+### Improvement
+* Allow user to override `poll_interval` and `idle_connection_timeout` settings on connection. [#6230](https://github.com/yandex/ClickHouse/pull/6230) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+## ClickHouse release 19.11.5.28, 2019-08-05
+
+### Bug fix
+* Fixed the possibility of hanging queries when server is overloaded. [#6301](https://github.com/yandex/ClickHouse/pull/6301) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix FPE in yandexConsistentHash function. This fixes [#6304](https://github.com/yandex/ClickHouse/issues/6304). [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed bug in conversion of `LowCardinality` types in `AggregateFunctionFactory`. This fixes [#6257](https://github.com/yandex/ClickHouse/issues/6257). [#6281](https://github.com/yandex/ClickHouse/pull/6281) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix parsing of `bool` settings from `true` and `false` strings in configuration files. [#6278](https://github.com/yandex/ClickHouse/pull/6278) ([alesapin](https://github.com/alesapin))
+* Fix rare bug with incompatible stream headers in queries to `Distributed` table over `MergeTree` table when part of `WHERE` moves to `PREWHERE`. [#6236](https://github.com/yandex/ClickHouse/pull/6236) ([alesapin](https://github.com/alesapin))
+* Fixed overflow in integer division of signed type to unsigned type. This fixes [#6214](https://github.com/yandex/ClickHouse/issues/6214). [#6233](https://github.com/yandex/ClickHouse/pull/6233) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Backward Incompatible Change
+* `Kafka` still broken.
+
+## ClickHouse release 19.11.4.24, 2019-08-01
+
+### Bug Fix
+* Fix bug with writing secondary indices marks with adaptive granularity. [#6126](https://github.com/yandex/ClickHouse/pull/6126) ([alesapin](https://github.com/alesapin))
+* Fix `WITH ROLLUP` and `WITH CUBE` modifiers of `GROUP BY` with two-level aggregation. [#6225](https://github.com/yandex/ClickHouse/pull/6225) ([Anton Popov](https://github.com/CurtizJ))
+* Fixed hang in `JSONExtractRaw` function. Fixed [#6195](https://github.com/yandex/ClickHouse/issues/6195) [#6198](https://github.com/yandex/ClickHouse/pull/6198) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix segfault in ExternalLoader::reloadOutdated(). [#6082](https://github.com/yandex/ClickHouse/pull/6082) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fixed the case when server may close listening sockets but not shutdown and continue serving remaining queries. You may end up with two running clickhouse-server processes. Sometimes, the server may return an error `bad_function_call` for remaining queries. [#6231](https://github.com/yandex/ClickHouse/pull/6231) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed useless and incorrect condition on update field for initial loading of external dictionaries via ODBC, MySQL, ClickHouse and HTTP. This fixes [#6069](https://github.com/yandex/ClickHouse/issues/6069) [#6083](https://github.com/yandex/ClickHouse/pull/6083) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed irrelevant exception in cast of `LowCardinality(Nullable)` to not-Nullable column in case if it doesn't contain Nulls (e.g. in query like `SELECT CAST(CAST('Hello' AS LowCardinality(Nullable(String))) AS String)`. [#6094](https://github.com/yandex/ClickHouse/issues/6094) [#6119](https://github.com/yandex/ClickHouse/pull/6119) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix non-deterministic result of "uniq" aggregate function in extreme rare cases. The bug was present in all ClickHouse versions. [#6058](https://github.com/yandex/ClickHouse/pull/6058) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Segfault when we set a little bit too high CIDR on the function `IPv6CIDRToRange`. [#6068](https://github.com/yandex/ClickHouse/pull/6068) ([Guillaume Tassery](https://github.com/YiuRULE))
+* Fixed small memory leak when server throw many exceptions from many different contexts. [#6144](https://github.com/yandex/ClickHouse/pull/6144) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix the situation when consumer got paused before subscription and not resumed afterwards. [#6075](https://github.com/yandex/ClickHouse/pull/6075) ([Ivan](https://github.com/abyss7)) Note that Kafka is broken in this version.
+* Clearing the Kafka data buffer from the previous read operation that was completed with an error [#6026](https://github.com/yandex/ClickHouse/pull/6026) ([Nikolay](https://github.com/bopohaa)) Note that Kafka is broken in this version.
+* Since `StorageMergeTree::background_task_handle` is initialized in `startup()` the `MergeTreeBlockOutputStream::write()` may try to use it before initialization. Just check if it is initialized. [#6080](https://github.com/yandex/ClickHouse/pull/6080) ([Ivan](https://github.com/abyss7))
+
+### Build/Testing/Packaging Improvement
+* Added official `rpm` packages. [#5740](https://github.com/yandex/ClickHouse/pull/5740) ([proller](https://github.com/proller)) ([alesapin](https://github.com/alesapin))
+* Add an ability to build `.rpm` and `.tgz` packages with `packager` script. [#5769](https://github.com/yandex/ClickHouse/pull/5769) ([alesapin](https://github.com/alesapin))
+* Fixes for "Arcadia" build system. [#6223](https://github.com/yandex/ClickHouse/pull/6223) ([proller](https://github.com/proller))
+
+### Backward Incompatible Change
+* `Kafka` is broken in this version.
+
+
+## ClickHouse release 19.11.3.11, 2019-07-18
+
+### New Feature
+* Added support for prepared statements. [#5331](https://github.com/yandex/ClickHouse/pull/5331/) ([Alexander](https://github.com/sanych73)) [#5630](https://github.com/yandex/ClickHouse/pull/5630) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* `DoubleDelta` and `Gorilla` column codecs [#5600](https://github.com/yandex/ClickHouse/pull/5600) ([Vasily Nemkov](https://github.com/Enmk))
+* Added `os_thread_priority` setting that allows to control the "nice" value of query processing threads that is used by OS to adjust dynamic scheduling priority. It requires `CAP_SYS_NICE` capabilities to work. This implements [#5858](https://github.com/yandex/ClickHouse/issues/5858) [#5909](https://github.com/yandex/ClickHouse/pull/5909) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Implement `_topic`, `_offset`, `_key` columns for Kafka engine [#5382](https://github.com/yandex/ClickHouse/pull/5382) ([Ivan](https://github.com/abyss7)) Note that Kafka is broken in this version.
+* Add aggregate function combinator `-Resample` [#5590](https://github.com/yandex/ClickHouse/pull/5590) ([hcz](https://github.com/hczhcz))
+* Aggregate functions `groupArrayMovingSum(win_size)(x)` and `groupArrayMovingAvg(win_size)(x)`, which calculate moving sum/avg with or without window-size limitation. [#5595](https://github.com/yandex/ClickHouse/pull/5595) ([inv2004](https://github.com/inv2004))
+* Add synonim `arrayFlatten` <-> `flatten` [#5764](https://github.com/yandex/ClickHouse/pull/5764) ([hcz](https://github.com/hczhcz))
+* Intergate H3 function `geoToH3` from Uber. [#4724](https://github.com/yandex/ClickHouse/pull/4724) ([Remen Ivan](https://github.com/BHYCHIK)) [#5805](https://github.com/yandex/ClickHouse/pull/5805) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Bug Fix
+* Implement DNS cache with asynchronous update. Separate thread resolves all hosts and updates DNS cache with period (setting `dns_cache_update_period`). It should help, when ip of hosts changes frequently. [#5857](https://github.com/yandex/ClickHouse/pull/5857) ([Anton Popov](https://github.com/CurtizJ))
+* Fix segfault in `Delta` codec which affects columns with values less than 32 bits size. The bug led to random memory corruption. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
+* Fix segfault in TTL merge with non-physical columns in block. [#5819](https://github.com/yandex/ClickHouse/pull/5819) ([Anton Popov](https://github.com/CurtizJ))
+* Fix rare bug in checking of part with `LowCardinality` column. Previously `checkDataPart` always fails for part with `LowCardinality` column. [#5832](https://github.com/yandex/ClickHouse/pull/5832) ([alesapin](https://github.com/alesapin))
+* Avoid hanging connections when server thread pool is full. It is important for connections from `remote` table function or connections to a shard without replicas when there is long connection timeout. This fixes [#5878](https://github.com/yandex/ClickHouse/issues/5878) [#5881](https://github.com/yandex/ClickHouse/pull/5881) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Support for constant arguments to `evalMLModel` function. This fixes [#5817](https://github.com/yandex/ClickHouse/issues/5817) [#5820](https://github.com/yandex/ClickHouse/pull/5820) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed the issue when ClickHouse determines default time zone as `UCT` instead of `UTC`. This fixes [#5804](https://github.com/yandex/ClickHouse/issues/5804). [#5828](https://github.com/yandex/ClickHouse/pull/5828) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed buffer underflow in `visitParamExtractRaw`. This fixes [#5901](https://github.com/yandex/ClickHouse/issues/5901) [#5902](https://github.com/yandex/ClickHouse/pull/5902) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Now distributed `DROP/ALTER/TRUNCATE/OPTIMIZE ON CLUSTER` queries will be executed directly on leader replica. [#5757](https://github.com/yandex/ClickHouse/pull/5757) ([alesapin](https://github.com/alesapin))
+* Fix `coalesce` for `ColumnConst` with `ColumnNullable` + related changes. [#5755](https://github.com/yandex/ClickHouse/pull/5755) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix the `ReadBufferFromKafkaConsumer` so that it keeps reading new messages after `commit()` even if it was stalled before [#5852](https://github.com/yandex/ClickHouse/pull/5852) ([Ivan](https://github.com/abyss7))
+* Fix `FULL` and `RIGHT` JOIN results when joining on `Nullable` keys in right table. [#5859](https://github.com/yandex/ClickHouse/pull/5859) ([Artem Zuikov](https://github.com/4ertus2))
+* Possible fix of infinite sleeping of low-priority queries. [#5842](https://github.com/yandex/ClickHouse/pull/5842) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix race condition, which cause that some queries may not appear in query_log after `SYSTEM FLUSH LOGS` query. [#5456](https://github.com/yandex/ClickHouse/issues/5456) [#5685](https://github.com/yandex/ClickHouse/pull/5685) ([Anton Popov](https://github.com/CurtizJ))
+* Fixed `heap-use-after-free` ASan warning in ClusterCopier caused by watch which try to use already removed copier object. [#5871](https://github.com/yandex/ClickHouse/pull/5871) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fixed wrong `StringRef` pointer returned by some implementations of `IColumn::deserializeAndInsertFromArena`. This bug affected only unit-tests. [#5973](https://github.com/yandex/ClickHouse/pull/5973) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Prevent source and intermediate array join columns of masking same name columns. [#5941](https://github.com/yandex/ClickHouse/pull/5941) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix insert and select query to MySQL engine with MySQL style identifier quoting. [#5704](https://github.com/yandex/ClickHouse/pull/5704) ([Winter Zhang](https://github.com/zhang2014))
+* Now `CHECK TABLE` query can work with MergeTree engine family. It returns check status and message if any for each part (or file in case of simplier engines). Also, fix bug in fetch of a broken part. [#5865](https://github.com/yandex/ClickHouse/pull/5865) ([alesapin](https://github.com/alesapin))
+* Fix SPLIT_SHARED_LIBRARIES runtime [#5793](https://github.com/yandex/ClickHouse/pull/5793) ([Danila Kutenin](https://github.com/danlark1))
+* Fixed time zone initialization when `/etc/localtime` is a relative symlink like `../usr/share/zoneinfo/Europe/Moscow` [#5922](https://github.com/yandex/ClickHouse/pull/5922) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* clickhouse-copier: Fix use-after free on shutdown [#5752](https://github.com/yandex/ClickHouse/pull/5752) ([proller](https://github.com/proller))
+* Updated `simdjson`. Fixed the issue that some invalid JSONs with zero bytes successfully parse. [#5938](https://github.com/yandex/ClickHouse/pull/5938) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix shutdown of SystemLogs [#5802](https://github.com/yandex/ClickHouse/pull/5802) ([Anton Popov](https://github.com/CurtizJ))
+* Fix hanging when condition in invalidate_query depends on a dictionary. [#6011](https://github.com/yandex/ClickHouse/pull/6011) ([Vitaly Baranov](https://github.com/vitlibar))
+
+### Improvement
+* Allow unresolvable addresses in cluster configuration. They will be considered unavailable and tried to resolve at every connection attempt. This is especially useful for Kubernetes. This fixes [#5714](https://github.com/yandex/ClickHouse/issues/5714) [#5924](https://github.com/yandex/ClickHouse/pull/5924) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Close idle TCP connections (with one hour timeout by default). This is especially important for large clusters with multiple distributed tables on every server, because every server can possibly keep a connection pool to every other server, and after peak query concurrency, connections will stall. This fixes [#5879](https://github.com/yandex/ClickHouse/issues/5879) [#5880](https://github.com/yandex/ClickHouse/pull/5880) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Better quality of `topK` function. Changed the SavingSpace set behavior to remove the last element if the new element have a bigger weight. [#5833](https://github.com/yandex/ClickHouse/issues/5833) [#5850](https://github.com/yandex/ClickHouse/pull/5850) ([Guillaume Tassery](https://github.com/YiuRULE))
+* URL functions to work with domains now can work for incomplete URLs without scheme [#5725](https://github.com/yandex/ClickHouse/pull/5725) ([alesapin](https://github.com/alesapin))
+* Checksums added to the `system.parts_columns` table. [#5874](https://github.com/yandex/ClickHouse/pull/5874) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+* Added `Enum` data type as a synonim for `Enum8` or `Enum16`. [#5886](https://github.com/yandex/ClickHouse/pull/5886) ([dimarub2000](https://github.com/dimarub2000))
+* Full bit transpose variant for `T64` codec. Could lead to better compression with `zstd`. [#5742](https://github.com/yandex/ClickHouse/pull/5742) ([Artem Zuikov](https://github.com/4ertus2))
+* Condition on `startsWith` function now can uses primary key. This fixes [#5310](https://github.com/yandex/ClickHouse/issues/5310) and [#5882](https://github.com/yandex/ClickHouse/issues/5882) [#5919](https://github.com/yandex/ClickHouse/pull/5919) ([dimarub2000](https://github.com/dimarub2000))
+* Allow to use `clickhouse-copier` with cross-replication cluster topology by permitting empty database name. [#5745](https://github.com/yandex/ClickHouse/pull/5745) ([nvartolomei](https://github.com/nvartolomei))
+* Use `UTC` as default timezone on a system without `tzdata` (e.g. bare Docker container). Before this patch, error message `Could not determine local time zone` was printed and server or client refused to start. [#5827](https://github.com/yandex/ClickHouse/pull/5827) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Returned back support for floating point argument in function `quantileTiming` for backward compatibility. [#5911](https://github.com/yandex/ClickHouse/pull/5911) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Show which table is missing column in error messages. [#5768](https://github.com/yandex/ClickHouse/pull/5768) ([Ivan](https://github.com/abyss7))
+* Disallow run query with same query_id by various users [#5430](https://github.com/yandex/ClickHouse/pull/5430) ([proller](https://github.com/proller))
+* More robust code for sending metrics to Graphite. It will work even during long multiple `RENAME TABLE` operation. [#5875](https://github.com/yandex/ClickHouse/pull/5875) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* More informative error messages will be displayed when ThreadPool cannot schedule a task for execution. This fixes [#5305](https://github.com/yandex/ClickHouse/issues/5305) [#5801](https://github.com/yandex/ClickHouse/pull/5801) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Inverting ngramSearch to be more intuitive [#5807](https://github.com/yandex/ClickHouse/pull/5807) ([Danila Kutenin](https://github.com/danlark1))
+* Add user parsing in HDFS engine builder [#5946](https://github.com/yandex/ClickHouse/pull/5946) ([akonyaev90](https://github.com/akonyaev90))
+* Update default value of `max_ast_elements parameter` [#5933](https://github.com/yandex/ClickHouse/pull/5933) ([Artem Konovalov](https://github.com/izebit))
+* Added a notion of obsolete settings. The obsolete setting `allow_experimental_low_cardinality_type` can be used with no effect. [0f15c01c6802f7ce1a1494c12c846be8c98944cd](https://github.com/yandex/ClickHouse/commit/0f15c01c6802f7ce1a1494c12c846be8c98944cd) [Alexey Milovidov](https://github.com/alexey-milovidov)
+
+### Performance Improvement
+* Increase number of streams to SELECT from Merge table for more uniform distribution of threads. Added setting `max_streams_multiplier_for_merge_tables`. This fixes [#5797](https://github.com/yandex/ClickHouse/issues/5797) [#5915](https://github.com/yandex/ClickHouse/pull/5915) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Build/Testing/Packaging Improvement
+* Add a backward compatibility test for client-server interaction with different versions of clickhouse. [#5868](https://github.com/yandex/ClickHouse/pull/5868) ([alesapin](https://github.com/alesapin))
+* Test coverage information in every commit and pull request. [#5896](https://github.com/yandex/ClickHouse/pull/5896) ([alesapin](https://github.com/alesapin))
+* Cooperate with address sanitizer to support our custom allocators (`Arena` and `ArenaWithFreeLists`) for better debugging of "use-after-free" errors. [#5728](https://github.com/yandex/ClickHouse/pull/5728) ([akuzm](https://github.com/akuzm))
+* Switch to [LLVM libunwind implementation](https://github.com/llvm-mirror/libunwind) for C++ exception handling and for stack traces printing [#4828](https://github.com/yandex/ClickHouse/pull/4828) ([Nikita Lapkov](https://github.com/laplab))
+* Add two more warnings from -Weverything [#5923](https://github.com/yandex/ClickHouse/pull/5923) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Allow to build ClickHouse with Memory Sanitizer. [#3949](https://github.com/yandex/ClickHouse/pull/3949) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed ubsan report about `bitTest` function in fuzz test. [#5943](https://github.com/yandex/ClickHouse/pull/5943) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Docker: added possibility to init a ClickHouse instance which requires authentication. [#5727](https://github.com/yandex/ClickHouse/pull/5727) ([Korviakov Andrey](https://github.com/shurshun))
+* Update librdkafka to version 1.1.0 [#5872](https://github.com/yandex/ClickHouse/pull/5872) ([Ivan](https://github.com/abyss7))
+* Add global timeout for integration tests and disable some of them in tests code. [#5741](https://github.com/yandex/ClickHouse/pull/5741) ([alesapin](https://github.com/alesapin))
+* Fix some ThreadSanitizer failures. [#5854](https://github.com/yandex/ClickHouse/pull/5854) ([akuzm](https://github.com/akuzm))
+* The `--no-undefined` option forces the linker to check all external names for existence while linking. It's very useful to track real dependencies between libraries in the split build mode. [#5855](https://github.com/yandex/ClickHouse/pull/5855) ([Ivan](https://github.com/abyss7))
+* Added performance test for [#5797](https://github.com/yandex/ClickHouse/issues/5797) [#5914](https://github.com/yandex/ClickHouse/pull/5914) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed compatibility with gcc-7. [#5840](https://github.com/yandex/ClickHouse/pull/5840) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Added support for gcc-9. This fixes [#5717](https://github.com/yandex/ClickHouse/issues/5717) [#5774](https://github.com/yandex/ClickHouse/pull/5774) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error when libunwind can be linked incorrectly. [#5948](https://github.com/yandex/ClickHouse/pull/5948) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed a few warnings found by PVS-Studio. [#5921](https://github.com/yandex/ClickHouse/pull/5921) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Added initial support for `clang-tidy` static analyzer. [#5806](https://github.com/yandex/ClickHouse/pull/5806) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Convert BSD/Linux endian macros( 'be64toh' and 'htobe64') to the Mac OS X equivalents [#5785](https://github.com/yandex/ClickHouse/pull/5785) ([Fu Chen](https://github.com/fredchenbj))
+* Improved integration tests guide. [#5796](https://github.com/yandex/ClickHouse/pull/5796) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Fixing build at macosx + gcc9 [#5822](https://github.com/yandex/ClickHouse/pull/5822) ([filimonov](https://github.com/filimonov))
+* Fix a hard-to-spot typo: aggreAGte -> aggregate. [#5753](https://github.com/yandex/ClickHouse/pull/5753) ([akuzm](https://github.com/akuzm))
+* Fix freebsd build [#5760](https://github.com/yandex/ClickHouse/pull/5760) ([proller](https://github.com/proller))
+* Add link to experimental YouTube channel to website [#5845](https://github.com/yandex/ClickHouse/pull/5845) ([Ivan Blinkov](https://github.com/blinkov))
+* CMake: add option for coverage flags: WITH_COVERAGE [#5776](https://github.com/yandex/ClickHouse/pull/5776) ([proller](https://github.com/proller))
+* Fix initial size of some inline PODArray's. [#5787](https://github.com/yandex/ClickHouse/pull/5787) ([akuzm](https://github.com/akuzm))
+* clickhouse-server.postinst: fix os detection for centos 6 [#5788](https://github.com/yandex/ClickHouse/pull/5788) ([proller](https://github.com/proller))
+* Added Arch linux package generation. [#5719](https://github.com/yandex/ClickHouse/pull/5719) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Split Common/config.h by libs (dbms) [#5715](https://github.com/yandex/ClickHouse/pull/5715) ([proller](https://github.com/proller))
+* Fixes for "Arcadia" build platform [#5795](https://github.com/yandex/ClickHouse/pull/5795) ([proller](https://github.com/proller))
+* Fixes for unconventional build (gcc9, no submodules) [#5792](https://github.com/yandex/ClickHouse/pull/5792) ([proller](https://github.com/proller))
+* Require explicit type in unalignedStore because it was proven to be bug-prone [#5791](https://github.com/yandex/ClickHouse/pull/5791) ([akuzm](https://github.com/akuzm))
+* Fixes MacOS build [#5830](https://github.com/yandex/ClickHouse/pull/5830) ([filimonov](https://github.com/filimonov))
+* Performance test concerning the new JIT feature with bigger dataset, as requested here [#5263](https://github.com/yandex/ClickHouse/issues/5263) [#5887](https://github.com/yandex/ClickHouse/pull/5887) ([Guillaume Tassery](https://github.com/YiuRULE))
+* Run stateful tests in stress test [12693e568722f11e19859742f56428455501fd2a](https://github.com/yandex/ClickHouse/commit/12693e568722f11e19859742f56428455501fd2a) ([alesapin](https://github.com/alesapin))
+
+### Backward Incompatible Change
+* `Kafka` is broken in this version.
+* Enable `adaptive_index_granularity` = 10MB by default for new `MergeTree` tables. If you created new MergeTree tables on version 19.11+, downgrade to versions prior to 19.6 will be impossible. [#5628](https://github.com/yandex/ClickHouse/pull/5628) ([alesapin](https://github.com/alesapin))
+* Removed obsolete undocumented embedded dictionaries that were used by Yandex.Metrica. The functions `OSIn`, `SEIn`, `OSToRoot`, `SEToRoot`, `OSHierarchy`, `SEHierarchy` are no longer available. If you are using these functions, write email to clickhouse-feedback@yandex-team.com. Note: at the last moment we decided to keep these functions for a while. [#5780](https://github.com/yandex/ClickHouse/pull/5780) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+
+## ClickHouse release 19.10.1.5, 2019-07-12
+
+### New Feature
+* Add new column codec: `T64`. Made for (U)IntX/EnumX/Data(Time)/DecimalX columns. It should be good for columns with constant or small range values. Codec itself allows enlarge or shrink data type without re-compression. [#5557](https://github.com/yandex/ClickHouse/pull/5557) ([Artem Zuikov](https://github.com/4ertus2))
+* Add database engine `MySQL` that allow to view all the tables in remote MySQL server [#5599](https://github.com/yandex/ClickHouse/pull/5599) ([Winter Zhang](https://github.com/zhang2014))
+* `bitmapContains` implementation. It's 2x faster than `bitmapHasAny` if the second bitmap contains one element. [#5535](https://github.com/yandex/ClickHouse/pull/5535) ([Zhichang Yu](https://github.com/yuzhichang))
+* Support for `crc32` function (with behaviour exactly as in MySQL or PHP). Do not use it if you need a hash function. [#5661](https://github.com/yandex/ClickHouse/pull/5661) ([Remen Ivan](https://github.com/BHYCHIK))
+* Implemented `SYSTEM START/STOP DISTRIBUTED SENDS` queries to control asynchronous inserts into `Distributed` tables. [#4935](https://github.com/yandex/ClickHouse/pull/4935) ([Winter Zhang](https://github.com/zhang2014))
+
+### Bug Fix
+* Ignore query execution limits and max parts size for merge limits while executing mutations. [#5659](https://github.com/yandex/ClickHouse/pull/5659) ([Anton Popov](https://github.com/CurtizJ))
+* Fix bug which may lead to deduplication of normal blocks (extremely rare) and insertion of duplicate blocks (more often). [#5549](https://github.com/yandex/ClickHouse/pull/5549) ([alesapin](https://github.com/alesapin))
+* Fix of function `arrayEnumerateUniqRanked` for arguments with empty arrays [#5559](https://github.com/yandex/ClickHouse/pull/5559) ([proller](https://github.com/proller))
+* Don't subscribe to Kafka topics without intent to poll any messages. [#5698](https://github.com/yandex/ClickHouse/pull/5698) ([Ivan](https://github.com/abyss7))
+* Make setting `join_use_nulls` get no effect for types that cannot be inside Nullable [#5700](https://github.com/yandex/ClickHouse/pull/5700) ([Olga Khvostikova](https://github.com/stavrolia))
+* Fixed `Incorrect size of index granularity` errors [#5720](https://github.com/yandex/ClickHouse/pull/5720) ([coraxster](https://github.com/coraxster))
+* Fix Float to Decimal convert overflow [#5607](https://github.com/yandex/ClickHouse/pull/5607) ([coraxster](https://github.com/coraxster))
+* Flush buffer when `WriteBufferFromHDFS`'s destructor is called. This fixes writing into `HDFS`. [#5684](https://github.com/yandex/ClickHouse/pull/5684) ([Xindong Peng](https://github.com/eejoin))
+
+### Improvement
+* Treat empty cells in `CSV` as default values when the setting `input_format_defaults_for_omitted_fields` is enabled. [#5625](https://github.com/yandex/ClickHouse/pull/5625) ([akuzm](https://github.com/akuzm))
+* Non-blocking loading of external dictionaries. [#5567](https://github.com/yandex/ClickHouse/pull/5567) ([Vitaly Baranov](https://github.com/vitlibar))
+* Network timeouts can be dynamically changed for already established connections according to the settings. [#4558](https://github.com/yandex/ClickHouse/pull/4558) ([Konstantin Podshumok](https://github.com/podshumok))
+* Using "public_suffix_list" for functions `firstSignificantSubdomain`, `cutToFirstSignificantSubdomain`. It's using a perfect hash table generated by `gperf` with a list generated from the file: [https://publicsuffix.org/list/public_suffix_list.dat](https://publicsuffix.org/list/public_suffix_list.dat). (for example, now we recognize the domain `ac.uk` as non-significant). [#5030](https://github.com/yandex/ClickHouse/pull/5030) ([Guillaume Tassery](https://github.com/YiuRULE))
+* Adopted `IPv6` data type in system tables; unified client info columns in `system.processes` and `system.query_log` [#5640](https://github.com/yandex/ClickHouse/pull/5640) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Using sessions for connections with MySQL compatibility protocol. #5476 [#5646](https://github.com/yandex/ClickHouse/pull/5646) ([Yuriy Baranov](https://github.com/yurriy))
+* Support more `ALTER` queries `ON CLUSTER`. [#5593](https://github.com/yandex/ClickHouse/pull/5593) [#5613](https://github.com/yandex/ClickHouse/pull/5613) ([sundyli](https://github.com/sundy-li))
+* Support `<logger>` section in `clickhouse-local` config file. [#5540](https://github.com/yandex/ClickHouse/pull/5540) ([proller](https://github.com/proller))
+* Allow run query with `remote` table function in `clickhouse-local` [#5627](https://github.com/yandex/ClickHouse/pull/5627) ([proller](https://github.com/proller))
+
+### Performance Improvement
+* Add the possibility to write the final mark at the end of MergeTree columns. It allows to avoid useless reads for keys that are out of table data range. It is enabled only if adaptive index granularity is in use. [#5624](https://github.com/yandex/ClickHouse/pull/5624) ([alesapin](https://github.com/alesapin))
+* Improved performance of MergeTree tables on very slow filesystems by reducing number of `stat` syscalls. [#5648](https://github.com/yandex/ClickHouse/pull/5648) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed performance degradation in reading from MergeTree tables that was introduced in version 19.6. Fixes #5631. [#5633](https://github.com/yandex/ClickHouse/pull/5633) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Build/Testing/Packaging Improvement
+* Implemented `TestKeeper` as an implementation of ZooKeeper interface used for testing [#5643](https://github.com/yandex/ClickHouse/pull/5643) ([alexey-milovidov](https://github.com/alexey-milovidov)) ([levushkin aleksej](https://github.com/alexey-milovidov))
+* From now on `.sql` tests can be run isolated by server, in parallel, with random database. It allows to run them faster, add new tests with custom server configurations, and be sure that different tests doesn't affect each other. [#5554](https://github.com/yandex/ClickHouse/pull/5554) ([Ivan](https://github.com/abyss7))
+* Remove `<name>` and `<metrics>` from performance tests [#5672](https://github.com/yandex/ClickHouse/pull/5672) ([Olga Khvostikova](https://github.com/stavrolia))
+* Fixed "select_format" performance test for `Pretty` formats [#5642](https://github.com/yandex/ClickHouse/pull/5642) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+
+## ClickHouse release 19.9.3.31, 2019-07-05
 
 ### Bug Fix
 * Fix segfault in Delta codec which affects columns with values less than 32 bits size. The bug led to random memory corruption. [#5786](https://github.com/yandex/ClickHouse/pull/5786) ([alesapin](https://github.com/alesapin))
@@ -10,7 +270,7 @@
 * Fix race condition, which cause that some queries may not appear in query_log instantly after SYSTEM FLUSH LOGS query. [#5685](https://github.com/yandex/ClickHouse/pull/5685) ([Anton Popov](https://github.com/CurtizJ))
 * Added missing support for constant arguments to `evalMLModel` function. [#5820](https://github.com/yandex/ClickHouse/pull/5820) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
-## ClickHouse release 19.7.6.1, 2019-07-05
+## ClickHouse release 19.7.5.29, 2019-07-05
 
 ### Bug Fix
 * Fix performance regression in some queries with JOIN. [#5192](https://github.com/yandex/ClickHouse/pull/5192) ([Winter Zhang](https://github.com/zhang2014))
@@ -98,7 +358,7 @@
 * Batched version of RowRefList for ALL JOINS. [#5267](https://github.com/yandex/ClickHouse/pull/5267) ([Artem Zuikov](https://github.com/4ertus2))
 * clickhouse-server: more informative listen error messages. [#5268](https://github.com/yandex/ClickHouse/pull/5268) ([proller](https://github.com/proller))
 * Support dictionaries in clickhouse-copier for functions in `<sharding_key>` [#5270](https://github.com/yandex/ClickHouse/pull/5270) ([proller](https://github.com/proller))
-* Add new setting `kafka_commit_every_batch` to regulate Kafka committing policy. 
+* Add new setting `kafka_commit_every_batch` to regulate Kafka committing policy.
 It allows to set commit mode: after every batch of messages is handled, or after the whole block is written to the storage. It's a trade-off between losing some messages or reading them twice in some extreme situations. [#5308](https://github.com/yandex/ClickHouse/pull/5308) ([Ivan](https://github.com/abyss7))
 * Make `windowFunnel` support other Unsigned Integer Types. [#5320](https://github.com/yandex/ClickHouse/pull/5320) ([sundyli](https://github.com/sundy-li))
 * Allow to shadow virtual column `_table` in Merge engine. [#5325](https://github.com/yandex/ClickHouse/pull/5325) ([Ivan](https://github.com/abyss7))
@@ -112,7 +372,7 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Renamed functions `leastSqr` to `simpleLinearRegression`, `LinearRegression` to `linearRegression`, `LogisticRegression` to `logisticRegression`. [#5391](https://github.com/yandex/ClickHouse/pull/5391) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
 ### Performance Improvements
-* Paralellize processing of parts in alter modify query. [#4639](https://github.com/yandex/ClickHouse/pull/4639) ([Ivan Kush](https://github.com/IvanKush))
+* Paralellize processing of parts of non-replicated MergeTree tables in ALTER MODIFY query. [#4639](https://github.com/yandex/ClickHouse/pull/4639) ([Ivan Kush](https://github.com/IvanKush))
 * Optimizations in regular expressions extraction. [#5193](https://github.com/yandex/ClickHouse/pull/5193) [#5191](https://github.com/yandex/ClickHouse/pull/5191) ([Danila Kutenin](https://github.com/danlark1))
 * Do not add right join key column to join result if it's used only in join on section. [#5260](https://github.com/yandex/ClickHouse/pull/5260) ([Artem Zuikov](https://github.com/4ertus2))
 * Freeze the Kafka buffer after first empty response. It avoids multiple invokations of `ReadBuffer::next()` for empty result in some row-parsing streams. [#5283](https://github.com/yandex/ClickHouse/pull/5283) ([Ivan](https://github.com/abyss7))
@@ -130,15 +390,15 @@ It allows to set commit mode: after every batch of messages is handled, or after
 * Fixed FPU clobbering in simdjson library that lead to wrong calculation of `uniqHLL` and `uniqCombined` aggregate function and math functions such as `log`. [#5354](https://github.com/yandex/ClickHouse/pull/5354) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed handling mixed const/nonconst cases in JSON functions. [#5435](https://github.com/yandex/ClickHouse/pull/5435) ([Vitaly Baranov](https://github.com/vitlibar))
 * Fix `retention` function. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
-* Fix result type for `quantileExact` with Decimals. [#5304](https://github.com/yandex/ClickHouse/pull/5304) ([Artem Zuikov](https://github.com/4ertus2)) 
+* Fix result type for `quantileExact` with Decimals. [#5304](https://github.com/yandex/ClickHouse/pull/5304) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Documentation
 *  Translate documentation for `CollapsingMergeTree` to chinese. [#5168](https://github.com/yandex/ClickHouse/pull/5168) ([张风啸](https://github.com/AlexZFX))
-* Translate some documentation about table engines to chinese. 
+* Translate some documentation about table engines to chinese.
     [#5134](https://github.com/yandex/ClickHouse/pull/5134)
     [#5328](https://github.com/yandex/ClickHouse/pull/5328)
     ([never lee](https://github.com/neverlee))
-    
+
 
 ### Build/Testing/Packaging Improvements
 * Fix some sanitizer reports that show probable use-after-free.[#5139](https://github.com/yandex/ClickHouse/pull/5139) [#5143](https://github.com/yandex/ClickHouse/pull/5143) [#5393](https://github.com/yandex/ClickHouse/pull/5393) ([Ivan](https://github.com/abyss7))
@@ -220,7 +480,7 @@ Kutenin](https://github.com/danlark1))
 ([张风啸](https://github.com/AlexZFX)),
 [#5068](https://github.com/yandex/ClickHouse/pull/5068) ([never
 lee](https://github.com/neverlee))
- 
+
 ### Build/Testing/Packaging Improvements
 * Print UTF-8 characters properly in `clickhouse-test`.
   [#5084](https://github.com/yandex/ClickHouse/pull/5084)
@@ -242,7 +502,7 @@ lee](https://github.com/neverlee))
 ### Bug Fixes
 * Fixed IN condition pushdown for queries from table functions `mysql` and `odbc` and corresponding table engines. This fixes #3540 and #2384. [#5313](https://github.com/yandex/ClickHouse/pull/5313) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix deadlock in Zookeeper. [#5297](https://github.com/yandex/ClickHouse/pull/5297) ([github1youlc](https://github.com/github1youlc))
-* Allow quoted decimals in CSV. [#5284](https://github.com/yandex/ClickHouse/pull/5284) ([Artem Zuikov](https://github.com/4ertus2) 
+* Allow quoted decimals in CSV. [#5284](https://github.com/yandex/ClickHouse/pull/5284) ([Artem Zuikov](https://github.com/4ertus2)
 * Disallow conversion from float Inf/NaN into Decimals (throw exception). [#5282](https://github.com/yandex/ClickHouse/pull/5282) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix data race in rename query. [#5247](https://github.com/yandex/ClickHouse/pull/5247) ([Winter Zhang](https://github.com/zhang2014))
 * Temporarily disable LFAlloc. Usage of LFAlloc might lead to a lot of MAP_FAILED in allocating UncompressedCache and in a result to crashes of queries at high loaded servers. [cfdba93](https://github.com/yandex/ClickHouse/commit/cfdba938ce22f16efeec504f7f90206a515b1280)([Danila Kutenin](https://github.com/danlark1))

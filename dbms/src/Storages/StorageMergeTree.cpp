@@ -41,6 +41,7 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+    extern const StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -104,7 +105,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger_mutator.actions_blocker.cancelForever();
+    merger_mutator.merges_blocker.cancelForever();
     if (background_task_handle)
         background_pool.removeTask(background_task_handle);
 }
@@ -164,7 +165,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
         /// NOTE: It's assumed that this method is called under lockForAlter.
 
@@ -203,31 +204,37 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     const auto & columns_for_parts = new_columns.getAllPhysical();
 
-    const Settings & settings = context.getSettingsRef();
-    size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
-    ThreadPool thread_pool(thread_pool_size);
+    const Settings & settings_ = context.getSettingsRef();
+    size_t thread_pool_size = std::min<size_t>(parts.size(), settings_.max_alter_threads);
 
+    std::optional<ThreadPool> thread_pool;
+
+    if (thread_pool_size > 1)
+        thread_pool.emplace(thread_pool_size);
 
     for (const auto & part : parts)
     {
         transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
 
-        thread_pool.schedule(
-            [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
-            {
-                this->alterDataPart(columns_for_parts, new_indices, false, transaction);
-            }
-        );
+        auto job = [this, & transaction = transactions.back(), & columns_for_parts, & new_indices = new_indices.indices]
+        {
+            this->alterDataPart(columns_for_parts, new_indices, false, transaction);
+        };
+
+        if (thread_pool)
+            thread_pool->schedule(job);
+        else
+            job();
     }
 
-    thread_pool.wait();
+    if (thread_pool)
+        thread_pool->wait();
 
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
         [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
         {
             return !transaction->isValid();
-        }
-    );
+        });
     transactions.erase(erase_pos, transactions.end());
 
     return transactions;
@@ -252,7 +259,7 @@ void StorageMergeTree::alter(
     }
 
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -590,9 +597,13 @@ bool StorageMergeTree::merge(
 
     try
     {
+        /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
+        ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate);
+            future_part, *merge_entry, table_lock_holder, time(nullptr),
+            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 
@@ -709,7 +720,7 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context, table_lock_holder);
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});
@@ -730,7 +741,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
     if (shutdown_called)
         return BackgroundProcessingPoolTaskResult::ERROR;
 
-    if (merger_mutator.actions_blocker.isCancelled())
+    if (merger_mutator.merges_blocker.isCancelled())
         return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
@@ -756,7 +767,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         else
             return BackgroundProcessingPoolTaskResult::ERROR;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
@@ -821,11 +832,11 @@ void StorageMergeTree::clearOldMutations()
 }
 
 
-void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger_mutator.actions_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
@@ -834,10 +845,6 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     std::vector<AlterDataPartTransactionPtr> transactions;
-
-    AlterCommand alter_command;
-    alter_command.type = AlterCommand::DROP_COLUMN;
-    alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
@@ -857,7 +864,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (transaction->isValid())
             transactions.push_back(std::move(transaction));
 
-        LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
+        if (alter_command.type == AlterCommand::DROP_COLUMN)
+            LOG_DEBUG(log, "Removing column " << alter_command.column_name << " from part " << part->name);
+        else if (alter_command.type == AlterCommand::DROP_INDEX)
+            LOG_DEBUG(log, "Removing index " << alter_command.index_name << " from part " << part->name);
     }
 
     if (transactions.empty())
@@ -961,8 +971,22 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                clearColumnInPartition(command.partition, command.column_name, context);
-                break;
+            {
+                AlterCommand alter_command;
+                alter_command.type = AlterCommand::DROP_COLUMN;
+                alter_command.column_name = get<String>(command.column_name);
+                clearColumnOrIndexInPartition(command.partition, alter_command, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_INDEX:
+            {
+                AlterCommand alter_command;
+                alter_command.type = AlterCommand::DROP_INDEX;
+                alter_command.index_name = get<String>(command.index_name);
+                clearColumnOrIndexInPartition(command.partition, alter_command, context);
+            }
+            break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
@@ -982,7 +1006,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger_mutator.actions_blocker.cancel();
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
         auto lock = lockExclusively(context.getCurrentQueryId());
 
@@ -1140,7 +1164,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return merger_mutator.actions_blocker.cancel();
+        return merger_mutator.merges_blocker.cancel();
+    else if (action_type == ActionLocks::PartsTTLMerge)
+        return  merger_mutator.ttl_merges_blocker.cancel();
 
     return {};
 }

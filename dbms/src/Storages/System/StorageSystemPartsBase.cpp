@@ -148,10 +148,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
 StoragesInfo StoragesInfoStream::next()
 {
-    StoragesInfo info;
-
     while (next_row < rows)
     {
+        StoragesInfo info;
 
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
@@ -198,10 +197,10 @@ StoragesInfo StoragesInfoStream::next()
         if (!info.data)
             throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
 
-        break;
+        return info;
     }
 
-    return info;
+    return {};
 }
 
 BlockInputStreams StorageSystemPartsBase::read(
@@ -253,21 +252,21 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    ColumnsDescription columns(std::move(columns_));
+    ColumnsDescription tmp_columns(std::move(columns_));
 
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        ColumnDescription column(alias_name, columns.get(column_name).type, false);
+        ColumnDescription column(alias_name, tmp_columns.get(column_name).type, false);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
-        columns.add(column);
+        tmp_columns.add(column);
     };
 
     /// Add aliases for old column names for backwards compatibility.
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(columns);
+    setColumns(tmp_columns);
 }
 
 }

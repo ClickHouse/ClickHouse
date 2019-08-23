@@ -20,7 +20,7 @@ public:
       * with_types - on the next line header with type names
       */
     TabSeparatedRowInputFormat(
-        ReadBuffer & in_, Block header, bool with_names, bool with_types, Params params, const FormatSettings & format_settings);
+        ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
@@ -36,6 +36,19 @@ private:
     bool with_types;
     const FormatSettings format_settings;
     DataTypes data_types;
+
+    using IndexesMap = std::unordered_map<String, size_t>;
+    IndexesMap column_indexes_by_names;
+
+    using OptionalIndexes = std::vector<std::optional<size_t>>;
+    OptionalIndexes column_indexes_for_input_fields;
+
+    std::vector<UInt8> read_columns;
+    std::vector<size_t> columns_to_fill_with_default_values;
+
+    void addInputColumn(const String & column_name);
+    void setupAllColumnsByTableSchema();
+    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
 
     /// For convenient diagnostics in case of an error.
 

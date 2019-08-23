@@ -102,6 +102,9 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
+## currentUser()
+Returns the login of authorized user (initiator of query execution).
+
 ## isFinite(x)
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
@@ -120,7 +123,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 Allows building a unicode-art diagram.
 
@@ -668,9 +671,9 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
 
-Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
 Evaluate external model.

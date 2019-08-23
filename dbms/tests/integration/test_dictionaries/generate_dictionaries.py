@@ -52,32 +52,32 @@ def generate_structure():
 
 def generate_dictionaries(path, structure):
     dictionary_skeleton = '''
-    <dictionaries>
-        <dictionary>
-            <name>{name}</name>
+    <yandex>
+       <dictionary>
+           <name>{name}</name>
 
-            <source>
-                {source}
-            </source>
+           <source>
+               {source}
+           </source>
 
-            <lifetime>
-                <min>0</min>
-                <max>0</max>
-            </lifetime>
+           <lifetime>
+               <min>0</min>
+               <max>0</max>
+           </lifetime>
 
-            <layout>
-                {layout}
-            </layout>
+           <layout>
+               {layout}
+           </layout>
 
-            <structure>
-                {key}
+           <structure>
+               {key}
 
-                %s
+               %s
 
-                {parent}
-            </structure>
-        </dictionary>
-    </dictionaries>'''
+               {parent}
+           </structure>
+       </dictionary>
+    </yandex>'''
     attribute_skeleton = '''
     <attribute>
         <name>%s_</name>

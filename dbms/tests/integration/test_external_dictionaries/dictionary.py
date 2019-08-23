@@ -290,19 +290,19 @@ class Dictionary(object):
     def generate_config(self):
         with open(self.config_path, 'w') as result:
             result.write('''
-            <dictionaries>
-                <dictionary>
-                    <lifetime>
-                        <min>3</min>
-                        <max>5</max>
-                    </lifetime>
-                    <name>{name}</name>
-                    {structure}
-                    <source>
-                    {source}
-                    </source>
-                </dictionary>
-            </dictionaries>
+            <yandex>
+               <dictionary>
+                   <lifetime>
+                       <min>3</min>
+                       <max>5</max>
+                   </lifetime>
+                   <name>{name}</name>
+                   {structure}
+                   <source>
+                   {source}
+                   </source>
+               </dictionary>
+            </yandex>
             '''.format(
                 name=self.name,
                 structure=self.structure.get_structure_str(),

@@ -83,13 +83,7 @@ String DB::RowInputStreamWithDiagnosticInfo::getDiagnosticInfo()
     return out.str();
 }
 
-/** gcc-7 may generate wrong code with optimization level greater than 1.
-  * See tests: dbms/src/IO/tests/write_int.cpp
-  *  and dbms/tests/queries/0_stateless/00898_parsing_bad_diagnostic_message.sh
-  * This is compiler bug. The bug does not present in gcc-8 and clang-8.
-  * Nevertheless, we don't need high optimization of this function.
-  */
-bool OPTIMIZE(1) RowInputStreamWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type,
+bool RowInputStreamWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type,
                                                                               IColumn & column,
                                                                               WriteBuffer & out,
                                                                               size_t input_position)

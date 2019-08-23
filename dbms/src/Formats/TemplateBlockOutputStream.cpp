@@ -330,6 +330,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
         return std::make_shared<TemplateBlockOutputStream>(buf, sample, settings);

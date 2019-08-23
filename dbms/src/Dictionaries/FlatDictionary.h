@@ -22,12 +22,12 @@ class FlatDictionary final : public IDictionary
 {
 public:
     FlatDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty,
-        BlockPtr saved_block = nullptr);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_,
+        BlockPtr saved_block_ = nullptr);
 
     std::string getName() const override { return name; }
 

@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -39,6 +40,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
+    checkStackSize();
 }
 
 
@@ -48,7 +50,8 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
     {
         const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
-        return factory.get(table_function->name, context)->execute(query.table_function, context);
+        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+        return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
     /// Into what table to write.

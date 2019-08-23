@@ -15,7 +15,7 @@ namespace DB
 class ITableFunctionXDBC : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
     virtual BridgeHelperPtr createBridgeHelper(Context & context,

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include <common/likely.h>
 #include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
@@ -32,6 +33,9 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
+    /// Return true in case of successful initializaiton
+    static bool isInitialized();
+
     /// Handler to current thread
     static ThreadStatus & get();
 
@@ -72,7 +76,12 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static StringRef getQueryId();
+    static StringRef getQueryId()
+    {
+        if (unlikely(!current_thread))
+            return {};
+        return current_thread->getQueryId();
+    }
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();

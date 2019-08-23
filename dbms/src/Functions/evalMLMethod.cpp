@@ -34,7 +34,7 @@ public:
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    FunctionEvalMLMethod(const Context & context) : context(context)
+    FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
