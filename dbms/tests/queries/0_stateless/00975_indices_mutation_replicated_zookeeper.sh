@@ -2,6 +2,7 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
+. $CURDIR/mergetree_mutations.lib
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.indices_mutaions1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.indices_mutaions2;"
@@ -47,13 +48,15 @@ $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test.indices_mutaions1 CLEAR INDEX idx IN PARTITION 1;"
-sleep 1
+wait_for_mutation "indices_mutaions1" "mutation_1.txt" "test"
+wait_for_mutation "indices_mutaions2" "mutation_1.txt" "test"
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test.indices_mutaions1 MATERIALIZE INDEX idx IN PARTITION 1;"
-sleep 1
+wait_for_mutation "indices_mutaions1" "mutation_2.txt" "test"
+wait_for_mutation "indices_mutaions2" "mutation_2.txt" "test"
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
