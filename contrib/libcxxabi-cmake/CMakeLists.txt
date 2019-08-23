@@ -33,3 +33,10 @@ if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
 else ()
     target_link_libraries(cxxabi PRIVATE gcc_eh)
 endif ()
+
+install(
+    TARGETS cxxabi
+    EXPORT global
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION lib
+)
