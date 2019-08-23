@@ -67,7 +67,7 @@ The command-line client allows passing external data (external temporary tables)
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a query with parameters and pass client app parameter values to them. For example:
+You can create a query with parameters and pass values of the corresponding client app parameters to them. For example:
 
 ```bash
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
@@ -75,14 +75,14 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 
 #### Query Syntax {#cli-queries-with-parameters-syntax}
 
-Format a query using the standard method. Place the values that you want to pass from the app to the query in braces in the following format:
+Format a query using the standard method. Place the values that you want to pass from the app parameters to the query in braces in the following format:
 
 ```
 {<name>:<data type>}
 ```
 
-- `name` — A placeholder identifier that should be used in app parameters as `--param_name = value`.
-- `data type` — The data type of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have a `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+- `name` — Placeholder identifier that should be used in app parameters as `--param_<name> = value`.
+- `data type` — Data type of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
 
 #### Example
 
