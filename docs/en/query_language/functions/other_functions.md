@@ -314,7 +314,7 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## neighbour(column, offset\[, default_value\])
+## neighbor(column, offset\[, default_value\])
 
 Returns value for `column`, in `offset` distance from current row.
 This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
@@ -330,7 +330,7 @@ WITH toDate('2018-01-01') AS start_date
 SELECT
     toStartOfMonth(start_date + (number * 32)) AS month,
     toInt32(month) % 100 AS money,
-    neighbour(money, -12) AS prev_year,
+    neighbor(money, -12) AS prev_year,
     round(prev_year / money, 2) AS year_over_year
 FROM numbers(16)
 ```

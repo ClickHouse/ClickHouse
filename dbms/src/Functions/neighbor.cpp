@@ -21,17 +21,17 @@ namespace ErrorCodes
 // | c1 |
 // | 10 |
 // | 20 |
-// SELECT c1, neighbour(c1, 1) as c2:
+// SELECT c1, neighbor(c1, 1) as c2:
 // | c1 | c2 |
 // | 10 | 20 |
 // | 20 | 0  |
-class FunctionNeighbour : public IFunction
+class FunctionNeighbor : public IFunction
 {
 public:
-    static constexpr auto name = "neighbour";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbour>(context); }
+    static constexpr auto name = "neighbor";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
 
-    FunctionNeighbour(const Context & context_) : context(context_) {}
+    FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -255,9 +255,9 @@ private:
     const Context & context;
 };
 
-void registerFunctionNeighbour(FunctionFactory & factory)
+void registerFunctionNeighbor(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNeighbour>();
+    factory.registerFunction<FunctionNeighbor>();
 }
 
 }
