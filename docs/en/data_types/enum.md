@@ -4,10 +4,10 @@ Enumerated type storing pairs in `'string' = integer` format.
 
 ClickHouse supports:
 
-- 8-bit `Enum`. It can contain up to 256 enumerated values between `[-128, 127]`.
-- 16-bit `Enum`. It can contain up to 65Об536 enumerated values between `[-32768, 32767]`.
+- 8-bit `Enum`. It can contain up to 256 values enumerated in the `[-128, 127]` range.
+- 16-bit `Enum`. It can contain up to 65536 values enumerated in the `[-32768, 32767]` range.
 
-ClickHouse automatically chooses the `Enum` type when data is inserted. You can also use `Enum8` or `Enum16` types to lock in the storage size.
+ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to lock in the storage size.
 
 ## Usage examples
 
