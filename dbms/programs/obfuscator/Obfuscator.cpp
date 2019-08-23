@@ -36,6 +36,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
+#include <Common/TerminalDisplaying.h>
 
 
 static const char * documantation = R"(
@@ -948,7 +949,7 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description("Options");
+    po::options_description description = setOptionsDescription("Options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
