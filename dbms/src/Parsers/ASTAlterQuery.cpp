@@ -45,6 +45,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+    if (values)
+    {
+        res->values = values->clone();
+        res->children.push_back(res->values);
+    }
 
     return res;
 }

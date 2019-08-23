@@ -107,6 +107,10 @@ public:
     /// For MODIFY TTL query
     ASTPtr ttl;
 
+    /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
+     */
+    ASTPtr values;
+
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART and DROP DETACHED PART
