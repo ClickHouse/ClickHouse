@@ -447,7 +447,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой установкой, логгируются согласно правилам конфигурационного параметра сервера [query_log](../server_settings/settings.md#server_settings-query-log).
+Запросы, переданные в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../server_settings/settings.md#server_settings-query-log).
 
 **Пример** :
 

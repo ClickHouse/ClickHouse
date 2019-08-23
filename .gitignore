@@ -19,7 +19,6 @@
 /docs/ru/development/build/
 /docs/en/single.md
 /docs/ru/single.md
-/docs/.yaspellerrc
 
 # callgrind files
 callgrind.out.*
