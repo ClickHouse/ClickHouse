@@ -365,7 +365,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_live("LIVE");
-    ParserKeyword s_channel("CHANNEL");
     ParserKeyword s_populate("POPULATE");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
@@ -396,7 +395,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_view = false;
     bool is_materialized_view = false;
     bool is_live_view = false;
-    bool is_live_channel = false;
     bool is_populate = false;
     bool is_temporary = false;
     bool replace_view = false;
@@ -494,9 +492,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_live.ignore(pos, expected))
     {
-        if (s_channel.ignore(pos, expected))
-           is_live_channel = true;
-        else if (s_view.ignore(pos, expected))
+        if (s_view.ignore(pos, expected))
            is_live_view = true;
         else
            return false;
@@ -520,50 +516,36 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (!is_live_channel)
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
         {
-            // TO [db.]table
-            if (ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!name_p.parse(pos, to_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
             {
+                to_database = to_table;
                 if (!name_p.parse(pos, to_table, expected))
                     return false;
-
-                if (s_dot.ignore(pos, expected))
-                {
-                    to_database = to_table;
-                    if (!name_p.parse(pos, to_table, expected))
-                        return false;
-                }
             }
         }
 
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns_list, expected))
+            if (!table_properties_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
                 return false;
         }
 
-        if (is_live_channel)
-        {
-            if (s_with.ignore(pos, expected))
-            {
-                if (!names_p.parse(pos, tables, expected))
-                    return false;
-            }
-        }
-        else
-        {
-            /// AS SELECT ...
-            if (!s_as.ignore(pos, expected))
-                return false;
+        /// AS SELECT ...
+        if (!s_as.ignore(pos, expected))
+            return false;
 
-            if (!select_p.parse(pos, select, expected))
-                return false;
-        }
+        if (!select_p.parse(pos, select, expected))
+            return false;
     }
     else if (is_temporary)
         return false;
@@ -673,7 +655,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
     query->is_live_view = is_live_view;
-    query->is_live_channel = is_live_channel;
     query->is_populate = is_populate;
     query->temporary = is_temporary;
     query->replace_view = replace_view;
