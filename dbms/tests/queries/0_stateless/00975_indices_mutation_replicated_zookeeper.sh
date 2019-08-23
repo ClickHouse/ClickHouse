@@ -48,8 +48,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test.indices_mutaions1 CLEAR INDEX idx IN PARTITION 1;"
-wait_for_mutation "indices_mutaions1" "mutation_1.txt" "test"
-wait_for_mutation "indices_mutaions2" "mutation_1.txt" "test"
+sleep 0.5
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.indices_mutaions2 WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
