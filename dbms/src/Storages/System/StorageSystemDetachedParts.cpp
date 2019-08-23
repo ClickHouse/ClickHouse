@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
@@ -31,12 +32,12 @@ protected:
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
-            {"partition_id", std::make_shared<DataTypeString>()},
+            {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
             {"name", std::make_shared<DataTypeString>()},
-            {"reason", std::make_shared<DataTypeString>()},
-            {"min_block_number", std::make_shared<DataTypeInt64>()},
-            {"max_block_number", std::make_shared<DataTypeInt64>()},
-            {"level", std::make_shared<DataTypeUInt32>()}
+            {"reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+            {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
         }});
     }
 
@@ -62,12 +63,12 @@ protected:
                 size_t i = 0;
                 new_columns[i++]->insert(info.database);
                 new_columns[i++]->insert(info.table);
-                new_columns[i++]->insert(p.partition_id);
-                new_columns[i++]->insert(p.getPartName());
-                new_columns[i++]->insert(p.prefix);
-                new_columns[i++]->insert(p.min_block);
-                new_columns[i++]->insert(p.max_block);
-                new_columns[i++]->insert(p.level);
+                new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[i++]->insert(p.dir_name);
+                new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
+                new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.max_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.level : Field());
             }
         }
 
