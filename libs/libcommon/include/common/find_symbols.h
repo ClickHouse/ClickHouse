@@ -17,7 +17,7 @@
   * but with the following differencies:
   * - works with any memory ranges, including containing zero bytes;
   * - doesn't require terminating zero byte: end of memory range is passed explicitly;
-  * - if not found, returns pointer to end instead of NULL;
+  * - if not found, returns pointer to end instead of nullptr;
   * - maximum number of symbols to search is 16.
   *
   * Uses SSE 2 in case of small number of symbols for search and SSE 4.2 in the case of large number of symbols,
@@ -188,6 +188,7 @@ inline const char * find_first_symbols_sse42_impl(const char * const begin, cons
             || (num_chars >= 11 && maybe_negate<positive>(*pos == c11))
             || (num_chars >= 12 && maybe_negate<positive>(*pos == c12))
             || (num_chars >= 13 && maybe_negate<positive>(*pos == c13))
+            || (num_chars >= 14 && maybe_negate<positive>(*pos == c14))
             || (num_chars >= 15 && maybe_negate<positive>(*pos == c15))
             || (num_chars >= 16 && maybe_negate<positive>(*pos == c16)))
             return pos;
