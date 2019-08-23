@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
+
 
 namespace DB
 {
@@ -310,7 +312,7 @@ protected:
         {
             if (null_maps[k] != nullptr)
             {
-                const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
                 if (null_map[row] == 1)
                 {
                     size_t bucket = k / 8;

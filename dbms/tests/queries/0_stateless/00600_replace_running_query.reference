@@ -1,5 +1,7 @@
 0
-1	0
-3	0
-2	0
+1
+1
+1
+finished	42	readonly	SELECT 2, count() FROM system.numbers
+1
 44

@@ -6,6 +6,7 @@
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
@@ -119,6 +120,9 @@ BlockIO InterpreterInsertQuery::execute()
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+    out = std::make_shared<CheckConstraintsBlockOutputStream>(
+            query.table, out, query_sample_block, table->getConstraints(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());

@@ -161,6 +161,8 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         if (const_filter_description.always_true)
         {
             addToTotals(chunk, nullptr);
+            auto num_rows = columns.front()->size();
+            chunk.setColumns(std::move(columns), num_rows);
             return;
         }
 

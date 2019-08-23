@@ -23,6 +23,7 @@
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
+    extern const Metric DistributedFilesToInsert;
 }
 
 namespace DB
@@ -208,6 +209,8 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 
     if (files.empty())
         return false;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedFilesToInsert, CurrentMetrics::Value(files.size())};
 
     if (should_batch_inserts)
     {

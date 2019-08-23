@@ -142,6 +142,7 @@ protected:
         const String & table_name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         Context & context_,
         const String & date_column_name,

@@ -884,7 +884,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final() && !query.join())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
             sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
@@ -1550,7 +1550,11 @@ void InterpreterSelectQuery::executeFetchColumns(
             {
                 /// Unify streams in case they have different headers.
                 auto first_header = streams.at(0)->getHeader();
-                for (size_t i = 1; i < streams.size(); ++i)
+
+                if (first_header.columns() > 1 && first_header.has("_dummy"))
+                    first_header.erase("_dummy");
+
+                for (size_t i = 0; i < streams.size(); ++i)
                 {
                     auto & stream = streams[i];
                     auto header = stream->getHeader();
