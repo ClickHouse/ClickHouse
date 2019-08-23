@@ -8,9 +8,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/LiveViewCommands.h>
+#include <Storages/LiveView/LiveViewCommands.h>
+#include <Storages/LiveView/StorageLiveView.h>
 #include <Common/typeid_cast.h>
-#include <Storages/StorageLiveView.h>
 
 #include <algorithm>
 

@@ -12,9 +12,9 @@ limitations under the License. */
 
 #pragma once
 
-#include <Parsers/ASTAlterQuery.h>
 #include <optional>
-#include <Storages/StorageLiveView.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {

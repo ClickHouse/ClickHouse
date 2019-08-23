@@ -1,23 +1,6 @@
-/* Copyright (c) 2018 BlackBerry Limited
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License. */
 #pragma once
 
-#include <limits>
-
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Poco/Condition.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/StorageLiveView.h>
 
 
 namespace DB
@@ -61,8 +44,8 @@ public:
         if (isCancelled() || storage->is_dropped)
             return;
         IBlockInputStream::cancel(kill);
-        Poco::FastMutex::ScopedLock lock(storage->mutex);
-        storage->condition.broadcast();
+        std::lock_guard lock(storage->mutex);
+        storage->condition.notify_all();
     }
 
     Block getHeader() const override { return storage->getHeader(); }
@@ -92,14 +75,14 @@ public:
 
     NonBlockingResult tryRead()
     {
-        return tryRead_(false);
+        return tryReadImpl(false);
     }
 
 protected:
     Block readImpl() override
     {
         /// try reading
-        return tryRead_(true).first;
+        return tryReadImpl(true).first;
     }
 
     /** tryRead method attempts to read a block in either blocking
@@ -107,7 +90,7 @@ protected:
      *  then method return empty block with flag set to false
      *  to indicate that method would block to get the next block.
      */
-    NonBlockingResult tryRead_(bool blocking)
+    NonBlockingResult tryReadImpl(bool blocking)
     {
         Block res;
 
@@ -118,7 +101,7 @@ protected:
         /// If blocks were never assigned get blocks
         if (!blocks)
         {
-            Poco::FastMutex::ScopedLock lock(storage->mutex);
+            std::lock_guard lock(storage->mutex);
             if (!active)
                 return { Block(), false };
             blocks = (*blocks_ptr);
@@ -135,7 +118,7 @@ protected:
         if (it == end)
         {
             {
-                Poco::FastMutex::ScopedLock lock(storage->mutex);
+                std::unique_lock lock(storage->mutex);
                 if (!active)
                     return { Block(), false };
                 /// If we are done iterating over our blocks
@@ -162,7 +145,10 @@ protected:
                     while (true)
                     {
                         UInt64 timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                        bool signaled = storage->condition.tryWait(storage->mutex, std::max(static_cast<UInt64>(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec)) / 1000);
+
+                        /// Or spurious wakeup.
+                        bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
+                            std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
 
                         if (isCancelled() || storage->is_dropped)
                         {
@@ -181,7 +167,7 @@ protected:
                     }
                 }
             }
-            return tryRead_(blocking);
+            return tryReadImpl(blocking);
         }
 
         res = *it;
