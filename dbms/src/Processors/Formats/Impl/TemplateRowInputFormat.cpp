@@ -1,6 +1,5 @@
-#include <Formats/TemplateRowInputStream.h>
+#include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Formats/verbosePrintString.h>
 #include <IO/Operators.h>
 
@@ -15,9 +14,9 @@ extern const int CANNOT_READ_ALL_DATA;
 }
 
 
-TemplateRowInputStream::TemplateRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & settings_,
-        bool ignore_spaces_)
-    : RowInputStreamWithDiagnosticInfo(buf, header_), buf(istr_), data_types(header.getDataTypes()),
+TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
+        const FormatSettings & settings_, bool ignore_spaces_)
+    : RowInputFormatWithDiagnosticInfo(header_, in_, params_), buf(in_), data_types(header_.getDataTypes()),
     settings(settings_), ignore_spaces(ignore_spaces_)
 {
     static const String default_format("${data}");
@@ -35,15 +34,15 @@ TemplateRowInputStream::TemplateRowInputStream(ReadBuffer & istr_, const Block &
 
     row_format = ParsedTemplateFormat(settings.template_settings.row_format, [&](const String & colName)
     {
-        return header.getPositionByName(colName);
+        return header_.getPositionByName(colName);
     });
 
-    std::vector<UInt8> column_in_format(header.columns(), false);
+    std::vector<UInt8> column_in_format(header_.columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         size_t col_idx = row_format.format_idx_to_column_idx[i];
         if (column_in_format[col_idx])
-            throw Exception("invalid template format: duplicate column " + header.getColumnsWithTypeAndName()[col_idx].name,
+            throw Exception("invalid template format: duplicate column " + header_.getColumnsWithTypeAndName()[col_idx].name,
                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
         column_in_format[col_idx] = true;
 
@@ -52,13 +51,13 @@ TemplateRowInputStream::TemplateRowInputStream(ReadBuffer & istr_, const Block &
     }
 }
 
-void TemplateRowInputStream::readPrefix()
+void TemplateRowInputFormat::readPrefix()
 {
     skipSpaces();
     assertString(format.delimiters.front(), buf);
 }
 
-bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & extra)
+bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & extra)
 {
     skipSpaces();
 
@@ -87,12 +86,12 @@ bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & e
 
     for (size_t i = 0; i < columns.size(); ++i)
         if (!extra.read_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+            data_types[row_format.format_idx_to_column_idx[i]]->insertDefaultInto(*columns[i]);
 
     return true;
 }
 
-void TemplateRowInputStream::deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format)
+void TemplateRowInputFormat::deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format)
 {
     try
     {
@@ -125,7 +124,7 @@ void TemplateRowInputStream::deserializeField(const IDataType & type, IColumn & 
 
 /// Returns true if all rows have been read i.e. there are only suffix and spaces (if ignnore_spaces == true) before EOF.
 /// Otherwise returns false
-bool TemplateRowInputStream::checkForSuffix()
+bool TemplateRowInputFormat::checkForSuffix()
 {
     if (unlikely(synced_after_error_at_last_row))
         return true;
@@ -148,7 +147,7 @@ bool TemplateRowInputStream::checkForSuffix()
 
 /// Returns true if buffer contains only suffix and maybe some spaces after it
 /// If there are not enough data in buffer, compares available data and removes it from reference to suffix
-bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available)
+bool TemplateRowInputFormat::compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available)
 {
     if (suffix.size < available)
     {
@@ -173,7 +172,7 @@ bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::P
     return true;
 }
 
-bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
+bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     try
     {
@@ -200,6 +199,7 @@ bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & col
         }
 
         skipSpaces();
+        auto & header = getPort().getHeader();
         size_t col_idx = row_format.format_idx_to_column_idx[i];
         if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx], out, i))
         {
@@ -223,7 +223,7 @@ bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & col
     return true;
 }
 
-void TemplateRowInputStream::writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim)
+void TemplateRowInputFormat::writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim)
 {
     out << "ERROR: There is no " << description << ": expected ";
     verbosePrintString(delim.data(), delim.data() + delim.size(), out);
@@ -235,7 +235,7 @@ void TemplateRowInputStream::writeErrorStringForWrongDelimiter(WriteBuffer & out
     out << '\n';
 }
 
-void TemplateRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
+void TemplateRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
                                                  ReadBuffer::Position & curr_pos)
 {
     prev_pos = buf.position();
@@ -243,18 +243,18 @@ void TemplateRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColu
     curr_pos = buf.position();
 }
 
-bool TemplateRowInputStream::isGarbageAfterField(size_t, ReadBuffer::Position)
+bool TemplateRowInputFormat::isGarbageAfterField(size_t, ReadBuffer::Position)
 {
     /// Garbage will be considered as wrong delimiter
     return false;
 }
 
-bool TemplateRowInputStream::allowSyncAfterError() const
+bool TemplateRowInputFormat::allowSyncAfterError() const
 {
     return !row_format.delimiters.back().empty() || !settings.template_settings.row_between_delimiter.empty();
 }
 
-void TemplateRowInputStream::syncAfterError()
+void TemplateRowInputFormat::syncAfterError()
 {
     skipToNextDelimiterOrEof(row_format.delimiters.back());
     if (buf.eof())
@@ -274,7 +274,7 @@ void TemplateRowInputStream::syncAfterError()
 }
 
 /// Searches for delimiter in input stream and sets buffer position to the beginning of delimiter (if found) or EOF (if not)
-void TemplateRowInputStream::skipToNextDelimiterOrEof(const String & delimiter)
+void TemplateRowInputFormat::skipToNextDelimiterOrEof(const String & delimiter)
 {
     StringRef delim(delimiter);
     if (!delim.size) return;
@@ -301,7 +301,7 @@ void TemplateRowInputStream::skipToNextDelimiterOrEof(const String & delimiter)
     }
 }
 
-void TemplateRowInputStream::throwUnexpectedEof()
+void TemplateRowInputFormat::throwUnexpectedEof()
 {
     throw Exception("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
                     "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
@@ -309,22 +309,18 @@ void TemplateRowInputStream::throwUnexpectedEof()
 }
 
 
-void registerInputFormatTemplate(FormatFactory & factory)
+void registerInputFormatProcessorTemplate(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
     {
-        factory.registerInputFormat(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
+        factory.registerInputFormatProcessor(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
                 ReadBuffer & buf,
                 const Block & sample,
                 const Context &,
-                UInt64 max_block_size,
-                UInt64 rows_portion_size,
-                FormatFactory::ReadCallback callback,
+                IRowInputFormat::Params params,
                 const FormatSettings & settings)
         {
-            return std::make_shared<BlockInputStreamFromRowInputStream>(
-                    std::make_shared<TemplateRowInputStream>(buf, sample, settings, ignore_spaces),
-                    sample, max_block_size, rows_portion_size, callback, settings);
+            return std::make_shared<TemplateRowInputFormat>(buf, sample, std::move(params), settings, ignore_spaces);
         });
     }
 }

@@ -226,10 +226,6 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatCSV(FormatFactory & factory);
-void registerInputFormatTemplate(FormatFactory & factory);
-void registerOutputFormatTemplate(FormatFactory &factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -250,6 +246,8 @@ void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 
 /// Output only (presentational) formats.
 
@@ -275,10 +273,6 @@ FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-    registerInputFormatTabSeparated(*this);
-    registerInputFormatCSV(*this);
-    registerInputFormatTemplate(*this);
-    registerOutputFormatTemplate(*this);
 
     registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
@@ -302,6 +296,8 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
 
 
     registerOutputFormatNull(*this);

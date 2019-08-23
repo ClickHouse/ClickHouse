@@ -5,6 +5,7 @@
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeNothing.h>
 
 namespace DB
 {
@@ -16,23 +17,23 @@ namespace ErrorCodes
 }
 
 
-static void skipTSVRow(ReadBuffer & istr, const size_t num_columns)
+static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
 {
     NullSink null_sink;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        readEscapedStringInto(null_sink, istr);
-        assertChar(i == num_columns - 1 ? '\n' : '\t', istr);
+        readEscapedStringInto(null_sink, in);
+        assertChar(i == num_columns - 1 ? '\n' : '\t', in);
     }
 }
 
 
 /** Check for a common error case - usage of Windows line feed.
   */
-static void checkForCarriageReturn(ReadBuffer & istr)
+static void checkForCarriageReturn(ReadBuffer & in)
 {
-    if (istr.position()[0] == '\r' || (istr.position() != istr.buffer().begin() && istr.position()[-1] == '\r'))
+    if (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r'))
         throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
@@ -43,7 +44,7 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header_), in_, std::move(params_)), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+    : RowInputFormatWithDiagnosticInfo(std::move(header_), in_, std::move(params_)), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
@@ -205,65 +206,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return true;
 }
 
-
-String TabSeparatedRowInputFormat::getDiagnosticInfo()
-{
-    if (in.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
-        return {};
-
-    auto & header = getPort().getHeader();
-    WriteBufferFromOwnString out;
-    MutableColumns columns = header.cloneEmptyColumns();
-
-    /// It is possible to display detailed diagnostics only if the last and next to last lines are still in the read buffer.
-    size_t bytes_read_at_start_of_buffer = in.count() - in.offset();
-    if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
-    {
-        out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        return out.str();
-    }
-
-    size_t max_length_of_column_name = 0;
-    for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
-            max_length_of_column_name = header.safeGetByPosition(i).name.size();
-
-    size_t max_length_of_data_type_name = 0;
-    for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
-            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
-
-    /// Roll back the cursor to the beginning of the previous or current line and pars all over again. But now we derive detailed information.
-
-    if (pos_of_prev_row)
-    {
-        in.position() = pos_of_prev_row;
-
-        out << "\nRow " << (row_num - 1) << ":\n";
-        if (!parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name))
-            return out.str();
-    }
-    else
-    {
-        if (!pos_of_current_row)
-        {
-            out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            return out.str();
-        }
-
-        in.position() = pos_of_current_row;
-    }
-
-    out << "\nRow " << row_num << ":\n";
-    parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name);
-    out << "\n";
-
-    return out.str();
-}
-
-
-bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
-    WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
+bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
     {
@@ -275,86 +218,19 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
         if (column_indexes_for_input_fields[input_position].has_value())
         {
-            const auto & column_index = *column_indexes_for_input_fields[input_position];
-            const auto & current_column_type = data_types[column_index];
-
-            const auto & header = getPort().getHeader();
-
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
-                << "name: " << header.safeGetByPosition(column_index).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(column_index).name.size(), ' ')
-                << "type: " << current_column_type->getName() << ", " << std::string(max_length_of_data_type_name - current_column_type->getName().size(), ' ');
-
-            auto prev_position = in.position();
-            std::exception_ptr exception;
-
-            try
-            {
-                current_column_type->deserializeAsTextEscaped(*columns[column_index], in, format_settings);
-            }
-            catch (...)
-            {
-                exception = std::current_exception();
-            }
-
-            auto curr_position = in.position();
-
-            if (curr_position < prev_position)
-                throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
-
-            if (isNativeNumber(current_column_type) || isDateOrDateTime(current_column_type))
-            {
-                /// An empty string instead of a value.
-                if (curr_position == prev_position)
-                {
-                    out << "ERROR: text ";
-                    verbosePrintString(prev_position, std::min(prev_position + 10, in.buffer().end()), out);
-                    out << " is not like " << current_column_type->getName() << "\n";
-                    return false;
-                }
-            }
-
-            out << "parsed text: ";
-            verbosePrintString(prev_position, curr_position, out);
-
-            if (exception)
-            {
-                if (current_column_type->getName() == "DateTime")
-                    out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-                else if (current_column_type->getName() == "Date")
-                    out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-                else
-                    out << "ERROR\n";
+            auto & header = getPort().getHeader();
+            size_t col_idx = column_indexes_for_input_fields[input_position].value();
+            if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
+                                                        out, input_position))
                 return false;
-            }
-
-            out << "\n";
-
-            if (current_column_type->haveMaximumSizeOfValue())
-            {
-                if (*curr_position != '\n' && *curr_position != '\t')
-                {
-                    out << "ERROR: garbage after " << current_column_type->getName() << ": ";
-                    verbosePrintString(curr_position, std::min(curr_position + 10, in.buffer().end()), out);
-                    out << "\n";
-
-                    if (current_column_type->getName() == "DateTime")
-                        out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-                    else if (current_column_type->getName() == "Date")
-                        out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-
-                    return false;
-                }
-            }
         }
         else
         {
             static const String skipped_column_str = "<SKIPPED COLUMN>";
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
-                << "name: " << skipped_column_str << ", " << std::string(max_length_of_column_name - skipped_column_str.length(), ' ')
-                << "type: " << skipped_column_str << ", " << std::string(max_length_of_data_type_name - skipped_column_str.length(), ' ');
-
-            NullSink null_sink;
-            readEscapedStringInto(null_sink, in);
+            static const DataTypePtr skipped_column_type = std::make_shared<DataTypeNothing>();
+            static const MutableColumnPtr skipped_column = skipped_column_type->createColumn();
+            if (!deserializeFieldAndPrintDiagnosticInfo(skipped_column_str, skipped_column_type, *skipped_column, out, input_position))
+                return false;
         }
 
         /// Delimiters
@@ -421,22 +297,24 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
     return true;
 }
 
+void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position,
+                                                     ReadBuffer::Position & prev_pos,
+                                                     ReadBuffer::Position & curr_pos)
+{
+    prev_pos = in.position();
+    if (column_indexes_for_input_fields[input_position])
+        type->deserializeAsTextEscaped(column, in, format_settings);
+    else
+    {
+        NullSink null_sink;
+        readEscapedStringInto(null_sink, in);
+    }
+    curr_pos = in.position();
+}
 
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(in);
-}
-
-
-void TabSeparatedRowInputFormat::updateDiagnosticInfo()
-{
-    ++row_num;
-
-    bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-    bytes_read_at_start_of_buffer_on_current_row = in.count() - in.offset();
-
-    pos_of_prev_row = pos_of_current_row;
-    pos_of_current_row = in.position();
 }
 
 

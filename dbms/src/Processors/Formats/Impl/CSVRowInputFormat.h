@@ -1,7 +1,10 @@
 #pragma once
 
+#include <optional>
+#include <unordered_map>
+
 #include <Core/Block.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -13,28 +16,24 @@ class ReadBuffer;
 /** A stream for inputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it skips spaces and tabs between values.
   */
-class CSVRowInputFormat : public IRowInputFormat
+class CSVRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
 public:
     /** with_names - in the first line the header with column names
-      * with_types - on the next line header with type names
       */
     CSVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
 
-    bool readRow(MutableColumns & columns, RowReadExtension &) override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::string getDiagnosticInfo() override;
-
 private:
     bool with_names;
-    DataTypes data_types;
-
     const FormatSettings format_settings;
+    DataTypes data_types;
 
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
@@ -55,25 +54,18 @@ private:
 
     void addInputColumn(const String & column_name);
 
-    /// For convenient diagnostics in case of an error.
-    size_t row_num = 0;
-
-    /// How many bytes were read, not counting those that are still in the buffer.
-    size_t bytes_read_at_start_of_buffer_on_current_row = 0;
-    size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
-
-    char * pos_of_current_row = nullptr;
-    char * pos_of_prev_row = nullptr;
+    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
+    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
+                             ReadBuffer::Position & curr_pos) override;
+    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
+    {
+        return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter;
+    }
 
     /// For setting input_format_null_as_default
     DataTypes nullable_types;
     MutableColumns nullable_columns;
     OptionalIndexes column_idx_to_nullable_column_idx;
-
-    void updateDiagnosticInfo();
-
-    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
-        WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
 
     bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx);
 };

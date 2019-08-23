@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/IRowInputStream.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <limits>
 
@@ -9,10 +9,10 @@
 namespace DB
 {
 
-class RowInputStreamWithDiagnosticInfo : public IRowInputStream
+class RowInputFormatWithDiagnosticInfo : public IRowInputFormat
 {
 public:
-    RowInputStreamWithDiagnosticInfo(ReadBuffer & istr_, const Block & header_);
+    RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
 
     String getDiagnosticInfo() override;
 
@@ -27,8 +27,8 @@ protected:
                                      ReadBuffer::Position & curr_pos) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
 
-    ReadBuffer & istr;
-    Block header;
+    //ReadBuffer & istr;
+    //Block header;
 
     /// For convenient diagnostics in case of an error.
     size_t row_num = 0;
