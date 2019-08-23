@@ -142,10 +142,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(
-    const MergeTreeData & storage_,
-    const String & name_,
-    const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
@@ -366,6 +363,8 @@ void MergeTreeDataPart::remove() const
       * But when we removing data part, it can be old enough. And rename doesn't change mtime.
       * And a race condition can happen that will lead to "File not found" error here.
       */
+
+    // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
     String from = storage.full_path + relative_path;
     String to = storage.full_path + "delete_tmp_" + name;

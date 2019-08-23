@@ -25,7 +25,6 @@ void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
-//void registerStorageLiveChannel(StorageFactory & factory);
 
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
@@ -67,7 +66,6 @@ void registerStorages()
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
-    //registerStorageLiveChannel(factory);
 
     #if USE_HDFS
     registerStorageHDFS(factory);
