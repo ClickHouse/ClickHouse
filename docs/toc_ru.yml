@@ -9,7 +9,9 @@ nav:
   - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':
-  - 'Установка и запуск': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.html'
+  - 'Установка': 'getting_started/install.md'
+  - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'

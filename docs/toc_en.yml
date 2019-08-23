@@ -8,8 +8,9 @@ nav:
   - 'The Yandex.Metrica Task': 'introduction/ya_metrika_task.md'
 
 - 'Getting Started':
+  - 'hidden': 'getting_started/index.md'
+  - 'Installation': 'getting_started/install.md'
   - 'Tutorial': 'getting_started/tutorial.md'
-  - 'Deploying and Running': 'getting_started/index.md'
   - 'Example Datasets':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'
