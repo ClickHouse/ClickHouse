@@ -1,10 +1,10 @@
-# 数据库引擎
+# Database Engines
 
-数据库引擎允许您使用表。
+Database engines allow you to work with tables.
 
-默认情况下，ClickHouse使用其本机数据库引擎，该引擎提供可配置 [table engines](../operations/table_engines/index.md) 和 [SQL dialect](../query_language/syntax.md).
+By default, ClickHouse uses its native database engine, which provides configurable [table engines](../operations/table_engines/index.md) and an [SQL dialect](../query_language/syntax.md).
 
-您还可以使用以下数据库引擎：
+You can also use the following database engines:
 
 - [MySQL](mysql.md)
 
