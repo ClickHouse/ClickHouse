@@ -32,7 +32,7 @@ target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 
 if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-    target_link_libraries(cxxabi PRIVATE ${UNWIND_LIBRARY})
+    target_link_libraries(cxxabi PRIVATE ${UNWIND_LIBRARIES})
 else ()
     target_link_libraries(cxxabi PRIVATE gcc_eh)
 endif ()

@@ -161,7 +161,7 @@ if (OS_FREEBSD)
 endif ()
 
 if (USE_UNWIND)
-    target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
+    target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARIES})
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
