@@ -44,6 +44,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_attach_partition("ATTACH PARTITION");
     ParserKeyword s_detach_partition("DETACH PARTITION");
     ParserKeyword s_drop_partition("DROP PARTITION");
+    ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
+    ParserKeyword s_drop_detached_part("DROP DETACHED PART");
     ParserKeyword s_attach_part("ATTACH PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
@@ -155,6 +157,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->type = ASTAlterCommand::DROP_PARTITION;
         }
+        else if (s_drop_detached_partition.ignore(pos, expected))
+        {
+            if (!parser_partition.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
+        }
+        else if (s_drop_detached_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::DROP_DETACHED_PARTITION;
+            command->part = true;
+        }
         else if (s_drop_column.ignore(pos, expected))
         {
             if (s_if_exists.ignore(pos, expected))
@@ -163,8 +180,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_name.parse(pos, command->column, expected))
                 return false;
 
-        command->type = ASTAlterCommand::DROP_COLUMN;
-        command->detach = false;
+            command->type = ASTAlterCommand::DROP_COLUMN;
+            command->detach = false;
         }
         else if (s_clear_column.ignore(pos, expected))
         {

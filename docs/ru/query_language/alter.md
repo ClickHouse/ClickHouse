@@ -210,6 +210,15 @@ ALTER TABLE table_name DROP PARTITION partition_expr
 
 Запрос реплицируется — данные будут удалены на всех репликах.
 
+#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+
+```sql
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
+```
+
+Удаляет из `detached` кусок или все куски, принадлежащие партиции.
+Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
 #### ATTACH PARTITION|PART {#alter_attach-partition}
 
 ```sql
@@ -337,7 +346,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 - Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../operations/system_tables.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
 - Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 - Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- Для запросов [ATTACH PART](#alter_attach-partition): чтобы задать имя куска партиции, используйте значение из столбца `name` системной таблицы `system.parts`. Например, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
+- Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../operations/system_tables.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Использование кавычек в имени партиций зависит от типа данных столбца, по которому задано партиционирование. Например, для столбца с типом `String` имя партиции необходимо указывать в кавычках (одинарных). Для типов `Date` и `Int*` кавычки указывать не нужно.
 

@@ -211,6 +211,16 @@ Read about setting the partition expression in a section [How to specify the par
 
 The query is replicated – it deletes data on all replicas.
 
+#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+
+```sql
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
+```
+
+Removes the specified part or all parts of the specified partition from `detached`.
+Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+
+
 #### ATTACH PARTITION|PART {#alter_attach-partition}
 
 ``` sql
@@ -336,7 +346,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
 - As the expression from the table column. Constants and constant expressions are supported. For example, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- In the [ALTER ATTACH PART](#alter_attach-partition) query, to specify the name of a part, use a value from the `name` column of the `system.parts` table. For example, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
+- In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](../operations/system_tables.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 

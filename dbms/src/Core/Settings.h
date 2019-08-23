@@ -341,6 +341,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
     M(SettingBool, check_query_single_value_result, true, "Return check query result as single 1/0 value") \
+    M(SettingBool, allow_drop_detached, false, "Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries") \
     \
     M(SettingBool, allow_experimental_live_view, false, "Enable LIVE VIEW. Not mature enough.") \
     M(SettingSeconds, live_view_heartbeat_interval, DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC, "The heartbeat interval in seconds to indicate live query is alive.") \
