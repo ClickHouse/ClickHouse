@@ -40,7 +40,7 @@
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 60
-/// replica error max cap
+/// replica error max cap, this is to prevent replica from accumulating too many errors and taking to long to recover.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT 1000
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_INFO 54032
