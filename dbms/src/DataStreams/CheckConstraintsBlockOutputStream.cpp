@@ -34,12 +34,9 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
     if (block.rows() > 0)
     {
-        std::cerr << "Checking " << expressions.size() << " constraints\n";
+        Block block_to_calculate = block;
         for (size_t i = 0; i < expressions.size(); ++i)
         {
-            std::cerr << serializeAST(*(constraints.constraints[i]->expr), true) << "\n";
-
-            Block block_to_calculate = block;
             auto constraint_expr = expressions[i];
 
             constraint_expr->execute(block_to_calculate);
@@ -54,8 +51,11 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             {
                 size_t row_idx = 0;
                 for (; row_idx < size; ++row_idx)
+                {
+                    std::cerr << row_idx << ": " << int(data[row_idx]) << "\n";
                     if (data[row_idx] != 1)
                         break;
+                }
 
                 Names related_columns = constraint_expr->getRequiredColumns();
 
