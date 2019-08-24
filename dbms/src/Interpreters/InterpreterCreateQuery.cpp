@@ -381,26 +381,37 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 }
 
 
-ColumnsDescription InterpreterCreateQuery::setColumns(
+ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const ASTExpressionList * constraints)
+{
+    ConstraintsDescription res;
+    if (constraints)
+        for (const auto & constraint : constraints->children)
+            res.constraints.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
+    return res;
+}
+
+
+ColumnsDescription InterpreterCreateQuery::setProperties(
     ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
 {
     ColumnsDescription columns;
     IndicesDescription indices;
     ConstraintsDescription constraints;
 
-
     if (create.columns_list)
     {
         if (create.columns_list->columns)
             columns = getColumnsDescription(*create.columns_list->columns, context);
+
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
                 indices.indices.push_back(
                     std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+
         if (create.columns_list->constraints)
             for (const auto & constraint : create.columns_list->constraints->children)
                 constraints.constraints.push_back(
-                        std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
+                    std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
     }
     else if (!create.as_table.empty())
     {
@@ -567,7 +578,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     else
     {
         /// Set and retrieve list of columns.
-        columns = setColumns(create, as_select_sample, as_storage);
+        columns = setProperties(create, as_select_sample, as_storage);
 
         /// Check low cardinality types in creating table if it was not allowed in setting
         if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
@@ -586,6 +597,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Set the table engine if it was not specified explicitly.
         setEngine(create);
     }
+
+    ConstraintsDescription constraints = getConstraintsDescription(create.columns_list->constraints);
 
     {
         std::unique_ptr<DDLGuard> guard;
@@ -635,6 +648,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 context,
                 context.getGlobalContext(),
                 columns,
+                constraints,
                 create.attach,
                 false);
         }

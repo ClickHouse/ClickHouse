@@ -33,8 +33,11 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
     if (block.rows() > 0)
     {
+        std::cerr << "Checking " << expressions.size() << " constraints\n";
         for (size_t i = 0; i < expressions.size(); ++i)
         {
+            std::cerr << serializeAST(*(constraints.constraints[i]->expr), true) << "\n";
+
             Block block_to_calculate = block;
             auto constraint_expr = expressions[i];
 
@@ -54,7 +57,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                         break;
 
                 throw Exception{"Violated constraint " + constraints.constraints[i]->name +
-                                " in table " + table + " at row " + std::to_string(row_idx) + ", constraint expression: " +
+                                " in table " + table + " at row " + std::to_string(rows_written + row_idx + 1) + ", constraint expression: " +
                                 serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::VIOLATED_CONSTRAINT};
             }
         }

@@ -37,6 +37,7 @@ protected:
         const String & table_name_,
         const String & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_);
 
 private:
