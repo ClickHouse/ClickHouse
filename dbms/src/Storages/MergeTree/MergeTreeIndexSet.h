@@ -88,6 +88,9 @@ private:
     std::set<String> key_columns;
     ASTPtr expression_ast;
     ExpressionActionsPtr actions;
+
+    /// Sets from syntax analyzer.
+    PreparedSets prepared_sets;
 };
 
 
