@@ -7,7 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 
 
 namespace DB
@@ -406,25 +405,6 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
     return true;
 }
 
-/*static bool checkAtomName(const String & name)
-{
-    static std::set<String> atoms = {
-            "notEquals",
-            "equals",
-            "less",
-            "greater",
-            "lessOrEquals",
-            "greaterOrEquals",
-            "in",
-            "notIn",
-            "like",
-            "startsWith",
-            "endsWith",
-            "multiSearchAny"
-            };
-    return atoms.find(name) != atoms.end();
-}*/
-
 bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
     if (const auto * func = node->as<ASTFunction>())
@@ -447,10 +427,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
     else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
     else if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.find(identifier->getColumnName()) == std::end(key_columns) &&
-            prepared_sets.find(PreparedSetKey::forSubquery(*identifier)) == std::end(prepared_sets);
-    else if (const auto * subquery = node->as<ASTSubquery>())
-        return prepared_sets.find(PreparedSetKey::forSubquery(*subquery)) == std::end(prepared_sets);
+        return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
     else
         return true;
 }
