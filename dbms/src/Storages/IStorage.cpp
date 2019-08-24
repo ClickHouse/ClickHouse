@@ -20,20 +20,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-IStorage::IStorage(ColumnsDescription columns_)
+IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
 {
-    setColumns(std::move(columns_));
-}
-
-IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
-{
-    setColumns(std::move(columns_));
-}
-
-IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
-{
-    setColumns(std::move(columns_));
-    setIndices(std::move(indices_));
 }
 
 const ColumnsDescription & IStorage::getColumns() const

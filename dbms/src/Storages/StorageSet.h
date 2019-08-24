@@ -33,7 +33,8 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 
     String path;
     String table_name;
@@ -81,7 +82,8 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 };
 
 }

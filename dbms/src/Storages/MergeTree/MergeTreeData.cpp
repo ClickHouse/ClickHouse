@@ -124,7 +124,6 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
-    setConstraints(constraints_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
