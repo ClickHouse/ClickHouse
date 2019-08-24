@@ -40,7 +40,10 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
-    hdfsBuilderSetNameNodePort(builder.get(), port);
+    if (port != 0)
+    {
+        hdfsBuilderSetNameNodePort(builder.get(), port);
+    }
     return builder;
 }
 
