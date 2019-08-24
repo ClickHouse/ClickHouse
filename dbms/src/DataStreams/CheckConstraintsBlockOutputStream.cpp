@@ -1,34 +1,65 @@
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <Functions/FunctionHelpers.h>
-#include <common/find_symbols.h>
 #include <Parsers/formatAST.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int VIOLATED_CONSTRAINT;
+}
+
+
+CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
+    const String & table_,
+    const BlockOutputStreamPtr & output_,
+    const Block & header_,
+    const ConstraintsDescription & constraints_,
+    const Context & context_)
+    : table(table_),
+    output(output_),
+    header(header_),
+    constraints(constraints_),
+    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+{
+}
+
+
 void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
-    for (size_t i = 0; i < expressions.size(); ++i)
+    if (block.rows() > 0)
     {
-        Block res = block;
-        auto constraint_expr = expressions[i];
-        auto res_column_uint8 = executeOnBlock(res, constraint_expr);
-        if (!memoryIsByte(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize(), 0x1))
+        for (size_t i = 0; i < expressions.size(); ++i)
         {
-            auto indices_wrong = findAllWrong(res_column_uint8->getRawDataBegin<1>(), res_column_uint8->byteSize());
-            std::string indices_str = "{";
-            for (size_t j = 0; j < indices_wrong.size(); ++j)
-            {
-                indices_str += std::to_string(indices_wrong[j]);
-                indices_str += (j != indices_wrong.size() - 1) ? ", " : "}";
-            }
+            Block block_to_calculate = block;
+            auto constraint_expr = expressions[i];
 
-            throw Exception{"Violated constraint " + constraints.constraints[i]->name +
-                            " in table " + table + " at indices " + indices_str + ", constraint expression: " +
-                            serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::VIOLATED_CONSTRAINT};
+            constraint_expr->execute(block_to_calculate);
+            ColumnWithTypeAndName res_column = block_to_calculate.getByPosition(block_to_calculate.columns() - 1);
+            const ColumnUInt8 & res_column_uint8 = assert_cast<const ColumnUInt8 &>(*res_column.column);
+
+            const UInt8 * data = res_column_uint8.getData().data();
+            size_t size = res_column_uint8.size();
+
+            /// Is violated.
+            if (!memoryIsByte(data, size, 1))
+            {
+                size_t row_idx = 0;
+                for (; row_idx < size; ++row_idx)
+                    if (data[row_idx] != 1)
+                        break;
+
+                throw Exception{"Violated constraint " + constraints.constraints[i]->name +
+                                " in table " + table + " at row " + std::to_string(row_idx) + ", constraint expression: " +
+                                serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::VIOLATED_CONSTRAINT};
+            }
         }
     }
+
     output->write(block);
     rows_written += block.rows();
 }
@@ -48,32 +79,4 @@ void CheckConstraintsBlockOutputStream::writeSuffix()
     output->writeSuffix();
 }
 
-const ColumnUInt8 *CheckConstraintsBlockOutputStream::executeOnBlock(
-        Block & block,
-        const ExpressionActionsPtr & constraint)
-{
-    constraint->execute(block);
-    ColumnWithTypeAndName res_column = block.safeGetByPosition(block.columns() - 1);
-    return checkAndGetColumn<ColumnUInt8>(res_column.column.get());
-}
-
-std::vector<size_t> CheckConstraintsBlockOutputStream::findAllWrong(const void *data, size_t size)
-{
-    std::vector<size_t> res;
-
-    if (size == 0)
-        return res;
-
-    auto ptr = reinterpret_cast<const uint8_t *>(data);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (*(ptr + i) == 0x0)
-        {
-            res.push_back(i);
-        }
-    }
-
-    return res;
-}
 }
