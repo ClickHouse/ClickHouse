@@ -216,7 +216,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
         const MergeTreeIndexSet &index_)
-        : IMergeTreeIndexCondition(), index(index_), prepared_sets(query.sets)
+        : IMergeTreeIndexCondition(), index(index_)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
