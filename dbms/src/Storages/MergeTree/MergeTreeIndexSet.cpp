@@ -405,25 +405,6 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
     return true;
 }
 
-static bool checkAtomName(const String & name)
-{
-    static std::set<String> atoms = {
-            "notEquals",
-            "equals",
-            "less",
-            "greater",
-            "lessOrEquals",
-            "greaterOrEquals",
-            "in",
-            "notIn",
-            "like",
-            "startsWith",
-            "endsWith",
-            "multiSearchAny"
-            };
-    return atoms.find(name) != atoms.end();
-}
-
 bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
     if (const auto * func = node->as<ASTFunction>())
@@ -439,16 +420,14 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
         else if (func->name == "not")
             return checkASTUseless(args[0], atomic);
-        else if (!atomic && checkAtomName(func->name))
-            return checkASTUseless(node, true);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
+                    [this](const auto & arg) { return checkASTUseless(arg, true); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
     else if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.find(identifier->getColumnName()) == key_columns.end();
+        return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
     else
         return true;
 }
