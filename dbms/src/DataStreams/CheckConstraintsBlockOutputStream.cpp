@@ -51,11 +51,8 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             {
                 size_t row_idx = 0;
                 for (; row_idx < size; ++row_idx)
-                {
-                    std::cerr << row_idx << ": " << int(data[row_idx]) << "\n";
                     if (data[row_idx] != 1)
                         break;
-                }
 
                 Names related_columns = constraint_expr->getRequiredColumns();
 
