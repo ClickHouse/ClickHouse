@@ -3,6 +3,7 @@
 #include <Parsers/formatAST.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/assert_cast.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -56,9 +57,29 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                     if (data[row_idx] != 1)
                         break;
 
-                throw Exception{"Violated constraint " + constraints.constraints[i]->name +
-                                " in table " + table + " at row " + std::to_string(rows_written + row_idx + 1) + ", constraint expression: " +
-                                serializeAST(*(constraints.constraints[i]->expr), true), ErrorCodes::VIOLATED_CONSTRAINT};
+                Names related_columns = constraint_expr->getRequiredColumns();
+
+                std::stringstream exception_message;
+
+                exception_message << "Constraint " << backQuote(constraints.constraints[i]->name)
+                    << " for table " << backQuote(table)
+                    << " is violated at row " << (rows_written + row_idx + 1)
+                    << ". Expression: (" << serializeAST(*(constraints.constraints[i]->expr), true) << ")"
+                    << ". Column values";
+
+                bool first = true;
+                for (const auto & name : related_columns)
+                {
+                    const IColumn & column = *block.getByName(name).column;
+                    assert(row_idx < column.size());
+
+                    exception_message << (first ? ": " : ", ")
+                        << backQuoteIfNeed(name) << " = " << applyVisitor(FieldVisitorToString(), column[row_idx]);
+
+                    first = false;
+                }
+
+                throw Exception{exception_message.str(), ErrorCodes::VIOLATED_CONSTRAINT};
             }
         }
     }
