@@ -56,11 +56,6 @@ int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
 
 
-#if USE_EMBEDDED_COMPILER
-    int mainEntryClickHouseClang(int argc, char ** argv);
-    int mainEntryClickHouseLLD(int argc, char ** argv);
-#endif
-
 namespace
 {
 
@@ -99,12 +94,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-
-#if USE_EMBEDDED_COMPILER
-    {"clang", mainEntryClickHouseClang},
-    {"clang++", mainEntryClickHouseClang},
-    {"lld", mainEntryClickHouseLLD},
 #endif
 };
 
@@ -151,11 +140,6 @@ int main(int argc_, char ** argv_)
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
     updatePHDRCache();
-
-#if USE_EMBEDDED_COMPILER
-    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
-        return mainEntryClickHouseClang(argc_, argv_);
-#endif
 
 #if USE_TCMALLOC
     /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations
