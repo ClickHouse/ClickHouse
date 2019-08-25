@@ -5,7 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Quota.h>
+#include <Account/Quota.h>
 
 #include <set>
 #include <random>

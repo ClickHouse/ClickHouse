@@ -1,7 +1,7 @@
 #include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Account/Quota.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 

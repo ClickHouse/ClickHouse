@@ -443,6 +443,17 @@ namespace ErrorCodes
     extern const int INSECURE_PATH = 466;
     extern const int CANNOT_PARSE_BOOL = 467;
     extern const int CANNOT_PTHREAD_ATTR = 468;
+    extern const int INVALID_GRANT = 469;
+    extern const int NO_SUCH_GRANT = 470;
+    extern const int NOT_ENOUGH_PRIVILEGES = 471;
+    extern const int USER_ALREADY_EXISTS = 472;
+    extern const int ROLE_ALREADY_EXISTS = 473;
+    extern const int RLS_POLICY_ALREADY_EXISTS = 474;
+    extern const int USER_NOT_FOUND = 475;
+    extern const int ROLE_NOT_FOUND = 476;
+    extern const int RLS_POLICY_NOT_FOUND = 477;
+    extern const int ACCESS_ATTRIBUTES_NOT_FOUND = 478;
+    extern const int NOT_GRANTED_ROLE_SET = 479;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
