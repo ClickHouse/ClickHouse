@@ -7,7 +7,7 @@ namespace DB
 class DictionaryBlockInputStreamBase : public IBlockInputStream
 {
 protected:
-    DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size);
+    DictionaryBlockInputStreamBase(size_t rows_count_, size_t max_block_size_);
 
     virtual Block getBlock(size_t start, size_t length) const = 0;
 

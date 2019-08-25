@@ -319,7 +319,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 Ключи:
-- user_syslog - обязательная настройка, если требуется запись в syslog
+- use_syslog - обязательная настройка, если требуется запись в syslog
 - address - хост[:порт] демона syslogd. Если не указан, используется локальный
 - hostname - опционально, имя хоста, с которого отсылаются логи
 - facility - [категория syslog](https://en.wikipedia.org/wiki/Syslog#Facility),

@@ -119,7 +119,6 @@ DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, 
 
 void DatabaseOrdinary::loadTables(
     Context & context,
-    ThreadPool * thread_pool,
     bool has_force_restore_data_flag)
 {
     using FileNames = std::vector<std::string>;
@@ -161,96 +160,68 @@ void DatabaseOrdinary::loadTables(
       */
     std::sort(file_names.begin(), file_names.end());
 
-    size_t total_tables = file_names.size();
+    const size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
 
-    auto task_function = [&](const String & table)
+    auto loadOneTable = [&](const String & table)
     {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
     };
 
-    for (const auto & filename : file_names)
-    {
-        auto task = createExceptionHandledJob(std::bind(task_function, filename), exception_handler);
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
 
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+    for (const auto & file_name : file_names)
+    {
+        pool.schedule([&]() { loadOneTable(file_name); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    pool.wait();
 
     /// After all tables was basically initialized, startup them.
-    startupTables(thread_pool);
+    startupTables(pool);
 }
 
 
-void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed {0};
-    size_t total_tables = tables.size();
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
-
+    const size_t total_tables = tables.size();
     if (!total_tables)
         return;
 
-    auto task_function = [&](const StoragePtr & table)
-    {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+    AtomicStopwatch watch;
+    std::atomic<size_t> tables_processed {0};
 
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+    auto startupOneTable = [&](const StoragePtr & table)
+    {
+        table->startup();
+
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        table->startup();
     };
 
-    for (const auto & name_storage : tables)
+    for (const auto & table : tables)
     {
-        auto task = createExceptionHandledJob(std::bind(task_function, name_storage.second), exception_handler);
-
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+        thread_pool.schedule([&]() { startupOneTable(table.second); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    thread_pool.wait();
 }
 
 
@@ -516,6 +487,7 @@ void DatabaseOrdinary::alterTable(
     const String & table_name,
     const ColumnsDescription & columns,
     const IndicesDescription & indices,
+    const ConstraintsDescription & constraints,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -538,6 +510,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
 
@@ -545,6 +518,11 @@ void DatabaseOrdinary::alterTable(
         ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
     else
         ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
+
+    if (ast_create_query.columns_list->constraints)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);

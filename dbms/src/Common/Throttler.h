@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <port/clock.h>
 
@@ -35,12 +36,12 @@ namespace ErrorCodes
 class Throttler
 {
 public:
-    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent = nullptr)
-            : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent) {}
+    Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_ = nullptr)
+            : max_speed(max_speed_), limit_exceeded_exception_message(""), parent(parent_) {}
 
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
-              const std::shared_ptr<Throttler> & parent = nullptr)
-        : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent) {}
+              const std::shared_ptr<Throttler> & parent_ = nullptr)
+        : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent_) {}
 
     void add(const size_t amount)
     {
@@ -76,12 +77,7 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
-                ::timespec sleep_ts;
-                sleep_ts.tv_sec = sleep_ns / 1000000000;
-                sleep_ts.tv_nsec = sleep_ns % 1000000000;
-
-                /// NOTE: Returns early in case of a signal. This is considered normal.
-                ::nanosleep(&sleep_ts, nullptr);
+                sleepForNanoseconds(sleep_ns);
 
                 ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }

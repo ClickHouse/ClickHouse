@@ -188,4 +188,30 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     return wb.str();
 }
 
+bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info,
+                                                MergeTreeDataFormatVersion format_version)
+{
+    part_info.dir_name = dir_name;
+
+    /// First, try to parse as <part_name>.
+    // TODO what if tryParsePartName will parse prefix as partition_id? It can happen if dir_name doesn't contain mutation number at the end
+    if (MergeTreePartInfo::tryParsePartName(dir_name, &part_info, format_version))
+        return part_info.valid_name = true;
+
+    /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
+    part_info.prefix = dir_name;
+    const auto first_separator = dir_name.find_first_of('_');
+    if (first_separator == String::npos)
+        return part_info.valid_name = false;
+
+    // TODO what if <prefix> contains '_'?
+    const auto part_name = dir_name.substr(first_separator + 1,
+                                           dir_name.size() - first_separator - 1);
+    if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
+        return part_info.valid_name = false;
+
+    part_info.prefix = dir_name.substr(0, first_separator);
+    return part_info.valid_name = true;
+}
+
 }

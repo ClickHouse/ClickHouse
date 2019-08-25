@@ -30,14 +30,30 @@ IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : 
     setColumns(std::move(columns_));
 }
 
+IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
+{
+    setColumns(std::move(columns_));
+    setIndices(std::move(indices_));
+}
+
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
 }
 
+const ColumnsDescription & IStorage::getVirtuals() const
+{
+    return virtuals;
+}
+
 const IndicesDescription & IStorage::getIndices() const
 {
     return indices;
+}
+
+const ConstraintsDescription & IStorage::getConstraints() const
+{
+    return constraints;
 }
 
 NameAndTypePair IStorage::getColumn(const String & column_name) const
@@ -145,9 +161,12 @@ namespace
     }
 }
 
-void IStorage::check(const Names & column_names) const
+void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
-    const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
+    if (include_virtuals)
+        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+
     const String list_of_columns = listOfColumns(available_columns);
 
     if (column_names.empty())
@@ -287,6 +306,11 @@ void IStorage::setIndices(IndicesDescription indices_)
     indices = std::move(indices_);
 }
 
+void IStorage::setConstraints(ConstraintsDescription constraints_)
+{
+    constraints = std::move(constraints_);
+}
+
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
     return getColumns().get(column_name).is_virtual;
@@ -362,8 +386,9 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 

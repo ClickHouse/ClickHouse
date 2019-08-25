@@ -24,7 +24,7 @@ public:
 
     struct Data
     {
-        NameSet source_columns;
+        const NameSet source_columns;
         const std::vector<TableWithColumnNames> & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
@@ -65,5 +65,16 @@ private:
 /// Visits AST for names qualification.
 /// It finds columns and translate their names to the normal form. Expand asterisks and qualified asterisks with column names.
 using TranslateQualifiedNamesVisitor = TranslateQualifiedNamesMatcher::Visitor;
+
+/// Restore ASTIdentifiers to long form
+struct RestoreQualifiedNamesData
+{
+    using TypeToVisit = ASTIdentifier;
+
+    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+};
+
+using RestoreQualifiedNamesMatcher = OneTypeMatcher<RestoreQualifiedNamesData>;
+using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
 
 }

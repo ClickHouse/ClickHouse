@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/File.h>
 #include <Common/ThreadPool.h>
@@ -56,11 +57,10 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Load a set of existing tables. If thread_pool is specified, use it.
+    /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
     /// Check the existence of the table.
@@ -116,6 +116,7 @@ public:
         const String & name,
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
+        const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

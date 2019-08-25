@@ -166,6 +166,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
     const ColumnsDescription & columns_desc = storage->getColumns();
+    const IndicesDescription & indices_desc = storage->getIndices();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -175,9 +176,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             updated_columns.insert(kv.first);
     }
 
-    /// We need to know which columns affect which MATERIALIZED columns to recalculate them if dependencies
-    /// are updated.
+    /// We need to know which columns affect which MATERIALIZED columns and data skipping indices
+    /// to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
+    NameSet affected_indices_columns;
     if (!updated_columns.empty())
     {
         for (const auto & column : columns_desc)
@@ -186,11 +188,25 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 auto query = column.default_desc.expression->clone();
                 auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
-                ExpressionAnalyzer analyzer(query, syntax_result, context);
-                for (const String & dependency : analyzer.getRequiredSourceColumns())
+                for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
+            }
+        }
+        for (const auto & index : indices_desc.indices)
+        {
+            auto query = index->expr->clone();
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+            const auto required_columns = syntax_result->requiredSourceColumns();
+
+            for (const String & dependency : required_columns)
+            {
+                if (updated_columns.count(dependency))
+                {
+                    affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
+                    break;
                 }
             }
         }
@@ -199,19 +215,20 @@ void MutationsInterpreter::prepare(bool dry_run)
     }
 
     /// First, break a sequence of commands into stages.
-    stages.emplace_back(context);
     for (const auto & command : commands)
     {
-        if (!stages.back().column_to_updated.empty())
-            stages.emplace_back(context);
-
         if (command.type == MutationCommand::DELETE)
         {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+
             auto negated_predicate = makeASTFunction("not", command.predicate->clone());
             stages.back().filters.push_back(negated_predicate);
         }
         else if (command.type == MutationCommand::UPDATE)
         {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
@@ -252,35 +269,84 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_INDEX)
+        {
+            auto it = std::find_if(
+                    std::cbegin(indices_desc.indices), std::end(indices_desc.indices),
+                    [&](const std::shared_ptr<ASTIndexDeclaration> & index)
+                    {
+                        return index->name == command.index_name;
+                    });
+            if (it == std::cend(indices_desc.indices))
+                throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
+
+            auto query = (*it)->expr->clone();
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+            const auto required_columns = syntax_result->requiredSourceColumns();
+            affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
+        }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    /// Next, for each stage calculate columns changed by this and previous stages.
-    for (size_t i = 0; i < stages.size(); ++i)
+    if (!affected_indices_columns.empty())
     {
-        if (!stages[i].filters.empty())
+        if (!stages.empty())
+        {
+            std::vector<Stage> stages_copy;
+            /// Copy all filled stages except index calculation stage.
+            for (const auto &stage : stages)
+            {
+                stages_copy.emplace_back(context);
+                stages_copy.back().column_to_updated = stage.column_to_updated;
+                stages_copy.back().output_columns = stage.output_columns;
+                stages_copy.back().filters = stage.filters;
+            }
+            auto first_stage_header = prepareInterpreterSelect(stages_copy, /* dry_run = */ true)->getSampleBlock();
+            auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
+            updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
+        }
+        /// Special step to recalculate affected indices.
+        stages.emplace_back(context);
+        for (const auto & column : affected_indices_columns)
+            stages.back().column_to_updated.emplace(
+                    column, std::make_shared<ASTIdentifier>(column));
+    }
+
+    interpreter_select = prepareInterpreterSelect(stages, dry_run);
+
+    is_prepared = true;
+}
+
+std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run)
+{
+    NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
+
+    /// Next, for each stage calculate columns changed by this and previous stages.
+    for (size_t i = 0; i < prepared_stages.size(); ++i)
+    {
+        if (!prepared_stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
-                stages[i].output_columns.insert(column.name);
+                prepared_stages[i].output_columns.insert(column.name);
             continue;
         }
 
         if (i > 0)
-            stages[i].output_columns = stages[i - 1].output_columns;
+            prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-        if (stages[i].output_columns.size() < all_columns.size())
+        if (prepared_stages[i].output_columns.size() < all_columns.size())
         {
-            for (const auto & kv : stages[i].column_to_updated)
-                stages[i].output_columns.insert(kv.first);
+            for (const auto & kv : prepared_stages[i].column_to_updated)
+                prepared_stages[i].output_columns.insert(kv.first);
         }
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
-    for (size_t i = stages.size() - 1; i > 0; --i)
+    for (size_t i = prepared_stages.size() - 1; i > 0; --i)
     {
-        auto & stage = stages[i];
+        auto & stage = prepared_stages[i];
 
         ASTPtr all_asts = std::make_shared<ASTExpressionList>();
 
@@ -318,7 +384,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & kv : stage.column_to_updated)
             {
                 actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
-                    kv.second->getColumnName(), kv.first, /* can_replace = */ true));
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true));
             }
         }
 
@@ -330,7 +396,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         /// Propagate information about columns needed as input.
         for (const auto & column : actions_chain.steps.front().actions->getRequiredColumnsWithTypes())
-            stages[i - 1].output_columns.insert(column.name);
+            prepared_stages[i - 1].output_columns.insert(column.name);
     }
 
     /// Execute first stage as a SELECT statement.
@@ -338,36 +404,34 @@ void MutationsInterpreter::prepare(bool dry_run)
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    for (const auto & column_name : stages[0].output_columns)
+    for (const auto & column_name : prepared_stages[0].output_columns)
         select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
-    if (!stages[0].filters.empty())
+    if (!prepared_stages[0].filters.empty())
     {
         ASTPtr where_expression;
-        if (stages[0].filters.size() == 1)
-            where_expression = stages[0].filters[0];
+        if (prepared_stages[0].filters.size() == 1)
+            where_expression = prepared_stages[0].filters[0];
         else
         {
             auto coalesced_predicates = std::make_shared<ASTFunction>();
             coalesced_predicates->name = "and";
             coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
             coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-            coalesced_predicates->arguments->children = stages[0].filters;
+            coalesced_predicates->arguments->children = prepared_stages[0].filters;
             where_expression = std::move(coalesced_predicates);
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
-
-    is_prepared = true;
+    return std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
 }
 
-BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStreamPtr in) const
+BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const
 {
-    for (size_t i_stage = 1; i_stage < stages.size(); ++i_stage)
+    for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
-        const Stage & stage = stages[i_stage];
+        const Stage & stage = prepared_stages[i_stage];
 
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
@@ -394,19 +458,28 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStr
     return in;
 }
 
-void MutationsInterpreter::validate()
+void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
     prepare(/* dry_run = */ true);
-    Block first_stage_header = interpreter_select->getSampleBlock();
+    /// Do not use getSampleBlock in order to check the whole pipeline.
+    Block first_stage_header = interpreter_select->execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
-    addStreamsForLaterStages(in)->getHeader();
+    addStreamsForLaterStages(stages, in)->getHeader();
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
     prepare(/* dry_run = */ false);
     BlockInputStreamPtr in = interpreter_select->execute().in;
-    return addStreamsForLaterStages(in);
+    auto result_stream = addStreamsForLaterStages(stages, in);
+    if (!updated_header)
+        updated_header = std::make_unique<Block>(result_stream->getHeader());
+    return result_stream;
+}
+
+const Block & MutationsInterpreter::getUpdatedHeader() const
+{
+    return *updated_header;
 }
 
 }

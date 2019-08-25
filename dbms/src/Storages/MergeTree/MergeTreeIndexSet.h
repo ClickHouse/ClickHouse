@@ -16,8 +16,8 @@ class MergeTreeIndexSet;
 
 struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index);
-    MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index, MutableColumns && columns);
+    explicit MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_);
+    MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_, MutableColumns && columns_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;

@@ -6,51 +6,51 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>();
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>();
             break;
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
@@ -63,9 +63,9 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(str_size + 1);
-                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, str_size};
+                auto str_ptr = string_arena->alloc(str_size);
+                std::copy(string.data(), string.data() + str_size, str_ptr);
+                string_ref = StringRef{str_ptr, str_size};
             }
             else
                 string_ref = {};

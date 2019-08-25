@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Core/SortDescription.h>
 #include <memory>
 
 namespace DB
@@ -33,8 +34,18 @@ struct FilterInfo
     bool do_remove_column = false;
 };
 
+struct SortingInfo
+{
+    SortDescription prefix_order_descr;
+    int direction;
+
+    SortingInfo(const SortDescription & prefix_order_descr_, int direction_)
+        : prefix_order_descr(prefix_order_descr_), direction(direction_) {}
+};
+
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
+using SortingInfoPtr = std::shared_ptr<SortingInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -50,6 +61,8 @@ struct SelectQueryInfo
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
+
+    SortingInfoPtr sorting_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

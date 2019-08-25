@@ -47,6 +47,18 @@ inline void writeChar(char x, WriteBuffer & buf)
     ++buf.position();
 }
 
+/// Write the same character n times.
+inline void writeChar(char c, size_t n, WriteBuffer & buf)
+{
+    while (n)
+    {
+        buf.nextIfAtEnd();
+        size_t count = std::min(n, buf.available());
+        memset(buf.position(), c, count);
+        n -= count;
+        buf.position() += count;
+    }
+}
 
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>

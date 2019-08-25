@@ -2,6 +2,7 @@
 
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -141,8 +142,8 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
             {
                 MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
-                const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     if (src_null_map[i])
@@ -232,14 +233,13 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
-            if (column.column->empty())
-                temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
-            else
-                temporary_block.insert(column);
+        {
+            temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
+        }
         else
         {
             have_converted_columns = true;
-            temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
+            temporary_block.insert({ assert_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
         }
     }
 
@@ -585,7 +585,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
         {
             bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
-                arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+                arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 
             if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {

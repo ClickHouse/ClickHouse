@@ -40,8 +40,8 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
 {
     const String & column_name = node->getColumnName();
 
-    for (const auto & name : columns)
-        if (column_name == name)
+    for (const auto & cname : columns)
+        if (column_name == cname)
             return true;
 
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))

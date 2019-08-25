@@ -15,7 +15,7 @@ class WriteBuffer;
 class ValuesRowOutputFormat : public IRowOutputFormat
 {
 public:
-    ValuesRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings);
+    ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesRowOutputFormat"; }
 
@@ -30,4 +30,3 @@ private:
 };
 
 }
-

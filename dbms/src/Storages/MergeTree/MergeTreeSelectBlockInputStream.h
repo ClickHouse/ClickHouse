@@ -22,7 +22,7 @@ public:
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
-        Names column_names,
+        Names column_names_,
         const MarkRanges & mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
@@ -55,8 +55,8 @@ private:
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
     NameSet column_name_set;
-    NamesAndTypesList columns;
-    NamesAndTypesList pre_columns;
+
+    MergeTreeReadTaskColumns task_columns;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;

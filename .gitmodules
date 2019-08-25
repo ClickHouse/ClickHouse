@@ -100,3 +100,9 @@
 [submodule "contrib/mimalloc"]
 	path = contrib/mimalloc
 	url = https://github.com/ClickHouse-Extras/mimalloc
+[submodule "contrib/fastops"]
+	path = contrib/fastops
+	url = https://github.com/ClickHouse-Extras/fastops
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/apache/orc

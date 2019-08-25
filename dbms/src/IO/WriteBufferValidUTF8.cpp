@@ -32,9 +32,9 @@ extern const UInt8 length_of_utf8_sequence[256] =
 
 
 WriteBufferValidUTF8::WriteBufferValidUTF8(
-    WriteBuffer & output_buffer, bool group_replacements, const char * replacement, size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(std::max(static_cast<size_t>(32), size)), output_buffer(output_buffer),
-    group_replacements(group_replacements), replacement(replacement)
+    WriteBuffer & output_buffer_, bool group_replacements_, const char * replacement_, size_t size)
+    : BufferWithOwnMemory<WriteBuffer>(std::max(static_cast<size_t>(32), size)), output_buffer(output_buffer_),
+    group_replacements(group_replacements_), replacement(replacement_)
 {
 }
 
@@ -117,6 +117,9 @@ void WriteBufferValidUTF8::nextImpl()
         memory[i] = p[i];
 
     working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
+
+    /// Propagate next() to the output buffer
+    output_buffer.next();
 }
 
 

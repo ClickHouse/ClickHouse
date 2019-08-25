@@ -546,11 +546,13 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
+    size_t left_args_count = 1;
     const auto * left_arg_tuple = left_arg->as<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
-        for (size_t i = 0; i < tuple_elements.size(); ++i)
+        left_args_count = tuple_elements.size();
+        for (size_t i = 0; i < left_args_count; ++i)
             get_key_tuple_position_mapping(tuple_elements[i], i);
     }
     else
@@ -576,6 +578,10 @@ bool KeyCondition::tryPrepareSetIndex(
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
         return false;
+
+    prepared_set->checkColumnsNumber(left_args_count);
+    for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
@@ -689,6 +695,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         MonotonicFunctionsChain chain;
         std::string func_name = func->name;
 
+        if (atom_map.find(func_name) == std::end(atom_map))
+            return false;
+
         if (args.size() == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain)))
@@ -775,8 +784,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             return false;
 
         const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
 
         out.key_column = key_column_num;
         out.monotonic_functions_chain = std::move(chain);

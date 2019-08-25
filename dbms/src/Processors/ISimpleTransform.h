@@ -30,7 +30,7 @@ protected:
     void stopReading() { no_more_data_needed = true; }
 
 public:
-    ISimpleTransform(Block input_header, Block output_header, bool skip_empty_chunks);
+    ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
 
     Status prepare() override;
     void work() override;

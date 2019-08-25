@@ -20,6 +20,9 @@
 
 #include <Common/StringUtils/StringUtils.h>
 
+#include <common/phdr_cache.h>
+
+
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -52,11 +55,6 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
 
-
-#if USE_EMBEDDED_COMPILER
-    int mainEntryClickHouseClang(int argc, char ** argv);
-    int mainEntryClickHouseLLD(int argc, char ** argv);
-#endif
 
 namespace
 {
@@ -96,12 +94,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-
-#if USE_EMBEDDED_COMPILER
-    {"clang", mainEntryClickHouseClang},
-    {"clang++", mainEntryClickHouseClang},
-    {"lld", mainEntryClickHouseLLD},
 #endif
 };
 
@@ -144,10 +136,10 @@ int main(int argc_, char ** argv_)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
 
-#if USE_EMBEDDED_COMPILER
-    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
-        return mainEntryClickHouseClang(argc_, argv_);
-#endif
+    /// PHDR cache is required for query profiler to work reliably
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+    ///  will work only after additional call of this function.
+    updatePHDRCache();
 
 #if USE_TCMALLOC
     /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations

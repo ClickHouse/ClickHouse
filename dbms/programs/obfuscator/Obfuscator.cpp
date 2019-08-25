@@ -22,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -176,7 +177,7 @@ private:
     const UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed) : seed(seed) {}
+    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -212,7 +213,7 @@ private:
     const UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed) : seed(seed) {}
+    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -256,18 +257,18 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed) : seed(seed) {}
+    FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<Float> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<Float> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<Float>::create(size);
-        auto & res_data = static_cast<ColumnVector<Float> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<Float> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -348,14 +349,14 @@ private:
     const UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed) : seed(seed) {}
+    FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnFixedString & column_fixed_string = static_cast<const ColumnFixedString &>(column);
+        const ColumnFixedString & column_fixed_string = assert_cast<const ColumnFixedString &>(column);
         const size_t string_size = column_fixed_string.getN();
 
         const auto & src_data = column_fixed_string.getChars();
@@ -385,18 +386,18 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed) : seed(seed), date_lut(DateLUT::instance()) {}
+    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<UInt32> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<UInt32> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<UInt32>::create(size);
-        auto & res_data = static_cast<ColumnVector<UInt32> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<UInt32> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -533,8 +534,8 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params)
-        : params(std::move(params)), code_points(params.order, BEGIN) {}
+    MarkovModel(MarkovModelParameters params_)
+        : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -745,11 +746,11 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed, MarkovModelParameters params) : seed(seed), markov_model(std::move(params)) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         for (size_t i = 0; i < size; ++i)
@@ -766,7 +767,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         auto res_column = ColumnString::create();
@@ -797,11 +798,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         nested_model->train(nested_column);
@@ -814,7 +815,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -830,11 +831,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         nested_model->train(nested_column);
@@ -847,7 +848,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);

@@ -11,8 +11,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IRowOutputFormat(header, out_), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -110,12 +110,15 @@ void VerticalRowOutputFormat::writeSuffix()
 void VerticalRowOutputFormat::writeBeforeTotals()
 {
     writeCString("\n", out);
+    writeCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeBeforeExtremes()
 {
     if (!was_totals_written)
         writeCString("\n", out);
+
+    writeCString("\n", out);
 }
 
 void VerticalRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -136,8 +139,6 @@ void VerticalRowOutputFormat::writeTotals(const Columns & columns, size_t row_nu
 
 void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t row_num, PortKind port_kind, const char * title)
 {
-    writeCString("\n", out);
-
     row_number = 0;
     field_number = 0;
 
@@ -168,9 +169,10 @@ void registerOutputFormatProcessorVertical(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, sample, callback, settings);
     });
 }
 

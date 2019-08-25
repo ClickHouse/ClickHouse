@@ -19,7 +19,7 @@ protected:
 class ParserTablesInSelectQueryElement : public IParserBase
 {
 public:
-    ParserTablesInSelectQueryElement(bool is_first) : is_first(is_first) {}
+    ParserTablesInSelectQueryElement(bool is_first_) : is_first(is_first_) {}
 
 protected:
     const char * getName() const { return "table, table function, subquery or list of joined tables"; }
