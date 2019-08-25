@@ -366,27 +366,40 @@ void StorageLiveView::checkTableCanBeDropped() const
 void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout)
 {
     bool drop_table = false;
+    UInt64 next_timeout = timeout;
 
-    if (storage->shutdown_called || storage->is_dropped)
+    if (storage->shutdown_called)
         return;
 
     {
         while (1)
         {
             std::unique_lock lock(storage->no_users_thread_mutex);
-            if(!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))
+            if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(next_timeout), [&] { return storage->no_users_thread_wakeup; }))
             {
                 storage->no_users_thread_wakeup = false;
-                if (storage->shutdown_called || storage->is_dropped)
+                if (storage->shutdown_called)
                     return;
                 if (storage->hasUsers())
+                {
+                    /// Thread woke up but there are still users so sleep for 3 times longer than
+                    /// the original timeout to reduce the number of times thread wakes up.
+                    /// Wait until we are explicitely woken up when a user goes away to
+                    /// reset wait time to the original timeout.
+                    next_timeout = timeout * 3;
                     continue;
+                }
                 if (!storage->global_context.getDependencies(storage->database_name, storage->table_name).empty())
                     continue;
                 drop_table = true;
             }
-            else {
+            else
+            {
+                /// Thread was explicitly awaken so reset timeout to the original
+                next_timeout = timeout;
                 storage->no_users_thread_wakeup = false;
+                if (storage->shutdown_called)
+                    return;
                 continue;
             }
             break;
@@ -421,12 +434,12 @@ void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
     {
         if (no_users_thread.joinable())
         {
-            {
-                std::lock_guard lock(no_users_thread_mutex);
-                no_users_thread_wakeup = true;
-                no_users_thread_condition.notify_one();
-            }
-            no_users_thread.join();
+            /// If the thread is already running then
+            /// wake it up and just return
+            std::lock_guard lock(no_users_thread_mutex);
+            no_users_thread_wakeup = true;
+            no_users_thread_condition.notify_one();
+            return;
         }
         {
             std::lock_guard lock(no_users_thread_mutex);
