@@ -72,6 +72,7 @@ public:
         return active_ptr.use_count() > 1;
     }
     /// No users thread mutex, predicate and wake up condition
+    void startNoUsersThread(const UInt64 & timeout);
     std::mutex no_users_thread_mutex;
     bool no_users_thread_wakeup = false;
     std::condition_variable no_users_thread_condition;
@@ -166,10 +167,10 @@ private:
 
     /// Background thread for temporary tables
     /// which drops this table if there are no users
-    void startNoUsersThread(const UInt64 & timeout);
     static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> start_no_users_thread_called = false;
     UInt64 temporary_live_view_timeout;
 
     StorageLiveView(
