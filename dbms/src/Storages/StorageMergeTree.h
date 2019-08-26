@@ -59,9 +59,7 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 

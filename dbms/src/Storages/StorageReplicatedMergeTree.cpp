@@ -3142,12 +3142,14 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(
-    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
-    const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {
     assertNotReadonly();
 
     LOG_DEBUG(log, "Doing ALTER");
+
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
 
     if (params.isSettingsAlter())
     {
@@ -3156,7 +3158,7 @@ void StorageReplicatedMergeTree::alter(
         LOG_DEBUG(log, "ALTER storage_settings only");
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, current_database_name, current_table_name, query_context, table_lock_holder);
+        alterSettings(new_changes, query_context, table_lock_holder);
         return;
     }
 

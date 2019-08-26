@@ -383,10 +383,12 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
-    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();

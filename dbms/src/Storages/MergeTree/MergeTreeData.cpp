@@ -1648,14 +1648,15 @@ void MergeTreeData::alterDataPart(
 
 void MergeTreeData::alterSettings(
         const SettingsChanges & new_changes,
-        const String & current_database_name,
-        const String & current_table_name,
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     MergeTreeSettings copy = *getSettings();
     copy.updateFromChanges(new_changes);
-    IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
+    IStorage::alterSettings(new_changes, context, table_lock_holder);
     storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
 }
 
