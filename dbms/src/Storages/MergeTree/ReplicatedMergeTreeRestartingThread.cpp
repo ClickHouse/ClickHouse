@@ -44,7 +44,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     , log(&Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
-    const auto storage_settings = storage.getCOWSettings();
+    const auto storage_settings = storage.getSettings();
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
@@ -122,7 +122,7 @@ void ReplicatedMergeTreeRestartingThread::run()
         }
 
         time_t current_time = time(nullptr);
-        const auto storage_settings = storage.getCOWSettings();
+        const auto storage_settings = storage.getSettings();
         if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage_settings->check_delay_period))
         {
             /// Find out lag of replicas.
@@ -171,7 +171,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         activateReplica();
 
         const auto & zookeeper = storage.getZooKeeper();
-        const auto storage_settings = storage.getCOWSettings();
+        const auto storage_settings = storage.getSettings();
 
         storage.cloneReplicaIfNeeded(zookeeper);
 

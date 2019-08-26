@@ -107,7 +107,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    MergeTreeSettingsPtr settings_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
@@ -121,11 +121,11 @@ MergeTreeData::MergeTreeData(
     full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name)),
-    guarded_settings(settings_),
+    storage_settings(std::move(storage_settings_)),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
     setConstraints(constraints_);
 
@@ -733,7 +733,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     Strings part_file_names;
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
@@ -966,7 +966,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     if (!lock.try_lock())
         return;
 
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
@@ -1021,7 +1021,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 part_remove_time < now &&
-                now - part_remove_time > getCOWSettings()->old_parts_lifetime.totalSeconds())
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1105,7 +1105,7 @@ void MergeTreeData::clearOldPartsFromFilesystem()
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
     {
         /// Parallel parts removal.
@@ -1342,7 +1342,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
@@ -1508,7 +1508,7 @@ void MergeTreeData::alterDataPart(
     bool skip_sanity_checks,
     AlterDataPartTransactionPtr & transaction)
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     ExpressionActionsPtr expression;
     const auto & part = transaction->getDataPart();
     bool force_update_metadata;
@@ -1653,11 +1653,10 @@ void MergeTreeData::alterSettings(
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder)
 {
-    std::lock_guard lock(settings_mutex);
-    MutableMergeTreeSettingsPtr settings = std::move(*guarded_settings.getPtr()).mutate();
-    settings->updateFromChanges(new_changes);
+    MergeTreeSettings copy = *getSettings();
+    copy.updateFromChanges(new_changes);
     IStorage::alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
-    guarded_settings.setPtr(std::move(settings));
+    storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
 }
 
 bool MergeTreeData::hasSetting(const String & setting_name) const
@@ -2343,7 +2342,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     const size_t parts_count_in_total = getPartsCount();
     if (parts_count_in_total >= settings->max_parts_in_total)
     {
@@ -2381,7 +2380,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 
 void MergeTreeData::throwInsertIfNeeded() const
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     const size_t parts_count_in_total = getPartsCount();
     if (parts_count_in_total >= settings->max_parts_in_total)
     {
@@ -3076,7 +3075,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
 
     if (!settings->enable_mixed_granularity_parts || settings->index_granularity_bytes == 0)
     {
