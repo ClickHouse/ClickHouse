@@ -297,7 +297,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     UInt8 bytes_size = source[0];
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
-    if (2 + bytes_to_skip > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
