@@ -567,6 +567,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     ColumnsDescription columns;
+    ConstraintsDescription constraints;
     StoragePtr res;
 
     if (create.as_table_function)
@@ -579,6 +580,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         /// Set and retrieve list of columns.
         columns = setProperties(create, as_select_sample, as_storage);
+        constraints = getConstraintsDescription(create.columns_list->constraints);
 
         /// Check low cardinality types in creating table if it was not allowed in setting
         if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
@@ -597,8 +599,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Set the table engine if it was not specified explicitly.
         setEngine(create);
     }
-
-    ConstraintsDescription constraints = getConstraintsDescription(create.columns_list->constraints);
 
     {
         std::unique_ptr<DDLGuard> guard;
