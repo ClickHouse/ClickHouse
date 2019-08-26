@@ -25,9 +25,6 @@ private:
     SortDescription description_sorted;
 
     Chunk tail_chunk;
-
-    bool end_of_stream = false;
-    size_t total_rows_processed = 0;
 };
 
 }
