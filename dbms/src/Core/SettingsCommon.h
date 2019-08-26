@@ -325,7 +325,7 @@ private:
         /// Can be updated after first load for config/definition.
         /// Non updatable settings can be `changed`,
         /// if they were overwritten in config/definition.
-        bool updateable;
+        const bool updateable;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
