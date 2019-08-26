@@ -9,7 +9,7 @@
 namespace DB
 {
 
-struct ParsedTemplateFormat
+struct ParsedTemplateFormatString
 {
     enum class ColumnFormat
     {
@@ -23,20 +23,21 @@ struct ParsedTemplateFormat
     };
     std::vector<String> delimiters;
     std::vector<ColumnFormat> formats;
-    std::vector<size_t> format_idx_to_column_idx;
+    std::vector<std::optional<size_t>> format_idx_to_column_idx;
 
-    typedef std::function<size_t(const String &)> ColumnIdxGetter;
+    typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
 
-    ParsedTemplateFormat() = default;
-    ParsedTemplateFormat(const String & format_string, const ColumnIdxGetter & idxByName);
+    ParsedTemplateFormatString() = default;
+    ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idxByName);
     static ColumnFormat stringToFormat(const String & format);
     static String formatToString(ColumnFormat format);
+    static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
     size_t columnsCount() const;
 };
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {
-    using ColumnFormat = ParsedTemplateFormat::ColumnFormat;
+    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
@@ -75,8 +76,8 @@ protected:
     const FormatSettings settings;
     DataTypes types;
 
-    ParsedTemplateFormat format;
-    ParsedTemplateFormat row_format;
+    ParsedTemplateFormatString format;
+    ParsedTemplateFormatString row_format;
 
     size_t rows_before_limit = 0;
     bool rows_before_limit_set = false;

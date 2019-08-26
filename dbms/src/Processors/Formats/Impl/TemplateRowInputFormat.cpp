@@ -21,7 +21,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
 {
     static const String default_format("${data}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
-    format = ParsedTemplateFormat(format_str, [&](const String & partName)
+    format = ParsedTemplateFormatString(format_str, [&](const String & partName)
     {
         if (partName == "data")
             return 0;
@@ -32,7 +32,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
         throw Exception("invalid template format: format_schema must be \"prefix ${data} suffix\"", ErrorCodes::INVALID_TEMPLATE_FORMAT);
 
 
-    row_format = ParsedTemplateFormat(settings.template_settings.row_format, [&](const String & colName)
+    row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName)
     {
         return header_.getPositionByName(colName);
     });
@@ -204,7 +204,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
         if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx], out, i))
         {
             out << "Maybe it's not possible to deserialize field " + std::to_string(i) +
-                   " as " + ParsedTemplateFormat::formatToString(row_format.formats[i]);
+                   " as " + ParsedTemplateFormatString::formatToString(row_format.formats[i]);
             return false;
         }
     }

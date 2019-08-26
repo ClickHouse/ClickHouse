@@ -1,8 +1,10 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -13,7 +15,7 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-ParsedTemplateFormat::ParsedTemplateFormat(const String & format_string, const ColumnIdxGetter & idxByName)
+ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idxByName)
 {
     enum ParserState
     {
@@ -21,8 +23,11 @@ ParsedTemplateFormat::ParsedTemplateFormat(const String & format_string, const C
         Column,
         Format
     };
+
     const char * pos = format_string.c_str();
+    const char * end = format_string.c_str() + format_string.size();
     const char * token_begin = pos;
+    String column_name;
     ParserState state = Delimiter;
     delimiters.emplace_back();
     for (; *pos; ++pos)
@@ -45,29 +50,29 @@ ParsedTemplateFormat::ParsedTemplateFormat(const String & format_string, const C
                 }
                 else
                 {
-                    throw Exception("invalid template: pos " + std::to_string(pos - format_string.c_str()) +
+                    throw Exception("Invalid template format string: pos " + std::to_string(pos - format_string.c_str()) +
                     ": expected '{' or '$' after '$'", ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 }
             }
             break;
 
         case Column:
+            pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_name);
+
             if (*pos == ':')
-            {
-                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
-                format_idx_to_column_idx.push_back(column_idx);
-                token_begin = pos + 1;
                 state = Format;
-            }
             else if (*pos == '}')
             {
-                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
-                format_idx_to_column_idx.push_back(column_idx);
                 formats.push_back(ColumnFormat::Default);
                 delimiters.emplace_back();
-                token_begin = pos + 1;
                 state = Delimiter;
             }
+            else
+                throw Exception("Invalid template format string: Expected ':' or '}' after column name: \"" + column_name + "\"",
+                                ErrorCodes::INVALID_TEMPLATE_FORMAT);
+
+            token_begin = pos + 1;
+            format_idx_to_column_idx.emplace_back(idxByName(column_name));
             break;
 
         case Format:
@@ -81,12 +86,12 @@ ParsedTemplateFormat::ParsedTemplateFormat(const String & format_string, const C
         }
     }
     if (state != Delimiter)
-        throw Exception("invalid template: check parentheses balance", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+        throw Exception("Invalid template format string: check parentheses balance", ErrorCodes::INVALID_TEMPLATE_FORMAT);
     delimiters.back().append(token_begin, pos - token_begin);
 }
 
 
-ParsedTemplateFormat::ColumnFormat ParsedTemplateFormat::stringToFormat(const String & col_format)
+ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
 {
     if (col_format.empty())
         return ColumnFormat::Default;
@@ -103,15 +108,16 @@ ParsedTemplateFormat::ColumnFormat ParsedTemplateFormat::stringToFormat(const St
     else if (col_format == "Raw")
         return ColumnFormat::Raw;
     else
-        throw Exception("invalid template: unknown field format " + col_format, ErrorCodes::INVALID_TEMPLATE_FORMAT);
+        throw Exception("Invalid template format string: unknown field format " + col_format,
+                        ErrorCodes::INVALID_TEMPLATE_FORMAT);
 }
 
-size_t ParsedTemplateFormat::columnsCount() const
+size_t ParsedTemplateFormatString::columnsCount() const
 {
     return format_idx_to_column_idx.size();
 }
 
-String ParsedTemplateFormat::formatToString(ParsedTemplateFormat::ColumnFormat format)
+String ParsedTemplateFormatString::formatToString(ParsedTemplateFormatString::ColumnFormat format)
 {
     switch (format)
     {
@@ -133,6 +139,27 @@ String ParsedTemplateFormat::formatToString(ParsedTemplateFormat::ColumnFormat f
     __builtin_unreachable();
 }
 
+const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s)
+{
+    s.clear();
+    if (!size)
+        return pos;
+    ReadBufferFromMemory buf{pos, size};
+    if (*pos == '"')
+        readDoubleQuotedStringWithSQLStyle(s, buf);
+    else if (*pos == '`')
+        readBackQuotedStringWithSQLStyle(s, buf);
+    else if (isWordCharASCII(*pos))
+    {
+        size_t name_size = 1;
+        while (name_size < size && isWordCharASCII(*(pos + name_size)))
+            ++name_size;
+        s = String{pos, name_size};
+        return pos + name_size;
+    }
+    return pos + buf.count();
+}
+
 
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
         : IOutputFormat(header_, out_), settings(settings_)
@@ -143,21 +170,25 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
     for (size_t i = 0; i < columns; ++i)
         types[i] = sample.safeGetByPosition(i).type;
 
+    /// Parse format string for whole output
     static const String default_format("${data}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
-    format = ParsedTemplateFormat(format_str, [&](const String & partName)
+    format = ParsedTemplateFormatString(format_str, [&](const String & partName)
     {
         return static_cast<size_t>(stringToOutputPart(partName));
     });
 
-    size_t dataIdx = format.format_idx_to_column_idx.size() + 1;
+    /// Validate format string for whole output
+    size_t data_idx = format.format_idx_to_column_idx.size() + 1;
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)
     {
-        switch (static_cast<OutputPart>(format.format_idx_to_column_idx[i]))
+        if (!format.format_idx_to_column_idx[i])
+            throw Exception("Output part name cannot be empty, it's a bug.", ErrorCodes::LOGICAL_ERROR);
+        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[i]))
         {
             case OutputPart::Data:
-                dataIdx = i;
-                BOOST_FALLTHROUGH;
+                data_idx = i;
+                [[fallthrough]];
             case OutputPart::Totals:
             case OutputPart::ExtremesMin:
             case OutputPart::ExtremesMax:
@@ -169,17 +200,21 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
                 break;
         }
     }
-
-    if (dataIdx != 0)
+    if (data_idx != 0)
         throw Exception("invalid template: ${data} must be the first output part", ErrorCodes::INVALID_TEMPLATE_FORMAT);
 
-    row_format = ParsedTemplateFormat(settings.template_settings.row_format, [&](const String & colName)
+    /// Parse format string for rows
+    row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName)
     {
         return sample.getPositionByName(colName);
     });
 
+    /// Validate format string for rows
     if (row_format.delimiters.size() == 1)
         throw Exception("invalid template: no columns specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    for (const auto & idx_mapping : row_format.format_idx_to_column_idx)
+        if (!idx_mapping)
+            throw Exception("Cannot skip format field for output, it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
 TemplateBlockOutputFormat::OutputPart TemplateBlockOutputFormat::stringToOutputPart(const String & part)
@@ -213,7 +248,7 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
     {
         writeString(row_format.delimiters[j], out);
 
-        size_t col_idx = row_format.format_idx_to_column_idx[j];
+        size_t col_idx = *row_format.format_idx_to_column_idx[j];
         serializeField(*chunk.getColumns()[col_idx], *types[col_idx], row_num, row_format.formats[j]);
     }
     writeString(row_format.delimiters[columns], out);
@@ -291,7 +326,7 @@ void TemplateBlockOutputFormat::finalize()
     {
         auto type = std::make_shared<DataTypeUInt64>();
         ColumnWithTypeAndName col(type->createColumnConst(1, row_count), type, String("tmp"));
-        switch (static_cast<OutputPart>(format.format_idx_to_column_idx[j]))
+        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[j]))
         {
             case OutputPart::Totals:
                 if (!totals)
