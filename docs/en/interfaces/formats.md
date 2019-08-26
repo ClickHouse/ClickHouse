@@ -146,7 +146,7 @@ SELECT * FROM t_null FORMAT TSKV
 x=1	y=\N
 ```
 
-When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. It is used in some departments of Yandex.
+When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. Nevertheless, it is no worse than JSONEachRow in terms of efficiency.
 
 Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
 

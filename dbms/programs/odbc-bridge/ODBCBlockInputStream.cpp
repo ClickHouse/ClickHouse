@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
@@ -44,46 +45,46 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                static_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
                 break;
             case ValueType::vtUInt16:
-                static_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
                 break;
             case ValueType::vtUInt32:
-                static_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
                 break;
             case ValueType::vtUInt64:
-                static_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
+                assert_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
                 break;
             case ValueType::vtInt8:
-                static_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
+                assert_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
                 break;
             case ValueType::vtInt16:
-                static_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
+                assert_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
                 break;
             case ValueType::vtInt32:
-                static_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
+                assert_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
                 break;
             case ValueType::vtInt64:
-                static_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
+                assert_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
                 break;
             case ValueType::vtFloat32:
-                static_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
                 break;
             case ValueType::vtFloat64:
-                static_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
+                assert_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
                 break;
             case ValueType::vtString:
-                static_cast<ColumnString &>(column).insert(value.convert<String>());
+                assert_cast<ColumnString &>(column).insert(value.convert<String>());
                 break;
             case ValueType::vtDate:
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
+                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
                 break;
             case ValueType::vtDateTime:
-                static_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
+                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
                 break;
             case ValueType::vtUUID:
-                static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
         }
     }
@@ -114,7 +115,7 @@ Block ODBCBlockInputStream::readImpl()
             {
                 if (description.types[idx].second)
                 {
-                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                     insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }

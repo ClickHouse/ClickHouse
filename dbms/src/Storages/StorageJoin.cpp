@@ -8,6 +8,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
+#include <Common/assert_cast.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -264,7 +265,7 @@ private:
                 if (key_pos == i)
                 {
                     // unwrap null key column
-                    ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*columns[i]);
+                    ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*columns[i]);
                     columns[i] = nullable_col.getNestedColumnPtr()->assumeMutable();
                 }
                 else
@@ -300,7 +301,7 @@ private:
                     res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
-                    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
+                    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
                     res.getByPosition(i).column = nullable_col.getNestedColumnPtr();
                 }
             }

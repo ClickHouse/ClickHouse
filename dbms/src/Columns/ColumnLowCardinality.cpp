@@ -3,6 +3,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
@@ -244,7 +246,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    const auto & low_cardinality_column = static_cast<const ColumnLowCardinality &>(rhs);
+    const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);

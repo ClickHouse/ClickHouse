@@ -249,6 +249,23 @@ public:
 
     using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
 
+    struct PartsTemporaryRename : private boost::noncopyable
+    {
+        PartsTemporaryRename(const MergeTreeData & storage_, const String & base_dir_) : storage(storage_), base_dir(base_dir_) {}
+
+        void addPart(const String & old_name, const String & new_name);
+
+        /// Renames part from old_name to new_name
+        void tryRenameAll();
+
+        /// Renames all added parts from new_name to old_name if old name is not empty
+        ~PartsTemporaryRename();
+
+        const MergeTreeData & storage;
+        String base_dir;
+        std::vector<std::pair<String, String>> old_and_new_names;
+        bool renamed = false;
+    };
 
     /// Parameters for various modes.
     struct MergingParams
@@ -305,6 +322,7 @@ public:
                   const String & full_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
+                  const ConstraintsDescription & constraints_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,
@@ -390,7 +408,14 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Returns all detached parts
-    std::vector<DetachedPartInfo> getDetachedParts() const;
+    DetachedPartsInfo getDetachedParts() const;
+
+    void validateDetachedPartName(const String & name) const;
+
+    void dropDetached(const ASTPtr & partition, bool part, const Context & context);
+
+    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+            const Context & context, PartsTemporaryRename & renamed_parts);
 
     /// Returns Committed parts
     DataParts getDataParts() const;
@@ -550,6 +575,7 @@ public:
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+    void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -805,9 +831,10 @@ protected:
     /// Mutex for settings usage
     mutable std::shared_mutex settings_mutex;
 
-    void setPrimaryKeyIndicesAndColumns(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
+    void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,
-                                        const IndicesDescription & indices_description, bool only_check = false);
+                                        const IndicesDescription & indices_description,
+                                        const ConstraintsDescription & constraints_description, bool only_check = false);
 
     void initPartitionKey();
 

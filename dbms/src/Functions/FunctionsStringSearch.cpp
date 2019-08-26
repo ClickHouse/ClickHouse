@@ -434,6 +434,74 @@ struct MultiSearchFirstIndexImpl
     }
 };
 
+/** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
+  */
+template <bool negate_result = false>
+struct HasTokenImpl
+{
+    using ResultType = UInt8;
+
+    static void vector_constant(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
+    {
+        if (offsets.empty())
+            return;
+
+        const UInt8 * begin = data.data();
+        const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
+
+        /// The current index in the array of strings.
+        size_t i = 0;
+
+        VolnitskyToken searcher(pattern.data(), pattern.size(), end - pos);
+
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        {
+            /// Let's determine which index it refers to.
+            while (begin + offsets[i] <= pos)
+            {
+                res[i] = negate_result;
+                ++i;
+            }
+
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (pos + pattern.size() < begin + offsets[i])
+                res[i] = !negate_result;
+            else
+                res[i] = negate_result;
+
+            pos = begin + offsets[i];
+            ++i;
+        }
+
+        /// Tail, in which there can be no substring.
+        if (i < res.size())
+            memset(&res[i], negate_result, (res.size() - i) * sizeof(res[0]));
+    }
+
+    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
+    {
+        VolnitskyToken searcher(pattern.data(), pattern.size(), data.size());
+        const auto found = searcher.search(data.c_str(), data.size()) != data.end().base();
+        res = negate_result ^ found;
+    }
+
+    template <typename... Args>
+    static void vector_vector(Args &&...)
+    {
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    /// Search different needles in single haystack.
+    template <typename... Args>
+    static void constant_vector(Args &&...)
+    {
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
 
 struct NamePosition
 {
@@ -516,6 +584,11 @@ struct NameMultiSearchFirstPositionCaseInsensitiveUTF8
     static constexpr auto name = "multiSearchFirstPositionCaseInsensitiveUTF8";
 };
 
+struct NameHasToken
+{
+    static constexpr auto name = "hasToken";
+};
+
 
 using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
 using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8>;
@@ -542,6 +615,7 @@ using FunctionMultiSearchFirstPositionUTF8 = FunctionsMultiStringSearch<MultiSea
 using FunctionMultiSearchFirstPositionCaseInsensitive = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
 using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstPositionCaseInsensitiveUTF8>;
 
+using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<false>, NameHasToken>;
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
@@ -569,6 +643,8 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionMultiSearchFirstPositionUTF8>();
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitive>();
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionHasToken>();
 
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
 }

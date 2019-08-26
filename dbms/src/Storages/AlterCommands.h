@@ -5,6 +5,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
+
 #include <Common/SettingsChanges.h>
 
 
@@ -26,6 +28,8 @@ struct AlterCommand
         MODIFY_ORDER_BY,
         ADD_INDEX,
         DROP_INDEX,
+        ADD_CONSTRAINT,
+        DROP_CONSTRAINT,
         MODIFY_TTL,
         UKNOWN_TYPE,
         MODIFY_SETTING,
@@ -64,6 +68,12 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
+    // For ADD CONSTRAINT
+    ASTPtr constraint_decl;
+
+    // For ADD/DROP CONSTRAINT
+    String constraint_name;
+
     /// For MODIFY TTL
     ASTPtr ttl;
 
@@ -89,7 +99,8 @@ struct AlterCommand
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
+        ConstraintsDescription & constraints_description, ASTPtr & order_by_ast,
+        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
@@ -103,12 +114,11 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-
-    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
-        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
-
     /// Used for primitive table engines, where only columns metadata can be changed
     void applyForColumnsOnly(ColumnsDescription & columns_description) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+        ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
+        ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
     /// Apply alter commands only for settings. Exception will be thrown if any other part of table structure will be modified.
     void applyForSettingsOnly(SettingsChanges & changes) const;

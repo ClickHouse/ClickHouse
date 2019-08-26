@@ -17,13 +17,6 @@ namespace DB
  *      COMMENT_COLUMN col_name 'comment',
  *  ALTER LIVE VIEW [db.]name_type
  *      REFRESH
- *  ALTER CHANNEL [db.]name_type
- *      ADD live_view,...
- *      DROP live_view,...
- *      SUSPEND live_view,...
- *      RESUME live_view,...
- *      REFRESH live_view,...
- *      MODIFY live_view,...
  */
 
 class ASTAlterCommand : public IAST
@@ -43,7 +36,11 @@ public:
         DROP_INDEX,
         MATERIALIZE_INDEX,
 
+        ADD_CONSTRAINT,
+        DROP_CONSTRAINT,
+
         DROP_PARTITION,
+        DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
         FETCH_PARTITION,
@@ -56,13 +53,6 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
-
-        LIVE_CHANNEL_ADD,
-        LIVE_CHANNEL_DROP,
-        LIVE_CHANNEL_SUSPEND,
-        LIVE_CHANNEL_RESUME,
-        LIVE_CHANNEL_REFRESH,
-        LIVE_CHANNEL_MODIFY
     };
 
     Type type = NO_TYPE;
@@ -93,6 +83,14 @@ public:
      */
     ASTPtr index;
 
+    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
+    */
+    ASTPtr constraint_decl;
+
+    /** The DROP CONSTRAINT query stores the name for deletion.
+    */
+    ASTPtr constraint;
+
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
      */
@@ -119,7 +117,7 @@ public:
 
     bool detach = false;        /// true for DETACH PARTITION
 
-    bool part = false;          /// true for ATTACH PART
+    bool part = false;          /// true for ATTACH PART and DROP DETACHED PART
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
@@ -174,7 +172,6 @@ class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCl
 {
 public:
     bool is_live_view{false}; /// true for ALTER LIVE VIEW
-    bool is_live_channel{false}; /// true for ALTER LIVE CHANNEL
 
     ASTAlterCommandList * command_list = nullptr;
 

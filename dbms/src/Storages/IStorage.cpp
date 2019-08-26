@@ -55,6 +55,11 @@ const IndicesDescription & IStorage::getIndices() const
     return indices;
 }
 
+const ConstraintsDescription & IStorage::getConstraints() const
+{
+    return constraints;
+}
+
 NameAndTypePair IStorage::getColumn(const String & column_name) const
 {
     /// By default, we assume that there are no virtual columns in the storage.
@@ -305,6 +310,11 @@ void IStorage::setIndices(IndicesDescription indices_)
     indices = std::move(indices_);
 }
 
+void IStorage::setConstraints(ConstraintsDescription constraints_)
+{
+    constraints = std::move(constraints_);
+}
+
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
     return getColumns().get(column_name).is_virtual;
@@ -400,7 +410,7 @@ void IStorage::alterSettings(
             }
         }
     };
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), storage_modifier);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), getConstraints(), storage_modifier);
 }
 
 
@@ -425,8 +435,9 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 
