@@ -4936,7 +4936,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
     /// If necessary, wait until the operation is performed on all replicas.
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock2.release();
+        lock1.release();
         waitForAllReplicasToProcessLogEntry(entry);
+    }
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(
