@@ -22,6 +22,7 @@ using JoinPtr = std::shared_ptr<Join>;
   */
 class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+    friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 

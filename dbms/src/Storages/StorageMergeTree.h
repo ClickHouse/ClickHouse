@@ -23,6 +23,7 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
     void shutdown() override;

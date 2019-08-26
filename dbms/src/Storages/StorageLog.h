@@ -21,6 +21,7 @@ class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageLog>;
 
 public:
     std::string getName() const override { return "Log"; }

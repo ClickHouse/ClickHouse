@@ -23,6 +23,7 @@ class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public
 {
 friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageStripeLog>;
 
 public:
     std::string getName() const override { return "StripeLog"; }
