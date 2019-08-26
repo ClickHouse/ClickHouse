@@ -46,6 +46,7 @@ StoragePtr StorageFactory::get(
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -154,6 +155,7 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
+        .constraints = constraints,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };

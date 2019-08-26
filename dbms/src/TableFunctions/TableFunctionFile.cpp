@@ -15,6 +15,7 @@ StoragePtr TableFunctionFile::getStorage(
         table_name,
         format,
         columns,
+        ConstraintsDescription{},
         global_context);
 }
 

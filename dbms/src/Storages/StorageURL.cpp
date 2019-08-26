@@ -24,14 +24,18 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
+IStorageURLBase::IStorageURLBase(
+    const Poco::URI & uri_,
     const Context & context_,
     const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
-    const ColumnsDescription & columns_)
-    : IStorage(columns_), uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_)
+    : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 namespace
@@ -214,7 +218,7 @@ void registerStorageURL(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.context);
+        return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
 }
 }
