@@ -50,7 +50,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 
 ### domainWithoutWWW
 
-Возвращает домен, удалив не более одного 'www.' с начала, если есть.
+Возвращает домен, удалив префикс 'www.', если он присутствовал.
 
 ### topLevelDomain
 
