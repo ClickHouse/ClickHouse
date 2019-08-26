@@ -2,7 +2,7 @@
 
 All these functions don't follow the RFC. They are maximally simplified for improved performance.
 
-## Functions that extract parts of a URL
+## Functions that Extract Parts of a URL
 
 If the relevant part isn't present in a URL, an empty string is returned.
 
@@ -31,6 +31,14 @@ The URL can be specified with or without a scheme. Examples:
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
+```
+
+For these examples, the `domain` function returns the following results:
+
+```
+some.svn-hosting.com
+some.svn-hosting.com
+yandex.com
 ```
 
 **Returned values**

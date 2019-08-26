@@ -29,6 +29,14 @@ some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
 ```
 
+Для указанных примеров функция `domain` возвращает следующие результаты:
+
+```
+some.svn-hosting.com
+some.svn-hosting.com
+yandex.com
+```
+
 **Возвращаемые значения**
 
 - Имя хоста. Если ClickHouse может распарсить входную строку как URL.
