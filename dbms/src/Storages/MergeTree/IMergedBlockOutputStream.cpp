@@ -39,7 +39,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
     , skip_indices(indices_to_recalc)
-    , with_final_mark(storage.getCOWSettings()->write_final_mark && can_use_adaptive_granularity)
+    , with_final_mark(storage.getSettings()->write_final_mark && can_use_adaptive_granularity)
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -139,7 +139,7 @@ void fillIndexGranularityImpl(
 
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
-    const auto storage_settings = storage.getCOWSettings();
+    const auto storage_settings = storage.getSettings();
     fillIndexGranularityImpl(
         block,
         storage_settings->index_granularity_bytes,

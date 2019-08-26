@@ -2,7 +2,6 @@
 
 #include <Core/Defines.h>
 #include <Core/SettingsCommon.h>
-#include <Common/COW.h>
 
 
 namespace Poco
@@ -22,10 +21,8 @@ class ASTStorage;
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>, public COW<MergeTreeSettings>
+struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 {
-
-    friend class COW<MergeTreeSettings>;
 
 /// M (mutable) for normal settings, IM (immutable) for not updateable settings.
 #define LIST_OF_MERGE_TREE_SETTINGS(M, IM)                                 \
@@ -101,14 +98,8 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>, public 
 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def);
-
-    MutablePtr clone() const;
-private:
-    MergeTreeSettings() = default;
-    MergeTreeSettings(const MergeTreeSettings & o) = default;
 };
 
-using MergeTreeSettingsPtr = MergeTreeSettings::Ptr;
-using MutableMergeTreeSettingsPtr = MergeTreeSettings::MutablePtr;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 }
