@@ -245,11 +245,12 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
-    const String & current_database_name,
-    const String & current_table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     if (!params.isMutable())
     {
         SettingsChanges new_changes;
@@ -257,7 +258,7 @@ void StorageMergeTree::alter(
         if (params.isSettingsAlter())
         {
             params.applyForSettingsOnly(new_changes);
-            alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
+            alterSettings(new_changes, context, table_lock_holder);
             return;
         }
 

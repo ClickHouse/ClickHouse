@@ -47,8 +47,7 @@ public:
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
     void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 

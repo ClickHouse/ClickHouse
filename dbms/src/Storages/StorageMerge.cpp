@@ -396,8 +396,7 @@ DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) c
 
 
 void StorageMerge::alter(
-    const AlterCommands & params, const String & database_name_, const String & table_name_,
-    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
@@ -405,7 +404,7 @@ void StorageMerge::alter(
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
     setColumns(new_columns);
 }
 

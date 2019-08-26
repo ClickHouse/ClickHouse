@@ -61,8 +61,6 @@ public:
 
     void alterSettings(
         const SettingsChanges & new_changes,
-        const String & current_database_name,
-        const String & current_table_name,
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder) override;
 
