@@ -54,7 +54,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 
 ### topLevelDomain
 
-Возвращает домен верхнего уровня.
+Извлекает домен верхнего уровня из URL.
 
 ```
 topLevelDomain(url)
