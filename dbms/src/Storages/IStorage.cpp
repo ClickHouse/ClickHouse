@@ -399,7 +399,7 @@ void IStorage::alterSettings(
             {
                 if (hasSetting(change.name))
                 {
-                    auto finder = [&change] (const SettingChange & c) { return c.name == change.name;};
+                    auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
                     if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
                         it->value = change.value;
                     else
