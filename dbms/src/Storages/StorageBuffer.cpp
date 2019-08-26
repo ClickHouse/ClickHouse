@@ -55,11 +55,12 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_,
+StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_,
+    const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    : IStorage{columns_},
+    :
     table_name(table_name_), database_name(database_name_), global_context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
@@ -67,6 +68,8 @@ StorageBuffer::StorageBuffer(const std::string & database_name_, const std::stri
     no_destination(destination_database.empty() && destination_table.empty()),
     allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name + ")"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 StorageBuffer::~StorageBuffer()
@@ -743,7 +746,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
         return StorageBuffer::create(
             args.database_name,
-            args.table_name, args.columns,
+            args.table_name, args.columns, args.constraints,
             args.context,
             num_buckets,
             StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
