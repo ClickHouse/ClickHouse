@@ -31,6 +31,7 @@ public:
     }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+
     void drop() override;
 
     void truncate(const ASTPtr &, const Context &) override;

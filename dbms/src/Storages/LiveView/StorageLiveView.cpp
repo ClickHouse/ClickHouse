@@ -218,9 +218,11 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(columns_), table_name(table_name_),
+    : table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
+    setColumns(columns_);
+
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
