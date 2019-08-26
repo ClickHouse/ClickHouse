@@ -35,7 +35,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/Compiler.h>
 #include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
@@ -140,7 +139,6 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
@@ -1631,17 +1629,6 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
         throw Exception("Clusters are not set", ErrorCodes::LOGICAL_ERROR);
 
     shared->clusters->setCluster(cluster_name, cluster);
-}
-
-
-Compiler & Context::getCompiler()
-{
-    auto lock = getLock();
-
-    if (!shared->compiler)
-        shared->compiler.emplace(shared->path + "build/", 1);
-
-    return *shared->compiler;
 }
 
 
