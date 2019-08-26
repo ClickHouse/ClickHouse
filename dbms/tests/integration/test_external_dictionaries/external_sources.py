@@ -246,7 +246,7 @@ class SourceFile(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
         path = "/" + table_name + ".tsv"
-        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)], user="root")
         self.ordered_names = structure.get_ordered_names()
         self.prepared = True
 
@@ -260,7 +260,7 @@ class SourceFile(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user="root")
 
     def compatible_with_layout(self, layout):
         return 'cache' not in layout.name
@@ -286,7 +286,7 @@ class _SourceExecutableBase(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
         path = "/" + table_name + ".tsv"
-        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)], user="root")
         self.ordered_names = structure.get_ordered_names()
         self.prepared = True
 
@@ -300,7 +300,7 @@ class _SourceExecutableBase(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user='root')
 
 
 class SourceExecutableCache(_SourceExecutableBase):
@@ -337,7 +337,7 @@ class SourceHTTPBase(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
         path = "/" + table_name + ".tsv"
-        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)], user='root')
 
         script_dir = os.path.dirname(os.path.realpath(__file__))
         self.node.copy_file_to_container(os.path.join(script_dir, './http_server.py'), '/http_server.py')
@@ -361,7 +361,7 @@ class SourceHTTPBase(ExternalSource):
                 sorted_row.append(str(row.data[name]))
 
             str_data = '\t'.join(sorted_row)
-            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user='root')
 
 
 class SourceHTTP(SourceHTTPBase):

@@ -198,14 +198,17 @@ StorageStripeLog::StorageStripeLog(
     const std::string & database_name_,
     const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), table_name(table_name_), database_name(database_name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -214,7 +217,8 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create files if they do not exist
         if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
+                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 }
 
@@ -315,7 +319,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageStripeLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

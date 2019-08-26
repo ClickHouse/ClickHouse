@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
 #include <Core/SettingsCommon.h>
 #include <ext/range.h>
@@ -52,13 +53,14 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
 {
+    setColumns(columns_);
 }
 
 
@@ -387,6 +389,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
+    checkStackSize();
     auto database = context.getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
     return database->getIterator(global_context, table_name_match);
@@ -401,8 +404,9 @@ void StorageMerge::alter(
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
-    params.apply(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, {});
+    auto new_constraints = getConstraints();
+    params.applyForColumnsOnly(new_columns);
+    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
     setColumns(new_columns);
 }
 

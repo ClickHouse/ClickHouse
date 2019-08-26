@@ -27,8 +27,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
+    const auto data_settings = data.getCOWSettings();
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.settings.index_granularity;
+    index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
@@ -48,9 +49,11 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     ttl_table = formattedAST(data.ttl_table_ast);
     skip_indices = data.getIndices().toString();
     if (data.canUseAdaptiveGranularity())
-        index_granularity_bytes = data.settings.index_granularity_bytes;
+        index_granularity_bytes = data_settings->index_granularity_bytes;
     else
         index_granularity_bytes = 0;
+
+    constraints = data.getConstraints().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -80,6 +83,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (index_granularity_bytes != 0)
         out << "granularity bytes: " << index_granularity_bytes << "\n";
+
+    if (!constraints.empty())
+        out << "constraints: " << constraints << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -123,6 +129,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     }
     else
         index_granularity_bytes = 0;
+
+    if (checkString("constraints: ", in))
+        in >> constraints >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -232,6 +241,21 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     "Existing table metadata in ZooKeeper differs in skip indexes."
                     " Stored in ZooKeeper: " + from_zk.skip_indices +
                     ", local: " + skip_indices,
+                    ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (constraints != from_zk.constraints)
+    {
+        if (allow_alter)
+        {
+            diff.constraints_changed = true;
+            diff.new_constraints = from_zk.constraints;
+        }
+        else
+            throw Exception(
+                    "Existing table metadata in ZooKeeper differs in constraints."
+                    " Stored in ZooKeeper: " + from_zk.constraints +
+                    ", local: " + constraints,
                     ErrorCodes::METADATA_MISMATCH);
     }
 

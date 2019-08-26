@@ -29,7 +29,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)). 
+Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -66,7 +66,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
 Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
- 
+
 If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
 Example:
@@ -85,7 +85,7 @@ Adds a comment to the column. If the `IF EXISTS` clause is specified, the query 
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](misc.md#misc-describe-table) query. 
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](misc.md#misc-describe-table) query.
 
 Example:
 
@@ -129,7 +129,7 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query. 
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
@@ -166,6 +166,22 @@ are available:
 These commands are lightweight in a sense that they only change metadata or remove files.
 Also, they are replicated (syncing indices metadata through ZooKeeper).
 
+### Manipulations with constraints
+
+See more on [constraints](create.md#constraints)
+
+Constraints could be added or deleted using following syntax:
+```
+ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
+```
+
+Queries will add or remove metadata about constraints from table so they are processed immediately.
+
+Constraint check *will not be executed* on existing data if it was added.
+
+All changes on replicated tables are broadcasting to ZooKeeper so will be applied on other replicas.
+
 ### Manipulations With Partitions and Parts {#alter_manipulations-with-partitions}
 
 The following operations with [partitions](../operations/table_engines/custom_partitioning_key.md) are available:
@@ -175,6 +191,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 
@@ -210,6 +227,16 @@ Read about setting the partition expression in a section [How to specify the par
 
 The query is replicated – it deletes data on all replicas.
 
+#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+
+```sql
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
+```
+
+Removes the specified part or all parts of the specified partition from `detached`.
+Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+
+
 #### ATTACH PARTITION|PART {#alter_attach-partition}
 
 ``` sql
@@ -240,7 +267,7 @@ This query copies the data partition from the `table1` to `table2`. Note that da
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
-- Both tables must have the same partition key.  
+- Both tables must have the same partition key.
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
@@ -262,13 +289,13 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once. 
+This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
 Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 !!! note
    The entire backup process is performed without stopping the server.
-   
+
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
@@ -292,6 +319,14 @@ Restoring from a backup doesn't require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../operations/backup.md) section.
 
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+
+``` sql
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
+
 #### FETCH PARTITION {#alter_fetch-partition}
 
 ``` sql
@@ -313,7 +348,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 ```
 Note that:
 
-- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the `detached` directory only on the local server. 
+- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the `detached` directory only on the local server.
 - The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
@@ -327,7 +362,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
 - As the expression from the table column. Constants and constant expressions are supported. For example, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- In the [ALTER ATTACH PART](#alter_attach-partition) query, to specify the name of a part, use a value from the `name` column of the `system.parts` table. For example, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
+- In the [ALTER ATTACH PART](#alter_attach-partition) and [DROP DETACHED PART](#alter_drop-detached) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](../operations/system_tables.md#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
@@ -369,6 +404,12 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+
+``` sql
+ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+```
+
+The query rebuilds the secondary index `name` in the partition `partition_name`.
 
 One query can contain several commands separated by commas.
 

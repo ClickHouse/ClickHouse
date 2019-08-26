@@ -2,7 +2,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesRowInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -29,9 +28,9 @@ namespace ErrorCodes
 
 
 ValuesRowInputFormat::ValuesRowInputFormat(
-    ReadBuffer & in_, Block header, Params params, const Context & context_, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, params)
-    , context(std::make_unique<Context>(context_)), format_settings(format_settings)
+    ReadBuffer & in_, Block header_, Params params_, const Context & context_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, params_)
+    , context(std::make_unique<Context>(context_)), format_settings(format_settings_)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);
@@ -105,7 +104,7 @@ bool ValuesRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
                 Expected expected;
 
                 Tokens tokens(prev_in_position, in.buffer().end());
-                TokenIterator token_iterator(tokens);
+                IParser::Pos token_iterator(tokens);
 
                 ASTPtr ast;
                 if (!parser.parse(token_iterator, ast, expected))
@@ -159,7 +158,7 @@ void registerInputFormatProcessorValues(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesRowInputFormat>(buf, sample, params, context, settings);
+        return std::make_shared<ValuesRowInputFormat>(buf, sample, std::move(params), context, settings);
     });
 }
 

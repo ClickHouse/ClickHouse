@@ -31,6 +31,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_string.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_time.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_tls.c
+${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/gnutls.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/ma_schannel.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/schannel.c
@@ -42,6 +43,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/mariadb_cleartext.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/my_auth.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/old_password.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sha256_pw.c
+${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/caching_sha2_pw.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_client.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_errmsg.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/connection/aurora.c
@@ -59,6 +61,11 @@ if(OPENSSL_LIBRARIES)
 endif()
 
 add_library(mysqlclient ${SRCS})
+
+target_link_libraries(mysqlclient PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+if(M_LIBRARY)
+    target_link_libraries(mysqlclient PRIVATE ${M_LIBRARY})
+endif()
 
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlclient PRIVATE ${OPENSSL_LIBRARIES})

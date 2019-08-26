@@ -15,6 +15,8 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/MetricLog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -230,7 +232,9 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
                     [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
-                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); }
+                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
+                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); },
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -274,6 +278,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -282,6 +287,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
             system_context,
             system_context.getGlobalContext(),
             columns,
+            constraints,
             create.attach,
             false);
 

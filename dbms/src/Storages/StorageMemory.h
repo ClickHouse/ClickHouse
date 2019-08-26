@@ -55,7 +55,7 @@ private:
     std::mutex mutex;
 
 protected:
-    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_);
+    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
 };
 
 }

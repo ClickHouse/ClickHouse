@@ -26,6 +26,7 @@ struct ReplicatedMergeTreeTableMetadata
     String partition_key;
     String sorting_key;
     String skip_indices;
+    String constraints;
     String ttl_table;
     UInt64 index_granularity_bytes;
 
@@ -46,10 +47,16 @@ struct ReplicatedMergeTreeTableMetadata
         bool skip_indices_changed = false;
         String new_skip_indices;
 
+        bool constraints_changed = false;
+        String new_constraints;
+
         bool ttl_table_changed = false;
         String new_ttl_table;
 
-        bool empty() const { return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed; }
+        bool empty() const
+        {
+            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
+        }
     };
 
     Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;

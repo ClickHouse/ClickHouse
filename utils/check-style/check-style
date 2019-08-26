@@ -25,3 +25,9 @@ find $ROOT_PATH/dbms -name '*.h' -or -name '*.cpp' |
 find $ROOT_PATH/dbms -name '*.h' -or -name '*.cpp' |
     grep -vP 'Compiler|build' |
     xargs grep $@ -P '}\s*//+\s*namespace\s*'
+
+# Broken symlinks
+find -L $ROOT_PATH -type l | grep -v contrib && echo "^ Broken symlinks found"
+
+# Double whitespaces
+find $ROOT_PATH/dbms -name '*.h' -or -name '*.cpp' | while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done

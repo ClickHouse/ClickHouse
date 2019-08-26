@@ -172,7 +172,7 @@
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
-    M(QueryProfilerCannotWriteTrace, "Number of stack traces dropped by query profiler because pipe is full or cannot write to pipe.") \
+    M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
 
 namespace ProfileEvents
@@ -191,10 +191,10 @@ Counters global_counters(global_counters_array);
 const Event Counters::num_counters = END;
 
 
-Counters::Counters(VariableContext level, Counters * parent)
+Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),
-      parent(parent),
-      level(level)
+      parent(parent_),
+      level(level_)
 {
     counters = counters_holder.get();
 }
