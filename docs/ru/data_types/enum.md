@@ -56,7 +56,7 @@ SELECT * FROM t_enum
 Если необходимо увидеть цифровые эквиваленты строкам, то необходимо привести тип `Enum` к целочисленному.
 
 ```sql
-SELECT CAST(x, 'Int8') FROM t_enum
+SELECT CAST(x AS Int8) FROM t_enum
 
 ┌─CAST(x, 'Int8')─┐
 │               1 │
