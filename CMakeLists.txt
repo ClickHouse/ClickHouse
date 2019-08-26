@@ -258,7 +258,7 @@ endif ()
 if (NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
     set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-endif()
+endif ()
 
 include (cmake/find_unwind.cmake)
 
@@ -421,10 +421,10 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
+include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
-include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)

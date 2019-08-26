@@ -1,9 +1,7 @@
 #include <Formats/FormatFactory.h>
 
-#include "config_formats.h"
+#include "ProtobufBlockOutputFormat.h"
 #if USE_PROTOBUF
-
-#include <Processors/Formats/Impl/ProtobufBlockOutputFormat.h>
 
 #include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>

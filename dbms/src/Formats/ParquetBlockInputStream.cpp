@@ -1,7 +1,6 @@
-#include "config_formats.h"
-#if USE_PARQUET
-#    include "ParquetBlockInputStream.h"
+#include "ParquetBlockInputStream.h"
 
+#if USE_PARQUET
 #    include <algorithm>
 #    include <iterator>
 #    include <vector>

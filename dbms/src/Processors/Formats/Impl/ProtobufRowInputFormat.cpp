@@ -1,11 +1,10 @@
-#include "config_formats.h"
+#include "ProtobufRowInputFormat.h"
 #if USE_PROTOBUF
 
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
-#include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
 
 
 namespace DB

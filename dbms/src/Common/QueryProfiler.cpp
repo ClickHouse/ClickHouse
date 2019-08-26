@@ -176,6 +176,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         throw;
     }
 #else
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
     throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
@@ -189,11 +194,13 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
+#if USE_INTERNAL_UNWIND_LIBRARY
     if (timer_id != nullptr && timer_delete(timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
         LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+#endif
 }
 
 template class QueryProfilerBase<QueryProfilerReal>;

@@ -1,8 +1,6 @@
-#include "config_formats.h"
-#if USE_CAPNP
-
 #include "CapnProtoRowInputStream.h"
 
+#if USE_CAPNP
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
