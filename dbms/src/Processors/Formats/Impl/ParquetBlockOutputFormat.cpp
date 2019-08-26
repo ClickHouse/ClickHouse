@@ -1,31 +1,30 @@
-#include "config_formats.h"
+#include "ParquetBlockOutputFormat.h"
 
 #if USE_PARQUET
-#    include "ParquetBlockOutputFormat.h"
 
 // TODO: clean includes
-#    include <Columns/ColumnDecimal.h>
-#    include <Columns/ColumnFixedString.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnVector.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <Core/ColumnWithTypeAndName.h>
-#    include <Core/callOnTypeIndex.h>
-#    include <DataTypes/DataTypeDateTime.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataStreams/SquashingBlockOutputStream.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/WriteHelpers.h>
-#    include <arrow/api.h>
-#    include <arrow/io/api.h>
-#    include <arrow/util/decimal.h>
-#    include <parquet/arrow/writer.h>
-#    include <parquet/exception.h>
-#    include <parquet/util/memory.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
+#include <Formats/FormatFactory.h>
+#include <IO/WriteHelpers.h>
+#include <arrow/api.h>
+#include <arrow/io/api.h>
+#include <arrow/util/decimal.h>
+#include <parquet/arrow/writer.h>
+#include <parquet/exception.h>
+#include <parquet/util/memory.h>
 
-#    include <Core/iostream_debug_helpers.h> // REMOVE ME
 
 namespace DB
 {
@@ -35,8 +34,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IOutputFormat(header, out_), format_settings{format_settings}
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
 }
 
@@ -50,7 +49,7 @@ template <typename NumericType, typename ArrowBuilderType>
 static void fillArrowArrayWithNumericColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
+    const PaddedPODArray<NumericType> & internal_data = assert_cast<const ColumnVector<NumericType> &>(*write_column).getData();
     ArrowBuilderType builder;
     arrow::Status status;
 
@@ -77,7 +76,7 @@ template <typename ColumnType>
 static void fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    const auto & internal_column = static_cast<const ColumnType &>(*write_column);
+    const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
     arrow::StringBuilder builder;
     arrow::Status status;
 
@@ -103,7 +102,7 @@ static void fillArrowArrayWithStringColumnData(
 static void fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
+    const PaddedPODArray<UInt16> & internal_data = assert_cast<const ColumnVector<UInt16> &>(*write_column).getData();
     //arrow::Date32Builder date_builder;
     arrow::UInt16Builder builder;
     arrow::Status status;
@@ -125,7 +124,7 @@ static void fillArrowArrayWithDateColumnData(
 static void fillArrowArrayWithDateTimeColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
+    auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
     //arrow::Date64Builder builder;
     arrow::UInt32Builder builder;
     arrow::Status status;
@@ -196,7 +195,7 @@ static void fillArrowArrayWithDecimalColumnData(
 */
 }
 
-#    define FOR_INTERNAL_NUMERIC_TYPES(M) \
+#define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
         M(UInt16, arrow::UInt16Builder) \
@@ -233,8 +232,8 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type
 
 static const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 {
-    ColumnPtr null_column = static_cast<const ColumnNullable &>(*column).getNullMapColumnPtr();
-    const PaddedPODArray<UInt8> & null_bytemap = static_cast<const ColumnVector<UInt8> &>(*null_column).getData();
+    ColumnPtr null_column = assert_cast<const ColumnNullable &>(*column).getNullMapColumnPtr();
+    const PaddedPODArray<UInt8> & null_bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
     return &null_bytemap;
 }
 
@@ -319,7 +318,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         std::shared_ptr<arrow::Array> arrow_array;
 
         ColumnPtr nested_column
-            = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
+            = is_column_nullable ? assert_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
         if ("String" == column_nested_type_name)
@@ -358,14 +357,14 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             };
             callOnIndexAndDataType<void>(column_nested_type->getTypeId(), fill_decimal);
         }
-#    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
+#define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
         { \
             fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(nested_column, arrow_array, null_bytemap); \
         }
 
         FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
-#    undef DISPATCH
+#undef DISPATCH
         else
         {
             throw Exception{"Internal type \"" + column_nested_type_name + "\" of a column \"" + column.name
@@ -424,7 +423,12 @@ void ParquetBlockOutputFormat::finalize()
 void registerOutputFormatProcessorParquet(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context & /*context*/, const FormatSettings & format_settings)
+        "Parquet",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const Context & /*context*/,
+           FormatFactory::WriteCallback,
+           const FormatSettings & format_settings)
         {
             auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
             /// TODO

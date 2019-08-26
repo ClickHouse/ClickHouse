@@ -31,21 +31,21 @@ namespace ErrorCodes
 MergeTreeReader::~MergeTreeReader() = default;
 
 
-MergeTreeReader::MergeTreeReader(const String & path,
-    const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-    UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
-    const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-    size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-    clockid_t clock_type)
-    : data_part(data_part), avg_value_size_hints(avg_value_size_hints), path(path), columns(columns)
-    , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
+MergeTreeReader::MergeTreeReader(const String & path_,
+    const MergeTreeData::DataPartPtr & data_part_, const NamesAndTypesList & columns_,
+    UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_, bool save_marks_in_cache_,
+    const MergeTreeData & storage_, const MarkRanges & all_mark_ranges_,
+    size_t aio_threshold_, size_t max_read_buffer_size_, const ValueSizeMap & avg_value_size_hints_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+    clockid_t clock_type_)
+    : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_), path(path_), columns(columns_)
+    , uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_), storage(storage_)
+    , all_mark_ranges(all_mark_ranges_), aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 {
     try
     {
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, profile_callback, clock_type);
+            addStreams(column.name, *column.type, profile_callback_, clock_type_);
     }
     catch (...)
     {

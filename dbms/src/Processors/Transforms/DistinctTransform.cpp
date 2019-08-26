@@ -9,23 +9,23 @@ namespace ErrorCodes
 }
 
 DistinctTransform::DistinctTransform(
-    const Block & header,
-    const SizeLimits & set_size_limits,
-    UInt64 limit_hint,
-    const Names & columns)
-    : ISimpleTransform(header, header, true)
-    , limit_hint(limit_hint)
-    , set_size_limits(set_size_limits)
+    const Block & header_,
+    const SizeLimits & set_size_limits_,
+    UInt64 limit_hint_,
+    const Names & columns_)
+    : ISimpleTransform(header_, header_, true)
+    , limit_hint(limit_hint_)
+    , set_size_limits(set_size_limits_)
 {
-    size_t num_columns = columns.empty() ? header.columns() : columns.size();
+    size_t num_columns = columns_.empty() ? header_.columns() : columns_.size();
 
-    key_columns_pos.reserve(columns.size());
+    key_columns_pos.reserve(columns_.size());
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto pos = columns.empty() ? i
-                                   : header.getPositionByName(columns[i]);
+        auto pos = columns_.empty() ? i
+                                   : header_.getPositionByName(columns_[i]);
 
-        auto & col = header.getByPosition(pos).column;
+        auto & col = header_.getByPosition(pos).column;
 
         if (!(col && isColumnConst(*col)))
             key_columns_pos.emplace_back(pos);

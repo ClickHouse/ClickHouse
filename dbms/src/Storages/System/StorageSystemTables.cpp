@@ -65,12 +65,12 @@ class TablesBlockInputStream : public IBlockInputStream
 {
 public:
     TablesBlockInputStream(
-        std::vector<UInt8> columns_mask,
-        Block header,
-        UInt64 max_block_size,
-        ColumnPtr databases,
-        const Context & context)
-        : columns_mask(std::move(columns_mask)), header(std::move(header)), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
+        std::vector<UInt8> columns_mask_,
+        Block header_,
+        UInt64 max_block_size_,
+        ColumnPtr databases_,
+        const Context & context_)
+        : columns_mask(std::move(columns_mask_)), header(std::move(header_)), max_block_size(max_block_size_), databases(std::move(databases_)), context(context_) {}
 
     String getName() const override { return "Tables"; }
     Block getHeader() const override { return header; }

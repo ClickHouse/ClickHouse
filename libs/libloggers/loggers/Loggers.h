@@ -3,6 +3,8 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
+#include <Interpreters/TextLog.h>
+#include "OwnSplitChannel.h"
 
 namespace Poco::Util
 {
@@ -23,6 +25,8 @@ public:
         return layer; /// layer setted in inheritor class BaseDaemonApplication.
     }
 
+    void setTextLog(std::shared_ptr<DB::TextLog> log);
+
 protected:
     std::optional<size_t> layer;
 
@@ -33,4 +37,7 @@ private:
     Poco::AutoPtr<Poco::Channel> syslog_channel;
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::string config_logger;
+
+    std::weak_ptr<DB::TextLog> text_log;
+    Poco::AutoPtr<DB::OwnSplitChannel> split;
 };

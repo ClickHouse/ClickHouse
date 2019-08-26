@@ -6,6 +6,7 @@
 #include <fstream>
 #include <streambuf>
 #include <cstdlib>
+#include <functional>
 
 namespace
 {

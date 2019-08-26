@@ -211,6 +211,11 @@ public:
         throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// In case if query was cancelled executor will wait till all processors finish their jobs.
+    /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
+    bool isCancelled() const { return is_cancelled; }
+    void cancel() { is_cancelled = true; }
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
@@ -219,10 +224,14 @@ public:
     /// Debug output.
     void dump() const;
 
-    std::string processor_description;
-
+    /// Used to print pipeline.
     void setDescription(const std::string & description_) { processor_description = description_; }
     const std::string & getDescription() const { return processor_description; }
+
+private:
+    std::atomic<bool> is_cancelled{false};
+
+    std::string processor_description;
 };
 
 

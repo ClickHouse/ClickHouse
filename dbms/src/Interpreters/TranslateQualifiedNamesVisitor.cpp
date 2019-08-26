@@ -253,7 +253,7 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
-            if (auto opt_column = getIdentifierName(key))
+            if (auto opt_column = tryGetIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
             else if (key->as<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());

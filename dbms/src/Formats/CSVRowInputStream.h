@@ -21,7 +21,7 @@ class CSVRowInputStream : public IRowInputStream
 public:
     /** with_names - in the first line the header with column names
       */
-    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings);
+    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings_);
 
     bool read(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;

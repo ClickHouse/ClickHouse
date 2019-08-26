@@ -179,8 +179,8 @@ protected:
 public:
     using Data = State::Data;
 
-    Port(Block header) : header(std::move(header)) {}
-    Port(Block header, IProcessor * processor) : header(std::move(header)), processor(processor) {}
+    Port(Block header_) : header(std::move(header_)) {}
+    Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
 
     const Block & getHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }

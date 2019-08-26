@@ -12,7 +12,7 @@ class ASTPartition : public IAST
 {
 public:
     ASTPtr value;
-    StringRef fields_str; /// The extent of comma-separated partition expression fields without parentheses.
+    String fields_str; /// The extent of comma-separated partition expression fields without parentheses.
     size_t fields_count = 0;
 
     String id;

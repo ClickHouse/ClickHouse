@@ -1,3 +1,5 @@
+#ifdef __ELF__
+
 /*
  * Copyright 2012-present Facebook, Inc.
  *
@@ -707,7 +709,7 @@ void Dwarf::LineNumberVM::init()
     lineRange_ = read<uint8_t>(header);
     opcodeBase_ = read<uint8_t>(header);
     SAFE_CHECK(opcodeBase_ != 0, "invalid opcode base");
-    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data());
+    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data()); //-V506
     header.remove_prefix(opcodeBase_ - 1);
 
     // We don't want to use heap, so we don't keep an unbounded amount of state.
@@ -1031,3 +1033,5 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 }
 
 }
+
+#endif

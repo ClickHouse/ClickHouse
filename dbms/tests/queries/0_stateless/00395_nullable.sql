@@ -125,6 +125,7 @@ SELECT '----- ifNull, nullIf -----';
 
 SELECT col1, col2, ifNull(col1,col2) FROM test1_00395 ORDER BY col1,col2 ASC;
 SELECT col1, col2, nullIf(col1,col2) FROM test1_00395 ORDER BY col1,col2 ASC;
+SELECT nullIf(1, NULL);
 
 SELECT '----- coalesce -----';
 

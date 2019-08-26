@@ -562,7 +562,7 @@ class ClickHouseInstance:
         with open(local_path, 'r') as fdata:
             data = fdata.read()
             encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
+            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)], user='root')
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])

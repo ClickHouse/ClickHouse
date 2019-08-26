@@ -61,9 +61,9 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
     return true;
 }
 
-MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index)
+MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
     : IMergeTreeIndexGranule()
-    , index(index)
+    , index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -87,8 +87,8 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index)
-    : index(index), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
+MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index_)
+    : index(index_), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 {
@@ -165,6 +165,19 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
 
                     const auto & str = value.get<String>();
                     likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
+                    return true;
+                }
+        },
+        {
+                "hasToken",
+                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
+                {
+                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.bloom_filter = std::make_unique<BloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    const auto & str = value.get<String>();
+                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         },

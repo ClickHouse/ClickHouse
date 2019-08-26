@@ -91,7 +91,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int LEADERSHIP_CHANGED;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
@@ -194,6 +193,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & table_name_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -202,11 +202,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    MergeTreeSettingsPtr settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
-            columns_, indices_,
+            columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, true, attach,
@@ -297,6 +297,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
+
+    other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+}
+
+
+bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
+{
+    auto zookeeper = getZooKeeper();
+    String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    return metadata_from_zk.index_granularity_bytes == 0;
 }
 
 
@@ -365,7 +376,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 }
 
 
-/** Verify that list of columns and table settings match those specified in ZK (/ metadata).
+/** Verify that list of columns and table storage_settings match those specified in ZK (/ metadata).
     * If not, throw an exception.
     */
 void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bool allow_alter)
@@ -416,6 +427,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_order_by_ast = order_by_ast;
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
@@ -445,6 +457,9 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.skip_indices_changed)
             new_indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
 
+        if (metadata_diff.constraints_changed)
+            new_constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+
         if (metadata_diff.ttl_table_changed)
         {
             ParserExpression parser;
@@ -470,11 +485,11 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         };
     }
 
-    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, storage_modifier);
+    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 }
 
@@ -622,7 +637,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (const auto & part : parts)
         total_rows_on_filesystem += part->rows_count;
 
-    bool insane = unexpected_parts_rows > total_rows_on_filesystem * settings.replicated_max_ratio_of_wrong_parts;
+    const auto storage_settings = getCOWSettings();
+    bool insane = unexpected_parts_rows > total_rows_on_filesystem * storage_settings->replicated_max_ratio_of_wrong_parts;
 
     if (insane && !skip_sanity_checks)
     {
@@ -765,12 +781,13 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
     if (!has_been_already_added)
     {
+        const auto storage_settings = getCOWSettings();
         String part_path = replica_path + "/parts/" + part_name;
 
         ops.emplace_back(zkutil::makeCheckRequest(
             zookeeper_path + "/columns", expected_columns_version));
 
-        if (settings.use_minimalistic_part_header_in_zookeeper)
+        if (storage_settings->use_minimalistic_part_header_in_zookeeper)
         {
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, local_part_header.toString(), zkutil::CreateMode::Persistent));
@@ -847,7 +864,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const
 {
     return MinimalisticDataPartChecksums::getSerializedString(checksums,
-                                                              static_cast<bool>(settings.use_minimalistic_checksums_in_zookeeper));
+        getCOWSettings()->use_minimalistic_checksums_in_zookeeper);
 }
 
 
@@ -859,9 +876,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::CLEAR_COLUMN)
+    if (entry.type == LogEntry::CLEAR_COLUMN || entry.type == LogEntry::CLEAR_INDEX)
     {
-        executeClearColumnInPartition(entry);
+        executeClearColumnOrIndexInPartition(entry);
         return true;
     }
 
@@ -1018,13 +1035,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         parts.push_back(part);
     }
 
+    const auto storage_settings = getCOWSettings();
     if (!have_all_parts)
     {
         /// If you do not have all the necessary parts, try to take some already merged part from someone.
         LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
         return false;
     }
-    else if (entry.create_time + settings.prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
+    else if (entry.create_time + storage_settings->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
     {
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
@@ -1033,7 +1051,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         for (const auto & part : parts)
             sum_parts_bytes_on_disk += part->bytes_on_disk;
 
-        if (sum_parts_bytes_on_disk >= settings.prefer_fetch_merged_part_size_threshold)
+        if (sum_parts_bytes_on_disk >= storage_settings->prefer_fetch_merged_part_size_threshold)
         {
             String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
@@ -1077,7 +1095,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
+            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -1143,6 +1161,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedMergeTree::LogEntry & entry)
 {
     const String & source_part_name = entry.source_parts.at(0);
+    const auto storage_settings = getCOWSettings();
     LOG_TRACE(log, "Executing log entry to mutate part " << source_part_name << " to " << entry.new_part_name);
 
     DataPartPtr source_part = getActiveContainingPart(source_part_name);
@@ -1162,8 +1181,8 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// TODO - some better heuristic?
     size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
 
-    if (entry.create_time + settings.prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
-        && estimated_space_for_result >= settings.prefer_fetch_merged_part_size_threshold)
+    if (entry.create_time + storage_settings->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
+        && estimated_space_for_result >= storage_settings->prefer_fetch_merged_part_size_threshold)
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
         /// then prefer fetching from replica.
@@ -1206,7 +1225,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1257,20 +1276,21 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 {
     String replica = findReplicaHavingCoveringPart(entry, true);
+    const auto storage_settings = getCOWSettings();
 
     static std::atomic_uint total_fetches {0};
-    if (settings.replicated_max_parallel_fetches && total_fetches >= settings.replicated_max_parallel_fetches)
+    if (storage_settings->replicated_max_parallel_fetches && total_fetches >= storage_settings->replicated_max_parallel_fetches)
     {
-        throw Exception("Too many total fetches from replicas, maximum: " + settings.replicated_max_parallel_fetches.toString(),
+        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings->replicated_max_parallel_fetches.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
     }
 
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
-    if (settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= settings.replicated_max_parallel_fetches_for_table)
+    if (storage_settings->replicated_max_parallel_fetches_for_table && current_table_fetches >= storage_settings->replicated_max_parallel_fetches_for_table)
     {
-        throw Exception("Too many fetches from replicas for table, maximum: " + settings.replicated_max_parallel_fetches_for_table.toString(),
+        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings->replicated_max_parallel_fetches_for_table.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
     }
 
@@ -1482,7 +1502,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 }
 
 
-void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & entry)
+void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogEntry & entry)
 {
     LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
 
@@ -1496,15 +1516,25 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     auto zookeeper = getZooKeeper();
 
     AlterCommand alter_command;
-    alter_command.type = AlterCommand::DROP_COLUMN;
-    alter_command.column_name = entry.column_name;
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+    {
+        alter_command.type = AlterCommand::DROP_COLUMN;
+        alter_command.column_name = entry.column_name;
+    }
+    else if (entry.type == LogEntry::CLEAR_INDEX)
+    {
+        alter_command.type = AlterCommand::DROP_INDEX;
+        alter_command.index_name = entry.index_name;
+    }
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    SettingsChanges ignored_changes;
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignored_changes);
 
     size_t modified_parts = 0;
     auto parts = getDataParts();
@@ -1522,7 +1552,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         if (!entry_part_info.contains(part->info))
             continue;
 
-        LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
+        if (entry.type == LogEntry::CLEAR_COLUMN)
+            LOG_DEBUG(log, "Clearing column " << alter_command.column_name << " in part " << part->name);
+        else if (entry.type == LogEntry::CLEAR_INDEX)
+            LOG_DEBUG(log, "Clearing index " << alter_command.index_name << " in part " << part->name);
 
         MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
         alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
@@ -1534,7 +1567,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         ++modified_parts;
     }
 
-    LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+        LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
+    else if (entry.type == LogEntry::CLEAR_INDEX)
+        LOG_DEBUG(log, "Cleared index " << entry.index_name << " in " << modified_parts << " parts");
 
     /// Recalculate columns size (not only for the modified column)
     recalculateColumnSizes();
@@ -1931,10 +1967,37 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
-    Strings parts = zookeeper->getChildren(source_path + "/parts");
-    ActiveDataPartSet active_parts_set(format_version, parts);
+    Strings source_replica_parts = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet active_parts_set(format_version, source_replica_parts);
 
     Strings active_parts = active_parts_set.getParts();
+
+    /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
+    Strings local_parts_in_zk = zookeeper->getChildren(replica_path + "/parts");
+    Strings parts_to_remove_from_zk;
+    for (const auto & part : local_parts_in_zk)
+    {
+        if (active_parts_set.getContainingPart(part).empty())
+        {
+            queue.remove(zookeeper, part);
+            parts_to_remove_from_zk.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part << ". Removing it from ZooKeeper.");
+        }
+    }
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
+
+    auto local_active_parts = getDataParts();
+    DataPartsVector parts_to_remove_from_working_set;
+    for (const auto & part : local_active_parts)
+    {
+        if (active_parts_set.getContainingPart(part->name).empty())
+        {
+            parts_to_remove_from_working_set.emplace_back(part);
+            LOG_WARNING(log, "Source replica does not have part " << part->name << ". Removing it from working set.");
+        }
+    }
+    removePartsFromWorkingSet(parts_to_remove_from_working_set, true);
+
     for (const String & name : active_parts)
     {
         LogEntry log_entry;
@@ -2150,6 +2213,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     if (!is_leader)
         return;
 
+    const auto storage_settings = getCOWSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
     const bool force_ttl = false;
 
@@ -2168,17 +2232,19 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
-        if (merges_and_mutations_queued >= settings.max_replicated_merges_in_queue)
+
+        auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
+        size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
+        if (merges_and_mutations_sum >= storage_settings->max_replicated_merges_in_queue)
         {
-            LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
-                << ") is greater than max_replicated_merges_in_queue ("
-                << settings.max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
+            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations ("
+                << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue ("
+                << storage_settings->max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
         }
         else
         {
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
-                settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
+                storage_settings->max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
@@ -2188,7 +2254,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
             }
-            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
+            /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
+            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
+                     && merges_and_mutations_queued.second < storage_settings->max_replicated_mutations_in_queue)
             {
                 /// Choose a part to mutate.
                 DataPartsVector data_parts = getDataPartsVector();
@@ -2892,14 +2960,14 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings_ = context.getSettingsRef();
 
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    if (settings.select_sequential_consistency)
+    if (settings_.select_sequential_consistency)
     {
         ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
 
@@ -2961,10 +3029,11 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 
 BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
+    const auto storage_settings = getCOWSettings();
     assertNotReadonly();
 
     const Settings & query_settings = context.getSettingsRef();
-    bool deduplicate = settings.replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
+    bool deduplicate = storage_settings->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
         query_settings.insert_quorum, query_settings.insert_quorum_timeout.totalMilliseconds(), query_settings.max_partitions_per_insert_block, deduplicate);
@@ -2998,6 +3067,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         };
 
         bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+        const auto storage_settings = getCOWSettings();
 
         if (!partition && final)
         {
@@ -3030,7 +3100,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             if (!partition)
             {
                 selected = merger_mutator.selectPartsToMerge(
-                    future_merged_part, true, settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
+                    future_merged_part, true, storage_settings->max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
             }
             else
             {
@@ -3059,9 +3129,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
     }
 
-    /// TODO: Bad setting name for such purpose
     if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
+        /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
+        /// TODO Check all other "wait" places.
         for (auto & merge_entry : merge_entries)
             waitForAllReplicasToProcessLogEntry(merge_entry);
     }
@@ -3071,12 +3142,23 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(
-    const AlterCommands & params, const String & /*database_name*/, const String & /*table_name*/,
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
     const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {
     assertNotReadonly();
 
     LOG_DEBUG(log, "Doing ALTER");
+
+    if (params.isSettingsAlter())
+    {
+        /// We don't replicate storage_settings ALTER. It's local operation.
+        /// Also we don't upgrade alter lock to table structure lock.
+        LOG_DEBUG(log, "ALTER storage_settings only");
+        SettingsChanges new_changes;
+        params.applyForSettingsOnly(new_changes);
+        alterSettings(new_changes, current_database_name, current_table_name, query_context, table_lock_holder);
+        return;
+    }
 
     /// Alter is done by modifying the metadata nodes in ZK that are shared between all replicas
     /// (/columns, /metadata). We set contents of the shared nodes to the new values and wait while
@@ -3117,10 +3199,12 @@ void StorageReplicatedMergeTree::alter(
 
         ColumnsDescription new_columns = getColumns();
         IndicesDescription new_indices = getIndices();
+        ConstraintsDescription new_constraints = getConstraints();
         ASTPtr new_order_by_ast = order_by_ast;
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
-        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+        SettingsChanges new_changes;
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != getColumns().toString())
@@ -3136,6 +3220,10 @@ void StorageReplicatedMergeTree::alter(
         String new_indices_str = new_indices.toString();
         if (new_indices_str != getIndices().toString())
             new_metadata.skip_indices = new_indices_str;
+
+        String new_constraints_str = new_constraints.toString();
+        if (new_constraints_str != getConstraints().toString())
+            new_metadata.constraints = new_constraints_str;
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
@@ -3353,6 +3441,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 dropPartition(query, command.partition, command.detach, query_context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                dropDetached(command.partition, command.part, query_context);
+                break;
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, query_context);
                 break;
@@ -3378,8 +3470,22 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                clearColumnInPartition(command.partition, command.column_name, query_context);
-                break;
+            {
+                LogEntry entry;
+                entry.type = LogEntry::CLEAR_COLUMN;
+                entry.column_name = command.column_name.safeGet<String>();
+                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_INDEX:
+            {
+                LogEntry entry;
+                entry.type = LogEntry::CLEAR_INDEX;
+                entry.index_name = command.index_name.safeGet<String>();
+                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
+            }
+            break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
@@ -3443,8 +3549,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 }
 
 
-void StorageReplicatedMergeTree::clearColumnInPartition(
-    const ASTPtr & partition, const Field & column_name, const Context & query_context)
+void StorageReplicatedMergeTree::clearColumnOrIndexInPartition(
+    const ASTPtr & partition, LogEntry && entry, const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3460,11 +3566,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     }
 
     /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
-
-    LogEntry entry;
-    entry.type = LogEntry::CLEAR_COLUMN;
     entry.new_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
-    entry.column_name = column_name.safeGet<String>();
     entry.create_time = time(nullptr);
 
     String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
@@ -3542,66 +3644,16 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
     assertNotReadonly();
 
-    String partition_id;
-
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, query_context);
-
-    String source_dir = "detached/";
-
-    /// Let's compose a list of parts that should be added.
-    Strings parts;
-    if (attach_part)
-    {
-        parts.push_back(partition_id);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts(format_version);
-
-        std::set<String> part_names;
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-        {
-            String name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
-                continue;
-            if (part_info.partition_id != partition_id)
-                continue;
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-            part_names.insert(name);
-        }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
-
-        /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
-        for (const auto & name : part_names)
-        {
-            String containing_part = active_parts.getContainingPart(name);
-            if (!containing_part.empty() && containing_part != name)
-                Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
-        }
-    }
-
-    /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
-    LOG_DEBUG(log, "Checking parts");
-    std::vector<MutableDataPartPtr> loaded_parts;
-    for (const String & part : parts)
-    {
-        LOG_DEBUG(log, "Checking part " << part);
-        loaded_parts.push_back(loadPartAndFixMetadata(source_dir + part));
-    }
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
-    for (auto & part : loaded_parts)
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        String old_name = part->name;
-        output.writeExistingPart(part);
-        LOG_DEBUG(log, "Attached part " << old_name << " as " << part->name);
+        String old_name = loaded_parts[i]->name;
+        output.writeExistingPart(loaded_parts[i]);
+        renamed_parts.old_and_new_names[i].first.clear();
+        LOG_DEBUG(log, "Attached part " << old_name << " as " << loaded_parts[i]->name);
     }
 }
 
@@ -3896,9 +3948,10 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
     auto zookeeper = tryGetZooKeeper();
+    const auto storage_settings = getCOWSettings();
 
     res.is_leader = is_leader;
-    res.can_become_leader = settings.replicated_can_become_leader;
+    res.can_become_leader = storage_settings->replicated_can_become_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
@@ -4088,13 +4141,14 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
     out_absolute_delay = getAbsoluteDelay();
     out_relative_delay = 0;
+    const auto storage_settings = getCOWSettings();
 
     /** Relative delay is the maximum difference of absolute delay from any other replica,
       *  (if this replica lags behind any other live replica, or zero, otherwise).
       * Calculated only if the absolute delay is large enough.
       */
 
-    if (out_absolute_delay < static_cast<time_t>(settings.min_relative_delay_to_yield_leadership))
+    if (out_absolute_delay < static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
         return;
 
     auto zookeeper = getZooKeeper();
@@ -4352,7 +4406,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     /// instead.
     ///
     /// Mutations of individual parts are in fact pretty similar to merges, e.g. their assignment and execution
-    /// is governed by the same settings. TODO: support a single "merge-mutation" operation when the data
+    /// is governed by the same storage_settings. TODO: support a single "merge-mutation" operation when the data
     /// read from the the source parts is first mutated on the fly to some uniform mutation version and then
     /// merged to a resulting part.
     ///
@@ -4915,6 +4969,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     const String & block_id_path) const
 {
     const String & part_name = part->name;
+    const auto storage_settings = getCOWSettings();
 
     if (!block_id_path.empty())
     {
@@ -4932,7 +4987,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
         zookeeper_path + "/columns",
         columns_version));
 
-    if (settings.use_minimalistic_part_header_in_zookeeper)
+    if (storage_settings->use_minimalistic_part_header_in_zookeeper)
     {
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name,
@@ -4961,11 +5016,12 @@ void StorageReplicatedMergeTree::updatePartHeaderInZooKeeperAndCommit(
     AlterDataPartTransaction & transaction)
 {
     String part_path = replica_path + "/parts/" + transaction.getPartName();
+    const auto storage_settings = getCOWSettings();
 
     bool need_delete_columns_and_checksums_nodes = false;
     try
     {
-        if (settings.use_minimalistic_part_header_in_zookeeper)
+        if (storage_settings->use_minimalistic_part_header_in_zookeeper)
         {
             auto part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
                 transaction.getNewColumns(), transaction.getNewChecksums());
@@ -5142,5 +5198,14 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, const C
     }
     return results;
 }
+
+bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
+{
+    const auto storage_settings = getCOWSettings();
+    return storage_settings->index_granularity_bytes != 0 &&
+        (storage_settings->enable_mixed_granularity_parts ||
+            (!has_non_adaptive_index_granularity_parts && !other_replicas_fixed_granularity));
+}
+
 
 }

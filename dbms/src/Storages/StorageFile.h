@@ -60,6 +60,7 @@ protected:
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_);
 
 private:

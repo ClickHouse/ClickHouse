@@ -1,8 +1,8 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
 
-The basic idea for `MergeTree` engines family is the following. When you have tremendous amount of a data that should be inserted into the table, you should write them quickly part by part and then merge parts by some rules in background. This method is much more efficient than constantly rewriting data in the storage at the insert.
+Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
 Main features:
 
@@ -10,13 +10,13 @@ Main features:
 
     This allows you to create a small sparse index that helps find data faster.
 
-- This allows you to use partitions if the [partitioning key](custom_partitioning_key.md) is specified.
+- Partitions can be used if the [partitioning key](custom_partitioning_key.md) is specified.
 
-    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also increases the query performance.
+    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also improves query performance.
 
 - Data replication support.
 
-    The family of `ReplicatedMergeTree` tables is used for this. For more information, see the [Data replication](replication.md) section.
+    The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](replication.md).
 
 - Data sampling support.
 
@@ -28,7 +28,7 @@ Main features:
 
 ## Creating a Table  {#table_engine-mergetree-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -45,11 +45,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-**Query clauses**
+!!! note "Note"
+    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
-- `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
+### Query Clauses
+
+- `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
 
@@ -69,34 +72,34 @@ For a description of request parameters, see [request description](../../query_l
 
 - `TTL` — An expression for setting storage time for rows.
 
-    It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
+    It must depend on the `Date` or `DateTime` column and have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
-    - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
-    - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, then ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For the list of available parameters, see [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in "Server configuration parameters".
+    - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-    - `merge_with_ttl_timeout` — Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
+    - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
 
-**Example of sections setting**
+**Example of Sections Setting**
 
-```
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md#select-sample-clause) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](../../query_language/select.md#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
-`index_granularity` could be omitted because 8192 is the default value.
+The `index_granularity` setting can be omitted because 8192 is the default value.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+    Do not use this method in new projects. If possible, switch old projects to the method described above.
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -107,11 +110,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-**MergeTree() parameters**
+**MergeTree() Parameters**
 
-- `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
-- `sampling_expression` — an expression for sampling.
-- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md)
+- `date-column` — The name of a column of the [Date](../../data_types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+- `sampling_expression` — An expression for sampling.
+- `(primary, key)` — Primary key. Type: [Tuple()](../../data_types/tuple.md)
 - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
@@ -125,7 +128,7 @@ The `MergeTree` engine is configured in the same way as in the example above for
 
 ## Data Storage
 
-A table consists of data *parts* sorted by primary key.
+A table consists of data parts sorted by primary key.
 
 When data is inserted in a table, separate data parts are created and each of them is lexicographically sorted by primary key. For example, if the primary key is `(CounterID, Date)`, the data in the part is sorted by `CounterID`, and within each `CounterID`, it is ordered by `Date`.
 
@@ -137,7 +140,7 @@ You can use a single large table and continually add data to it in small chunks 
 
 ## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
-Let's take the `(CounterID, Date)` primary key. In this case, the sorting and index can be illustrated as follows:
+Take the `(CounterID, Date)` primary key as an example. In this case, the sorting and index can be illustrated as follows:
 
 ```
 Whole data:     [-------------------------------------------------------------------------]
@@ -169,6 +172,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 - Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
+    
     - There are queries with a condition on column `c`.
     - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
@@ -176,37 +180,29 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
 
-### Choosing the Primary Key that differs from the Sorting Key
+### Choosing a Primary Key that Differs from the Sorting Key
 
-It is possible to specify the primary key (the expression, values of which are written into the index file
-for each mark) that is different from the sorting key (the expression for sorting the rows in data parts).
-In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
+It is possible to specify a primary key (an expression with values that are written in the index file for each mark) that is different from the sorting key (an expression for sorting the rows in data parts). In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
 
 This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
-[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the
-table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure
-columns with arbitrary `GROUP BY` and filtering by dimensions. As SummingMergeTree and AggregatingMergeTree
-aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result
-the key expression consists of a long list of columns and this list must be frequently updated with newly
-added dimensions.
+[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
 
-In this case it makes sense to leave only a few columns in the primary key that will provide efficient
-range scans and add the remaining dimension columns to the sorting key tuple.
+In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER of the sorting key](../../query_language/alter.md) is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the just added column, the data at the moment of table modification is sorted by both the old and the new sorting key.
+[ALTER](../../query_language/alter.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
 ### Use of Indexes and Partitions in Queries
 
-For`SELECT` queries, ClickHouse analyzes whether an index can be used. An index can be used if the `WHERE/PREWHERE` clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has `IN` or `LIKE` with a fixed prefix on columns or expressions that are in the primary key or partitioning key, or on certain partially repetitive functions of these columns, or logical relationships of these expressions.
+For `SELECT` queries, ClickHouse analyzes whether an index can be used. An index can be used if the `WHERE/PREWHERE` clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has `IN` or `LIKE` with a fixed prefix on columns or expressions that are in the primary key or partitioning key, or on certain partially repetitive functions of these columns, or logical relationships of these expressions.
 
-Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag; for a specific tag and date range; for a specific tag and date; for multiple tags with a date range, and so on.
+Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag, for a specific tag and date range, for a specific tag and date, for multiple tags with a date range, and so on.
 
 Let's look at the engine configured as follows:
 
@@ -244,18 +240,18 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indices (Experimental)
+### Data Skipping Indexes (Experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
-Index declaration in the columns section of the `CREATE` query.
+The index declaration is in the columns section of the `CREATE` query.
 ```sql
 INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 ```
 
-For tables from the `*MergeTree` family data skipping indices can be specified.
+For tables from the `*MergeTree` family, data skipping indices can be specified.
 
-These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine), then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (the size of the granule is specified using the `index_granularity` setting in the table engine). Then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where the `where` query cannot be satisfied.
 
 
 **Example**
@@ -273,7 +269,7 @@ CREATE TABLE table_name
 ...
 ```
 
-Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in following queries.
+Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
 ```sql
 SELECT count() FROM table WHERE s < 'z'
@@ -284,24 +280,32 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 - `minmax`
 
-    Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
+    Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
 
 - `set(max_rows)`
 
-    Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
+    Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.  
 
 - `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
+    Stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
 
     - `n` — ngram size,
-    - `size_of_bloom_filter_in_bytes` — bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
-    - `number_of_hash_functions` — number of hash functions used in bloom filter,
-    - `random_seed` — seed for bloom filter hash functions.
+    - `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+    - `number_of_hash_functions` — The number of hash functions used in the bloom filter.
+    - `random_seed` — The seed for bloom filter hash functions.
 
 - `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
+    The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
+
+- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+
+    The `false_positive` optional parameter is the probability of false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+
+    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+
+    Supported for the following functions: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -316,20 +320,20 @@ For concurrent table access, we use multi-versioning. In other words, when a tab
 Reading from a table is automatically parallelized.
 
 
-## TTL for columns and tables {#table_engine-mergetree-ttl}
+## TTL for Columns and Tables {#table_engine-mergetree-ttl}
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. If `TTL` is set for the whole table, individual `TTL` for columns are ignored.
+The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which expires earlier.
 
-
-The table must have the column of the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. This date column should be used in the `TTL` clause. You can only set lifetime of the data as an interval from the date column value.
+The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
 
 ```
-TTL date_time + interval
+TTL time_column
+TTL time_column + interval
 ```
 
-You can set the `interval` by any expression, returning the value of the `DateTime` data type. For example, you can use [time interval](../../query_language/operators.md#operators-datetime) operators.
+To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
 ```
 TTL date_time + INTERVAL 1 MONTH
@@ -338,20 +342,20 @@ TTL date_time + INTERVAL 15 HOUR
 
 **Column TTL**
 
-When the values in the column expire, ClickHouse replace them with the default values for the column data type. If all the column values in the data part become expired, ClickHouse deletes this column from the data part in a filesystem.
+When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause cannot be used for key columns.
+The `TTL` clause can't be used for key columns.
 
 **Table TTL**
 
-When some data in table expires, ClickHouse deletes all the corresponding rows.
+When data in a table expires, ClickHouse deletes all corresponding rows.
 
-**Cleaning up of Data**
+**Removing Data**
 
-Data with expired TTL is removed, when ClickHouse merges data parts.
+Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse see that some data is expired, it performs off-schedule merge. To control frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If it is too low, many off-schedule merges consume much resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout). If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
-If you perform the `SELECT` query between merges you can get the expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
+If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
