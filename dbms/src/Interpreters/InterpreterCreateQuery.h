@@ -4,6 +4,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
 
 
@@ -30,6 +31,7 @@ public:
     static ASTPtr formatColumns(const ColumnsDescription & columns);
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
+    static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {

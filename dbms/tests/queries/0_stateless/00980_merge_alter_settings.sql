@@ -5,7 +5,7 @@ CREATE TABLE log_for_alter (
   Data String
 ) ENGINE = Log();
 
-ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError 470 }
+ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError 471 }
 
 DROP TABLE IF EXISTS log_for_alter;
 
@@ -16,7 +16,7 @@ CREATE TABLE table_for_alter (
   Data String
 ) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096;
 
-ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError 471 }
+ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError 472 }
 
 SHOW CREATE TABLE table_for_alter;
 
