@@ -23,6 +23,7 @@ class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public
 {
 friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageStripeLog>;
 
 public:
     std::string getName() const override { return "StripeLog"; }
@@ -74,6 +75,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         size_t max_compress_block_size_);
 };

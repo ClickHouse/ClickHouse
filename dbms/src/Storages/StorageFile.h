@@ -20,6 +20,7 @@ class StorageFileBlockOutputStream;
 
 class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
     std::string getTableName() const override { return table_name; }
@@ -60,6 +61,7 @@ protected:
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_);
 
 private:

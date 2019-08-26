@@ -20,10 +20,12 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
+    bool supportsSettings() const override { return true; }
 
     void startup() override;
     void shutdown() override;
@@ -55,6 +57,13 @@ public:
     const auto & getFormatName() const { return format_name; }
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
+
+    bool hasSetting(const String & setting_name) const override;
+
+    void alterSettings(
+        const SettingsChanges & new_changes,
+        const Context & context,
+        TableStructureWriteLockHolder & table_lock_holder) override;
 
 protected:
     StorageKafka(

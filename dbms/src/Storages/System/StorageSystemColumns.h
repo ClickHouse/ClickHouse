@@ -13,6 +13,7 @@ class Context;
   */
 class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageSystemColumns>;
 public:
     std::string getName() const override { return "SystemColumns"; }
     std::string getTableName() const override { return name; }
