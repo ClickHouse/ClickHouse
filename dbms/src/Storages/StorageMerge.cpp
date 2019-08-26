@@ -53,13 +53,14 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
 {
+    setColumns(columns_);
 }
 
 
@@ -396,16 +397,15 @@ DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) c
 
 
 void StorageMerge::alter(
-    const AlterCommands & params, const String & database_name_, const String & table_name_,
-    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
-    params.apply(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
+    params.applyForColumnsOnly(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
     setColumns(new_columns);
 }
 

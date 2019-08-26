@@ -251,7 +251,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     {
         elem.client_info = query_context->getClientInfo();
 
-        if (query_context->getSettingsRef().log_profile_events.value != 0)
+        if (query_context->getSettingsRef().log_profile_events != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
             elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());

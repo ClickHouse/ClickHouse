@@ -127,6 +127,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         replace_query,
         on_duplicate_clause,
         ColumnsDescription{columns},
+        ConstraintsDescription{},
         context);
 
     res->startup();

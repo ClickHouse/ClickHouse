@@ -11,6 +11,7 @@ namespace DB
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
@@ -31,6 +32,7 @@ public:
     }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+
     void drop() override;
 
     void truncate(const ASTPtr &, const Context &) override;
