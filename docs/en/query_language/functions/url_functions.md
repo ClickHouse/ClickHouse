@@ -8,7 +8,9 @@ If the relevant part isn't present in a URL, an empty string is returned.
 
 ### protocol
 
-Returns the protocol. Examples: http, ftp, mailto, magnet...
+Extracts the protocol from a URL.
+
+Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 ### domain
 
