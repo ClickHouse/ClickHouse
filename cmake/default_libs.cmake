@@ -1,7 +1,8 @@
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
-set (DEFAULT_LIBS "-nodefaultlibs")
+# The group will contain all linked libs including the standard libs overriden later, and glibc-compatibility.
+set (DEFAULT_LIBS "-Wl,-end-group -nodefaultlibs")
 
 if (OS_LINUX)
     # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
@@ -23,3 +24,7 @@ set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
 
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
+
+# XXX: hack is based on the fact that linker flags never duplicates and are always before linked libs
+set (CMAKE_EXE_LINKER_FLAGS "-Wl,-start-group ${CMAKE_EXE_LINKER_FLAGS}")
+set (CMAKE_SHARED_LINKER_FLAGS "-Wl,-start-group ${CMAKE_SHARED_LINKER_FLAGS}")

@@ -40,5 +40,6 @@ if (USE_LIBCXX)
     message (STATUS "Using libcxxfs: ${LIBCXXFS_LIBRARY}")
     message (STATUS "Using libcxxabi: ${LIBCXXABI_LIBRARY}")
 else ()
-    link_libraries(stdc++ stdc++fs)
+    # Always link these libraries as static
+    set(CMAKE_CXX_STANDARD_LIBRARIES "-l:libstdc++.a -l:libstdc++fs.a ${CMAKE_CXX_STANDARD_LIBRARIES}")
 endif ()

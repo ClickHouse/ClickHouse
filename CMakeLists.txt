@@ -252,19 +252,6 @@ link_libraries(pthread ${CMAKE_DL_LIBS})
 include (cmake/find_unwind.cmake)
 include (cmake/find_cxx.cmake)
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
-    if (USE_LIBCXX)
-        set (STATIC_STDLIB_FLAGS "")
-    else ()
-        set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
-    endif ()
-
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-
-    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-endif ()
-
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
