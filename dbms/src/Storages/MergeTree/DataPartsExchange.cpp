@@ -54,7 +54,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     String part_name = params.get("part");
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
@@ -175,7 +175,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 {
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);

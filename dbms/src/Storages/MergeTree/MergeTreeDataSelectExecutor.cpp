@@ -673,7 +673,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     size_t sum_marks = 0;
     size_t total_rows = 0;
 
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
     size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
@@ -832,7 +832,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     SortingInfoPtr sorting_info = query_info.sorting_info;
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     for (size_t i = 0; i < parts.size(); ++i)
     {
@@ -1035,7 +1035,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
     size_t adaptive_parts = 0;
     for (size_t i = 0; i < parts.size(); ++i)

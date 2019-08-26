@@ -331,7 +331,7 @@ public:
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
-                  MergeTreeSettingsPtr settings_,
+                  std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
@@ -620,7 +620,7 @@ public:
     /// Has additional constraint in replicated version
     virtual bool canUseAdaptiveGranularity() const
     {
-        const auto settings = getCOWSettings();
+        const auto settings = getSettings();
         return settings->index_granularity_bytes != 0 &&
             (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
@@ -683,13 +683,12 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// Get copy-on-write pointer to storage settings.
+    /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will
     /// get consistent settings.
-    const MergeTreeSettingsPtr getCOWSettings() const
+    MergeTreeSettingsPtr getSettings() const
     {
-        std::shared_lock lock(settings_mutex);
-        return guarded_settings.copyPtr();
+        return storage_settings.get();
     }
 
 protected:
@@ -721,26 +720,9 @@ protected:
     String log_name;
     Logger * log;
 
-    /// Just hides settings pointer from direct usage
-    class MergeTreeSettingsGuard
-    {
-    private:
-        /// Settings COW pointer. Data maybe changed at any point of time.
-        /// If you need consistent settings, just copy pointer to your scope.
-        MergeTreeSettingsPtr settings_ptr;
-    public:
-        MergeTreeSettingsGuard(MergeTreeSettingsPtr settings_ptr_)
-            : settings_ptr(settings_ptr_)
-        {}
-
-        const MergeTreeSettingsPtr copyPtr() const { return settings_ptr; }
-        MergeTreeSettingsPtr getPtr() { return settings_ptr; }
-        void setPtr(MergeTreeSettingsPtr ptr) { settings_ptr = ptr; }
-    };
-
-    /// Storage settings. Don't use this field directly, if you
-    /// want readonly settings. Prefer getCOWSettings() method.
-    MergeTreeSettingsGuard guarded_settings;
+    /// Storage settings.
+    /// Use get and set to receive readonly versions.
+    MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Work with data parts
 
@@ -829,7 +811,6 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
     /// Mutex for settings usage
-    mutable std::shared_mutex settings_mutex;
 
     void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,

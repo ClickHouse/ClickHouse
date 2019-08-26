@@ -153,7 +153,7 @@ protected:
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
         const ASTPtr & ttl_table_ast_,
         const MergingParams & merging_params_,
-        MergeTreeSettingsPtr settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 

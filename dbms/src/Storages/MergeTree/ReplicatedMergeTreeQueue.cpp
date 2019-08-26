@@ -964,7 +964,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
-        const auto data_settings = data.getCOWSettings();
+        const auto data_settings = data.getSettings();
         bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
 
         if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)

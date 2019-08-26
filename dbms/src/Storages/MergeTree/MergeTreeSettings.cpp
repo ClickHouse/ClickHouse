@@ -75,9 +75,4 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 #undef ADD_IF_ABSENT
 }
 
-
-MergeTreeSettings::MutablePtr MergeTreeSettings::clone() const
-{
-    return COW::create(*this);
-}
 }

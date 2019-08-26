@@ -27,7 +27,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    auto storage_settings = storage.getCOWSettings();
+    auto storage_settings = storage.getSettings();
     const auto CLEANUP_SLEEP_MS = storage_settings->cleanup_delay_period * 1000
         + std::uniform_int_distribution<UInt64>(0, storage_settings->cleanup_delay_period_random_add * 1000)(rng);
 
@@ -75,7 +75,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 {
     auto zookeeper = storage.getZooKeeper();
-    auto storage_settings = storage.getCOWSettings();
+    auto storage_settings = storage.getSettings();
 
     Coordination::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
@@ -287,7 +287,7 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 {
     auto zookeeper = storage.getZooKeeper();
-    auto storage_settings = storage.getCOWSettings();
+    auto storage_settings = storage.getSettings();
 
     std::vector<NodeWithStat> timed_blocks;
     getBlocksSortedByTime(*zookeeper, timed_blocks);
@@ -404,7 +404,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
 
 void ReplicatedMergeTreeCleanupThread::clearOldMutations()
 {
-    auto storage_settings = storage.getCOWSettings();
+    auto storage_settings = storage.getSettings();
     if (!storage_settings->finished_mutations_to_keep)
         return;
 
