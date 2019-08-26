@@ -63,14 +63,14 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    MergeTreeSettingsPtr settings_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
-            settings_, false, attach),
+            std::move(storage_settings_), false, attach),
         path(path_),
         background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool())
@@ -245,11 +245,12 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
-    const String & current_database_name,
-    const String & current_table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     if (!params.isMutable())
     {
         SettingsChanges new_changes;
@@ -257,7 +258,7 @@ void StorageMergeTree::alter(
         if (params.isSettingsAlter())
         {
             params.applyForSettingsOnly(new_changes);
-            alterSettings(new_changes, current_database_name, current_table_name, context, table_lock_holder);
+            alterSettings(new_changes, context, table_lock_holder);
             return;
         }
 
@@ -804,7 +805,7 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
 
 void StorageMergeTree::clearOldMutations()
 {
-    const auto settings = getCOWSettings();
+    const auto settings = getSettings();
     if (!settings->finished_mutations_to_keep)
         return;
 
