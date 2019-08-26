@@ -331,7 +331,7 @@ public:
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
-                  const MergeTreeSettings & settings_,
+                  MergeTreeSettingsPtr settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
@@ -359,6 +359,8 @@ public:
             || merging_params.mode == MergingParams::Replacing
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
+
+    bool supportsSettings() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
 
@@ -535,6 +537,18 @@ public:
         bool skip_sanity_checks,
         AlterDataPartTransactionPtr& transaction);
 
+    /// Performs ALTER of table settings (MergeTreeSettings). Lightweight operation, affects metadata only.
+    /// Not atomic, have to be done with alter intention lock.
+    void alterSettings(
+           const SettingsChanges & new_changes,
+           const String & current_database_name,
+           const String & current_table_name,
+           const Context & context,
+           TableStructureWriteLockHolder & table_lock_holder) override;
+
+    /// All MergeTreeData children have settings.
+    bool hasSetting(const String & setting_name) const override;
+
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
@@ -606,8 +620,9 @@ public:
     /// Has additional constraint in replicated version
     virtual bool canUseAdaptiveGranularity() const
     {
-        return settings.index_granularity_bytes != 0 &&
-            (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+        const auto settings = getCOWSettings();
+        return settings->index_granularity_bytes != 0 &&
+            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
 
@@ -660,8 +675,6 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    MergeTreeSettings settings;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -670,7 +683,17 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+    /// Get copy-on-write pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    const MergeTreeSettingsPtr getCOWSettings() const
+    {
+        std::shared_lock lock(settings_mutex);
+        return guarded_settings.copyPtr();
+    }
+
 protected:
+
     friend struct MergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
@@ -698,6 +721,26 @@ protected:
     String log_name;
     Logger * log;
 
+    /// Just hides settings pointer from direct usage
+    class MergeTreeSettingsGuard
+    {
+    private:
+        /// Settings COW pointer. Data maybe changed at any point of time.
+        /// If you need consistent settings, just copy pointer to your scope.
+        MergeTreeSettingsPtr settings_ptr;
+    public:
+        MergeTreeSettingsGuard(MergeTreeSettingsPtr settings_ptr_)
+            : settings_ptr(settings_ptr_)
+        {}
+
+        const MergeTreeSettingsPtr copyPtr() const { return settings_ptr; }
+        MergeTreeSettingsPtr getPtr() { return settings_ptr; }
+        void setPtr(MergeTreeSettingsPtr ptr) { settings_ptr = ptr; }
+    };
+
+    /// Storage settings. Don't use this field directly, if you
+    /// want readonly settings. Prefer getCOWSettings() method.
+    MergeTreeSettingsGuard guarded_settings;
 
     /// Work with data parts
 
@@ -785,6 +828,8 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// Mutex for settings usage
+    mutable std::shared_mutex settings_mutex;
 
     void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,

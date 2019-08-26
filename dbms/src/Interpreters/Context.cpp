@@ -35,7 +35,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/Compiler.h>
 #include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
@@ -140,11 +139,10 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
+    MergeTreeSettingsPtr merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -1126,6 +1124,17 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
+void Context::updateSettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+    {
+        if (change.name == "profile")
+            setProfile(change.value.safeGet<String>());
+        else
+            settings.updateFromChange(change);
+    }
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
@@ -1634,17 +1643,6 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 }
 
 
-Compiler & Context::getCompiler()
-{
-    auto lock = getLock();
-
-    if (!shared->compiler)
-        shared->compiler.emplace(shared->path + "build/", 1);
-
-    return *shared->compiler;
-}
-
-
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
@@ -1761,8 +1759,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        shared->merge_tree_settings.emplace();
-        shared->merge_tree_settings->loadFromConfig("merge_tree", config);
+        MutableMergeTreeSettingsPtr settings_ptr = MergeTreeSettings::create();
+        settings_ptr->loadFromConfig("merge_tree", config);
+        shared->merge_tree_settings = std::move(settings_ptr);
     }
 
     return *shared->merge_tree_settings;
