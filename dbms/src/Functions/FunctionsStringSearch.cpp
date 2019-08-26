@@ -436,7 +436,7 @@ struct MultiSearchFirstIndexImpl
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
   */
-template <bool negate_result = false>
+template <typename TokenSearcher, bool negate_result = false>
 struct HasTokenImpl
 {
     using ResultType = UInt8;
@@ -454,7 +454,7 @@ struct HasTokenImpl
         /// The current index in the array of strings.
         size_t i = 0;
 
-        VolnitskyToken searcher(pattern.data(), pattern.size(), end - pos);
+        TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
 
         /// We will search for the next occurrence in all rows at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -483,7 +483,7 @@ struct HasTokenImpl
 
     static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
     {
-        VolnitskyToken searcher(pattern.data(), pattern.size(), data.size());
+        TokenSearcher searcher(pattern.data(), pattern.size(), data.size());
         const auto found = searcher.search(data.c_str(), data.size()) != data.end().base();
         res = negate_result ^ found;
     }
@@ -589,6 +589,11 @@ struct NameHasToken
     static constexpr auto name = "hasToken";
 };
 
+struct NameHasTokenCaseInsensitive
+{
+    static constexpr auto name = "hasTokenCaseInsensitive";
+};
+
 
 using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
 using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8>;
@@ -615,7 +620,8 @@ using FunctionMultiSearchFirstPositionUTF8 = FunctionsMultiStringSearch<MultiSea
 using FunctionMultiSearchFirstPositionCaseInsensitive = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
 using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstPositionCaseInsensitiveUTF8>;
 
-using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<false>, NameHasToken>;
+using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseSensitiveToken, false>, NameHasToken>;
+using FunctionHasTokenCaseInsensitive = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseInsensitiveToken, false>, NameHasTokenCaseInsensitive>;
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
@@ -645,6 +651,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>();
 
     factory.registerFunction<FunctionHasToken>();
+    factory.registerFunction<FunctionHasTokenCaseInsensitive>();
 
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
 }
