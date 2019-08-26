@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -413,9 +414,9 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
                 return 0;
         }
 
-        StringPieceType pieces[MAX_SUBPATTERNS];
+        DB::PODArrayWithStackMemory<StringPieceType, sizeof(StringPieceType) * (MAX_SUBPATTERNS+1)> pieces(limit);
 
-        if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces, limit))
+        if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
             return 0;
         else
         {

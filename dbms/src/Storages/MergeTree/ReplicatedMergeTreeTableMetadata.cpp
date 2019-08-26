@@ -27,8 +27,9 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
+    const auto data_settings = data.getCOWSettings();
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.settings.index_granularity;
+    index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
@@ -48,7 +49,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     ttl_table = formattedAST(data.ttl_table_ast);
     skip_indices = data.getIndices().toString();
     if (data.canUseAdaptiveGranularity())
-        index_granularity_bytes = data.settings.index_granularity_bytes;
+        index_granularity_bytes = data_settings->index_granularity_bytes;
     else
         index_granularity_bytes = 0;
 
