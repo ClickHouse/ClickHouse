@@ -14,7 +14,7 @@ Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 ### domain
 
-Extracts the host from a URL.
+Extracts the hostname from a URL.
 
 ```
 domain(url)
