@@ -82,8 +82,13 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
+
+#include <IO/WriteBufferFromOStream.h>
+
+#include <Processors/printPipeline.h>
 
 
 namespace DB
@@ -2083,8 +2088,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
 
 void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
 {
-    /// TODO: Implement optimization using sorting_info
-
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
     UInt64 limit = getLimitForSorting(query, context);
@@ -2107,20 +2110,38 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 
         bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
 
-        if (!need_finish_sorting)
+        if (need_finish_sorting)
         {
-            if (pipeline.getNumStreams() > 1)
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
             {
-                auto transform = std::make_shared<MergingSortedTransform>(
+                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
+                return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+            });
+        }
+
+        if (pipeline.getNumStreams() > 1)
+        {
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+            auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
                 sorting_info->prefix_order_descr,
-                settings.max_block_size, limit);
+                settings.max_block_size, limit_for_merging);
 
-                pipeline.addPipe({ std::move(transform) });
-            }
-            return;
+            pipeline.addPipe({ std::move(transform) });
         }
+
+        if (need_finish_sorting)
+        {
+            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+            {
+                return std::make_shared<FinishSortingTransform>(
+                    header, sorting_info->prefix_order_descr, 
+                    order_descr, settings.max_block_size, limit);
+            });
+        }
+
+        return;
     }
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
