@@ -39,7 +39,7 @@ void StorageNull::alter(
     ColumnsDescription new_columns = getColumns();
     IndicesDescription new_indices = getIndices();
     ConstraintsDescription new_constraints = getConstraints();
-    params.apply(new_columns);
+    params.applyForColumnsOnly(new_columns);
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }

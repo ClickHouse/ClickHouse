@@ -130,6 +130,7 @@ private:
     friend struct CurrentlyMergingPartsTagger;
 
 protected:
+
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
@@ -152,7 +153,7 @@ protected:
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
         const ASTPtr & ttl_table_ast_,
         const MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
+        MergeTreeSettingsPtr settings_,
         bool has_force_restore_data_flag);
 };
 
