@@ -43,7 +43,6 @@
         </client>
     </openSSL>
 
-    <allow_experimental_live_view>1</allow_experimental_live_view>
     <keep_alive_timeout>3</keep_alive_timeout>
     <path>/tmp/clickhouse/data/</path>
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
