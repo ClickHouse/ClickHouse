@@ -70,7 +70,7 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl)
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    if (storage.hasTableTTL() && old_ttl_infos.table_ttl.max <= current_time)
+    if (storage.hasTableTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
@@ -80,18 +80,8 @@ Block TTLBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    if (storage.hasTableTTL())
-    {
-        /// Skip all data if table ttl is expired for part
-        if (isTTLExpired(old_ttl_infos.table_ttl.max))
-        {
-            rows_removed = data_part->rows_count;
-            return {};
-        }
-
-        if (force || isTTLExpired(old_ttl_infos.table_ttl.min))
-            removeRowsWithExpiredTableTTL(block);
-    }
+    if (storage.hasTableTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
+        removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
 
