@@ -86,10 +86,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
 
-#include <IO/WriteBufferFromOStream.h>
-
-#include <Processors/printPipeline.h>
-
 
 namespace DB
 {
@@ -2136,7 +2132,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
-                    header, sorting_info->prefix_order_descr, 
+                    header, sorting_info->prefix_order_descr,
                     order_descr, settings.max_block_size, limit);
             });
         }

@@ -1,7 +1,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
-
-#include <Core/SortDescription.h>
-#include <Core/SortCursor.h>
+#include <Processors/IAccumulatingTransform.h>
+#include <Processors/Transforms/MergingSortedTransform.h>
 
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
@@ -11,9 +10,6 @@
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-
-#include <queue>
-#include <Processors/Transforms/MergingSortedTransform.h>
 
 
 namespace ProfileEvents

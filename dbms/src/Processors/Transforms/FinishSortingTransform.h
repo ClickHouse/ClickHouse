@@ -1,8 +1,5 @@
 #pragma once
-
-#include <Core/SortDescription.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Transforms/SortingTransform.h>
 
 namespace DB
 {
@@ -28,7 +25,6 @@ private:
     SortDescription description_sorted;
 
     Chunk tail_chunk;
-    // Chunks chunks;
 
     bool end_of_stream = false;
     size_t total_rows_processed = 0;

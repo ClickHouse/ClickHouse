@@ -12,10 +12,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
-#include <queue>
-#include <Processors/ISource.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
-
 
 namespace ProfileEvents
 {
