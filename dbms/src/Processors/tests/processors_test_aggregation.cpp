@@ -224,8 +224,6 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
@@ -298,8 +296,6 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,

@@ -85,7 +85,6 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = ‘any’ are present.") \
     M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
-    M(SettingBool, compile, false, "Whether query compilation is enabled.") \
     M(SettingBool, allow_suspicious_low_cardinality_types, false, "In CREATE TABLE statement allows specifying LowCardinality modifier for types of small fixed size (8 or less). Enabling this may increase merge times and memory consumption.") \
     M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
@@ -351,6 +350,7 @@ struct Settings : public SettingsCollection<Settings>
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
+    M(SettingBool, compile, false, "Whether query compilation is enabled. Will be removed after 2020-03-13") \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
