@@ -36,8 +36,9 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Kind kind_,
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool overwrite)
-    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_}
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_, constraints_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -170,6 +171,7 @@ void registerStorageJoin(StorageFactory & factory)
             kind,
             strictness,
             args.columns,
+            args.constraints,
             join_any_take_last_row);
     });
 }

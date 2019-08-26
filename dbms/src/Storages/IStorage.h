@@ -65,9 +65,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>
 {
 public:
     IStorage() = default;
-    explicit IStorage(ColumnsDescription columns_);
-    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_);
-    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_);
+    explicit IStorage(ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;

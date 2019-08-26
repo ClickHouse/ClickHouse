@@ -78,6 +78,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         size_t max_compress_block_size_);
 };

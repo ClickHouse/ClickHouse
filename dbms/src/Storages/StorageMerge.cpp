@@ -53,13 +53,14 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
 {
+    setColumns(columns_);
 }
 
 
