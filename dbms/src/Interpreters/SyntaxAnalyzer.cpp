@@ -1,7 +1,9 @@
+#include <Core/Settings.h>
+#include <Core/NamesAndTypes.h>
+
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Core/Settings.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -14,6 +16,8 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -27,10 +31,8 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Core/NamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
-#include <Common/typeid_cast.h>
 
 #include <functional>
 
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int EXPECTED_ALL_OR_ANY;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -485,6 +488,27 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness)
+{
+    const ASTTablesInSelectQueryElement * node = select_query.join();
+    if (!node)
+        return;
+
+    auto & table_join = const_cast<ASTTablesInSelectQueryElement *>(node)->table_join->as<ASTTableJoin &>();
+
+    if (table_join.strictness == ASTTableJoin::Strictness::Unspecified &&
+        table_join.kind != ASTTableJoin::Kind::Cross)
+    {
+        if (join_default_strictness == JoinStrictness::ANY)
+            table_join.strictness = ASTTableJoin::Strictness::Any;
+        else if (join_default_strictness == JoinStrictness::ALL)
+            table_join.strictness = ASTTableJoin::Strictness::All;
+        else
+            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
+                            DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
+    }
+}
+
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
                           const Aliases & aliases, bool join_use_nulls)
@@ -556,6 +580,30 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
                             "It would be equal to apply distinct for keys to right, left and both tables respectively. "
                             "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
                             ErrorCodes::NOT_IMPLEMENTED);
+}
+
+std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
+{
+    if (const auto * select_query = query->as<ASTSelectQuery>())
+    {
+        /// There can not be aggregate functions inside the WHERE and PREWHERE.
+        if (select_query->where())
+            assertNoAggregates(select_query->where(), "in WHERE");
+        if (select_query->prewhere())
+            assertNoAggregates(select_query->prewhere(), "in PREWHERE");
+
+        GetAggregatesVisitor::Data data;
+        GetAggregatesVisitor(data).visit(query);
+
+        /// There can not be other aggregate functions within the aggregate functions.
+        for (const ASTFunction * node : data.aggregates)
+            for (auto & arg : node->arguments->children)
+                assertNoAggregates(arg, "inside another aggregate function");
+        return data.aggregates;
+    }
+    else
+        assertNoAggregates(query, "in wrong place");
+    return {};
 }
 
 }
@@ -837,9 +885,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
+        setJoinStrictness(*select_query, settings.join_default_strictness);
         collectJoinedColumns(result.analyzed_join, *select_query, source_columns_set, result.aliases, settings.join_use_nulls);
     }
 
+    result.aggregates = getAggregates(query);
     result.collectUsedColumns(query, additional_source_columns);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }

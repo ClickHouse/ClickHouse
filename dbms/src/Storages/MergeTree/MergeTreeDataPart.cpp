@@ -142,10 +142,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(
-    const MergeTreeData & storage_,
-    const String & name_,
-    const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
     : storage(storage_)
     , name(name_)
     , info(info_)
@@ -367,6 +364,8 @@ void MergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+    // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
+
     String from = storage.full_path + relative_path;
     String to = storage.full_path + "delete_tmp_" + name;
 
@@ -409,6 +408,8 @@ void MergeTreeDataPart::remove() const
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
+        std::shared_lock<std::shared_mutex> lock(columns_lock);
+
         for (const auto & [file, _] : checksums.files)
         {
             String path_to_remove = to + "/" + file;

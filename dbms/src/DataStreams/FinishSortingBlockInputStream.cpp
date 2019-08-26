@@ -102,8 +102,6 @@ Block FinishSortingBlockInputStream::readImpl()
             if (block.rows() == 0)
                 continue;
 
-            // We need to sort each block separately before merging.
-            sortBlock(block, description_to_sort, limit);
 
             removeConstantsFromBlock(block);
 

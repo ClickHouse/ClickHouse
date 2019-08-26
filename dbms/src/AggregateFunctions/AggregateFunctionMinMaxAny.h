@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <common/StringRef.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -38,9 +39,9 @@ public:
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            static_cast<ColumnVector<T> &>(to).getData().push_back(value);
+            assert_cast<ColumnVector<T> &>(to).getData().push_back(value);
         else
-            static_cast<ColumnVector<T> &>(to).insertDefault();
+            assert_cast<ColumnVector<T> &>(to).insertDefault();
     }
 
     void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
@@ -61,7 +62,7 @@ public:
     void change(const IColumn & column, size_t row_num, Arena *)
     {
         has_value = true;
-        value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+        value = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     }
 
     /// Assuming to.has()
@@ -112,7 +113,7 @@ public:
 
     bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] < value)
+        if (!has() || assert_cast<const ColumnVector<T> &>(column).getData()[row_num] < value)
         {
             change(column, row_num, arena);
             return true;
@@ -134,7 +135,7 @@ public:
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] > value)
+        if (!has() || assert_cast<const ColumnVector<T> &>(column).getData()[row_num] > value)
         {
             change(column, row_num, arena);
             return true;
@@ -161,7 +162,7 @@ public:
 
     bool isEqualTo(const IColumn & column, size_t row_num) const
     {
-        return has() && static_cast<const ColumnVector<T> &>(column).getData()[row_num] == value;
+        return has() && assert_cast<const ColumnVector<T> &>(column).getData()[row_num] == value;
     }
 };
 
@@ -204,9 +205,9 @@ public:
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            static_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
+            assert_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
         else
-            static_cast<ColumnString &>(to).insertDefault();
+            assert_cast<ColumnString &>(to).insertDefault();
     }
 
     void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
@@ -281,7 +282,7 @@ public:
 
     void change(const IColumn & column, size_t row_num, Arena * arena)
     {
-        changeImpl(static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
+        changeImpl(assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
     }
 
     void change(const Self & to, Arena * arena)
@@ -330,7 +331,7 @@ public:
 
     bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
+        if (!has() || assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
         {
             change(column, row_num, arena);
             return true;
@@ -352,7 +353,7 @@ public:
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
+        if (!has() || assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
         {
             change(column, row_num, arena);
             return true;
@@ -379,7 +380,7 @@ public:
 
     bool isEqualTo(const IColumn & column, size_t row_num) const
     {
-        return has() && static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
+        return has() && assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
     }
 };
 

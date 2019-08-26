@@ -12,6 +12,8 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Common/SettingsChanges.h>
+#include <Storages/ConstraintsDescription.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -65,6 +67,7 @@ public:
     IStorage() = default;
     explicit IStorage(ColumnsDescription columns_);
     IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_);
+    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -75,7 +78,7 @@ public:
 
     /// The name of the table.
     virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const = 0;
+    virtual std::string getDatabaseName() const { return {}; }
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -95,14 +98,22 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
+    /// Returns true if the storage supports settings.
+    virtual bool supportsSettings() const { return false; }
+
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
 public: /// thread-unsafe part. lockStructure must be acquired
-    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    const ColumnsDescription & getVirtuals() const;
     const IndicesDescription & getIndices() const;
+
+    const ConstraintsDescription & getConstraints() const;
+    void setConstraints(ConstraintsDescription constraints_);
 
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
@@ -129,18 +140,20 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    /// Check storage has setting. Exception will be thrown if it doesn't support settings at all.
+    virtual bool hasSetting(const String & setting_name) const;
+
 protected: /// still thread-unsafe part.
-    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
     void setIndices(IndicesDescription indices_);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
-
 private:
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};
     IndicesDescription indices;
+    ConstraintsDescription constraints;
 
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
@@ -169,6 +182,36 @@ public:
       *  for example, the request can be partially processed on a remote server.)
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
+
+    /** Watch live changes to the table.
+     * Accepts a list of columns to read, as well as a description of the query,
+     *  from which information can be extracted about how to retrieve data
+     *  (indexes, locks, etc.)
+     * Returns a stream with which you can read data sequentially
+     *  or multiple streams for parallel data reading.
+     * The `processed_stage` info is also written to what stage the request was processed.
+     * (Normally, the function only reads the columns from the list, but in other cases,
+     *  for example, the request can be partially processed on a remote server.)
+     *
+     * context contains settings for one query.
+     * Usually Storage does not care about these settings, since they are used in the interpreter.
+     * But, for example, for distributed query processing, the settings are passed to the remote server.
+     *
+     * num_streams - a recommendation, how many streams to return,
+     *  if the storage can return a different number of streams.
+     *
+     * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+     */
+    virtual BlockInputStreams watch(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/)
+    {
+        throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -250,6 +293,15 @@ public:
         throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** ALTER table settings if possible. Otherwise throws exception.
+     */
+    virtual void alterSettings(
+        const SettingsChanges & new_changes,
+        const String & current_database_name,
+        const String & current_table_name,
+        const Context & context,
+        TableStructureWriteLockHolder & table_lock_holder);
+
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
@@ -294,7 +346,7 @@ public:
         return {};
     }
 
-    bool is_dropped{false};
+    std::atomic<bool> is_dropped{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }

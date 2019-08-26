@@ -103,7 +103,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
         columns_[i++]->insert(part->getIndexSizeInBytes());
         columns_[i++]->insert(part->getIndexSizeInAllocatedBytes());
-        columns_[i++]->insert(part->is_frozen);
+        columns_[i++]->insert(part->is_frozen.load(std::memory_order_relaxed));
 
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
@@ -114,7 +114,11 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(part->stateString());
 
         MinimalisticDataPartChecksums helper;
-        helper.computeTotalChecksums(part->checksums);
+        {
+            /// TODO: MergeTreeDataPart structure is too error-prone.
+            std::shared_lock<std::shared_mutex> lock(part->columns_lock);
+            helper.computeTotalChecksums(part->checksums);
+        }
 
         auto checksum = helper.hash_of_all_files;
         columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));

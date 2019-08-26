@@ -6,7 +6,6 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMaterializedView.h>
 
-
 namespace DB
 {
 

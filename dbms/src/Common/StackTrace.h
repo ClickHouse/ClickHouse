@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <functional>
 #include <signal.h>
 
 #ifdef __APPLE__
@@ -38,6 +39,8 @@ public:
     size_t getOffset() const;
     const Frames & getFrames() const;
     std::string toString() const;
+
+    void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 
 protected:
     void tryCapture();

@@ -10,10 +10,10 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 - `IF NOT EXISTS`
 
-    If the `db_name` database already exists then:
+    If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
 
-    - If clause is specified, ClickHouse doesn't create a new database and doesn't throw an exception.
-    - If clause is not specified, then ClickHouse doesn't create a new database and throw and exception.
+    - Doesn't throw an exception if clause is specified.
+    - Throws an exception if clause isn't specified.
 
 - `ON CLUSTER`
 
@@ -23,7 +23,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
     - [MySQL](../database_engines/mysql.md)
 
-        Allows to retrieve data from the remote MySQL server.
+        Allows you to retrieve data from the remote MySQL server.
 
     By default, ClickHouse uses its own [database engine](../database_engines/index.md).
 
@@ -102,6 +102,26 @@ When using the ALTER query to add new columns, old data for these columns is not
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
+
+### Constraints {#constraints}
+
+WARNING: This feature is experimental. Correct work is not guaranteed on non-MergeTree family engines.
+
+Along with columns descriptions constraints could be defined:
+
+``sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+`boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
+
+Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
 ### TTL expression
 
