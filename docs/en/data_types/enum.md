@@ -21,7 +21,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception. ClickHouse automatically chooses 8-bit when enumerating this `Enum`.
+Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.
 
 ```sql
 :) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
