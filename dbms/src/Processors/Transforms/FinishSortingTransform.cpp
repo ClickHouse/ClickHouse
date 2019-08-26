@@ -63,7 +63,7 @@ void FinishSortingTransform::consume(Chunk chunk)
     generated_prefix = false;
 
     // If there were only const columns in sort description, then there is no need to sort.
-    // Return the blocks as is.
+    // Return the chunks as is.
     if (description.empty())
     {
         generated_chunk = std::move(chunk);
@@ -72,7 +72,7 @@ void FinishSortingTransform::consume(Chunk chunk)
 
     removeConstColumns(chunk);
 
-    /// Find the position of last already read key in current block.
+    /// Find the position of last already read key in current chunk.
     if (!chunks.empty())
     {
         size_t size = chunk.getNumRows();
@@ -91,8 +91,8 @@ void FinishSortingTransform::consume(Chunk chunk)
 
         size_t tail_pos = high;
 
-        /// We need to save tail of block, because next block may starts with the same key as in tail
-        /// and we should sort these rows in one chunk.
+        /// We need to save tail of chunk, because next chunk may starts with the same key as in tail
+        /// and we should sort these rows in one portion.
         if (tail_pos != size)
         {
             auto source_columns = chunk.detachColumns();
@@ -112,8 +112,8 @@ void FinishSortingTransform::consume(Chunk chunk)
         }
     }
 
-    /// If we reach here, that means that current block is first in chunk
-    /// or it all consists of rows with the same key as tail of a previous block.
+    /// If we reach here, that means that current cunk is first in portion
+    /// or it all consists of rows with the same key as tail of a previous chunk.
     chunks.push_back(std::move(chunk));
 }
 

@@ -40,8 +40,7 @@ private:
     size_t max_bytes_before_external_sort;
     const std::string tmp_path;
 
-    Logger * log = &Logger::get("MergeSortingBlockInputStream");
-    // Chunks chunks;
+    Logger * log = &Logger::get("MergeSortingTransform");
 
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;

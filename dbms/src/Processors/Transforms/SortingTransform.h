@@ -1,24 +1,10 @@
 #pragma once
-#include <Processors/IAccumulatingTransform.h>
+#include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-#include <Poco/TemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-
 #include <Processors/ISource.h>
-
-#include <common/logger_useful.h>
-
 #include <queue>
-
-
-namespace ProfileEvents
-{
-    extern const Event ExternalSortWritePart;
-    extern const Event ExternalSortMerge;
-}
 
 
 namespace DB
@@ -72,7 +58,9 @@ private:
     MergeSorter merge_sorter;
 };
 
-
+/** Base class for sorting.
+ *  Currently there are two implementations: MergeSortingTransform and FinishSortingTransform.
+ */
 class SortingTransform : public IProcessor
 {
 public:
@@ -91,7 +79,6 @@ protected:
     virtual void generate() = 0;
     virtual void serialize();
 
-protected:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
