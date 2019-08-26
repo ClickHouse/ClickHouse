@@ -2,6 +2,7 @@
 #include <sys/ioctl.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <boost/program_options.hpp>
 
 
 namespace DB::ErrorCodes
