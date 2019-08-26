@@ -363,7 +363,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -396,7 +396,7 @@ void StorageDistributed::alter(
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
-    params.apply(new_columns);
+    params.applyForColumnsOnly(new_columns);
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
