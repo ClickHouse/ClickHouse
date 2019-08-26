@@ -64,6 +64,7 @@ protected:
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool overwrite);
 };
 

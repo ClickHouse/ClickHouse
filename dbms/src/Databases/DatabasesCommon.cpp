@@ -83,6 +83,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
+    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
     {
@@ -90,7 +91,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         StorageFactory::instance().get(
             ast_create_query,
             database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns,
+            columns, constraints,
             true, has_force_restore_data_flag)
     };
 }
