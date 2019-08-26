@@ -32,6 +32,11 @@ private:
     /// Order is important.
     RWLockImpl::LockHolder new_data_structure_lock;
     RWLockImpl::LockHolder structure_lock;
+
+    void release()
+    {
+        *this = TableStructureReadLockHolder();
+    }
 };
 
 }
