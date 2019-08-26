@@ -39,6 +39,7 @@ class Context;
   */
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
+friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
@@ -94,6 +95,8 @@ public:
         const AlterCommands & params, const String & database_name, const String & table_name,
         const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
+    ~StorageBuffer() override;
+
 private:
     String table_name;
     String database_name;
@@ -145,8 +148,6 @@ protected:
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
-
-    ~StorageBuffer() override;
 };
 
 }

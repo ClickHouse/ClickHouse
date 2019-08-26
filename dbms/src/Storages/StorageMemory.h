@@ -21,6 +21,7 @@ class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStor
 {
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }

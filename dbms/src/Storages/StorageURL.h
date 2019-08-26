@@ -71,6 +71,7 @@ private:
 
 class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
+    friend struct ext::shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const Poco::URI & uri_,

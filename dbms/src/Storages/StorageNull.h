@@ -16,6 +16,7 @@ namespace DB
   */
 class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return table_name; }
