@@ -13,7 +13,7 @@ namespace DB
 
 class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
-    using ColumnFormat = ParsedTemplateFormat::ColumnFormat;
+    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
             const FormatSettings & settings_, bool ignore_spaces_);
@@ -48,8 +48,8 @@ private:
     DataTypes data_types;
 
     FormatSettings settings;
-    ParsedTemplateFormat format;
-    ParsedTemplateFormat row_format;
+    ParsedTemplateFormatString format;
+    ParsedTemplateFormatString row_format;
     const bool ignore_spaces;
     bool synced_after_error_at_last_row = false;
 };
