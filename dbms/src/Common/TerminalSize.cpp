@@ -24,7 +24,7 @@ uint16_t getTerminalWidth()
     return 0;
 }
 
-po::options_description createOptionsDescription(const std::string &caption, uint16_t terminal_width)
+po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)
 {
     unsigned line_length = po::options_description::m_default_line_length;
     unsigned min_description_length = line_length / 2;
