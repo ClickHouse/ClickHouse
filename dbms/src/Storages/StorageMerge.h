@@ -14,6 +14,7 @@ namespace DB
   */
 class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return table_name; }
