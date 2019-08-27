@@ -485,6 +485,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
     auto & pipeline = state.io.pipeline;
 
+    if (pipeline.getMaxThreads())
+        num_threads = pipeline.getMaxThreads();
+
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         auto & header = pipeline.getHeader();
