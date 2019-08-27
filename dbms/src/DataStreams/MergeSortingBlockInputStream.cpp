@@ -21,10 +21,11 @@ namespace DB
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_, size_t min_free_disk_space_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
-    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_),
+    min_free_disk_space(min_free_disk_space_)
 {
     children.push_back(input);
     header = children.at(0)->getHeader();
@@ -77,6 +78,11 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
+                auto freeSpace = Poco::File(tmp_path).freeSpace();
+                if (min_free_disk_space > freeSpace - sum_bytes_in_blocks)
+                {
+                    throw Exception("Not enough space.", ErrorCodes::NOT_ENOUGH_SPACE);
+                }
                 Poco::File(tmp_path).createDirectories();
                 temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
                 const std::string & path = temporary_files.back()->path();
