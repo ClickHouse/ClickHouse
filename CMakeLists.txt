@@ -226,8 +226,8 @@ endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (NOT SANITIZE)
-    set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
@@ -363,9 +363,7 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 include (cmake/print_flags.cmake)
 
-if (MAKE_STATIC_LIBRARIES AND NOT_UNBUNDLED)
-    install (EXPORT global DESTINATION cmake)
-endif ()
+install (EXPORT global DESTINATION cmake)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)

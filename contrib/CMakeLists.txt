@@ -162,15 +162,6 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
-if (ENABLE_CAPNP AND USE_INTERNAL_CAPNP_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    set (_save ${CMAKE_CXX_EXTENSIONS})
-    set (CMAKE_CXX_EXTENSIONS)
-    add_subdirectory (capnproto/c++)
-    set (CMAKE_CXX_EXTENSIONS ${_save})
-    target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
-endif ()
-
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time

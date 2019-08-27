@@ -353,10 +353,7 @@ if (USE_ICU)
 endif ()
 
 if (USE_CAPNP)
-    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARY})
-    if (NOT USE_INTERNAL_CAPNP_LIBRARY)
-        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
-    endif ()
+    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARIES})
 endif ()
 
 if (USE_PARQUET)
