@@ -67,7 +67,7 @@ The command-line client allows passing external data (external temporary tables)
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 
-You can create a query with parameters and pass values of the corresponding client app parameters to them. For example:
+You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
 
 ```bash
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
