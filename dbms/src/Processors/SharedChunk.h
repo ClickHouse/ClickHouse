@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <Core/Block.h>
+#include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
@@ -17,37 +17,39 @@ namespace DB
 /// The reference counter is not atomic, since it is used from one thread.
 namespace detail
 {
-    struct SharedBlock : Block
-    {
-        int refcount = 0;
+struct SharedChunk : Chunk
+{
+    int refcount = 0;
 
-        ColumnRawPtrs all_columns;
-        ColumnRawPtrs sort_columns;
+    ColumnRawPtrs all_columns;
+    ColumnRawPtrs sort_columns;
 
-        SharedBlock(Block && block) : Block(std::move(block)) {}
-    };
+    SharedChunk(Chunk && chunk) : Chunk(std::move(chunk)) {}
+};
+
 }
 
-inline void intrusive_ptr_add_ref(detail::SharedBlock * ptr)
+inline void intrusive_ptr_add_ref(detail::SharedChunk * ptr)
 {
     ++ptr->refcount;
 }
 
-inline void intrusive_ptr_release(detail::SharedBlock * ptr)
+inline void intrusive_ptr_release(detail::SharedChunk * ptr)
 {
     if (0 == --ptr->refcount)
         delete ptr;
 }
 
-using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
+using SharedChunkPtr = boost::intrusive_ptr<detail::SharedChunk>;
 
-struct SharedBlockRowRef
+
+struct SharedChunkRowRef
 {
     ColumnRawPtrs * columns = nullptr;
     size_t row_num;
-    SharedBlockPtr shared_block;
+    SharedChunkPtr shared_block;
 
-    void swap(SharedBlockRowRef & other)
+    void swap(SharedChunkRowRef & other)
     {
         std::swap(columns, other.columns);
         std::swap(row_num, other.row_num);
@@ -55,7 +57,7 @@ struct SharedBlockRowRef
     }
 
     /// The number and types of columns must match.
-    bool operator==(const SharedBlockRowRef & other) const
+    bool operator==(const SharedChunkRowRef & other) const
     {
         size_t size = columns->size();
         for (size_t i = 0; i < size; ++i)
@@ -64,21 +66,21 @@ struct SharedBlockRowRef
         return true;
     }
 
-    bool operator!=(const SharedBlockRowRef & other) const
+    bool operator!=(const SharedChunkRowRef & other) const
     {
         return !(*this == other);
     }
 
     void reset()
     {
-        SharedBlockRowRef empty;
+        SharedChunkRowRef empty;
         swap(empty);
     }
 
     bool empty() const { return columns == nullptr; }
     size_t size() const { return empty() ? 0 : columns->size(); }
 
-    void set(SharedBlockPtr & shared_block_, ColumnRawPtrs * columns_, size_t row_num_)
+    void set(SharedChunkPtr & shared_block_, ColumnRawPtrs * columns_, size_t row_num_)
     {
         shared_block = shared_block_;
         columns = columns_;

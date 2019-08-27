@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// gets pointers to all columns of block, which were used for ORDER BY
-static ColumnRawPtrs getSortColumns(const Block & block, const SortDescription & description)
+static ColumnRawPtrs extractSortColumns(const Block & block, const SortDescription & description)
 {
     size_t size = description.size();
     ColumnRawPtrs res;
@@ -45,7 +45,7 @@ Block LimitBlockInputStream::readImpl()
     UInt64 rows = 0;
 
     /// pos >= offset + limit and all rows in the end of previous block were equal
-    ///  to last row at 'limit' position. So we check current block.
+    ///  to row at 'limit' position. So we check current block.
     if (!ties_row_ref.empty() && pos >= offset + limit)
     {
         res = children.back()->read();
@@ -55,13 +55,13 @@ Block LimitBlockInputStream::readImpl()
             return res;
 
         SharedBlockPtr ptr = new detail::SharedBlock(std::move(res));
-        ptr->sort_columns = getSortColumns(*ptr, description);
+        ptr->sort_columns = extractSortColumns(*ptr, description);
 
         UInt64 len;
         for (len = 0; len < rows; ++len)
         {
             SharedBlockRowRef current_row;
-            SharedBlockRowRef::setSharedBlockRowRef(current_row, ptr, &ptr->sort_columns, len);
+            current_row.set(ptr, &ptr->sort_columns, len);
 
             if (current_row != ties_row_ref)
             {
@@ -102,14 +102,14 @@ Block LimitBlockInputStream::readImpl()
 
     SharedBlockPtr ptr = new detail::SharedBlock(std::move(res));
     if (with_ties)
-        ptr->sort_columns = getSortColumns(*ptr, description);
+        ptr->sort_columns = extractSortColumns(*ptr, description);
 
     /// give away the whole block
     if (pos >= offset + rows && pos <= offset + limit)
     {
         /// Save rowref for last row, because probalbly next block begins with the same row.
         if (with_ties && pos == offset + limit)
-            SharedBlockRowRef::setSharedBlockRowRef(ties_row_ref, ptr, &ptr->sort_columns, rows - 1);
+            ties_row_ref.set(ptr, &ptr->sort_columns, rows - 1);
         return *ptr;
     }
 
@@ -127,12 +127,12 @@ Block LimitBlockInputStream::readImpl()
     /// check if other rows in current block equals to last one in limit
     if (with_ties)
     {
-        SharedBlockRowRef::setSharedBlockRowRef(ties_row_ref, ptr, &ptr->sort_columns, start + length - 1);
+        ties_row_ref.set(ptr, &ptr->sort_columns, start + length - 1);
 
         for (size_t i = ties_row_ref.row_num + 1; i < rows; ++i)
         {
             SharedBlockRowRef current_row;
-            SharedBlockRowRef::setSharedBlockRowRef(current_row, ptr, &ptr->sort_columns, i);
+            current_row.set(ptr, &ptr->sort_columns, i);
             if (current_row == ties_row_ref)
                 ++length;
             else
@@ -154,6 +154,5 @@ Block LimitBlockInputStream::readImpl()
 
     return *ptr;
 }
-
 
 }
