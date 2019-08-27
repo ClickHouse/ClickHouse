@@ -11,9 +11,9 @@ The table engine (type of table) determines:
 
 ## Engine Families
 
-### *MergeTree
+### MergeTree
 
-The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `*MergeTree` engines support data replication (with [Replicated*](replication.md) versions of engines), partitioning, and other features not supported in other engines.
+The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated*](replication.md) versions of engines), partitioning, and other features not supported in other engines.
 
 Engines in the family:
 
@@ -25,7 +25,7 @@ Engines in the family:
 - [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
 - [GraphiteMergeTree](graphitemergetree.md)
 
-### *Log
+### Log
 
 Lightweight [engines](log_family.md) with minimum functionality. They're the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
 
@@ -46,9 +46,7 @@ Engines in the family:
 - [ODBC](odbc.md)
 - [JDBC](jdbc.md)
 
-### Special engines
-
-Engines that perform special tasks.
+### Other engines
 
 Engines in the family:
 
