@@ -32,9 +32,7 @@ def test_strange_filenames(start_cluster):
                      ("p.o.*t.s", "2"),
                      ("b}{r?{ces", "2"),
                      ("b}*ces", "2"),
-                     ("b}{r{a..z}{ces", "2"),
-                     ("b}.?{t.h", "2"),
-                     ("b}.?{t.{a..z}", "2")]
+                     ("b}.?{t.h", "2")]
 
     for pattern, value in test_requests:
         assert node.query('''
@@ -64,8 +62,8 @@ def test_linear_structure(start_cluster):
                      ("file*", "20"),
                      ("a_{file,data}", "4"),
                      ("?_{file,data}", "20"),
-                     ("{a..z}_{file,data}", "20"),
-                     ("{a..z}?{file,data}", "20"),
+                     ("{a,b,c,d,e}_{file,data}", "20"),
+                     ("{a,b,c,d,e}?{file,data}", "20"),
                      ("*", "40")]
 
     for pattern, value in test_requests:
@@ -106,7 +104,7 @@ def test_deep_structure(start_cluster):
     test_requests = [ ("directory{1..5}/big_dir/*", "2002"), ("directory{0..6}/big_dir/*{0..9}{0..9}{0..9}", "2000"),
                      ("?", "0"),
                      ("directory{0..5}/dir{1..3}/file", "10"), ("directory{0..5}/dir?/file", "10"),
-                     ("we/need/to/go/deeper/file", "2"), ("*/*/*/*/*/*", "2"), ("we/n{a..z}ed/to/*/deeper/{a..z}{a..z}{a..z}{a..z}", "2"), ("we/need/??/go/deeper/*?*?*?*?*", "2")]
+                     ("we/need/to/go/deeper/file", "2"), ("*/*/*/*/*/*", "2"), ("we/need/??/go/deeper/*?*?*?*?*", "2")]
 
     for pattern, value in test_requests:
         assert node.query('''

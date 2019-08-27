@@ -91,7 +91,6 @@ def test_globs_in_read_table(started_cluster):
                      ("dir/*", 1),
                      ("dir/*?*?*?*?*", 1),
                      ("dir/*?*?*?*?*?*", 0),
-                     ("dir/*{a..z}*{a..z}*{a..z}*{a..z}*", 1),
                      ("some_dir/*/file", 2),
                      ("some_dir/dir?/*", 2),
                      ("*/*/*", 3),
