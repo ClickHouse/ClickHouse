@@ -47,5 +47,9 @@ ALTER TABLE table_for_alter MODIFY SETTING check_delay_period=10, check_delay_pe
 
 SHOW CREATE TABLE table_for_alter;
 
+ALTER TABLE table_for_alter ADD COLUMN Data2 UInt64, MODIFY SETTING check_delay_period=5, check_delay_period=10, check_delay_period=15;
+
+SHOW CREATE TABLE table_for_alter;
+
 DROP TABLE IF EXISTS table_for_alter;
 

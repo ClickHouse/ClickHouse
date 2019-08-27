@@ -59,11 +59,6 @@ public:
 
     bool hasSetting(const String & setting_name) const override;
 
-    void alterSettings(
-        const SettingsChanges & new_changes,
-        const Context & context,
-        TableStructureWriteLockHolder & table_lock_holder) override;
-
 protected:
     StorageKafka(
         const std::string & table_name_,

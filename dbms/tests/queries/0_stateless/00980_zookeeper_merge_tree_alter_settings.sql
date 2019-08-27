@@ -58,5 +58,10 @@ ATTACH TABLE replicated_table_for_alter1;
 SHOW CREATE TABLE replicated_table_for_alter1;
 SHOW CREATE TABLE replicated_table_for_alter2;
 
+ALTER TABLE replicated_table_for_alter1 ADD COLUMN Data2 UInt64, MODIFY SETTING check_delay_period=5, check_delay_period=10, check_delay_period=15;
+
+SHOW CREATE TABLE replicated_table_for_alter1;
+SHOW CREATE TABLE replicated_table_for_alter2;
+
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 DROP TABLE IF EXISTS replicated_table_for_alter1;
