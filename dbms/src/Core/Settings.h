@@ -352,6 +352,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
     M(SettingBool, compile, false, "Whether query compilation is enabled. Will be removed after 2020-03-13") \
+    M(SettingUInt64, min_free_disk_space, 0, "The minimum disk space to keep") \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
