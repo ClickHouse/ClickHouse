@@ -80,7 +80,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
-            database_and_table.second->truncate(query_ptr, context);
+            database_and_table.second->truncate(query_ptr, context, table_lock);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
@@ -94,7 +94,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
-            database_and_table.second->drop();
+            database_and_table.second->drop(table_lock);
             database_and_table.second->is_dropped = true;
 
             String database_data_path = database_and_table.first->getDataPath();
@@ -128,7 +128,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Drop table data, don't touch metadata
-                table->truncate(query_ptr, context);
+                table->truncate(query_ptr, context, table_lock);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
@@ -137,7 +137,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
-                table->drop();
+                table->drop(table_lock);
                 table->is_dropped = true;
             }
         }

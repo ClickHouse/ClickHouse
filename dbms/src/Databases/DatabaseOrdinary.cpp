@@ -355,7 +355,8 @@ void DatabaseOrdinary::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name)
+    const String & to_table_name,
+    TableStructureWriteLockHolder & lock)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -372,7 +373,7 @@ void DatabaseOrdinary::renameTable(
     {
         table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
             to_database_concrete->name,
-            to_table_name);
+            to_table_name, lock);
     }
     catch (const Exception &)
     {
