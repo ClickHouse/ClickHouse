@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int SETTINGS_ARE_NOT_SUPPORTED;
     extern const int UNKNOWN_SETTING;
+    extern const int TABLE_IS_DROPPED;
 }
 
 IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
