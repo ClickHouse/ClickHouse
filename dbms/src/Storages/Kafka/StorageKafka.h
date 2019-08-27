@@ -1,16 +1,14 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
-#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 
 #include <mutex>
+#include <atomic>
+
 
 namespace DB
 {
@@ -40,10 +38,9 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
-        const Context & context
-    ) override;
+        const Context & context) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void updateDependencies() override;
 

@@ -113,7 +113,7 @@ BlockIO InterpreterRenameQuery::execute()
     if (descriptions.size() > 1)
         lock = context.getLock();
 
-    for (const auto & elem : descriptions)
+    for (auto & elem : descriptions)
     {
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
