@@ -93,7 +93,7 @@ BlockIO InterpreterRenameQuery::execute()
             if (auto table = context.tryGetTable(from.database_name, from.table_name))
                 tables_from_locks.emplace(from, table->lockExclusively(context.getCurrentQueryId()));
 
-        descriptions.back().table_lock = tables_from_locks[from];
+        descriptions.back().from_table_lock = tables_from_locks[from];
 
         if (!table_guards.count(from))
             table_guards.emplace(from, context.getDDLGuard(from.database_name, from.table_name));
@@ -118,7 +118,7 @@ BlockIO InterpreterRenameQuery::execute()
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
         context.getDatabase(elem.from_database_name)->renameTable(
-            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, elem.table_lock);
+            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, elem.from_table_lock);
     }
 
     return {};
