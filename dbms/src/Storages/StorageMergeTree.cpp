@@ -253,15 +253,6 @@ void StorageMergeTree::alter(
 
     if (!params.isMutable())
     {
-        SettingsChanges new_changes;
-        /// We don't need to lock table structure exclusively to ALTER settings.
-        if (params.isSettingsAlter())
-        {
-            params.applyForSettingsOnly(new_changes);
-            alterSettings(new_changes, context, table_lock_holder);
-            return;
-        }
-
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
@@ -269,8 +260,14 @@ void StorageMergeTree::alter(
         ASTPtr new_order_by_ast = order_by_ast;
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
+        SettingsChanges new_changes;
+
         params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
+
+        changeSettings(new_changes, table_lock_holder);
+
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
         setColumns(std::move(new_columns));
         return;
     }
@@ -305,8 +302,18 @@ void StorageMergeTree::alter(
 
         if (new_ttl_table_ast.get() != ttl_table_ast.get())
             storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
+
+        if (!new_changes.empty())
+        {
+            auto settings_modifier = getSettingsModifier(new_changes);
+            settings_modifier(ast);
+        }
     };
+
+    changeSettings(new_changes, table_lock_holder);
+
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+
 
     /// Reinitialize primary key because primary key column types might have changed.
     setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
