@@ -412,6 +412,11 @@ bool StorageKafka::hasSetting(const String & setting_name) const
     return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
 }
 
+IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
+{
+    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
 void registerStorageKafka(StorageFactory & factory)
 {
     factory.registerStorage("Kafka", [](const StorageFactory::Arguments & args)

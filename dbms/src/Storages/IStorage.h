@@ -149,7 +149,7 @@ protected: /// still thread-unsafe part.
     virtual bool isVirtualColumn(const String & column_name) const;
 
     /// Returns modifier of settings in storage definition
-    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
+    virtual IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
     ColumnsDescription columns; /// combined real and virtual columns

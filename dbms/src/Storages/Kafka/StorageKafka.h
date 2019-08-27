@@ -59,6 +59,7 @@ public:
 
     bool hasSetting(const String & setting_name) const override;
 
+
 protected:
     StorageKafka(
         const std::string & table_name_,
@@ -70,6 +71,7 @@ protected:
         size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
         bool intermediate_commit_);
 
+    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const override;
 private:
     // Configuration and state
     String table_name;
