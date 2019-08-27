@@ -40,8 +40,11 @@ public:
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
         const void * data;
 
-        /// Minimal time, when we need to delete some data from this part
+        /// Minimal time, when we need to delete some data from this part.
         time_t min_ttl;
+
+        /// Maximum time, when we will need to drop this part altogether because all rows in it are expired.
+        time_t max_ttl;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.
