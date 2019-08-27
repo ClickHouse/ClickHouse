@@ -74,6 +74,7 @@ namespace DB
 
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -98,9 +99,7 @@ public:
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
@@ -540,7 +539,7 @@ protected:
         const ASTPtr & sample_by_ast_,
         const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 

@@ -45,6 +45,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
+    if (settings_changes)
+    {
+        res->settings_changes = settings_changes->clone();
+        res->children.push_back(res->settings_changes);
+    }
     if (values)
     {
         res->values = values->clone();
@@ -221,6 +226,11 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        settings_changes->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {

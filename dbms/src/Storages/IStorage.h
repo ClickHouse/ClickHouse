@@ -12,6 +12,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Common/SettingsChanges.h>
 #include <Storages/ConstraintsDescription.h>
 
 #include <optional>
@@ -64,9 +65,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>
 {
 public:
     IStorage() = default;
-    explicit IStorage(ColumnsDescription columns_);
-    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_);
-    IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_);
+    explicit IStorage(ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -96,6 +95,9 @@ public:
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
+
+    /// Returns true if the storage supports settings.
+    virtual bool supportsSettings() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -136,12 +138,18 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    /// Check storage has setting. Exception will be thrown if it doesn't support settings at all.
+    virtual bool hasSetting(const String & setting_name) const;
+
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
+
+    /// Returns modifier of settings in storage definition
+    virtual IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
     ColumnsDescription columns; /// combined real and virtual columns
@@ -277,7 +285,7 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
+    virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
