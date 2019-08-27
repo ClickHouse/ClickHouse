@@ -150,6 +150,8 @@ String transformQueryForExternalDatabase(
                         compatible_found = true;
                     }
                 }
+                if (new_function_and->arguments->children.size() == 1)
+                    new_function_and->name = "";
 
                 if (compatible_found)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
