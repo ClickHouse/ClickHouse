@@ -87,8 +87,8 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
+        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size_)
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
             compressed(plain)
         {
             if (offset)
@@ -422,12 +422,15 @@ StorageLog::StorageLog(
     const std::string & database_name_,
     const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), table_name(table_name_), database_name(database_name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json")
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -644,7 +647,7 @@ void registerStorageLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
     });
 }

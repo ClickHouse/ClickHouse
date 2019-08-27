@@ -22,7 +22,7 @@ To install official packages add the Yandex repository in `/etc/apt/sources.list
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is not recommended for production environments).
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
 Then run these commands to actually install packages:
 
@@ -37,13 +37,25 @@ You can also download and install packages manually from here: <https://repo.yan
 
 ### From RPM Packages
 
-Yandex does not run ClickHouse on `rpm` based Linux distributions and `rpm` packages are not as thoroughly tested. So use them at your own risk, but there are many other companies that do successfully run them in production without any major issues.
+Yandex ClickHouse team recommends using official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
 
-For CentOS, RHEL or Fedora there are the following options:
+First you need to add the official repository:
 
-* Packages from <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64/> are generated from official `deb` packages by Yandex and have byte-identical binaries.
-* Packages from <https://github.com/Altinity/clickhouse-rpm-install> are built by independent company Altinity, but are used widely without any complaints.
-* Or you can use Docker (see below).
+```bash
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+```
+
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+
+Then run these commands to actually install packages:
+
+```bash
+sudo yum install clickhouse-server clickhouse-client
+```
+
+You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
 
 ### From Docker Image
 
@@ -75,6 +87,13 @@ To start the server as a daemon, run:
 ``` bash
 $ sudo service clickhouse-server start
 ```
+
+If you don't have `service` command, run as
+
+``` bash
+$ sudo /etc/init.d/clickhouse-server start
+```
+
 
 See the logs in the `/var/log/clickhouse-server/` directory.
 

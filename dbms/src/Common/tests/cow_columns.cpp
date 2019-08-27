@@ -28,7 +28,7 @@ private:
     friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    ConcreteColumn(int data) : data(data) {}
+    ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
     MutableColumnPtr test() const override

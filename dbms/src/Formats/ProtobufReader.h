@@ -9,7 +9,7 @@
 #if USE_PROTOBUF
 
 #include <boost/noncopyable.hpp>
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/ReadBuffer.h>
 #include <memory>
 
@@ -231,7 +231,7 @@ public:
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) { return false; }
-    bool maybeCanReadValue() const { return false; }
+    bool canReadMoreValues() const { return false; }
 };
 
 }

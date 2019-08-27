@@ -79,7 +79,7 @@ private:
         Func func;
         size_t shift;
 
-        Action(Func func, size_t shift = 0) : func(func), shift(shift) {}
+        Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
         void perform(char *& target, Time source, const DateLUTImpl & timezone)
         {

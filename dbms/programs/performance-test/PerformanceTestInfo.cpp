@@ -3,9 +3,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <boost/filesystem.hpp>
 #include "applySubstitutions.h"
+#include <filesystem>
 #include <iostream>
+
 
 namespace DB
 {
@@ -39,7 +40,7 @@ void extractSettings(
 }
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
@@ -96,7 +97,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         }
 
         extractSettings(config, "settings", config_settings, settings_to_apply);
-        settings.applyChanges(settings_to_apply);
+        settings.loadFromChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
             TestStats::avg_rows_speed_precision =

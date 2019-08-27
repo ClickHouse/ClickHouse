@@ -33,6 +33,8 @@ public:
         RELOAD_CONFIG,
         STOP_MERGES,
         START_MERGES,
+        STOP_TTL_MERGES,
+        START_TTL_MERGES,
         STOP_FETCHES,
         START_FETCHES,
         STOP_REPLICATED_SENDS,

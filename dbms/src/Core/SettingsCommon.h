@@ -17,6 +17,10 @@ class Field;
 class ReadBuffer;
 class WriteBuffer;
 
+namespace ErrorCodes
+{
+    extern const int IMMUTABLE_SETTING;
+}
 
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
@@ -304,6 +308,7 @@ private:
     Derived & castToDerived() { return *static_cast<Derived *>(this); }
     const Derived & castToDerived() const { return *static_cast<const Derived *>(this); }
 
+    using IsChangedFunction = bool (*)(const Derived &);
     using GetStringFunction = String (*)(const Derived &);
     using GetFieldFunction = Field (*)(const Derived &);
     using SetStringFunction = void (*)(Derived &, const String &);
@@ -314,9 +319,13 @@ private:
 
     struct MemberInfo
     {
-        size_t offset_of_changed;
+        IsChangedFunction is_changed;
         StringRef name;
         StringRef description;
+        /// Can be updated after first load for config/definition.
+        /// Non updatable settings can be `changed`,
+        /// if they were overwritten in config/definition.
+        const bool updateable;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
@@ -325,7 +334,7 @@ private:
         DeserializeFunction deserialize;
         CastValueWithoutApplyingFunction cast_value_without_applying;
 
-        bool isChanged(const Derived & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
+        bool isChanged(const Derived & collection) const { return is_changed(collection); }
     };
 
     class MemberInfos
@@ -396,6 +405,7 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
+        bool isUpdateable() const { return member->updateable; }
         bool isChanged() const { return member->isChanged(*collection); }
         Field getValue() const { return member->get_field(*collection); }
         String getValueAsString() const { return member->get_string(*collection); }
@@ -415,6 +425,18 @@ public:
         reference(const const_reference & src) : const_reference(src) {}
         void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
         void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
+        void updateValue(const Field & value)
+        {
+            if (!this->member->updateable)
+                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
+            setValue(value);
+        }
+        void updateValue(const String & value)
+        {
+            if (!this->member->updateable)
+                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
+            setValue(value);
+        }
     };
 
     /// Iterator to iterating through all the settings.
@@ -497,6 +519,15 @@ public:
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
     void set(const String & name, const String & value) { (*this)[name].setValue(value); }
 
+    /// Updates setting's value. Checks it' mutability.
+    void update(size_t index, const Field & value) { (*this)[index].updateValue(value); }
+
+    void update(const String & name, const Field & value) { (*this)[name].updateValue(value); }
+
+    void update(size_t index, const String & value) { (*this)[index].updateValue(value); }
+
+    void update(const String & name, const String & value) { (*this)[name].updateValue(value); }
+
     /// Returns value of a setting.
     Field get(size_t index) const { return (*this)[index].getValue(); }
     Field get(const String & name) const { return (*this)[name].getValue(); }
@@ -555,22 +586,39 @@ public:
         for (const auto & member : members())
         {
             if (member.isChanged(castToDerived()))
-                found_changes.emplace_back(member.name.toString(), member.get_field(castToDerived()));
+                found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
         }
         return found_changes;
     }
 
-    /// Applies changes to the settings.
-    void applyChange(const SettingChange & change)
+    /// Applies change to the settings. Doesn't check settings mutability.
+    void loadFromChange(const SettingChange & change)
     {
         set(change.name, change.value);
     }
 
-    void applyChanges(const SettingsChanges & changes)
+    /// Applies changes to the settings. Should be used in initial settings loading.
+    /// (on table creation or loading from config)
+    void loadFromChanges(const SettingsChanges & changes)
     {
         for (const SettingChange & change : changes)
-            applyChange(change);
+            loadFromChange(change);
     }
+
+    /// Applies change to the settings, checks settings mutability.
+    void updateFromChange(const SettingChange & change)
+    {
+        update(change.name, change.value);
+    }
+
+    /// Applies changes to the settings. Should be used for settigns update.
+    /// (ALTER MODIFY SETTINGS)
+    void updateFromChanges(const SettingsChanges & changes)
+    {
+        for (const SettingChange & change : changes)
+            updateFromChange(change);
+    }
+
 
     void copyChangesFrom(const Derived & src)
     {
@@ -615,7 +663,7 @@ public:
 };
 
 #define DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS_MACRO) \
-    LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
+    LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_, DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -625,9 +673,9 @@ public:
         using Derived = DERIVED_CLASS_NAME; \
         struct Functions \
         { \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
-        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
+        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_) \
     }
 
 
@@ -645,13 +693,19 @@ public:
     static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); }
 
 
-#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
-    add({offsetof(Derived, NAME.changed), \
-         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), \
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    add({[](const Derived & d) { return d.NAME.changed; },          \
+         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
          &Functions::NAME##_castValueWithoutApplying });
 
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    add({[](const Derived & d) { return d.NAME.changed; },              \
+        StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), false, \
+        &Functions::NAME##_getString, &Functions::NAME##_getField, \
+        &Functions::NAME##_setString, &Functions::NAME##_setField, \
+        &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
+        &Functions::NAME##_castValueWithoutApplying });
 }

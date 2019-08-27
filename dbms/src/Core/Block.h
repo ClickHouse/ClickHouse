@@ -144,7 +144,8 @@ private:
 
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
-
+using BlocksPtr = std::shared_ptr<Blocks>;
+using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);

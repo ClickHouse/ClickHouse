@@ -32,7 +32,9 @@
   */
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
+#define DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC 5
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
+#define DEFAULT_LIVE_VIEW_HEARTBEAT_INTERVAL_SEC 15
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
@@ -92,6 +94,7 @@
 #endif
 
 /// Check for presence of address sanitizer
+#if !defined(ADDRESS_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer)
         #define ADDRESS_SANITIZER 1
@@ -99,7 +102,9 @@
 #elif defined(__SANITIZE_ADDRESS__)
     #define ADDRESS_SANITIZER 1
 #endif
+#endif
 
+#if !defined(THREAD_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(thread_sanitizer)
         #define THREAD_SANITIZER 1
@@ -107,13 +112,16 @@
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
 #endif
+#endif
 
+#if !defined(MEMORY_SANITIZER)
 #if defined(__has_feature)
     #if __has_feature(memory_sanitizer)
         #define MEMORY_SANITIZER 1
     #endif
 #elif defined(__MEMORY_SANITIZER__)
     #define MEMORY_SANITIZER 1
+#endif
 #endif
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
@@ -140,6 +148,11 @@
 /// It could be any magic number.
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
 
+#if !__has_include(<sanitizer/asan_interface.h>)
+#   define ASAN_UNPOISON_MEMORY_REGION(a, b)
+#   define ASAN_POISON_MEMORY_REGION(a, b)
+#endif
+
 /// A macro for suppressing warnings about unused variables or function results.
 /// Useful for structured bindings which have no standard way to declare this.
-#define UNUSED(X) (void) (X)
+#define UNUSED(...) (void)(__VA_ARGS__)

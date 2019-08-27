@@ -7,9 +7,7 @@
 #include "MySQLProtocol.h"
 
 
-namespace DB
-{
-namespace MySQLProtocol
+namespace DB::MySQLProtocol
 {
 
 void PacketSender::resetSequenceId()
@@ -17,7 +15,7 @@ void PacketSender::resetSequenceId()
     sequence_id = 0;
 }
 
-String PacketSender::packetToText(String payload)
+String PacketSender::packetToText(const String & payload)
 {
     String result;
     for (auto c : payload)
@@ -28,11 +26,11 @@ String PacketSender::packetToText(String payload)
     return result;
 }
 
-uint64_t readLengthEncodedNumber(std::istringstream & ss)
+uint64_t readLengthEncodedNumber(ReadBuffer & ss)
 {
     char c{};
     uint64_t buf = 0;
-    ss.get(c);
+    ss.readStrict(c);
     auto cc = static_cast<uint8_t>(c);
     if (cc < 0xfc)
     {
@@ -40,55 +38,65 @@ uint64_t readLengthEncodedNumber(std::istringstream & ss)
     }
     else if (cc < 0xfd)
     {
-        ss.read(reinterpret_cast<char *>(&buf), 2);
+        ss.readStrict(reinterpret_cast<char *>(&buf), 2);
     }
     else if (cc < 0xfe)
     {
-        ss.read(reinterpret_cast<char *>(&buf), 3);
+        ss.readStrict(reinterpret_cast<char *>(&buf), 3);
     }
     else
     {
-        ss.read(reinterpret_cast<char *>(&buf), 8);
+        ss.readStrict(reinterpret_cast<char *>(&buf), 8);
     }
     return buf;
 }
 
-std::string writeLengthEncodedNumber(uint64_t x)
+void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer)
 {
-    std::string result;
     if (x < 251)
     {
-        result.append(1, static_cast<char>(x));
+        buffer.write(static_cast<char>(x));
     }
     else if (x < (1 << 16))
     {
-        result.append(1, 0xfc);
-        result.append(reinterpret_cast<char *>(&x), 2);
+        buffer.write(0xfc);
+        buffer.write(reinterpret_cast<char *>(&x), 2);
     }
     else if (x < (1 << 24))
     {
-        result.append(1, 0xfd);
-        result.append(reinterpret_cast<char *>(&x), 3);
+        buffer.write(0xfd);
+        buffer.write(reinterpret_cast<char *>(&x), 3);
     }
     else
     {
-        result.append(1, 0xfe);
-        result.append(reinterpret_cast<char *>(&x), 8);
+        buffer.write(0xfe);
+        buffer.write(reinterpret_cast<char *>(&x), 8);
     }
-    return result;
 }
 
-void writeLengthEncodedString(std::string & payload, const std::string & s)
+size_t getLengthEncodedNumberSize(uint64_t x)
 {
-    payload.append(writeLengthEncodedNumber(s.length()));
-    payload.append(s);
+    if (x < 251)
+    {
+        return 1;
+    }
+    else if (x < (1 << 16))
+    {
+        return 3;
+    }
+    else if (x < (1 << 24))
+    {
+        return 4;
+    }
+    else
+    {
+        return 9;
+    }
 }
 
-void writeNulTerminatedString(std::string & payload, const std::string & s)
+size_t getLengthEncodedStringSize(const String & s)
 {
-    payload.append(s);
-    payload.append(1, 0);
+    return getLengthEncodedNumberSize(s.size()) + s.size();
 }
 
-}
 }

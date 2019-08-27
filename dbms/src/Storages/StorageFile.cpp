@@ -72,10 +72,14 @@ StorageFile::StorageFile(
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_)
-    : IStorage(columns_),
+    :
     table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;
@@ -192,8 +196,8 @@ BlockInputStreams StorageFile::read(
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
-    const ColumnsDescription & columns = getColumns();
-    auto column_defaults = columns.getDefaults();
+    const ColumnsDescription & columns_ = getColumns();
+    auto column_defaults = columns_.getDefaults();
     if (column_defaults.empty())
         return {block_input};
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
@@ -303,7 +307,7 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (auto opt_name = getIdentifierName(engine_args[1]))
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
             {
                 if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
@@ -330,7 +334,7 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
-            args.database_name, args.table_name, format_name, args.columns,
+            args.database_name, args.table_name, format_name, args.columns, args.constraints,
             args.context);
     });
 }

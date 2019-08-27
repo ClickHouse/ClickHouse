@@ -41,6 +41,10 @@ public:
     /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
     using ReadCallback = std::function<void()>;
 
+    /// This callback allows to perform some additional actions after writing a single row.
+    /// It's initial purpose was to flush Kafka message for each row.
+    using WriteCallback = std::function<void()>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
@@ -55,6 +59,7 @@ private:
         WriteBuffer & buf,
         const Block & sample,
         const Context & context,
+        WriteCallback callback,
         const FormatSettings & settings)>;
 
     using InputProcessorCreator = std::function<InputFormatPtr(
@@ -68,13 +73,18 @@ private:
             WriteBuffer & buf,
             const Block & sample,
             const Context & context,
+            WriteCallback callback,
             const FormatSettings & settings)>;
 
-    using Creators = std::pair<InputCreator, OutputCreator>;
-    using ProcessorCreators = std::pair<InputProcessorCreator, OutputProcessorCreator>;
+    struct Creators
+    {
+        InputCreator inout_creator;
+        OutputCreator output_creator;
+        InputProcessorCreator input_processor_creator;
+        OutputProcessorCreator output_processor_creator;
+    };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
-    using FormatProcessorsDictionary = std::unordered_map<String, ProcessorCreators>;
 
 public:
     BlockInputStreamPtr getInput(
@@ -87,13 +97,19 @@ public:
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        ReadCallback callback = {}) const;
 
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context) const;
+    OutputFormatPtr getOutputFormat(
+        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
@@ -108,14 +124,13 @@ public:
     }
 
 private:
+    /// FormatsDictionary dict;
     FormatsDictionary dict;
-    FormatProcessorsDictionary processors_dict;
 
     FormatFactory();
     friend class ext::singleton<FormatFactory>;
 
     const Creators & getCreators(const String & name) const;
-    const ProcessorCreators & getProcessorCreators(const String & name) const;
 };
 
 }
