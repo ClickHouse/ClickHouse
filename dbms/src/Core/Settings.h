@@ -42,7 +42,8 @@ struct Settings : public SettingsCollection<Settings>
       *  but we are not going to do it, because settings is used everywhere as static struct fields.
       */
 
-#define LIST_OF_SETTINGS(M) \
+/// M (mutable) for normal settings, IM (immutable) for not updateable settings.
+#define LIST_OF_SETTINGS(M, IM)                                            \
     M(SettingUInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.") \
     M(SettingUInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.") \
     M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading") \
@@ -332,7 +333,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, external_table_functions_use_nulls, true, "If it is set to true, external table functions will implicitly use Nullable type if needed. Otherwise NULLs will be substituted with default values. Currently supported only for 'mysql' table function.") \
     M(SettingBool, allow_experimental_data_skipping_indices, false, "If it is set to true, data skipping indices can be used in CREATE TABLE/ALTER TABLE queries.") \
     \
-    M(SettingBool, experimental_use_processors, true, "Use processors pipeline.") \
+    M(SettingBool, experimental_use_processors, false, "Use processors pipeline.") \
     \
     M(SettingBool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.") \
     M(SettingBool, allow_simdjson, true, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.") \

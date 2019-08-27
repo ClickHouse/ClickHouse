@@ -14,6 +14,7 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
+class ASTConstraintDeclaration;
 
 
 /** Allows to create new table or database,
@@ -45,13 +46,14 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
+    static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
 private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
-    /// Calculate list of columns of table and return it.
-    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    /// Calculate list of columns, constraints, indices, etc... of table and return columns.
+    ColumnsDescription setProperties(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
     void setEngine(ASTCreateQuery & create) const;
     void checkAccess(const ASTCreateQuery & create);
 

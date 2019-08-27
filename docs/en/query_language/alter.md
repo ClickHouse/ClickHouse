@@ -29,7 +29,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)). 
+Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -66,7 +66,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
 Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
- 
+
 If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
 Example:
@@ -85,7 +85,7 @@ Adds a comment to the column. If the `IF EXISTS` clause is specified, the query 
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](misc.md#misc-describe-table) query. 
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](misc.md#misc-describe-table) query.
 
 Example:
 
@@ -129,7 +129,7 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query. 
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
@@ -178,9 +178,9 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Queries will add or remove metadata about constraints from table so they are processed immediately.
 
-Constraint check *will not be executed* on existing table if it was added. For now, we recommend to create new table and use `INSERT SELECT` query to fill new table.
+Constraint check *will not be executed* on existing data if it was added.
 
-All changes on distributed tables are broadcasting to ZooKeeper so will be applied on other replicas.
+All changes on replicated tables are broadcasting to ZooKeeper so will be applied on other replicas.
 
 ### Manipulations With Partitions and Parts {#alter_manipulations-with-partitions}
 
@@ -267,7 +267,7 @@ This query copies the data partition from the `table1` to `table2`. Note that da
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
-- Both tables must have the same partition key.  
+- Both tables must have the same partition key.
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
@@ -289,13 +289,13 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once. 
+This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
 Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 !!! note
    The entire backup process is performed without stopping the server.
-   
+
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
@@ -348,7 +348,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 ```
 Note that:
 
-- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the `detached` directory only on the local server. 
+- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the `detached` directory only on the local server.
 - The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.

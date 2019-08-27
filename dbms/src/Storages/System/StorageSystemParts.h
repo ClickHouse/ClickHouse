@@ -14,6 +14,7 @@ class Context;
   */
 class StorageSystemParts : public ext::shared_ptr_helper<StorageSystemParts>, public StorageSystemPartsBase
 {
+    friend struct ext::shared_ptr_helper<StorageSystemParts>;
 public:
     std::string getName() const override { return "SystemParts"; }
 

@@ -294,26 +294,22 @@ public:
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted) { emplaceImpl(x, it, inserted); }
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t) { emplaceImpl(x, it, inserted); }
 
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
+    iterator ALWAYS_INLINE find(Key x)
     {
         return !buf[x].isZero(*this) ? iterator(this, &buf[x]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
+    const_iterator ALWAYS_INLINE find(Key x) const
     {
         return !buf[x].isZero(*this) ? const_iterator(this, &buf[x]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value)
+    iterator ALWAYS_INLINE find(Key, size_t hash_value)
     {
         return !buf[hash_value].isZero(*this) ? iterator(this, &buf[hash_value]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value) const
+    const_iterator ALWAYS_INLINE find(Key, size_t hash_value) const
     {
         return !buf[hash_value].isZero(*this) ? const_iterator(this, &buf[hash_value]) : end();
     }

@@ -1124,6 +1124,17 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
+void Context::updateSettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+    {
+        if (change.name == "profile")
+            setProfile(change.value.safeGet<String>());
+        else
+            settings.updateFromChange(change);
+    }
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
@@ -1748,8 +1759,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        shared->merge_tree_settings.emplace();
-        shared->merge_tree_settings->loadFromConfig("merge_tree", config);
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;

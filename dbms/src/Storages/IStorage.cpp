@@ -1,6 +1,8 @@
 #include <Storages/IStorage.h>
 
 #include <Storages/AlterCommands.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
@@ -18,22 +20,12 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
+    extern const int SETTINGS_ARE_NOT_SUPPORTED;
+    extern const int UNKNOWN_SETTING;
 }
 
-IStorage::IStorage(ColumnsDescription columns_)
+IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
 {
-    setColumns(std::move(columns_));
-}
-
-IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
-{
-    setColumns(std::move(columns_));
-}
-
-IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_, IndicesDescription indices_) : virtuals(std::move(virtuals_))
-{
-    setColumns(std::move(columns_));
-    setIndices(std::move(indices_));
 }
 
 const ColumnsDescription & IStorage::getColumns() const
@@ -316,6 +308,13 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
+bool IStorage::hasSetting(const String & /* setting_name */) const
+{
+    if (!supportsSettings())
+        throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
+    return false;
+}
+
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
 {
     TableStructureReadLockHolder result;
@@ -370,26 +369,61 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
     return result;
 }
 
+
+IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
+{
+    return [&] (IAST & ast)
+    {
+        if (!new_changes.empty())
+        {
+            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
+            /// Make storage settings unique
+            for (const auto & change : new_changes)
+            {
+                if (hasSetting(change.name))
+                {
+                    auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
+                    if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+                        it->value = change.value;
+                    else
+                        storage_changes.push_back(change);
+                }
+                else
+                    throw Exception{"Storage '" + getName() + "' doesn't have setting '" + change.name + "'", ErrorCodes::UNKNOWN_SETTING};
+            }
+        }
+    };
+}
+
+
 void IStorage::alter(
     const AlterCommands & params,
-    const String & database_name,
-    const String & table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    for (const auto & param : params)
-    {
-        if (param.isMutable())
-            throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    if (params.isMutable())
+        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(std::move(new_columns));
+    const String database_name = getDatabaseName();
+    const String table_name = getTableName();
+
+    if (params.isSettingsAlter())
+    {
+        SettingsChanges new_changes;
+        params.applyForSettingsOnly(new_changes);
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+    }
+    else
+    {
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+        auto new_columns = getColumns();
+        auto new_indices = getIndices();
+        auto new_constraints = getConstraints();
+        params.applyForColumnsOnly(new_columns);
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+        setColumns(std::move(new_columns));
+    }
 }
 
 }

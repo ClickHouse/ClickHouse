@@ -15,6 +15,7 @@ class Context;
 
 class StorageSystemMerges : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemMerges>;
 public:
     std::string getName() const override { return "SystemMerges"; }
 

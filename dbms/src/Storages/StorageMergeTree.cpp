@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace ActionLocks
@@ -61,14 +63,14 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
-            settings_, false, attach),
+            std::move(storage_settings_), false, attach),
         path(path_),
         background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool())
@@ -243,19 +245,29 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
-    const String & current_database_name,
-    const String & current_table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     if (!params.isMutable())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
         auto new_constraints = getConstraints();
-        params.apply(new_columns);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
+        ASTPtr new_order_by_ast = order_by_ast;
+        ASTPtr new_primary_key_ast = primary_key_ast;
+        ASTPtr new_ttl_table_ast = ttl_table_ast;
+        SettingsChanges new_changes;
+
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+
+        changeSettings(new_changes, table_lock_holder);
+
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
         setColumns(std::move(new_columns));
         return;
     }
@@ -271,7 +283,8 @@ void StorageMergeTree::alter(
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+    SettingsChanges new_changes;
+    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
@@ -289,8 +302,18 @@ void StorageMergeTree::alter(
 
         if (new_ttl_table_ast.get() != ttl_table_ast.get())
             storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
+
+        if (!new_changes.empty())
+        {
+            auto settings_modifier = getSettingsModifier(new_changes);
+            settings_modifier(ast);
+        }
     };
+
+    changeSettings(new_changes, table_lock_holder);
+
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+
 
     /// Reinitialize primary key because primary key column types might have changed.
     setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
@@ -789,14 +812,15 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
 
 void StorageMergeTree::clearOldMutations()
 {
-    if (!settings.finished_mutations_to_keep)
+    const auto settings = getSettings();
+    if (!settings->finished_mutations_to_keep)
         return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        if (current_mutations_by_version.size() <= settings.finished_mutations_to_keep)
+        if (current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
             return;
 
         auto begin_it = current_mutations_by_version.begin();
@@ -807,10 +831,10 @@ void StorageMergeTree::clearOldMutations()
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
         size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= settings.finished_mutations_to_keep)
+        if (done_count <= settings->finished_mutations_to_keep)
             return;
 
-        size_t to_delete_count = done_count - settings.finished_mutations_to_keep;
+        size_t to_delete_count = done_count - settings->finished_mutations_to_keep;
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
@@ -849,7 +873,10 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    SettingsChanges ignored_settings_changes;
+
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast,
+        ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
