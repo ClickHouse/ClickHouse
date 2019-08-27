@@ -46,7 +46,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            loadFromChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {
@@ -67,7 +67,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
-                  [](const SettingChange & c) { return c.name == #NAME; })                              \
+                  [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
         changes.push_back(SettingChange{#NAME, NAME.value});
 

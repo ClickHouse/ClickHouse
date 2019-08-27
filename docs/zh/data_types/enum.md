@@ -91,7 +91,7 @@ ENGINE = TinyLog
 不仅可以存储 `'hello'` 和 `'world'` ，还可以存储 `NULL`。
 
 ```
-INSERT INTO t_enum_null Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 
 在内存中，`Enum` 列的存储方式与相应数值的 `Int8` 或 `Int16` 相同。

@@ -12,7 +12,7 @@ namespace DB
 
 ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_)
     : IRowInputFormat(header_, in_, params_)
-    ,  data_types(header_.getDataTypes())
+    , data_types(header_.getDataTypes())
     , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames())
 {
 }

@@ -72,10 +72,14 @@ StorageFile::StorageFile(
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_)
-    : IStorage(columns_),
+    :
     table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;
@@ -330,7 +334,7 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
-            args.database_name, args.table_name, format_name, args.columns,
+            args.database_name, args.table_name, format_name, args.columns, args.constraints,
             args.context);
     });
 }

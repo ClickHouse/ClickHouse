@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -168,7 +169,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnUInt8::create(key_col_with_type.column->size());
@@ -354,7 +355,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnString::create();
@@ -891,7 +892,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             typename ColVec::MutablePtr out;

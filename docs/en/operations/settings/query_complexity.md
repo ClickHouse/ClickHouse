@@ -79,7 +79,7 @@ Enables or disables execution of `GROUP BY` clauses in external memory. See [GRO
 
 Possible values:
 
-- Maximum volume or RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
