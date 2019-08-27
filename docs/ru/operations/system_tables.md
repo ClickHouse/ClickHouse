@@ -87,6 +87,12 @@ user String — имя пользователя, которого использ
 Для каждой базы данных, о которой знает сервер, будет присутствовать соответствующая запись в таблице.
 Эта системная таблица используется для реализации запроса `SHOW DATABASES`.
 
+## system.detached_parts {#system_tables-detached_parts}
+
+Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](table_engines/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
+Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
+Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+
 ## system.dictionaries
 
 Содержит информацию о внешних словарях.
