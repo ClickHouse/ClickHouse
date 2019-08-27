@@ -27,10 +27,9 @@
 
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/operations.hpp>
+#include <filesystem>
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace DB
 {

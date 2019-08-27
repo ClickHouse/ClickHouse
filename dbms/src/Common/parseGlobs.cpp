@@ -5,56 +5,60 @@
 
 namespace DB
 {
-/*  Because of difference between grep-wildcard-syntax and perl-regexp one we need some transformation of string to use RE2 library for matching.
- *  It couldn't be one pass because of various configurations of braces in filenames (Linux allow almost any symbols in paths).
- *  So there are some iterations of escaping and replacements to make correct perl-regexp.
+/* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library fo matching
+ * with such steps:
+ * 1) search intervals and enums in {}, replace them by regexp with pipe (expr1|expr2|expr3),
+ * 2) search and replace "*" and "?".
+ * Before each search need to escape symbols that we would not search.
  */
-std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
+std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
-    std::string first_prepare;
-    first_prepare.reserve(initial_str.size());
-    for (const auto & letter : initial_str)
+    std::string escaped_with_globs;
+    escaped_with_globs.reserve(initial_str_with_globs.size());
+    /// Escaping only characters that not used in glob syntax
+    for (const auto & letter : initial_str_with_globs)
     {
-        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+'))
-            first_prepare.push_back('\\');
-        first_prepare.push_back(letter);
+        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')'))
+            escaped_with_globs.push_back('\\');
+        escaped_with_globs.push_back(letter);
     }
-    re2::RE2 char_range(R"(({[^*?/\\]\.\.[^*?/\\]}))");
-    re2::StringPiece input_for_range(first_prepare);
-    re2::StringPiece matched_range(first_prepare);
 
-    std::string second_prepare;
-    second_prepare.reserve(first_prepare.size());
+    re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without {}*,
+    re2::StringPiece input(escaped_with_globs);
+    re2::StringPiece matched(escaped_with_globs);
     size_t current_index = 0;
-    size_t pos;
-    while (RE2::FindAndConsume(&input_for_range, char_range, &matched_range))
+    std::string almost_regexp;
+    almost_regexp.reserve(escaped_with_globs.size());
+    while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
-        pos = matched_range.data() - first_prepare.data();
-        second_prepare += first_prepare.substr(current_index, pos - current_index);
-        second_prepare.append({'[', matched_range.ToString()[1], '-', matched_range.ToString()[4], ']'});
-        current_index = input_for_range.data() - first_prepare.data();
+        std::string buffer = matched.ToString();
+        almost_regexp.append(escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1));
+
+        if (buffer.find(',') == std::string::npos)
+        {
+            size_t first_point = buffer.find('.');
+            std::string first_number = buffer.substr(0, first_point);
+            std::string second_number = buffer.substr(first_point + 2, buffer.size() - first_point - 2);
+            size_t range_begin = std::stoull(first_number);
+            size_t range_end = std::stoull(second_number);
+            buffer = std::to_string(range_begin);
+            for (size_t i = range_begin + 1; i <= range_end; ++i)
+            {
+                buffer += "|";
+                buffer += std::to_string(i);
+            }
+        }
+        else
+        {
+            std::replace(buffer.begin(), buffer.end(), ',', '|');
+        }
+        almost_regexp.append("(" + buffer + ")");
+        current_index = input.data() - escaped_with_globs.data();
     }
-    second_prepare += first_prepare.substr(current_index);
-    re2::RE2 enumeration(R"(({[^{}*,]+,[^{}*]*[^{}*,]}))");
-    re2::StringPiece input_enum(second_prepare);
-    re2::StringPiece matched_enum(second_prepare);
-    current_index = 0;
-    std::string third_prepare;
-    while (RE2::FindAndConsume(&input_enum, enumeration, &matched_enum))
-    {
-        pos = matched_enum.data() - second_prepare.data();
-        third_prepare.append(second_prepare.substr(current_index, pos - current_index));
-        std::string buffer = matched_enum.ToString();
-        buffer[0] = '(';
-        buffer.back() = ')';
-        std::replace(buffer.begin(), buffer.end(), ',', '|');
-        third_prepare.append(buffer);
-        current_index = input_enum.data() - second_prepare.data();
-    }
-    third_prepare += second_prepare.substr(current_index);
+    almost_regexp += escaped_with_globs.substr(current_index); /////
     std::string result;
-    result.reserve(third_prepare.size());
-    for (const auto & letter : third_prepare)
+    result.reserve(almost_regexp.size());
+    for (const auto & letter : almost_regexp)
     {
         if ((letter == '?') || (letter == '*'))
         {
@@ -62,7 +66,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str)
             if (letter == '?')
                 continue;
         }
-        if ((letter == '.') || (letter == '{') || (letter == '}'))
+        if ((letter == '.') || (letter == '{') || (letter == '}') || (letter == '\\'))
             result.push_back('\\');
         result.push_back(letter);
     }
