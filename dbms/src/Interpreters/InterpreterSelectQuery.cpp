@@ -405,6 +405,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
+    query_pipeline.setMaxThreads(context.getSettingsRef().max_threads);
     executeImpl(query_pipeline, input);
     return query_pipeline;
 }
