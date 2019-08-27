@@ -29,11 +29,13 @@ public:
 
 private:
     void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
+    void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
+    template <typename ReturnType = void>
+    ReturnType tryReadPrefixOrSuffix(size_t input_part_beg, size_t input_part_end);
     bool checkForSuffix();
     [[noreturn]] void throwUnexpectedEof();
-    bool compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
@@ -51,7 +53,9 @@ private:
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
     const bool ignore_spaces;
-    bool synced_after_error_at_last_row = false;
+
+    size_t format_data_idx;
+    bool end_of_stream = false;
 };
 
 }

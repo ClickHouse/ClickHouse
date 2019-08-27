@@ -63,7 +63,7 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_str
                 state = Format;
             else if (*pos == '}')
             {
-                formats.push_back(ColumnFormat::Default);
+                formats.push_back(ColumnFormat::None);
                 delimiters.emplace_back();
                 state = Delimiter;
             }
@@ -94,7 +94,9 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_str
 ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
 {
     if (col_format.empty())
-        return ColumnFormat::Default;
+        return ColumnFormat::None;
+    else if (col_format == "None")
+        return ColumnFormat::None;
     else if (col_format == "Escaped")
         return ColumnFormat::Escaped;
     else if (col_format == "Quoted")
@@ -121,8 +123,8 @@ String ParsedTemplateFormatString::formatToString(ParsedTemplateFormatString::Co
 {
     switch (format)
     {
-        case ColumnFormat::Default:
-            return "Escaped (Default)";
+        case ColumnFormat::None:
+            return "None";
         case ColumnFormat::Escaped:
             return "Escaped";
         case ColumnFormat::Quoted:
@@ -192,11 +194,13 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
             case OutputPart::Totals:
             case OutputPart::ExtremesMin:
             case OutputPart::ExtremesMax:
-                if (format.formats[i] != ColumnFormat::Default)
+                if (format.formats[i] != ColumnFormat::None)
                     throw Exception("invalid template: wrong serialization type for data, totals, min or max",
                                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 break;
             default:
+                if (format.formats[i] == ColumnFormat::None)
+                    throw Exception("Serialization type for output part rows, rows_before_limit, time, rows_read or bytes_read not specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 break;
         }
     }
@@ -212,9 +216,13 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
     /// Validate format string for rows
     if (row_format.delimiters.size() == 1)
         throw Exception("invalid template: no columns specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-    for (const auto & idx_mapping : row_format.format_idx_to_column_idx)
-        if (!idx_mapping)
+    for (size_t i = 0; i < row_format.columnsCount(); ++i)
+    {
+        if (!row_format.format_idx_to_column_idx[i])
             throw Exception("Cannot skip format field for output, it's a bug.", ErrorCodes::LOGICAL_ERROR);
+        if (row_format.formats[i] == ColumnFormat::None)
+            throw Exception("Serialization type for file column " + std::to_string(i) + " not specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    }
 }
 
 TemplateBlockOutputFormat::OutputPart TemplateBlockOutputFormat::stringToOutputPart(const String & part)
@@ -258,7 +266,6 @@ void TemplateBlockOutputFormat::serializeField(const IColumn & column, const IDa
 {
     switch (col_format)
     {
-        case ColumnFormat::Default:
         case ColumnFormat::Escaped:
             type.serializeAsTextEscaped(column, row_num, out, settings);
             break;
@@ -277,6 +284,8 @@ void TemplateBlockOutputFormat::serializeField(const IColumn & column, const IDa
         case ColumnFormat::Raw:
             type.serializeAsText(column, row_num, out, settings);
             break;
+        default:
+            __builtin_unreachable();
     }
 }
 

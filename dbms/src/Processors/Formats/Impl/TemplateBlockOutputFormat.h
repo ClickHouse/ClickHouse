@@ -13,7 +13,7 @@ struct ParsedTemplateFormatString
 {
     enum class ColumnFormat
     {
-        Default,
+        None,
         Escaped,
         Quoted,
         Csv,
@@ -21,6 +21,11 @@ struct ParsedTemplateFormatString
         Xml,
         Raw
     };
+
+    /// Format string has syntax: "Delimiter0 ${ColumnName0:Format0} Delimiter1 ${ColumnName1:Format1} Delimiter2"
+    /// The following vectors is filled with corresponding values, delimiters.size() - 1 = formats.size() = format_idx_to_column_idx.size()
+    /// If format_idx_to_column_idx[i] has no value, then TemplateRowInputStream will skip i-th column.
+
     std::vector<String> delimiters;
     std::vector<ColumnFormat> formats;
     std::vector<std::optional<size_t>> format_idx_to_column_idx;
