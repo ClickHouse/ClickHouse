@@ -22,6 +22,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <common/demangle.h>
 
 #if __has_include(<Interpreters/config_compile.h>)
@@ -1212,7 +1213,7 @@ Block Aggregator::prepareBlockAndFill(
             aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
-            ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+            ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
 
             for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
                 column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
@@ -1228,7 +1229,7 @@ Block Aggregator::prepareBlockAndFill(
             if (aggregate_functions[i]->isState())
             {
                 /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
+                ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
 
                 for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
                     column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
