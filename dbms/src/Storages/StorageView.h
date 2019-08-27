@@ -12,6 +12,7 @@ namespace DB
 
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageView>;
 public:
     std::string getName() const override { return "View"; }
     std::string getTableName() const override { return table_name; }

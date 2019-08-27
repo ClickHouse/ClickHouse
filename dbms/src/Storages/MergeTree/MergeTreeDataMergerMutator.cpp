@@ -141,7 +141,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
 
     size_t free_entries = pool_size - pool_used;
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     UInt64 max_size = 0;
     if (free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
@@ -159,7 +159,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
 {
 
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
     size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
@@ -179,7 +179,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     if (data_parts.empty())
     {
@@ -556,7 +556,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
@@ -965,7 +965,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     Block in_header = in->getHeader();
 
@@ -1145,7 +1145,7 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
     const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
     const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const
 {
-    const auto data_settings = data.getCOWSettings();
+    const auto data_settings = data.getSettings();
 
     if (deduplicate)
         return MergeAlgorithm::Horizontal;

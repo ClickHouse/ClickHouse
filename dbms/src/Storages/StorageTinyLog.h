@@ -22,6 +22,7 @@ class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public ISt
 {
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageTinyLog>;
 
 public:
     std::string getName() const override { return "TinyLog"; }

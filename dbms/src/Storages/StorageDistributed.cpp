@@ -266,11 +266,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -282,11 +279,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -392,10 +386,12 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
-    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();

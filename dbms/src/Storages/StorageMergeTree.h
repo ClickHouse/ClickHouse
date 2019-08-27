@@ -23,6 +23,7 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -59,9 +60,7 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
@@ -153,7 +152,7 @@ protected:
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
         const ASTPtr & ttl_table_ast_,
         const MergingParams & merging_params_,
-        MergeTreeSettingsPtr settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 

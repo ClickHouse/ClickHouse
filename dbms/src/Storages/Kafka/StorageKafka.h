@@ -20,6 +20,7 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
@@ -61,8 +62,6 @@ public:
 
     void alterSettings(
         const SettingsChanges & new_changes,
-        const String & current_database_name,
-        const String & current_table_name,
         const Context & context,
         TableStructureWriteLockHolder & table_lock_holder) override;
 

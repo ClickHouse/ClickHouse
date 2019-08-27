@@ -372,11 +372,12 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 void IStorage::alterSettings(
     const SettingsChanges & new_changes,
-    const String & current_database_name,
-    const String & current_table_name,
     const Context & context,
     TableStructureWriteLockHolder & /* table_lock_holder */)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
         if (!new_changes.empty())
@@ -404,16 +405,16 @@ void IStorage::alterSettings(
 
 void IStorage::alter(
     const AlterCommands & params,
-    const String & database_name,
-    const String & table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String database_name = getDatabaseName();
+    const String table_name = getTableName();
     if (params.isSettingsAlter())
     {
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, database_name, table_name, context, table_lock_holder);
+        alterSettings(new_changes, context, table_lock_holder);
         return;
     }
 

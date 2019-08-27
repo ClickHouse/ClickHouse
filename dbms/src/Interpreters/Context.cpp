@@ -142,7 +142,7 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    MergeTreeSettingsPtr merge_tree_settings; /// Settings of MergeTree* engines.
+    std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -1759,9 +1759,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        MutableMergeTreeSettingsPtr settings_ptr = MergeTreeSettings::create();
-        settings_ptr->loadFromConfig("merge_tree", config);
-        shared->merge_tree_settings = std::move(settings_ptr);
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;
