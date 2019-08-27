@@ -264,11 +264,10 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-# TODO: only make this extra-checks in CI builds, since a lot of contrib libs won't link -
-#       CI works around this problem by explicitly adding GLIBC_COMPATIBILITY flag.
-if (NOT SANITIZE AND YANDEX_OFFICIAL_BUILD)
-    set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+# Make this extra-checks for correct library dependencies.
+if (NOT SANITIZE)
+    set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
 include (cmake/find_unwind.cmake)

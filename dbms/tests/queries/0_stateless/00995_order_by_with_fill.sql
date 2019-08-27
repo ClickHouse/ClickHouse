@@ -24,7 +24,6 @@ SELECT * FROM fill ORDER BY date DESC WITH FILL TO toDate('2019-05-01') STEP -2,
 SELECT '*** date WITH FILL TO 2019-06-23 STEP 3, val WITH FILL FROM -10 STEP 2';
 SELECT * FROM fill ORDER BY date WITH FILL TO toDate('2019-06-23') STEP 3, val WITH FILL FROM -10 STEP 2;
 
-
 DROP TABLE fill;
 CREATE TABLE fill (a UInt32, b Int32) ENGINE = Memory;
 INSERT INTO fill VALUES (1, -2), (1, 3), (3, 2), (5, -1), (6, 5), (8, 0);
@@ -38,9 +37,9 @@ SELECT * FROM fill ORDER BY a WITH FILL, b WITH fill;
 SELECT '*** a WITH FILL, b WITH fill TO 6 STEP 2 ***';
 SELECT * FROM fill ORDER BY a WITH FILL, b WITH fill TO 6 STEP 2;
 
-SELECT * FROM fill ORDER BY a WITH FILL STEP -1; -- { serverError 470 }
-SELECT * FROM fill ORDER BY a WITH FILL FROM 10 TO 1; -- { serverError 470 }
-SELECT * FROM fill ORDER BY a DESC WITH FILL FROM 1 TO 10; -- { serverError 470 }
-SELECT * FROM fill ORDER BY a WITH FILL FROM -10 to 10; -- { serverError 470 }
+SELECT * FROM fill ORDER BY a WITH FILL STEP -1; -- { serverError 473 }
+SELECT * FROM fill ORDER BY a WITH FILL FROM 10 TO 1; -- { serverError 473 }
+SELECT * FROM fill ORDER BY a DESC WITH FILL FROM 1 TO 10; -- { serverError 473 }
+SELECT * FROM fill ORDER BY a WITH FILL FROM -10 to 10; -- { serverError 473 }
 
 DROP TABLE fill;
