@@ -574,7 +574,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
     IndicesDescription indices_description;
-    MutableMergeTreeSettingsPtr storage_settings = MergeTreeSettings::create(args.context.getMergeTreeSettings());
+    ConstraintsDescription constraints_description;
+
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {

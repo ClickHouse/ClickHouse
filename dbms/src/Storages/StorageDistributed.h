@@ -29,6 +29,7 @@ class StorageDistributedDirectoryMonitor;
   */
 class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -85,8 +86,7 @@ public:
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
     void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;

@@ -16,6 +16,7 @@ namespace DB
   */
 class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return table_name; }
@@ -44,8 +45,7 @@ public:
     }
 
     void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
     String table_name;
