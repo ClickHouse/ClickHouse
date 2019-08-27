@@ -90,7 +90,6 @@ dbms/src/Core/tests/field
 dbms/src/Core/tests/rvo_test
 dbms/src/Core/tests/string_pool
 dbms/src/DataStreams/tests/aggregating_stream
-dbms/src/DataStreams/tests/block_row_transforms
 dbms/src/DataStreams/tests/block_tab_separated_streams
 dbms/src/DataStreams/tests/collapsing_sorted_stream
 dbms/src/DataStreams/tests/expression_stream
