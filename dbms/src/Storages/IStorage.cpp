@@ -370,15 +370,9 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 }
 
 
-void IStorage::alterSettings(
-    const SettingsChanges & new_changes,
-    const Context & context,
-    TableStructureWriteLockHolder & /* table_lock_holder */)
+IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
 {
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
-
-    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
+    return [&] (IAST & ast)
     {
         if (!new_changes.empty())
         {
@@ -399,7 +393,6 @@ void IStorage::alterSettings(
             }
         }
     };
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, getColumns(), getIndices(), getConstraints(), storage_modifier);
 }
 
 
@@ -408,26 +401,29 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    if (params.isMutable())
+        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+
     const String database_name = getDatabaseName();
     const String table_name = getTableName();
+
     if (params.isSettingsAlter())
     {
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, context, table_lock_holder);
-        return;
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
     }
-
-    if (params.isMutable())
-        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(std::move(new_columns));
+    else
+    {
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+        auto new_columns = getColumns();
+        auto new_indices = getIndices();
+        auto new_constraints = getConstraints();
+        params.applyForColumnsOnly(new_columns);
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+        setColumns(std::move(new_columns));
+    }
 }
 
 }

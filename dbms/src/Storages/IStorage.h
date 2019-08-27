@@ -147,6 +147,10 @@ protected: /// still thread-unsafe part.
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
+
+    /// Returns modifier of settings in storage definition
+    virtual IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
+
 private:
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};
@@ -290,13 +294,6 @@ public:
     {
         throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    /** ALTER table settings if possible. Otherwise throws exception.
-     */
-    virtual void alterSettings(
-        const SettingsChanges & new_changes,
-        const Context & context,
-        TableStructureWriteLockHolder & table_lock_holder);
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
