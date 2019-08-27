@@ -26,6 +26,8 @@ struct RenameDescription
         to_table_name(elem.to.table)
     {}
 
+    TableStructureWriteLockHolder from_table_lock;
+
     String from_database_name;
     String from_table_name;
 
@@ -75,7 +77,7 @@ BlockIO InterpreterRenameQuery::execute()
         }
     };
 
-    std::set<UniqueTableName> unique_tables_from;
+    std::map<UniqueTableName, TableStructureWriteLockHolder> tables_from_locks;
 
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
@@ -87,7 +89,11 @@ BlockIO InterpreterRenameQuery::execute()
         UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
         UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);
 
-        unique_tables_from.emplace(from);
+        if (!tables_from_locks.count(from))
+            if (auto table = context.tryGetTable(from.database_name, from.table_name))
+                tables_from_locks.emplace(from, table->lockExclusively(context.getCurrentQueryId()));
+
+        descriptions.back().table_lock = tables_from_locks[from];
 
         if (!table_guards.count(from))
             table_guards.emplace(from, context.getDDLGuard(from.database_name, from.table_name));
@@ -95,13 +101,6 @@ BlockIO InterpreterRenameQuery::execute()
         if (!table_guards.count(to))
             table_guards.emplace(to, context.getDDLGuard(to.database_name, to.table_name));
     }
-
-    std::vector<TableStructureWriteLockHolder> locks;
-    locks.reserve(unique_tables_from.size());
-
-    for (const auto & names : unique_tables_from)
-        if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockExclusively(context.getCurrentQueryId()));
 
     /** All tables are locked. If there are more than one rename in chain,
       *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
@@ -119,7 +118,7 @@ BlockIO InterpreterRenameQuery::execute()
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
         context.getDatabase(elem.from_database_name)->renameTable(
-            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name);
+            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, elem.table_lock);
     }
 
     return {};

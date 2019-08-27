@@ -378,7 +378,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -424,7 +424,7 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &, const Context &)
+void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     if (table_name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
