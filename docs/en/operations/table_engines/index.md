@@ -46,7 +46,7 @@ Engines in the family:
 - [ODBC](odbc.md)
 - [JDBC](jdbc.md)
 
-### Other engines
+### Special engines
 
 Engines in the family:
 
