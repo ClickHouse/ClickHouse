@@ -31,7 +31,7 @@ if (USE_LIBCXX)
         add_subdirectory(contrib/libcxx-cmake)
     endif ()
 
-    link_libraries(${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} ${LIBCXXFS_LIBRARY})
+    target_link_libraries(global-libs INTERFACE ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} ${LIBCXXFS_LIBRARY})
 
     set (HAVE_LIBCXX 1)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -41,5 +41,5 @@ if (USE_LIBCXX)
     message (STATUS "Using libcxxabi: ${LIBCXXABI_LIBRARY}")
 else ()
     # Always link these libraries as static
-    set(CMAKE_CXX_STANDARD_LIBRARIES "-l:libstdc++.a -l:libstdc++fs.a ${CMAKE_CXX_STANDARD_LIBRARIES}")
+    target_link_libraries(global-libs INTERFACE -l:libstdc++.a -l:libstdc++fs.a)
 endif ()

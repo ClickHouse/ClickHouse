@@ -27,7 +27,7 @@ if (USE_UNWIND)
         endif ()
     endif ()
 
-    link_libraries(${EXCEPTION_HANDLING_LIBRARY})
+    target_link_libraries(global-libs INTERFACE ${EXCEPTION_HANDLING_LIBRARY})
 
     message (STATUS "Using libunwind: ${UNWIND_LIBRARIES}")
     message (STATUS "Using exception handler: ${EXCEPTION_HANDLING_LIBRARY}")

@@ -1,8 +1,7 @@
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
-# The group will contain all linked libs including the standard libs overriden later, and glibc-compatibility.
-set (DEFAULT_LIBS "-Wl,-end-group -nodefaultlibs")
+set (DEFAULT_LIBS "-nodefaultlibs")
 
 if (OS_LINUX)
     # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
@@ -18,13 +17,33 @@ if (OS_LINUX)
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 endif ()
 
-# NOTE: this probably has no effect.
-set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
-set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
-
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-# XXX: hack is based on the fact that linker flags never duplicates and are always before linked libs
-set (CMAKE_EXE_LINKER_FLAGS "-Wl,-start-group ${CMAKE_EXE_LINKER_FLAGS}")
-set (CMAKE_SHARED_LINKER_FLAGS "-Wl,-start-group ${CMAKE_SHARED_LINKER_FLAGS}")
+# Global libraries
+
+add_library(global-libs INTERFACE)
+
+# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
+# Just make sure we have pthreads at all.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+target_link_libraries(global-libs INTERFACE pthread ${CMAKE_DL_LIBS})
+
+add_subdirectory(libs/libglibc-compatibility)
+include (cmake/find_unwind.cmake)
+include (cmake/find_cxx.cmake)
+
+add_library(global-group INTERFACE)
+target_link_libraries(global-group INTERFACE
+    -Wl,--start-group
+    $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
+    -Wl,--end-group
+)
+
+link_libraries(global-group)
+
+install(
+    TARGETS global-group global-libs
+    EXPORT global
+)

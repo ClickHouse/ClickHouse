@@ -3,6 +3,7 @@ foreach(policy
         CMP0048 # CMake 3.0
         CMP0074 # CMake 3.12
         CMP0077
+        CMP0079
     )
     if(POLICY ${policy})
         cmake_policy(SET ${policy} NEW)
@@ -232,25 +233,9 @@ endif ()
 include(cmake/dbms_glob_sources.cmake)
 include(cmake/default_libs.cmake)
 
-if (GLIBC_COMPATIBILITY)
-    set (USE_INTERNAL_MEMCPY ON)
-
-    message (STATUS "Some symbols from glibc will be replaced for compatibility")
-
-    add_subdirectory(libs/libglibc-compatibility)
-    link_libraries(glibc-compatibility)
-elseif (YANDEX_OFFICIAL_BUILD)
-    message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
-endif ()
-
-# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
-# Just make sure we have pthreads at all.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-link_libraries(pthread ${CMAKE_DL_LIBS})
-
-include (cmake/find_unwind.cmake)
-include (cmake/find_cxx.cmake)
+######################################
+### Add targets below this comment ###
+######################################
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
