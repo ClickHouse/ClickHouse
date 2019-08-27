@@ -4,8 +4,8 @@
 namespace DB
 {
 
-SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & dst, const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : output(dst), header(header), transform(min_block_size_rows, min_block_size_bytes)
+SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr dst, Block header_, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : output(std::move(dst)), header(std::move(header_)), transform(min_block_size_rows, min_block_size_bytes)
 {
 }
 

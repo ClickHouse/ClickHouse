@@ -22,6 +22,7 @@ class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public ISt
 {
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageTinyLog>;
 
 public:
     std::string getName() const override { return "TinyLog"; }
@@ -65,6 +66,7 @@ private:
     Files_t files;
 
     FileChecker file_checker;
+    mutable std::shared_mutex rwlock;
 
     Logger * log;
 
@@ -77,6 +79,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         size_t max_compress_block_size_);
 };

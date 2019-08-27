@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -25,7 +26,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
     if (isColumnConst(column))
     {
-        const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
+        const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
         ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();
 
         if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))

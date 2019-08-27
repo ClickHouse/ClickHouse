@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', config_dir=config_dir)
+node = cluster.add_instance('node', config_dir=config_dir, env_variables={'UBSAN_OPTIONS': 'print_stacktrace=1'})
 
 server_port = 9001
 
@@ -50,8 +50,22 @@ def php_container():
     yield docker.from_env().containers.get(cluster.project_name + '_php1_1')
 
 
+@pytest.fixture(scope='module')
+def nodejs_container():
+    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'mysqljs', 'docker_compose.yml')
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
+
+
 def test_mysql_client(mysql_client, server_address):
     # type: (Container, str) -> None
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
+        -e "SELECT 1;"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert stdout == '\n'.join(['1', '1', ''])
+
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "SELECT 1 as a;"
@@ -149,10 +163,26 @@ def test_golang_client(server_address, golang_container):
 
 def test_php_client(server_address, php_container):
     # type: (str, Container) -> None
-    code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run('php -f test.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == 'tables\n'
 
-    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} default 123 '.format(host=server_address, port=server_port), demux=True)
+    code, (stdout, stderr) = php_container.exec_run('php -f test_ssl.php {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == 'tables\n'
+
+
+def test_mysqljs_client(server_address, nodejs_container):
+    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
+    assert code == 1
+    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
+
+    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password ""'.format(host=server_address, port=server_port), demux=True)
+    assert code == 1
+    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
+
+    code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+
+    code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password 123'.format(host=server_address, port=server_port), demux=True)
+    assert code == 1

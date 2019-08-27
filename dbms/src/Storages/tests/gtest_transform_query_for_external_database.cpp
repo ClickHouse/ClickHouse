@@ -23,7 +23,7 @@ struct State
     {
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");
-        database->attachTable("table", StorageMemory::create("test", "table", ColumnsDescription{columns}));
+        database->attachTable("table", StorageMemory::create("test", "table", ColumnsDescription{columns}, ConstraintsDescription{}));
         context.makeGlobalContext();
         context.addDatabase("test", database);
         context.setCurrentDatabase("test");
@@ -67,5 +67,12 @@ TEST(TransformQueryForExternalDatabase, Like)
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column NOT LIKE 'w%rld'",
           "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" NOT LIKE 'w%rld'",
+          state().context, state().columns);
+}
+
+TEST(TransformQueryForExternalDatabase, Substring)
+{
+    check("SELECT column FROM test.table WHERE left(column, 10) = RIGHT(column, 10) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello'",
+          "SELECT \"column\" FROM \"test\".\"table\"",
           state().context, state().columns);
 }

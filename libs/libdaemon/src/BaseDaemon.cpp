@@ -15,7 +15,7 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/Pipe.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
@@ -37,7 +37,8 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -91,18 +92,12 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-thread_local bool already_signal_handled = false;
-
 /** Handler for "fault" signals. Send data about fault to separate thread to write into log.
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (already_signal_handled)
-        return;
-    already_signal_handled = true;
-
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -115,10 +110,12 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    /// The time that is usually enough for separate thread to print info into log.
-    ::sleep(10);
-
-    call_default_signal_handler(sig);
+    if (sig != SIGPROF) /// This signal is used for debugging.
+    {
+        /// The time that is usually enough for separate thread to print info into log.
+        ::sleep(10);
+        call_default_signal_handler(sig);
+    }
 }
 
 
@@ -191,7 +188,9 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, stack_trace, thread_num);
+                /// This allows to receive more signals if failure happens inside onFault function.
+                /// Example: segfault while symbolizing stack trace.
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
             }
         }
     }
@@ -203,17 +202,32 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
+        LOG_FATAL(log, "########################################");
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        LOG_ERROR(log, signalToErrorMessage(sig, info, context));
-        LOG_ERROR(log, stack_trace.toString());
+        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
+
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+            LOG_FATAL(log, bare_stacktrace.rdbuf());
+        }
+
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
     }
 };
 
@@ -501,6 +515,35 @@ void BaseDaemon::closeFDs()
     }
 }
 
+namespace
+{
+/// In debug version on Linux, increase oom score so that clickhouse is killed
+/// first, instead of some service. Use a carefully chosen random score of 555:
+/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+/// whatever errors that occur, because it's just a debugging aid and we don't
+/// care if it breaks.
+#if defined(__linux__) && !defined(NDEBUG)
+void debugIncreaseOOMScore()
+{
+    const std::string new_score = "555";
+    try
+    {
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(new_score.c_str(), new_score.size());
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
+                    e.displayText() + "'.");
+        return;
+    }
+    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
+}
+#else
+void debugIncreaseOOMScore() {}
+#endif
+}
+
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
@@ -630,6 +673,7 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
+    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
@@ -672,7 +716,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE}, faultSignalHandler);
+    /// SIGPROF is added for debugging purposes. To output a stack trace of any running thread at anytime.
+
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGPROF}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 

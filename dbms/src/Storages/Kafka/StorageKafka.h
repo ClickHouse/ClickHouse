@@ -5,11 +5,11 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
-#include <Poco/Event.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
+
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 
-#include <cppkafka/cppkafka.h>
 #include <mutex>
 
 namespace DB
@@ -20,10 +20,12 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
+    bool supportsSettings() const override { return true; }
 
     void startup() override;
     void shutdown() override;
@@ -36,19 +38,32 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    BlockOutputStreamPtr write(
+        const ASTPtr & query,
+        const Context & context
+    ) override;
+
     void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
 
     void updateDependencies() override;
 
-    BufferPtr createBuffer();
-    BufferPtr claimBuffer();
-    BufferPtr tryClaimBuffer(long wait_ms);
-    void pushBuffer(BufferPtr buf);
+    void pushReadBuffer(ConsumerBufferPtr buf);
+    ConsumerBufferPtr popReadBuffer();
+    ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
+
+    ProducerBufferPtr createWriteBuffer();
 
     const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
+
+    bool hasSetting(const String & setting_name) const override;
+
+    void alterSettings(
+        const SettingsChanges & new_changes,
+        const Context & context,
+        TableStructureWriteLockHolder & table_lock_holder) override;
 
 protected:
     StorageKafka(
@@ -84,7 +99,7 @@ private:
     // Consumer list
     Poco::Semaphore semaphore;
     std::mutex mutex;
-    std::vector<BufferPtr> buffers; /// available buffers for Kafka consumers
+    std::vector<ConsumerBufferPtr> buffers; /// available buffers for Kafka consumers
 
     size_t skip_broken;
 
@@ -94,9 +109,12 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    cppkafka::Configuration createConsumerConfiguration();
+    ConsumerBufferPtr createReadBuffer();
 
-    void streamThread();
+    // Update Kafka configuration with values from CH user configuration.
+    void updateConfiguration(cppkafka::Configuration & conf);
+
+    void threadFunc();
     bool streamToViews();
     bool checkDependencies(const String & database_name, const String & table_name);
 };

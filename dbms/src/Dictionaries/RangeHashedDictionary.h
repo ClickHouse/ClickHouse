@@ -18,11 +18,11 @@ class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
-        const std::string & dictionary_name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty);
+        const std::string & dictionary_name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_);
 
     std::string getName() const override { return dictionary_name; }
 

@@ -34,14 +34,16 @@ else()
 endif()
 
 if (COMPILER_GCC)
-    # Require at least gcc 7
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 7. For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require minimum version of gcc
+    set (GCC_MINIMUM_VERSION 8)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 6
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
-        message (FATAL_ERROR "Clang version must be at least 6.")
+    # Require minimum version of clang
+    set (CLANG_MINIMUM_VERSION 7)
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
+        message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
     endif ()
 else ()
     message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
@@ -106,6 +108,10 @@ endif ()
 if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wno-unused-command-line-argument")
+    # generate ranges for fast "addr2line" search
+    if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
+    endif ()
 endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
@@ -190,10 +196,13 @@ endif ()
 option(WITH_COVERAGE "Build with coverage." 0)
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+   # If we want to disable coverage for specific translation units
+   set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
 if(WITH_COVERAGE AND COMPILER_GCC)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
    set(COVERAGE_OPTION "-lgcov")
+   set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -255,10 +264,11 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
+# Make this extra-checks for correct library dependencies.
 if (NOT SANITIZE)
-    set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-endif()
+    set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+endif ()
 
 include (cmake/find_unwind.cmake)
 
@@ -304,8 +314,11 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
 
     if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        # TODO: Allow to use non-static library as well.
-        set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
+        if (USE_STATIC_LIBRARIES)
+            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
+        else ()
+            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_shared${${CMAKE_POSTFIX_VARIABLE}}.so")
+        endif ()
     else ()
         set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
     endif ()
@@ -316,12 +329,12 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
         if (USE_INTERNAL_LIBCXX_LIBRARY)
             set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
-            set (LIBCXX_LIBS "-lc++ -lc++abi")
+            set (LIBCXX_LIBS "-lc++ -lc++abi -lc++fs")
         endif ()
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lstdc++fs ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
@@ -343,6 +356,10 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+if (NOT GLIBC_COMPATIBILITY)
+    set (M_LIBRARY m)
 endif ()
 
 if (DEFAULT_LIBS)
@@ -421,10 +438,10 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include(GNUInstallDirs)
 include (cmake/find_contrib_lib.cmake)
+include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find_ssl.cmake)
-include (cmake/lib_name.cmake)
 include (cmake/find_icu.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
@@ -462,6 +479,8 @@ include (cmake/find_hyperscan.cmake)
 include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
+include (cmake/find_fastops.cmake)
+include (cmake/find_orc.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -554,4 +573,5 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
     add_default_dependencies(base64)
     add_default_dependencies(readpassphrase)
     add_default_dependencies(unwind_static)
+    add_default_dependencies(fastops)
 endif ()

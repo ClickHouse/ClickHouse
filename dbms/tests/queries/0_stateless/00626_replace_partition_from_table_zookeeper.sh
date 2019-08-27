@@ -101,7 +101,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE test.src;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test.src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO test.src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO test.src VALUES (1, '1', 1);"
-$CLICKHOUSE_CLIENT --query="INSERT INTO test.dst_r1 VALUES (1, '1', 2);" -- trash part to be
+$CLICKHOUSE_CLIENT --query="INSERT INTO test.dst_r1 VALUES (1, '1', 2); -- trash part to be deleted"
 
 # Stop replication at the second replica and remove source table to use fetch instead of copying
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP REPLICATION QUEUES test.dst_r2;"

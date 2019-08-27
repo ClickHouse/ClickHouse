@@ -71,6 +71,7 @@ public:
         const String & name,
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
+        const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

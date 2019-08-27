@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -124,10 +125,10 @@ private:
 
         if (result_is_const)
         {
-            const auto & colLon1 = static_cast<const ColumnConst *>(block.getByPosition(arguments[0]).column.get())->getValue<Float64>();
-            const auto & colLat1 = static_cast<const ColumnConst *>(block.getByPosition(arguments[1]).column.get())->getValue<Float64>();
-            const auto & colLon2 = static_cast<const ColumnConst *>(block.getByPosition(arguments[2]).column.get())->getValue<Float64>();
-            const auto & colLat2 = static_cast<const ColumnConst *>(block.getByPosition(arguments[3]).column.get())->getValue<Float64>();
+            const auto & colLon1 = assert_cast<const ColumnConst *>(block.getByPosition(arguments[0]).column.get())->getValue<Float64>();
+            const auto & colLat1 = assert_cast<const ColumnConst *>(block.getByPosition(arguments[1]).column.get())->getValue<Float64>();
+            const auto & colLon2 = assert_cast<const ColumnConst *>(block.getByPosition(arguments[2]).column.get())->getValue<Float64>();
+            const auto & colLat2 = assert_cast<const ColumnConst *>(block.getByPosition(arguments[3]).column.get())->getValue<Float64>();
 
             Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, res);
@@ -143,9 +144,9 @@ private:
                 for (const auto idx : ext::range(0, instrs.size()))
                 {
                     if (instr_type::get_float_64 == instrs[idx].first)
-                        vals[idx] = static_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
+                        vals[idx] = assert_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
                     else if (instr_type::get_const_float_64 == instrs[idx].first)
-                        vals[idx] = static_cast<const ColumnConst *>(instrs[idx].second)->getValue<Float64>();
+                        vals[idx] = assert_cast<const ColumnConst *>(instrs[idx].second)->getValue<Float64>();
                     else
                         throw Exception{"Unknown instruction type in implementation of greatCircleDistance function", ErrorCodes::LOGICAL_ERROR};
                 }

@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -33,7 +34,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
     if (size > 0)
     {
-        auto & new_col = static_cast<ColumnFixedString &>(*new_col_holder);
+        auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
@@ -60,7 +61,7 @@ void ColumnFixedString::insert(const Field & x)
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 {
-    const ColumnFixedString & src = static_cast<const ColumnFixedString &>(src_);
+    const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
     if (n != src.getN())
         throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
@@ -140,7 +141,7 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnFixedString & src_concrete = static_cast<const ColumnFixedString &>(src);
+    const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
 
     if (start + length > src_concrete.size())
         throw Exception("Parameters start = "

@@ -5,4 +5,5 @@
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_SNAPPY
 #cmakedefine01 USE_PARQUET
+#cmakedefine01 USE_ORC
 #cmakedefine01 USE_PROTOBUF

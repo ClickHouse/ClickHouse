@@ -15,6 +15,8 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
+ *  ALTER LIVE VIEW [db.]name_type
+ *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -28,11 +30,17 @@ public:
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_TTL,
+        MODIFY_SETTING,
 
         ADD_INDEX,
         DROP_INDEX,
+        MATERIALIZE_INDEX,
+
+        ADD_CONSTRAINT,
+        DROP_CONSTRAINT,
 
         DROP_PARTITION,
+        DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
         MOVE_PARTITION,
@@ -44,6 +52,8 @@ public:
         UPDATE,
 
         NO_TYPE,
+
+        LIVE_VIEW_REFRESH,
     };
 
     Type type = NO_TYPE;
@@ -69,8 +79,18 @@ public:
 
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
+     *  The MATERIALIZE INDEX query stores the name of the index to materialize.
+     *  The CLEAR INDEX query stores the name of the index to clear.
      */
-     ASTPtr index;
+    ASTPtr index;
+
+    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
+    */
+    ASTPtr constraint_decl;
+
+    /** The DROP CONSTRAINT query stores the name for deletion.
+    */
+    ASTPtr constraint;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
@@ -89,15 +109,24 @@ public:
     /// For MODIFY TTL query
     ASTPtr ttl;
 
+    /// FOR MODIFY_SETTING
+    ASTPtr settings_changes;
+
+    /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
+     */
+    ASTPtr values;
+
     bool detach = false;        /// true for DETACH PARTITION
 
-    bool part = false;          /// true for ATTACH PART
+    bool part = false;          /// true for ATTACH PART and DROP DETACHED PART
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
-    bool if_not_exists = false;  /// option for ADD_COLUMN
+    bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
 
-    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+    bool if_not_exists = false; /// option for ADD_COLUMN
+
+    bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */
@@ -146,6 +175,8 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
+    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+
     ASTAlterCommandList * command_list = nullptr;
 
     String getID(char) const override;

@@ -30,11 +30,13 @@ StorageDictionary::StorageDictionary(
     const Context & context,
     bool attach,
     const String & dictionary_name_)
-    : IStorage{columns_}, table_name(table_name_),
+    : table_name(table_name_),
     database_name(database_name_),
     dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
+    setColumns(columns_);
+
     if (!attach)
     {
         const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
