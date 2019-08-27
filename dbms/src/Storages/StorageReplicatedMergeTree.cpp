@@ -3158,7 +3158,12 @@ void StorageReplicatedMergeTree::alter(
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, query_context, table_lock_holder);
+
+        changeSettings(new_changes, table_lock_holder);
+
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        global_context.getDatabase(current_database_name)->alterTable(
+            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
         return;
     }
 
@@ -3230,6 +3235,18 @@ void StorageReplicatedMergeTree::alter(
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
+
+        /// Perform settings update locally
+        if (!new_changes.empty())
+        {
+            IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+
+            changeSettings(new_changes, table_lock_holder);
+
+            global_context.getDatabase(current_database_name)->alterTable(
+                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+
+        }
 
         /// Modify shared metadata nodes in ZooKeeper.
         Coordination::Requests ops;

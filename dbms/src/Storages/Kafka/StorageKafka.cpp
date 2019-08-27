@@ -412,14 +412,10 @@ bool StorageKafka::hasSetting(const String & setting_name) const
     return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
 }
 
-void StorageKafka::alterSettings(
-    const SettingsChanges & /* new_changes */,
-    const Context & /* context */,
-    TableStructureWriteLockHolder & /* table_lock_holder */)
+IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
 {
     throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
 }
-
 
 void registerStorageKafka(StorageFactory & factory)
 {
