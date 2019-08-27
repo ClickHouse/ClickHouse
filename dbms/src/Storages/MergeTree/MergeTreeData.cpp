@@ -1645,18 +1645,16 @@ void MergeTreeData::alterDataPart(
     return;
 }
 
-void MergeTreeData::alterSettings(
+void MergeTreeData::changeSettings(
         const SettingsChanges & new_changes,
-        const Context & context,
-        TableStructureWriteLockHolder & table_lock_holder)
+        TableStructureWriteLockHolder & /* table_lock_holder */)
 {
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
-
-    MergeTreeSettings copy = *getSettings();
-    copy.updateFromChanges(new_changes);
-    IStorage::alterSettings(new_changes, context, table_lock_holder);
-    storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+    if (!new_changes.empty())
+    {
+        MergeTreeSettings copy = *getSettings();
+        copy.updateFromChanges(new_changes);
+        storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+    }
 }
 
 bool MergeTreeData::hasSetting(const String & setting_name) const
