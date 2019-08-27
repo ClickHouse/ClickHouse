@@ -24,6 +24,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
+#include <common/config_common.h>
 
 
 namespace ProfileEvents
@@ -639,11 +640,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        auto freeSpace = Poco::File(params.tmp_path).freeSpace();
-        if (params.min_free_disk_space > freeSpace - current_memory_usage)
-        {
-            throw Exception("Not enough space.", ErrorCodes::NOT_ENOUGH_SPACE);
-        }
+#if !UNBUNDLED
+        auto free_space = Poco::File(params.tmp_path).freeSpace();
+        if (current_memory_usage + params.min_free_disk_space > free_space)
+            throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+#endif
+
         writeToTemporaryFile(result);
     }
 
