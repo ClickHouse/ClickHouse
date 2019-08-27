@@ -15,6 +15,7 @@ namespace DB
  */
 class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:
     String getName() const override { return "HDFS"; }
     String getTableName() const override { return table_name; }
@@ -37,6 +38,7 @@ protected:
         const String & table_name_,
         const String & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_);
 
 private:

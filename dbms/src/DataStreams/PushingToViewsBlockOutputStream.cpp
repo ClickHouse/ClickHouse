@@ -12,7 +12,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageLiveView.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {
@@ -106,8 +106,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        BlockOutputStreamPtr output_ = std::make_shared<LiveViewBlockOutputStream>(*live_view);
-        StorageLiveView::writeIntoLiveView(*live_view, block, context, output_);
+        StorageLiveView::writeIntoLiveView(*live_view, block, context);
     }
     else
     {

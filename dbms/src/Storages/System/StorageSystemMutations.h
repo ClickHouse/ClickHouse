@@ -14,6 +14,7 @@ class Context;
 /// in the MergeTree tables.
 class StorageSystemMutations : public ext::shared_ptr_helper<StorageSystemMutations>, public IStorageSystemOneBlock<StorageSystemMutations>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemMutations>;
 public:
     String getName() const override { return "SystemMutations"; }
 
