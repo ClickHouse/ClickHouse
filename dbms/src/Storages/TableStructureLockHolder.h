@@ -26,17 +26,17 @@ private:
 
 struct TableStructureReadLockHolder
 {
+    void release()
+    {
+        *this = TableStructureReadLockHolder();
+    }
+
 private:
     friend class IStorage;
 
     /// Order is important.
     RWLockImpl::LockHolder new_data_structure_lock;
     RWLockImpl::LockHolder structure_lock;
-
-    void release()
-    {
-        *this = TableStructureReadLockHolder();
-    }
 };
 
 }
