@@ -75,14 +75,14 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 
 #### Query Syntax {#cli-queries-with-parameters-syntax}
 
-Format a query using the standard method. Place the values that you want to pass from the app parameters to the query in braces in the following format:
+Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
 
 ```
 {<name>:<data type>}
 ```
 
-- `name` — Placeholder identifier that should be used in app parameters as `--param_<name> = value`.
-- `data type` — Data type of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+- `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
 
 #### Example
 
@@ -118,6 +118,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
 - `--secure` – If specified, will connect to server over secure connection.
+- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
 
 ### Configuration Files
 
