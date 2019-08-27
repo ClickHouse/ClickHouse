@@ -46,6 +46,7 @@ StoragePtr StorageFactory::get(
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -67,14 +68,6 @@ StoragePtr StorageFactory::get(
             throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
 
         name = "LiveView";
-    }
-    else if (query.is_live_channel)
-    {
-
-        if (query.storage)
-            throw Exception("Specifying ENGINE is not allowed for a LiveChannel", ErrorCodes::INCORRECT_QUERY);
-
-        name = "LiveChannel";
     }
     else
     {
@@ -137,12 +130,6 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
-            else if (name == "LiveChannel")
-            {
-                throw Exception(
-                    "Direct creation of tables with ENGINE LiveChannel is not supported, use CREATE LIVE CHANNEL statement",
-                    ErrorCodes::INCORRECT_QUERY);
-            }
         }
     }
 
@@ -168,6 +155,7 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
+        .constraints = constraints,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };

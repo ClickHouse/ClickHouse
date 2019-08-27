@@ -128,6 +128,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->columns, columns->clone());
     if (indices)
         res->set(res->indices, indices->clone());
+    if (constraints)
+        res->set(res->constraints, constraints->clone());
 
     return res;
 }
@@ -153,6 +155,16 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
             auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "INDEX";
             elem->set(elem->elem, index->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (constraints)
+    {
+        for (const auto & constraint : constraints->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "CONSTRAINT";
+            elem->set(elem->elem, constraint->clone());
             list.children.push_back(elem);
         }
     }
@@ -208,9 +220,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         if (is_live_view)
             what = "LIVE VIEW";
-        if (is_live_channel)
-            what = "LIVE CHANNEL";
-
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")

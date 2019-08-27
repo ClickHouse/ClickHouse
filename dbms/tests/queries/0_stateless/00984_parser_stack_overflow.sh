@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+CLICKHOUSE_CURL_TIMEOUT=30
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 

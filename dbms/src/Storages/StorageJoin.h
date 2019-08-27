@@ -22,6 +22,7 @@ using JoinPtr = std::shared_ptr<Join>;
   */
 class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+    friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 
@@ -64,6 +65,7 @@ protected:
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool overwrite);
 };
 

@@ -21,6 +21,7 @@ class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStor
 {
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
@@ -55,7 +56,7 @@ private:
     std::mutex mutex;
 
 protected:
-    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_);
+    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
 };
 
 }

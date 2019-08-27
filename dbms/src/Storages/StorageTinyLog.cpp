@@ -327,14 +327,17 @@ StorageTinyLog::StorageTinyLog(
     const std::string & database_name_,
     const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), table_name(table_name_), database_name(database_name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -450,7 +453,7 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

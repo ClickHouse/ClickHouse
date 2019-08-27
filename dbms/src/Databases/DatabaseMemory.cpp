@@ -53,6 +53,7 @@ void DatabaseMemory::alterTable(
     const String &,
     const ColumnsDescription &,
     const IndicesDescription &,
+    const ConstraintsDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
