@@ -28,7 +28,7 @@ set (KJ_SRCS
 )
 
 add_library(kj ${KJ_SRCS})
-target_include_directories(kj INTERFACE ${CAPNPROTO_SOURCE_DIR}>)
+target_include_directories(kj INTERFACE ${CAPNPROTO_SOURCE_DIR})
 
 set (CAPNP_SRCS
     ${CAPNPROTO_SOURCE_DIR}/capnp/c++.capnp.c++
@@ -66,5 +66,3 @@ set (CAPNPC_SRCS
 
 add_library(capnpc ${CAPNPC_SRCS})
 target_link_libraries(capnpc PUBLIC capnp)
-
-set (CAPNP_LIBRARIES capnpc)

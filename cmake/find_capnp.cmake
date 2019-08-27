@@ -12,6 +12,8 @@ if (USE_CAPNP)
         set (CAPNP_LIBRARIES ${CAPNPC} ${CAPNP} ${KJ})
     else ()
         add_subdirectory(contrib/capnproto-cmake)
+
+        set (CAPNP_LIBRARIES capnpc)
     endif ()
 
     message (STATUS "Using capnp: ${CAPNP_LIBRARIES}")
