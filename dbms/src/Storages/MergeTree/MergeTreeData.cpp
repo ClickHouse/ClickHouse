@@ -1652,7 +1652,7 @@ void MergeTreeData::changeSettings(
     if (!new_changes.empty())
     {
         MergeTreeSettings copy = *getSettings();
-        copy.updateFromChanges(new_changes);
+        copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
     }
 }
