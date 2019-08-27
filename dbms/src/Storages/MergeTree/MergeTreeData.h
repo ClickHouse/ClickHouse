@@ -537,12 +537,10 @@ public:
         bool skip_sanity_checks,
         AlterDataPartTransactionPtr& transaction);
 
-    /// Performs ALTER of table settings (MergeTreeSettings). Lightweight operation, affects metadata only.
-    /// Not atomic, have to be done with alter intention lock.
-    void alterSettings(
+    /// Change MergeTreeSettings
+    void changeSettings(
            const SettingsChanges & new_changes,
-           const Context & context,
-           TableStructureWriteLockHolder & table_lock_holder) override;
+           TableStructureWriteLockHolder & table_lock_holder);
 
     /// All MergeTreeData children have settings.
     bool hasSetting(const String & setting_name) const override;

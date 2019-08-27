@@ -45,7 +45,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-You can visualize a histogram with the [bar](../other_functions.md#function-bar) function, for example:
+You can visualize a histogram with the [bar](../functions/other_functions.md#function-bar) function, for example:
 
 ```sql
 WITH histogram(5)(rand() % 100) AS hist
