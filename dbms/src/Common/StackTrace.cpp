@@ -13,7 +13,7 @@
 #include <unordered_map>
 
 #if USE_UNWIND
-#   include <unwind.h>
+#   include <libunwind.h>
 #endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
