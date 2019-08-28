@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
 
@@ -22,7 +23,7 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
     if (!isColumnConst(*column))
         return {};
 
-    const ColumnConst * res = static_cast<const ColumnConst *>(column);
+    const ColumnConst * res = assert_cast<const ColumnConst *>(column);
 
     if (checkColumn<ColumnString>(&res->getDataColumn())
         || checkColumn<ColumnFixedString>(&res->getDataColumn()))
@@ -34,7 +35,7 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 Columns convertConstTupleToConstantElements(const ColumnConst & column)
 {
-    const ColumnTuple & src_tuple = static_cast<const ColumnTuple &>(column.getDataColumn());
+    const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(column.getDataColumn());
     const auto & src_tuple_columns = src_tuple.getColumns();
     size_t tuple_size = src_tuple_columns.size();
     size_t rows = column.size();

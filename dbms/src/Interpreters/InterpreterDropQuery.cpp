@@ -80,7 +80,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
-            database_and_table.second->truncate(query_ptr, context);
+            database_and_table.second->truncate(query_ptr, context, table_lock);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
@@ -94,14 +94,14 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             const auto prev_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql";
             const auto drop_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql.tmp_drop";
 
-            //Try to rename metadata file and delete the data
+            /// Try to rename metadata file and delete the data
             try
             {
                 //There some kind of tables that have no metadata - ignore renaming
                 if (Poco::File(prev_metadata_name).exists())
                     Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
                 /// Delete table data
-                database_and_table.second->drop();
+                database_and_table.second->drop(table_lock);
             }
             catch (...)
             {
@@ -145,7 +145,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Drop table data, don't touch metadata
-                table->truncate(query_ptr, context);
+                table->truncate(query_ptr, context, table_lock);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {
@@ -154,7 +154,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
-                table->drop();
+                table->drop(table_lock);
                 table->is_dropped = true;
             }
         }
