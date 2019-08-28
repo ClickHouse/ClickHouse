@@ -1546,7 +1546,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
-            pipeline.setMaxThreads(max_streams);
+            pipeline.setMaxThreads(streams.size());
 
             /// Unify streams. They must have same headers.
             if (streams.size() > 1)
