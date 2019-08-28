@@ -1026,11 +1026,16 @@ private:
         while (true)
         {
             Block block = async_block_input->read();
+            /// Check if server send Exception packet
+            auto packet_type = connection->checkPacket();
+            if (packet_type && *packet_type == Protocol::Server::Exception)
+                return;
+
             connection->sendData(block);
             processed_rows += block.rows();
 
             /// Check if server send Log packet
-            auto packet_type = connection->checkPacket();
+            packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Log)
                 receiveAndProcessPacket();
 
