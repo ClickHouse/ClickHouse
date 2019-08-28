@@ -313,8 +313,7 @@ namespace DB
             }
             else
             {
-                throw Exception{
-                        "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
                         + "\" is not supported for conversion from a " + format_name + " data format",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }
