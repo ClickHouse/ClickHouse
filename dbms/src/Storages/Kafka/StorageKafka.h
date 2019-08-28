@@ -2,6 +2,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>

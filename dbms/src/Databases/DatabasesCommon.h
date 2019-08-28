@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
+#include <mutex>
 
 
 /// General functionality for several different database engines.
