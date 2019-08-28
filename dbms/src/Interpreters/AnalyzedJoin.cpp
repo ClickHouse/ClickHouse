@@ -7,7 +7,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Storages/IStorage.h>
-#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -101,22 +100,6 @@ std::unordered_map<String, String> AnalyzedJoin::getOriginalColumnsMap(const Nam
     }
     return out;
 }
-
-void AnalyzedJoin::calculateAvailableJoinedColumns(bool make_nullable)
-{
-    if (!make_nullable)
-    {
-        available_joined_columns = columns_from_joined_table;
-        return;
-    }
-
-    for (auto & column : columns_from_joined_table)
-    {
-        auto type = column.type->canBeInsideNullable() ? makeNullable(column.type) : column.type;
-        available_joined_columns.emplace_back(NameAndTypePair(column.name, std::move(type)));
-    }
-}
-
 
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
 {
