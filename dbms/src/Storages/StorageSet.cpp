@@ -126,7 +126,7 @@ void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block);
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &, const Context &)
+void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
@@ -193,7 +193,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 }
 
 
-void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageSetOrJoinBase::rename(
+    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     /// Rename directory with data.
     String new_path = new_path_to_db + escapeForFileName(new_table_name);
