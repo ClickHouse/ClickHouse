@@ -34,7 +34,8 @@ void DatabaseMemory::createTable(
 
 void DatabaseMemory::removeTable(
     const Context & /*context*/,
-    const String & table_name)
+    const String & table_name,
+    TableStructureWriteLockHolder &)
 {
     detachTable(table_name);
 }

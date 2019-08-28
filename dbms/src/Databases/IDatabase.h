@@ -93,7 +93,8 @@ public:
     /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
-        const String & name) = 0;
+        const String & name,
+        TableStructureWriteLockHolder &) = 0;
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     virtual void attachTable(const String & name, const StoragePtr & table) = 0;

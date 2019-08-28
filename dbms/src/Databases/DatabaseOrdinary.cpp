@@ -306,12 +306,8 @@ void DatabaseOrdinary::createTable(
 }
 
 
-void DatabaseOrdinary::removeTable(
-    const Context & /*context*/,
-    const String & table_name)
+void removeTableMetadata(const String & table_name)
 {
-    StoragePtr res = detachTable(table_name);
-
     String table_metadata_path = getTableMetadataPath(table_name);
 
     try
@@ -329,9 +325,50 @@ void DatabaseOrdinary::removeTable(
         {
             LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         }
-        attachTable(table_name, res);
         throw;
     }
+}
+
+
+void DatabaseOrdinary::removeTable(
+    const Context & /*context*/,
+    const String & table_name,
+    TableStructureWriteLockHolder &)
+{
+    StoragePtr table = detachTable(table_name);
+
+    table->shutdown();
+    /// If table was already dropped by anyone, an exception will be thrown
+
+    auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+
+    const auto prev_metadata_name = getTableMetadataPath(table_name);
+    const auto drop_metadata_name = getTableMetadataPath(table_name) + ".tmp_drop";
+
+    /// Try to rename metadata file and delete the data
+    try
+    {
+        Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+
+        /// Delete table data
+        table->drop(table_lock);
+    }
+    catch (...)
+    {
+        if (Poco::File(drop_metadata_name).exists())
+            Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+
+        table->startup();
+        attachTable(table_name, table);
+        throw;
+    }
+
+    table->is_dropped = true;
+
+    /// Drop remaining data dir if any
+    String table_data_path = getDataPath() + "/" + escapeForFileName(table->getTableName());
+    if (Poco::File(table_data_path).exists())
+        Poco::File(table_data_path).remove(true);
 }
 
 static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)

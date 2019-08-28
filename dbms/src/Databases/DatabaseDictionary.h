@@ -55,7 +55,8 @@ public:
 
     void removeTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        TableStructureWriteLockHolder &) override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
     StoragePtr detachTable(const String & table_name) override;

@@ -53,7 +53,7 @@ public:
         /// do nothing
     }
 
-    void removeTable(const Context &, const String &) override
+    void removeTable(const Context &, const String &, TableStructureWriteLockHolder &) override
     {
         throw Exception("MySQL database engine does not support remove table.", ErrorCodes::NOT_IMPLEMENTED);
     }

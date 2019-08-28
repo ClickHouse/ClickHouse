@@ -110,7 +110,8 @@ void DatabaseDictionary::createTable(
 
 void DatabaseDictionary::removeTable(
     const Context &,
-    const String &)
+    const String &,
+    TableStructureWriteLockHolder &)
 {
     throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }

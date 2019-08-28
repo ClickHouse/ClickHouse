@@ -30,7 +30,8 @@ public:
 
     void removeTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        TableStructureWriteLockHolder &) override;
 
     void renameTable(
         const Context & context,
@@ -78,6 +79,8 @@ private:
     void startupTables(ThreadPool & thread_pool);
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
+
+    void removeTableMetadata(const String & table_name);
 };
 
 }

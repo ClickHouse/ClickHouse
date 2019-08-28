@@ -35,7 +35,8 @@ public:
 
     void removeTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        TableStructureWriteLockHolder &) override;
 
     time_t getTableMetadataModificationTime(
         const Context & context,
