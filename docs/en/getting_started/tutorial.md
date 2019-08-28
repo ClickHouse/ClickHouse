@@ -1,31 +1,48 @@
 # ClickHouse Tutorial
 
-## Setup
+## What to Expect from This Tutorial?
 
-Let's get started with sample dataset from open sources. We will use USA civil flights data from 1987 to 2015. It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this allows us to quickly get to work. Dataset is available for download [here](https://yadi.sk/d/pOZxpa42sDdgm). Also you may download it from the original datasource [as described here](example_datasets/ontime.md).
+By going through this tutorial you'll learn how to set up basic ClickHouse cluster, it'll be small, but fault tolerant and scalable. We will use one of example datasets to fill it with data and execute some demo queries.
 
-At first we will deploy ClickHouse to a single server. Later we will also review the process of deployment to a cluster with support for sharding and replication.
+## Single Node Setup
 
-ClickHouse is usually installed from [deb](index.md#from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them. What do we have in those packages:
+To postpone complexities of distributed environment, we'll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+
+For example, you have chosen `deb` packages and executed:
+``` bash
+sudo apt-get install dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+```
+
+What do we have in the packages that got installed:
 
 * `clickhouse-client` package contains [clickhouse-client](../interfaces/cli.md) application, interactive ClickHouse console client.
 * `clickhouse-common` package contains a ClickHouse executable file.
 * `clickhouse-server` package contains configuration files to run ClickHouse as a server.
 
-Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the `path` element in config. Path dtermines the location for data storage. It's not really handy to directly edit `config.xml` file considering package updates. Recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md). Also you may want to [set up access rights](../operations/access_rights.md) early on.</p>
+Server config files are located in `/etc/clickhouse-server/`. Before going further please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity, the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration it's not really handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. Recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as "patches" to config.xml.
 
-`clickhouse-server` won't be launched automatically after package installation. It won't be automatically  restarted after updates either. Start the server with:
+As you might have noticed, `clickhouse-server` is not launched automatically after package installation. It won't be automatically restarted after updates either. The way you start the server depends on your init system, usually it's:
+
 ``` bash
 sudo service clickhouse-server start
 ```
+or
 
-The default location for server logs is `/var/log/clickhouse-server/`.
+``` bash
+sudo /etc/init.d/clickhouse-server start
+```
 
-Server is ready to handle client connections once `Ready for connections` message was logged.
+The default location for server logs is `/var/log/clickhouse-server/`. Server will be ready to handle client connections once `Ready for connections` message was logged.
 
-Use `clickhouse-client` to connect to the server.</p>
+Once the `clickhouse-server` is up and running, we can use `clickhouse-client` to connect to the server and run some test queries like `SELECT "Hello, world!";`.
 
-<details markdown="1"><summary>Tips for clickhouse-client</summary>
+<details markdown="1"><summary>Quick tips for clickhouse-client</summary>
 Interactive mode:
 ``` bash
 clickhouse-client
@@ -42,160 +59,432 @@ Run queries in batch-mode:
 ``` bash
 clickhouse-client --query='SELECT 1'
 echo 'SELECT 1' | clickhouse-client
+clickhouse-client <<< 'SELECT 1'
 ```
 
-Insert data from file of a specified format:
+Insert data from a file in specified format:
 ``` bash
-clickhouse-client --query='INSERT INTO table VALUES' &lt; data.txt
-clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
+clickhouse-client --query='INSERT INTO table VALUES' < data.txt
+clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 ```
 </details>
 
-## Create Table for Sample Dataset</h3>
-<details markdown="1"><summary>Create table query</summary>
-``` bash
-$ clickhouse-client --multiline
-ClickHouse client version 0.0.53720.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.53720.
+## Import Sample Dataset
 
-:) CREATE TABLE ontime
+Now it's time to fill our ClickHouse server with some sample data. In this tutorial we'll use anonymized data of Yandex.Metrica, the first service that run ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example_datasets/metrica.md) and for the sake of the tutorial we'll go with the most realistic one.
+
+### Download and Extract Table Data
+
+``` bash
+curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv 
+curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv 
+```
+
+The extracted files are about 10GB in size.
+
+### Create Tables
+
+Tables are logically grouped into "databases". There's a `default` database, but we'll create a new one named `tutorial`:
+
+``` bash
+clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
+```
+
+Syntax for creating tables is way more complicated compared to databases (see [reference](../query_language/create.md). In general `CREATE TABLE` statement has to specify three key things:
+
+1. Name of table to create.
+2. Table schema, i.e. list of columns and their [data types](../data_types/index.md).
+3. [Table engine](../operations/table_engines/index.md) and it's settings, which determines all the details on how queries to this table will be physically executed.
+
+Yandex.Metrica is a web analytics service and sample dataset doesn't cover it's full functionality, so there are only two tables to create:
+
+* `hits` is a table with each action done by all users on all websites covered by the service.
+* `visits` is a table that contains pre-built sessions instead of individual actions.
+
+Let's see and execute the real create table queries for these tables:
+
+``` sql
+CREATE TABLE tutorial.hits_v1
 (
-    Year UInt16,
-    Quarter UInt8,
-    Month UInt8,
-    DayofMonth UInt8,
-    DayOfWeek UInt8,
-    FlightDate Date,
-    UniqueCarrier FixedString(7),
-    AirlineID Int32,
-    Carrier FixedString(2),
-    TailNum String,
-    FlightNum String,
-    OriginAirportID Int32,
-    OriginAirportSeqID Int32,
-    OriginCityMarketID Int32,
-    Origin FixedString(5),
-    OriginCityName String,
-    OriginState FixedString(2),
-    OriginStateFips String,
-    OriginStateName String,
-    OriginWac Int32,
-    DestAirportID Int32,
-    DestAirportSeqID Int32,
-    DestCityMarketID Int32,
-    Dest FixedString(5),
-    DestCityName String,
-    DestState FixedString(2),
-    DestStateFips String,
-    DestStateName String,
-    DestWac Int32,
-    CRSDepTime Int32,
-    DepTime Int32,
-    DepDelay Int32,
-    DepDelayMinutes Int32,
-    DepDel15 Int32,
-    DepartureDelayGroups String,
-    DepTimeBlk String,
-    TaxiOut Int32,
-    WheelsOff Int32,
-    WheelsOn Int32,
-    TaxiIn Int32,
-    CRSArrTime Int32,
-    ArrTime Int32,
-    ArrDelay Int32,
-    ArrDelayMinutes Int32,
-    ArrDel15 Int32,
-    ArrivalDelayGroups Int32,
-    ArrTimeBlk String,
-    Cancelled UInt8,
-    CancellationCode FixedString(1),
-    Diverted UInt8,
-    CRSElapsedTime Int32,
-    ActualElapsedTime Int32,
-    AirTime Int32,
-    Flights Int32,
-    Distance Int32,
-    DistanceGroup UInt8,
-    CarrierDelay Int32,
-    WeatherDelay Int32,
-    NASDelay Int32,
-    SecurityDelay Int32,
-    LateAircraftDelay Int32,
-    FirstDepTime String,
-    TotalAddGTime String,
-    LongestAddGTime String,
-    DivAirportLandings String,
-    DivReachedDest String,
-    DivActualElapsedTime String,
-    DivArrDelay String,
-    DivDistance String,
-    Div1Airport String,
-    Div1AirportID Int32,
-    Div1AirportSeqID Int32,
-    Div1WheelsOn String,
-    Div1TotalGTime String,
-    Div1LongestGTime String,
-    Div1WheelsOff String,
-    Div1TailNum String,
-    Div2Airport String,
-    Div2AirportID Int32,
-    Div2AirportSeqID Int32,
-    Div2WheelsOn String,
-    Div2TotalGTime String,
-    Div2LongestGTime String,
-    Div2WheelsOff String,
-    Div2TailNum String,
-    Div3Airport String,
-    Div3AirportID Int32,
-    Div3AirportSeqID Int32,
-    Div3WheelsOn String,
-    Div3TotalGTime String,
-    Div3LongestGTime String,
-    Div3WheelsOff String,
-    Div3TailNum String,
-    Div4Airport String,
-    Div4AirportID Int32,
-    Div4AirportSeqID Int32,
-    Div4WheelsOn String,
-    Div4TotalGTime String,
-    Div4LongestGTime String,
-    Div4WheelsOff String,
-    Div4TailNum String,
-    Div5Airport String,
-    Div5AirportID Int32,
-    Div5AirportSeqID Int32,
-    Div5WheelsOn String,
-    Div5TotalGTime String,
-    Div5LongestGTime String,
-    Div5WheelsOff String,
-    Div5TailNum String
+    `WatchID` UInt64,
+    `JavaEnable` UInt8,
+    `Title` String,
+    `GoodEvent` Int16,
+    `EventTime` DateTime,
+    `EventDate` Date,
+    `CounterID` UInt32,
+    `ClientIP` UInt32,
+    `ClientIP6` FixedString(16),
+    `RegionID` UInt32,
+    `UserID` UInt64,
+    `CounterClass` Int8,
+    `OS` UInt8,
+    `UserAgent` UInt8,
+    `URL` String,
+    `Referer` String,
+    `URLDomain` String,
+    `RefererDomain` String,
+    `Refresh` UInt8,
+    `IsRobot` UInt8,
+    `RefererCategories` Array(UInt16),
+    `URLCategories` Array(UInt16),
+    `URLRegions` Array(UInt32),
+    `RefererRegions` Array(UInt32),
+    `ResolutionWidth` UInt16,
+    `ResolutionHeight` UInt16,
+    `ResolutionDepth` UInt8,
+    `FlashMajor` UInt8,
+    `FlashMinor` UInt8,
+    `FlashMinor2` String,
+    `NetMajor` UInt8,
+    `NetMinor` UInt8,
+    `UserAgentMajor` UInt16,
+    `UserAgentMinor` FixedString(2),
+    `CookieEnable` UInt8,
+    `JavascriptEnable` UInt8,
+    `IsMobile` UInt8,
+    `MobilePhone` UInt8,
+    `MobilePhoneModel` String,
+    `Params` String,
+    `IPNetworkID` UInt32,
+    `TraficSourceID` Int8,
+    `SearchEngineID` UInt16,
+    `SearchPhrase` String,
+    `AdvEngineID` UInt8,
+    `IsArtifical` UInt8,
+    `WindowClientWidth` UInt16,
+    `WindowClientHeight` UInt16,
+    `ClientTimeZone` Int16,
+    `ClientEventTime` DateTime,
+    `SilverlightVersion1` UInt8,
+    `SilverlightVersion2` UInt8,
+    `SilverlightVersion3` UInt32,
+    `SilverlightVersion4` UInt16,
+    `PageCharset` String,
+    `CodeVersion` UInt32,
+    `IsLink` UInt8,
+    `IsDownload` UInt8,
+    `IsNotBounce` UInt8,
+    `FUniqID` UInt64,
+    `HID` UInt32,
+    `IsOldCounter` UInt8,
+    `IsEvent` UInt8,
+    `IsParameter` UInt8,
+    `DontCountHits` UInt8,
+    `WithHash` UInt8,
+    `HitColor` FixedString(1),
+    `UTCEventTime` DateTime,
+    `Age` UInt8,
+    `Sex` UInt8,
+    `Income` UInt8,
+    `Interests` UInt16,
+    `Robotness` UInt8,
+    `GeneralInterests` Array(UInt16),
+    `RemoteIP` UInt32,
+    `RemoteIP6` FixedString(16),
+    `WindowName` Int32,
+    `OpenerName` Int32,
+    `HistoryLength` Int16,
+    `BrowserLanguage` FixedString(2),
+    `BrowserCountry` FixedString(2),
+    `SocialNetwork` String,
+    `SocialAction` String,
+    `HTTPError` UInt16,
+    `SendTiming` Int32,
+    `DNSTiming` Int32,
+    `ConnectTiming` Int32,
+    `ResponseStartTiming` Int32,
+    `ResponseEndTiming` Int32,
+    `FetchTiming` Int32,
+    `RedirectTiming` Int32,
+    `DOMInteractiveTiming` Int32,
+    `DOMContentLoadedTiming` Int32,
+    `DOMCompleteTiming` Int32,
+    `LoadEventStartTiming` Int32,
+    `LoadEventEndTiming` Int32,
+    `NSToDOMContentLoadedTiming` Int32,
+    `FirstPaintTiming` Int32,
+    `RedirectCount` Int8,
+    `SocialSourceNetworkID` UInt8,
+    `SocialSourcePage` String,
+    `ParamPrice` Int64,
+    `ParamOrderID` String,
+    `ParamCurrency` FixedString(3),
+    `ParamCurrencyID` UInt16,
+    `GoalsReached` Array(UInt32),
+    `OpenstatServiceName` String,
+    `OpenstatCampaignID` String,
+    `OpenstatAdID` String,
+    `OpenstatSourceID` String,
+    `UTMSource` String,
+    `UTMMedium` String,
+    `UTMCampaign` String,
+    `UTMContent` String,
+    `UTMTerm` String,
+    `FromTag` String,
+    `HasGCLID` UInt8,
+    `RefererHash` UInt64,
+    `URLHash` UInt64,
+    `CLID` UInt32,
+    `YCLID` UInt64,
+    `ShareService` String,
+    `ShareURL` String,
+    `ShareTitle` String,
+    `ParsedParams` Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    `IslandID` FixedString(16),
+    `RequestNum` UInt32,
+    `RequestTry` UInt8
 )
-ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
 ```
-</details>
 
-Now we have a table of [MergeTree type](../operations/table_engines/mergetree.md). MergeTree table engine family is recommended for usage in production. Tables of this kind has a primary key used for incremental sort of table data. This allows fast execution of queries in ranges of a primary key.
+``` sql
+CREATE TABLE tutorial.visits_v1
+(
+    `CounterID` UInt32,
+    `StartDate` Date,
+    `Sign` Int8,
+    `IsNew` UInt8,
+    `VisitID` UInt64,
+    `UserID` UInt64,
+    `StartTime` DateTime,
+    `Duration` UInt32,
+    `UTCStartTime` DateTime,
+    `PageViews` Int32,
+    `Hits` Int32,
+    `IsBounce` UInt8,
+    `Referer` String,
+    `StartURL` String,
+    `RefererDomain` String,
+    `StartURLDomain` String,
+    `EndURL` String,
+    `LinkURL` String,
+    `IsDownload` UInt8,
+    `TraficSourceID` Int8,
+    `SearchEngineID` UInt16,
+    `SearchPhrase` String,
+    `AdvEngineID` UInt8,
+    `PlaceID` Int32,
+    `RefererCategories` Array(UInt16),
+    `URLCategories` Array(UInt16),
+    `URLRegions` Array(UInt32),
+    `RefererRegions` Array(UInt32),
+    `IsYandex` UInt8,
+    `GoalReachesDepth` Int32,
+    `GoalReachesURL` Int32,
+    `GoalReachesAny` Int32,
+    `SocialSourceNetworkID` UInt8,
+    `SocialSourcePage` String,
+    `MobilePhoneModel` String,
+    `ClientEventTime` DateTime,
+    `RegionID` UInt32,
+    `ClientIP` UInt32,
+    `ClientIP6` FixedString(16),
+    `RemoteIP` UInt32,
+    `RemoteIP6` FixedString(16),
+    `IPNetworkID` UInt32,
+    `SilverlightVersion3` UInt32,
+    `CodeVersion` UInt32,
+    `ResolutionWidth` UInt16,
+    `ResolutionHeight` UInt16,
+    `UserAgentMajor` UInt16,
+    `UserAgentMinor` UInt16,
+    `WindowClientWidth` UInt16,
+    `WindowClientHeight` UInt16,
+    `SilverlightVersion2` UInt8,
+    `SilverlightVersion4` UInt16,
+    `FlashVersion3` UInt16,
+    `FlashVersion4` UInt16,
+    `ClientTimeZone` Int16,
+    `OS` UInt8,
+    `UserAgent` UInt8,
+    `ResolutionDepth` UInt8,
+    `FlashMajor` UInt8,
+    `FlashMinor` UInt8,
+    `NetMajor` UInt8,
+    `NetMinor` UInt8,
+    `MobilePhone` UInt8,
+    `SilverlightVersion1` UInt8,
+    `Age` UInt8,
+    `Sex` UInt8,
+    `Income` UInt8,
+    `JavaEnable` UInt8,
+    `CookieEnable` UInt8,
+    `JavascriptEnable` UInt8,
+    `IsMobile` UInt8,
+    `BrowserLanguage` UInt16,
+    `BrowserCountry` UInt16,
+    `Interests` UInt16,
+    `Robotness` UInt8,
+    `GeneralInterests` Array(UInt16),
+    `Params` Array(String),
+    `Goals` Nested(
+        ID UInt32,
+        Serial UInt32,
+        EventTime DateTime,
+        Price Int64,
+        OrderID String,
+        CurrencyID UInt32),
+    `WatchIDs` Array(UInt64),
+    `ParamSumPrice` Int64,
+    `ParamCurrency` FixedString(3),
+    `ParamCurrencyID` UInt16,
+    `ClickLogID` UInt64,
+    `ClickEventID` Int32,
+    `ClickGoodEvent` Int32,
+    `ClickEventTime` DateTime,
+    `ClickPriorityID` Int32,
+    `ClickPhraseID` Int32,
+    `ClickPageID` Int32,
+    `ClickPlaceID` Int32,
+    `ClickTypeID` Int32,
+    `ClickResourceID` Int32,
+    `ClickCost` UInt32,
+    `ClickClientIP` UInt32,
+    `ClickDomainID` UInt32,
+    `ClickURL` String,
+    `ClickAttempt` UInt8,
+    `ClickOrderID` UInt32,
+    `ClickBannerID` UInt32,
+    `ClickMarketCategoryID` UInt32,
+    `ClickMarketPP` UInt32,
+    `ClickMarketCategoryName` String,
+    `ClickMarketPPName` String,
+    `ClickAWAPSCampaignName` String,
+    `ClickPageName` String,
+    `ClickTargetType` UInt16,
+    `ClickTargetPhraseID` UInt64,
+    `ClickContextType` UInt8,
+    `ClickSelectType` Int8,
+    `ClickOptions` String,
+    `ClickGroupBannerID` Int32,
+    `OpenstatServiceName` String,
+    `OpenstatCampaignID` String,
+    `OpenstatAdID` String,
+    `OpenstatSourceID` String,
+    `UTMSource` String,
+    `UTMMedium` String,
+    `UTMCampaign` String,
+    `UTMContent` String,
+    `UTMTerm` String,
+    `FromTag` String,
+    `HasGCLID` UInt8,
+    `FirstVisit` DateTime,
+    `PredLastVisit` Date,
+    `LastVisit` Date,
+    `TotalVisits` UInt32,
+    `TraficSource` Nested(
+        ID Int8,
+        SearchEngineID UInt16,
+        AdvEngineID UInt8,
+        PlaceID UInt16,
+        SocialSourceNetworkID UInt8,
+        Domain String,
+        SearchPhrase String,
+        SocialSourcePage String),
+    `Attendance` FixedString(16),
+    `CLID` UInt32,
+    `YCLID` UInt64,
+    `NormalizedRefererHash` UInt64,
+    `SearchPhraseHash` UInt64,
+    `RefererDomainHash` UInt64,
+    `NormalizedStartURLHash` UInt64,
+    `StartURLDomainHash` UInt64,
+    `NormalizedEndURLHash` UInt64,
+    `TopLevelDomain` UInt64,
+    `URLScheme` UInt64,
+    `OpenstatServiceNameHash` UInt64,
+    `OpenstatCampaignIDHash` UInt64,
+    `OpenstatAdIDHash` UInt64,
+    `OpenstatSourceIDHash` UInt64,
+    `UTMSourceHash` UInt64,
+    `UTMMediumHash` UInt64,
+    `UTMCampaignHash` UInt64,
+    `UTMContentHash` UInt64,
+    `UTMTermHash` UInt64,
+    `FromHash` UInt64,
+    `WebVisorEnabled` UInt8,
+    `WebVisorActivity` UInt32,
+    `ParsedParams` Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    `Market` Nested(
+        Type UInt8,
+        GoalID UInt32,
+        OrderID String,
+        OrderPrice Int64,
+        PP UInt32,
+        DirectPlaceID UInt32,
+        DirectOrderID UInt32,
+        DirectBannerID UInt32,
+        GoodID String,
+        GoodName String,
+        GoodQuantity Int32,
+        GoodPrice Int64),
+    `IslandID` FixedString(16)
+)
+ENGINE = CollapsingMergeTree(Sign)
+PARTITION BY toYYYYMM(StartDate)
+ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
+```
 
-## Load Data
+You can execute those queries using interactive mode of `clickhouse-client` (just launch it in terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you ant.
+
+As we can see, `hits_v1` uses the [basic MergeTree engine](../operations/table_engines/mergetree.md), while the `visits_v1` uses the [Collapsing](../operations/table_engines/collapsingmergetree.md) variant.
+
+### Import Data
+
+Data import to ClickHouse is done via [INSERT INTO](../query_language/insert_into.md) query like in many other SQL databases. However data is usually provided in one of the [supported formats](../interfaces/formats.md) instead of `VALUES` clause (which is also supported).
+
+The files we downloaded earlier are in tab-separated format, so here's how to import them via console client:
+
 ``` bash
-xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"
+clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert_block_size=100000 < hits_v1.tsv
+clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse INSERT query allows to load data in any [supported format](../interfaces/formats.md). Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input. It is strongly recommended to insert data with [not so small blocks](../introduction/performance/#performance-when-inserting-data). Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576
-        rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case of disconnect during insert operation you may not know if the block was inserted successfully. To achieve exactly-once semantics ClickHouse supports idempotency for [replicated tables](../operations/table_engines/replication.md). This means that you may retry insert of the same data block (possibly on a different replicas) but this block will be inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data blocks generation and exactly-once semantics.
+ClickHouse has a lot of [settings to tune](../operations/settings.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
 
-INSERT query into tables of MergeTree type is non-blocking (so does a SELECT query). You can execute SELECT queries right after of during insert operation.
+``` sql
+SELECT name, value, changed, description
+FROM system.settings
+WHERE name LIKE '%max_insert_b%'
+FORMAT TSV
 
-Our sample dataset is a bit not optimal. There are two reasons:
+max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
+```
 
-* The first is that String data type is used in cases when [Enum](../data_types/enum.md) or numeric type would fit better.
-* The second is that dataset contains redundant fields like Year, Quarter, Month, DayOfMonth, DayOfWeek. In fact a single FlightDate would be enough. Most likely they have been added to improve performance for other DBMS'eswhere DateTime handling functions may be not efficient.
+Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with MergeTree-family engine always do merges of data parts in background to optimize data storage (or at least check if it makes sense). These queries will just force table engine to do storage optimization right now instead of some time later:
+``` bash
+clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
+clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
+```
 
-!!! note "Tip"
-    ClickHouse [functions for manipulating DateTime fields](../query_language/functions/date_time_functions/) are well-optimized so such redundancy is not required. Anyway many columns is not a reason to worry, because ClickHouse is a [column-oriented DBMS](https://en.wikipedia.org/wiki/Column-oriented_DBMS). This allows you to have as many fields as you need with minimal impact on performance. Hundreds of columns in a table is totally fine for ClickHouse.
+This is I/O and CPU intensive operation so if the table constantly receives new data it's better to leave it alone and let merges run in background.
 
-## Querying the Sample Dataset
+Now we can check that the tables are successfully imported:
+``` bash
+clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
+clickhouse-client --query "SELECT COUNT(*) FROM tutorial.visits_v1"
+```
+
+## Queries
 
 TODO
 
