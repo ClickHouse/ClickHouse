@@ -5,7 +5,7 @@ nav:
   - 'Distinctive Features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica Task': 'introduction/ya_metrika_task.md'
+  - 'History': 'introduction/history.md'
 
 - 'Getting Started':
   - 'hidden': 'getting_started/index.md'

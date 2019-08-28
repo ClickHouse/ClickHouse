@@ -5,7 +5,7 @@ nav:
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Производительность': 'introduction/performance.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
+  - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':

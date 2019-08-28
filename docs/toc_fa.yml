@@ -4,8 +4,8 @@ nav:
   - 'ClickHouse چیست؟': 'index.md'
   - ' ویژگی های برجسته ClickHouse': 'introduction/distinctive_features.md'
   - ' ویژگی های از ClickHouse که می تواند معایبی باشد': 'introduction/features_considered_disadvantages.md'
-  - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
+  - 'ﯽﯾﺍﺭﺎﮐ': 'introduction/performance.md'
+  - 'ﺦﯾﺭﺎﺗ': 'introduction/history.md'
 
 - 'Getting started':
   - 'hidden': 'getting_started/index.md'
