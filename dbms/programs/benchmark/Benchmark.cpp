@@ -32,6 +32,7 @@
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
+#include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 
 
@@ -504,7 +505,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     {
         using boost::program_options::value;
 
-        boost::program_options::options_description desc("Allowed options");
+        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
