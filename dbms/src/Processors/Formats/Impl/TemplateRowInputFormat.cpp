@@ -49,7 +49,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
         }
         else
         {
-            if (format.formats[i] == ColumnFormat::None || format.formats[i] == ColumnFormat::Xml || format.formats[i] == ColumnFormat::Raw)
+            if (format.formats[i] == ColumnFormat::Xml || format.formats[i] == ColumnFormat::Raw)
                 throw Exception("None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
         }
     }
@@ -66,11 +66,14 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
     std::vector<UInt8> column_in_format(header_.columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
-        if (row_format.formats[i] == ColumnFormat::None || row_format.formats[i] == ColumnFormat::Xml || row_format.formats[i] == ColumnFormat::Raw)
+        if (row_format.formats[i] == ColumnFormat::Xml || row_format.formats[i] == ColumnFormat::Raw)
             throw Exception("invalid template format: None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
 
-        if (format.format_idx_to_column_idx[i])
+        if (row_format.format_idx_to_column_idx[i])
         {
+            if (row_format.formats[i] == ColumnFormat::None)
+                throw Exception("invalid template format: None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
             if (column_in_format[col_idx])
                 throw Exception("invalid template format: duplicate column " + header_.getColumnsWithTypeAndName()[col_idx].name,
@@ -95,10 +98,10 @@ ReturnType TemplateRowInputFormat::tryReadPrefixOrSuffix(size_t input_part_beg, 
 
     skipSpaces();
     if constexpr (throw_exception)
-        assertString(format.delimiters[input_part_end], buf);
+        assertString(format.delimiters[input_part_beg], buf);
     else
     {
-        if (likely(!checkString(format.delimiters[input_part_end], buf)))
+        if (likely(!checkString(format.delimiters[input_part_beg], buf)))
             return ReturnType(false);
     }
 
@@ -219,6 +222,8 @@ void TemplateRowInputFormat::deserializeField(const IDataType & type, IColumn & 
 void TemplateRowInputFormat::skipField(TemplateRowInputFormat::ColumnFormat col_format)
 {
     String tmp;
+    constexpr const char * field_name = "<SKIPPED COLUMN>";
+    constexpr size_t field_name_len = 16;
     try
     {
         switch (col_format)
@@ -236,7 +241,7 @@ void TemplateRowInputFormat::skipField(TemplateRowInputFormat::ColumnFormat col_
                 readCSVString(tmp, buf, settings.csv);
                 break;
             case ColumnFormat::Json:
-                readJSONString(tmp, buf);
+                skipJSONField(buf, StringRef(field_name, field_name_len));
                 break;
             default:
                 __builtin_unreachable();
