@@ -90,11 +90,28 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             /// If table was already dropped by anyone, an exception will be thrown
 
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
-            /// Delete table metadata and table itself from memory
 
+            const auto prev_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql";
+            const auto drop_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql.tmp_drop";
+
+            /// Try to rename metadata file and delete the data
+            try
+            {
+                //There some kind of tables that have no metadata - ignore renaming
+                if (Poco::File(prev_metadata_name).exists())
+                    Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
+                /// Delete table data
+                database_and_table.second->drop(table_lock);
+            }
+            catch (...)
+            {
+                if (Poco::File(drop_metadata_name).exists())
+                    Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
+                throw;
+            }
+
+            /// Delete table metadata and table itself from memory
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
-            /// Delete table data
-            database_and_table.second->drop(table_lock);
             database_and_table.second->is_dropped = true;
 
             String database_data_path = database_and_table.first->getDataPath();
