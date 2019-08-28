@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-echo 'SELECT 1; SELECT 2; SELECT 3;' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @- 2&>1 /dev/null
+echo 'SELECT 1; SELECT 2; SELECT 3;' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @-
 
 echo '
 DROP TABLE IF EXISTS test.test_table_1;
@@ -31,7 +31,7 @@ select count(*) from system.tables where name in (
   'test_table_5'
 ) and database = 'test';
 " | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-)
-
+echo ${COUNT}
 if [ ${COUNT} -ne 5 ];
 then
   echo "MultiQuery failed"
@@ -55,7 +55,7 @@ select count(*) from system.tables where name in (
   'test_table_5'
 ) and database = 'test';
 " | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @-)
-
+echo ${COUNT}
 if [ ${COUNT} -ne 0 ];
 then
   echo "MultiQuery failed"
