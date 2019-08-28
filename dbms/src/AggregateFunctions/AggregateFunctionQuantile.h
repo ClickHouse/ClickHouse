@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 #include <type_traits>
 
@@ -143,7 +144,7 @@ public:
 
         if constexpr (returns_many)
         {
-            ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+            ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
             ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
             size_t size = levels.size();
@@ -154,7 +155,7 @@ public:
 
             if constexpr (returns_float)
             {
-                auto & data_to = static_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
+                auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
@@ -172,7 +173,7 @@ public:
         else
         {
             if constexpr (returns_float)
-                static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
+                assert_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }

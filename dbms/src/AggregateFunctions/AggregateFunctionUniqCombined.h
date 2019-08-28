@@ -4,6 +4,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -131,7 +132,7 @@ public:
     {
         if constexpr (!std::is_same_v<T, String>)
         {
-            const auto & value = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
             this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T>::hash(value));
         }
         else
@@ -158,7 +159,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
 
     const char * getHeaderFilePath() const override
@@ -222,7 +223,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
 
     const char * getHeaderFilePath() const override

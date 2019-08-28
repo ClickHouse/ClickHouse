@@ -8,7 +8,7 @@ namespace DB
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.
 /// Calculates all subsets of columns and aggregates over them.
-class CubeTransform : public IInflatingTransform
+class CubeTransform : public IAccumulatingTransform
 {
 public:
     CubeTransform(Block header, AggregatingTransformParamsPtr params);
@@ -16,20 +16,20 @@ public:
 
 protected:
     void consume(Chunk chunk) override;
-
-    bool canGenerate() override;
-
     Chunk generate() override;
 
 private:
     AggregatingTransformParamsPtr params;
     ColumnNumbers keys;
 
-    Chunk consumed_chunk;
+    Chunks consumed_chunks;
+    Chunk cube_chunk;
     Columns current_columns;
     Columns current_zero_columns;
 
     UInt64 mask = 0;
+
+    Chunk merge(Chunks && chunks, bool final);
 };
 
 }

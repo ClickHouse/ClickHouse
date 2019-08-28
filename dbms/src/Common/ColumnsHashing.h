@@ -4,6 +4,7 @@
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/LRUCache.h>
+#include <Common/assert_cast.h>
 #include <common/unaligned.h>
 
 #include <Columns/ColumnString.h>
@@ -80,7 +81,7 @@ struct HashMethodString
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
         const IColumn & column = *key_columns[0];
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
     }
@@ -120,7 +121,7 @@ struct HashMethodFixedString
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
         const IColumn & column = *key_columns[0];
-        const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
+        const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(column);
         n = column_string.getN();
         chars = &column_string.getChars();
     }
@@ -307,10 +308,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         switch (size_of_index_type)
         {
-            case sizeof(UInt8): return static_cast<const ColumnUInt8 *>(positions)->getElement(row);
-            case sizeof(UInt16): return static_cast<const ColumnUInt16 *>(positions)->getElement(row);
-            case sizeof(UInt32): return static_cast<const ColumnUInt32 *>(positions)->getElement(row);
-            case sizeof(UInt64): return static_cast<const ColumnUInt64 *>(positions)->getElement(row);
+            case sizeof(UInt8): return assert_cast<const ColumnUInt8 *>(positions)->getElement(row);
+            case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
+            case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
+            case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
             default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
         }
     }
