@@ -16,6 +16,7 @@
 #include <memory>
 #include <chrono>
 #include <cstring>
+#include <cassert>
 #include <iostream>
 
 #define DATE_LUT_MIN 0
