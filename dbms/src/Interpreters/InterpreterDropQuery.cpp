@@ -91,13 +91,17 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
 
-            const auto prev_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql";
-            const auto drop_metadata_name = database_and_table.first->getMetadataPath() + escapeForFileName(database_and_table.second->getTableName()) + ".sql.tmp_drop";
+            const std::string metadata_file_without_extension =
+                database_and_table.first->getMetadataPath()
+                + escapeForFileName(database_and_table.second->getTableName());
+
+            const auto prev_metadata_name = metadata_file_without_extension + ".sql";
+            const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
 
             /// Try to rename metadata file and delete the data
             try
             {
-                //There some kind of tables that have no metadata - ignore renaming
+                /// There some kind of tables that have no metadata - ignore renaming
                 if (Poco::File(prev_metadata_name).exists())
                     Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
                 /// Delete table data

@@ -136,14 +136,14 @@ void DatabaseOrdinary::loadTables(
             continue;
 
         // There are files that we tried to delete previously
-        const std::string tmp_drop_ext = ".sql.tmp_drop";
-        if (endsWith(dir_it.name(), ".sql.tmp_drop"))
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        if (endsWith(dir_it.name(), tmp_drop_ext))
         {
-            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - tmp_drop_ext.size());
+            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
             if (Poco::File(data_path + '/' + table_name).exists())
             {
                 Poco::File(dir_it->path()).renameTo(table_name + ".sql");
-                LOG_WARNING(log, "Table was not dropped previously");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
             }
             else
             {
@@ -325,7 +325,10 @@ void DatabaseOrdinary::removeTable(
             Poco::File(table_metadata_path + ".tmp_drop").remove();
             return;
         }
-        catch (...) {}
+        catch (...)
+        {
+            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        }
         attachTable(table_name, res);
         throw;
     }
