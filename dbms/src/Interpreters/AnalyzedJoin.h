@@ -42,8 +42,6 @@ private:
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
-    /// Columns from joined table which may be added to block. It's columns_from_joined_table with possibly modified types.
-    NamesAndTypesList available_joined_columns;
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only ranamed columns.
@@ -61,7 +59,6 @@ public:
     std::unordered_map<String, String> getOriginalColumnsMap(const NameSet & required_columns) const;
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
-    void calculateAvailableJoinedColumns(bool make_nullable);
     size_t rightKeyInclusion(const String & name) const;
 };
 
