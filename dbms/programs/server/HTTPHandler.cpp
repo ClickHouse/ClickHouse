@@ -36,6 +36,8 @@
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
+#include <IO/LimitReadBuffer.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -622,10 +624,40 @@ void HTTPHandler::processQuery(
 
     customizeContext(context);
 
-    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); },
-        [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
+    if (params.get("multiquery") == "true")
+    {
+        size_t max_query_size = context.getSettingsRef().max_query_size;
+        std::vector<String> queries;
+        PODArray<char> parse_buf;
+        ReadBuffer & input_buffer = *in;
 
+        /// If 'in' is empty now, fetch next data into buffer.
+        if (input_buffer.buffer().size() == 0)
+            input_buffer.next();
+
+        WriteBufferFromVector<PODArray<char>> out(parse_buf);
+        LimitReadBuffer limit(input_buffer, max_query_size + 1, false);
+        copyData(limit, out);
+        out.finish();
+        std::string queries_str = std::string(parse_buf.data(), parse_buf.size());
+
+        splitMultipartQuery(queries_str, queries);
+
+        for (const auto & query : queries)
+        {
+            ReadBufferFromString read_buf(query);
+            executeQuery(read_buf, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
+                         [&response] (const String & content_type) { response.setContentType(content_type); },
+                         [&response] (const String & current_query_id) { response.add("Query-Id", current_query_id); });
+        }
+    }
+    else
+    {
+        executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
+                     [&response] (const String & content_type) { response.setContentType(content_type); },
+                     [&response] (const String & current_query_id) { response.add("Query-Id", current_query_id); });
+    }
+    
     if (used_output.hasDelayed())
     {
         /// TODO: set Content-Length if possible
