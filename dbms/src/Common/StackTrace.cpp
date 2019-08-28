@@ -1,15 +1,20 @@
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
-#include <Common/config.h>
 #include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
+
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <sstream>
-#include <filesystem>
-#include <unordered_map>
-#include <cstring>
+#include <Common/SymbolIndex.h>
+#include <Common/config.h>
+#include <common/SimpleCache.h>
+#include <common/demangle.h>
 
+#include <cstring>
+#include <filesystem>
+#include <sstream>
+#include <unordered_map>
+
+#if USE_UNWIND
+#   include <libunwind.h>
+#endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
@@ -214,12 +219,6 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 StackTrace::StackTrace(NoCapture)
 {
 }
-
-
-#if USE_UNWIND
-extern "C" int unw_backtrace(void **, int);
-#endif
-
 
 void StackTrace::tryCapture()
 {
