@@ -24,11 +24,15 @@ if (USE_LIBCXX)
         find_library (LIBCXX_LIBRARY c++)
         find_library (LIBCXXFS_LIBRARY c++fs)
         find_library (LIBCXXABI_LIBRARY c++abi)
+
+        target_link_libraries(global-libs INTERFACE ${EXCEPTION_HANDLING_LIBRARY})
     else ()
         set (LIBCXX_LIBRARY cxx)
         set (LIBCXXABI_LIBRARY cxxabi)
         add_subdirectory(contrib/libcxxabi-cmake)
         add_subdirectory(contrib/libcxx-cmake)
+
+        # Exception handling library is embedded into libcxxabi.
     endif ()
 
     target_link_libraries(global-libs INTERFACE ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} ${LIBCXXFS_LIBRARY})
@@ -40,6 +44,6 @@ if (USE_LIBCXX)
     message (STATUS "Using libcxxfs: ${LIBCXXFS_LIBRARY}")
     message (STATUS "Using libcxxabi: ${LIBCXXABI_LIBRARY}")
 else ()
-    # Always link these libraries as static
-    target_link_libraries(global-libs INTERFACE -l:libstdc++.a -l:libstdc++fs.a)
+    target_link_libraries(global-libs INTERFACE -l:libstdc++.a -l:libstdc++fs.a) # Always link these libraries as static
+    target_link_libraries(global-libs INTERFACE ${EXCEPTION_HANDLING_LIBRARY})
 endif ()
