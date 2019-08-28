@@ -278,8 +278,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
         case JOIN:
         {
             bool is_null_used_as_default = settings.join_use_nulls;
-            bool right_or_full_join = join_kind == ASTTableJoin::Kind::Right || join_kind == ASTTableJoin::Kind::Full;
-            bool left_or_full_join = join_kind == ASTTableJoin::Kind::Left || join_kind == ASTTableJoin::Kind::Full;
+            bool right_or_full_join = isRightOrFull(join_kind);
+            bool left_or_full_join = isLeftOrFull(join_kind);
 
             for (auto & col : sample_block)
             {
