@@ -241,6 +241,7 @@ target_link_libraries(clickhouse_common_io
     ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PRIVATE
     apple_rt
         PUBLIC
