@@ -264,9 +264,10 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
 endif ()
 
-if (NOT SANITIZE AND NOT SPLIT_SHARED_LIBRARIES)
-    set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+# Make this extra-checks for correct library dependencies.
+if (NOT SANITIZE)
+    set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
 include (cmake/find_unwind.cmake)
@@ -328,7 +329,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
         if (USE_INTERNAL_LIBCXX_LIBRARY)
             set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
         else ()
-            set (LIBCXX_LIBS "-lc++ -lc++abi")
+            set (LIBCXX_LIBS "-lc++ -lc++abi -lc++fs")
         endif ()
 
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
@@ -479,6 +480,7 @@ include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
 include (cmake/find_fastops.cmake)
+include (cmake/find_orc.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

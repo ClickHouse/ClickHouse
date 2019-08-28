@@ -1,15 +1,9 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/IndicesDescription.h>
 #include <Storages/IStorage_fwd.h>
-#include <Poco/File.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
+#include <Common/Exception.h>
 
 #include <ctime>
 #include <functional>
@@ -20,8 +14,16 @@ namespace DB
 {
 
 class Context;
-
 struct Settings;
+struct ConstraintsDescription;
+class ColumnsDescription;
+struct IndicesDescription;
+struct TableStructureWriteLockHolder;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 
 /** Allows to iterate over tables.
@@ -101,21 +103,29 @@ public:
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
-        const Context & context,
-        const String & name,
-        IDatabase & to_database,
-        const String & to_name) = 0;
+        const Context & /*context*/,
+        const String & /*name*/,
+        IDatabase & /*to_database*/,
+        const String & /*to_name*/,
+        TableStructureWriteLockHolder &)
+    {
+        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
     /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
-        const Context & context,
-        const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ASTModifier & engine_modifier) = 0;
+        const Context & /*context*/,
+        const String & /*name*/,
+        const ColumnsDescription & /*columns*/,
+        const IndicesDescription & /*indices*/,
+        const ConstraintsDescription & /*constraints*/,
+        const ASTModifier & /*engine_modifier*/)
+    {
+        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getTableMetadataModificationTime(

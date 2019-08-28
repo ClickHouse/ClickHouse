@@ -114,6 +114,7 @@ add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
+add_headers_and_sources(dbms src/Storages/LiveView)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
 add_headers_and_sources(dbms src/Processors)
@@ -240,6 +241,7 @@ target_link_libraries(clickhouse_common_io
     ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PRIVATE
     apple_rt
         PUBLIC

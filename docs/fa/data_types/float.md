@@ -32,7 +32,7 @@ SELECT 1 - 0.9
 - محاسبات Float ممکن اسن نتایجی مثل infinity (`inf`) و "Not-a-number" (`Nan`) داشته باشد. این در هنگام پردازش نتایج محاسبات باید مورد توجه قرار گیرد.
 - هنگام خواندن اعداد float از سطر ها، نتایج ممکن است نزدیک به اعداد machine-representable نباشد.
 
-## NaN و Inf
+## NaN و Inf {#data_type-float-nan-inf}
 
 در مقابل استاندارد SQL، ClickHouse از موارد زیر مربوط به اعداد float پشتیبانی می کند:
 

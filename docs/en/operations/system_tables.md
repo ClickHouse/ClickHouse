@@ -87,10 +87,9 @@ This table contains a single String column called 'name' – the name of a datab
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.detached_parts
+## system.detached_parts {#system_tables-detached_parts}
 
-Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts).
-
+Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
 ## system.dictionaries
 
@@ -249,55 +248,81 @@ This is similar to the DUAL table found in other DBMSs.
 
 Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
-Each row describes one part of the data.
+Each row describes one data part.
 
 Columns:
 
-- partition (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
+- `partition` (`String`) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
 
-Formats:
-- `YYYYMM` for automatic partitioning by month.
-- `any_string` when partitioning manually.
+    Formats:
 
-- name (String) – Name of the data part.
+    - `YYYYMM` for automatic partitioning by month.
+    - `any_string` when partitioning manually.
 
-- active (UInt8) – Indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
+- `name` (`String`) – Name of the data part.
 
-- marks (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply ``marks`` by the index granularity (usually 8192).
+- `active` (`UInt8`) – Flag that indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
 
-- marks_size (UInt64) – The size of the file with marks.
+- `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn't work for adaptive granularity).
 
-- rows (UInt64) – The number of rows.
+- `rows` (`UInt64`) – The number of rows.
 
-- bytes (UInt64) – The number of bytes when compressed.
+- `bytes_on_disk` (`UInt64`) – Total size of all the data part files in bytes.
 
-- modification_time (DateTime) – The modification time of the directory with the data part. This usually corresponds to the time of data part creation.|
+- `data_compressed_bytes` (`UInt64`) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
-- remove_time (DateTime) – The time when the data part became inactive.
+- `data_uncompressed_bytes` (`UInt64`) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
-- refcount (UInt32) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
+- `marks_bytes` (`UInt64`) – The size of the file with marks.
 
-- min_date (Date) – The minimum value of the date key in the data part.
+- `modification_time` (`DateTime`) – The modification time of the directory with the data part. This usually corresponds to the time of data part creation.|
 
-- max_date (Date) – The maximum value of the date key in the data part.
+- `remove_time` (`DateTime`) – The time when the data part became inactive.
 
-- min_block_number (UInt64) – The minimum number of data parts that make up the current part after merging.
+- `refcount` (`UInt32`) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
 
-- max_block_number (UInt64) – The maximum number of data parts that make up the current part after merging.
+- `min_date` (`Date`) – The minimum value of the date key in the data part.
 
-- level (UInt32) – Depth of the merge tree. If a merge was not performed, ``level=0``.
+- `max_date` (`Date`) – The maximum value of the date key in the data part.
 
-- primary_key_bytes_in_memory (UInt64) – The amount of memory (in bytes) used by primary key values.
+- `min_time` (`DateTime`) – The minimum value of the date and time key in the data part.
 
-- primary_key_bytes_in_memory_allocated (UInt64) – The amount of memory (in bytes) reserved for primary key values.
+- `max_time`(`DateTime`) – The maximum value of the date and time key in the data part.
 
-- database (String) – Name of the database.
+- `partition_id` (`String`) – Id of the partition.
 
-- table (String) – Name of the table.
+- `min_block_number` (`UInt64`) – The minimum number of data parts that make up the current part after merging.
 
-- engine (String) – Name of the table engine without parameters.
+- `max_block_number` (`UInt64`) – The maximum number of data parts that make up the current part after merging.
 
-- is_frozen (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+- `level` (`UInt32`) – Depth of the merge tree. Zero means that current part was created by insert rather than by merging other parts.
+
+- `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (the mutations with the higher version than `data_version`).
+
+- `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
+
+- `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
+
+- `is_frozen` (`UInt8`) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+
+- `database` (`String`) – Name of the database.
+
+- `table` (`String`) – Name of the table.
+
+- `engine` (`String`) – Name of the table engine without parameters.
+
+- `path` (`String`) – Absolute path to the folder with data part files.
+
+- `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+
+- `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed data.
+
+- `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of the file with marks.
+
+- `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
+
+- `marks_size` (`UInt64`) – Alias for `marks_bytes`.
+
 
 ## system.part_log {#system_tables-part-log}
 
@@ -357,15 +382,15 @@ Contains information about execution of queries. For each query, you can see pro
 
 !!! note
     The table doesn't contain input data for `INSERT` queries.
-    
+
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
 To enable query logging, set the [log_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
- 
+
 1. Initial queries that were run directly by the client.
-2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns. 
+2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
 
 Columns:
 
@@ -376,8 +401,8 @@ Columns:
     - 4 — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
-- `query_start_time` (DateTime) — Start time of query processing.
-- `query_duration_ms` (UInt64) — Duration of query processing. 
+- `query_start_time` (DateTime) — Start time of query execution.
+- `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
 - `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
@@ -388,7 +413,7 @@ Columns:
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Kind of query. Possible values: 
+- `is_initial_query` (UInt8) — Kind of query. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
@@ -410,7 +435,7 @@ Columns:
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface. 
+    - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.

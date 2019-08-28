@@ -10,6 +10,18 @@ endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+if (USE_INTERNAL_ORC_LIBRARY)
+    set(BUILD_JAVA OFF)
+    set (ANALYZE_JAVA OFF)
+    set (BUILD_CPP_TESTS OFF)
+    set (BUILD_TOOLS OFF)
+    option(BUILD_JAVA OFF)
+    option (ANALYZE_JAVA OFF)
+    option (BUILD_CPP_TESTS OFF)
+    option (BUILD_TOOLS OFF)
+    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/contrib/orc/cmake_modules")
+    add_subdirectory(orc)
+endif()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind-cmake)

@@ -72,7 +72,7 @@ public:
             offsets.push_back(offset);
         }
 
-        block.getByPosition(result).column = ColumnArray::create(col_value->replicate(offsets), std::move(offsets_col));
+        block.getByPosition(result).column = ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
     }
 };
 
