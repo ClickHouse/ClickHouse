@@ -51,12 +51,6 @@ MemoryTracker * CurrentThread::getMemoryTracker()
     return &current_thread->memory_tracker;
 }
 
-Int64 & CurrentThread::getUntrackedMemory()
-{
-    /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
-    return current_thread->untracked_memory;
-}
-
 void CurrentThread::updateProgressIn(const Progress & value)
 {
     if (unlikely(!current_thread))

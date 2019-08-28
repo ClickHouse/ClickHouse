@@ -95,7 +95,7 @@ Configuration example:
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-This storage method works the same way as hashed and allows using date/time ranges in addition to the key, if they appear in the dictionary.
+This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
 
@@ -111,7 +111,7 @@ Example: The table contains discounts for each advertiser in the format:
 +---------------+---------------------+-------------------+--------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md). These elements must contain elements `name` and` type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
 Example:
 
@@ -122,14 +122,16 @@ Example:
     </id>
     <range_min>
         <name>first</name>
+        <type>Date</type>
     </range_min>
     <range_max>
         <name>last</name>
+        <type>Date</type>
     </range_max>
     ...
 ```
 
-To work with these dictionaries, you need to pass an additional date argument to the `dictGetT` function:
+To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
 
 ```
 dictGetT('dict_name', 'attr_name', id, date)
@@ -160,10 +162,12 @@ Configuration example:
                                 <name>Abcdef</name>
                         </id>
                         <range_min>
-                                <name>StartDate</name>
+                                <name>StartTimeStamp</name>
+                                <type>UInt64</type>
                         </range_min>
                         <range_max>
-                                <name>EndDate</name>
+                                <name>EndTimeStamp</name>
+                                <type>UInt64</type>
                         </range_max>
                         <attribute>
                                 <name>XXXType</name>

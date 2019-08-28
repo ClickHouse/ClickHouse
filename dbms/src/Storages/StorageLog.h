@@ -21,6 +21,7 @@ class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageLog>;
 
 public:
     std::string getName() const override { return "Log"; }
@@ -57,6 +58,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         size_t max_compress_block_size_);
 
 private:
