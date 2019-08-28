@@ -87,8 +87,6 @@ def test_sophisticated_default(started_cluster):
     
     queries = [
         "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(redirecting_host, redirecting_to_http_port, format),
-#        "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(redirecting_host, redirecting_to_https_port, format),
-# FIXME
     ]
     
     put_query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(redirecting_host, preserving_data_port, bucket, format, values)
@@ -155,7 +153,6 @@ def test_sophisticated_default(started_cluster):
                 self.wfile.write("%s %d %s\r\n" % (self.protocol_version, code, message))
 
         def handle_expect_100(self):
-            # FIXME it does not work in Python 2. :(
             print('Received Expect-100')
             self.send_response_only(100)
             self.end_headers()
@@ -176,7 +173,6 @@ def test_sophisticated_default(started_cluster):
                 data = self.rfile.read(int(self.headers.get('Content-Length')))
                 assert query == 'uploadId=TEST'
                 assert data == b'<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>hello-etag</ETag></Part></CompleteMultipartUpload>'
-                self.send_header('Content-length', '0') # FIXME on python2 somehow connection does not close without this
                 self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 global received_data_completed
