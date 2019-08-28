@@ -44,9 +44,16 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
 }
 
 
+__attribute__((__weak__)) extern bool inside_main;
+
 DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     : time_zone(time_zone_)
 {
+    /// DateLUT should not be initialized in global constructors for the following reasons:
+    /// 1. It is too heavy.
+    if (&inside_main)
+        assert(inside_main);
+
     size_t i = 0;
     time_t start_of_day = DATE_LUT_MIN;
 
