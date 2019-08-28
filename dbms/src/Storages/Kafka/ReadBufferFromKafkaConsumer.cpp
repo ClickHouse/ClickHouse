@@ -72,7 +72,7 @@ void ReadBufferFromKafkaConsumer::commit()
     {
         /// Since we can poll more messages than we already processed,
         /// commit only processed messages.
-        consumer->async_commit(*current);
+        consumer->async_commit(*std::prev(current));
     }
     else
     {

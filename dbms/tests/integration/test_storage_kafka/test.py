@@ -30,7 +30,6 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/kafka.xml'],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
@@ -606,7 +605,7 @@ def test_kafka_produce_consume(kafka_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(60)
 def test_kafka_commit_on_block_write(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -617,6 +616,7 @@ def test_kafka_commit_on_block_write(kafka_cluster):
                      kafka_topic_list = 'block',
                      kafka_group_name = 'block',
                      kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
                      kafka_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
@@ -658,13 +658,14 @@ def test_kafka_commit_on_block_write(kafka_cluster):
                      kafka_topic_list = 'block',
                      kafka_group_name = 'block',
                      kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
                      kafka_row_delimiter = '\\n';
     ''')
 
     while int(instance.query('SELECT uniqExact(key) FROM test.view')) < i[0]:
         time.sleep(1)
 
-    result = instance.query('SELECT count() == uniqExact(key) FROM test.view')
+    result = int(instance.query('SELECT count() == uniqExact(key) FROM test.view'))
 
     instance.query('''
         DROP TABLE test.consumer;
@@ -673,7 +674,7 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 
     kafka_thread.join()
 
-    assert result == '1', 'Messages from kafka get duplicated!'
+    assert result == 1, 'Messages from kafka get duplicated!'
 
 
 if __name__ == '__main__':
