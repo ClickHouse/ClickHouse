@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
     extern const int UNKNOWN_SETTING;
+    extern const int UNSUPPORTED_SKIP_INDEX_EXPRESSION;
 }
 
 
@@ -349,6 +350,7 @@ void MergeTreeData::setProperties(
 
     MergeTreeIndices new_indices;
 
+    auto settings_ptr = getSettings();
     if (!indices_description.indices.empty())
     {
         std::set<String> indices_names;
@@ -357,11 +359,18 @@ void MergeTreeData::setProperties(
         {
             const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
-            new_indices.push_back(
-                    MergeTreeIndexFactory::instance().get(
-                            all_columns,
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                            global_context));
+            auto index_ptr = MergeTreeIndexFactory::instance().get(
+                all_columns,
+                std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                global_context);
+
+            if (index_ptr->getColumnsRequiredForIndexCalc().size() > 1 && settings_ptr->enable_vertical_merge_algorithm)
+                throw Exception("Index '" + index_ptr->name + "' contains expression with multiple columns and "
+                    + "'enable_vertical_merge_algorithm' is set to true in storage settings. "
+                    + "Disable vertical merge or use only one column in index expression.",
+                    ErrorCodes::UNSUPPORTED_SKIP_INDEX_EXPRESSION);
+
+            new_indices.push_back(std::move(index_ptr));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
@@ -1293,7 +1302,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
 
         if (columns_alter_forbidden.count(command.column_name))
-            throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
         if (columns_alter_metadata_only.count(command.column_name))
         {
@@ -1600,7 +1609,7 @@ void MergeTreeData::alterDataPart(
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
-            {},
+            {}, /// currently restricted
             unused_written_offsets,
             part->index_granularity,
             &part->index_granularity_info);
@@ -3083,6 +3092,21 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
             return false;
     }
     return true;
+}
+
+
+std::vector<MergeTreeIndexPtr> MergeTreeData::getIndicesForColumn(const String & column_name) const
+{
+    std::vector<MergeTreeIndexPtr> result;
+
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+    {
+        const auto & index_columns = skip_indices[i]->getColumnsRequiredForIndexCalc();
+        if (std::find(index_columns.begin(), index_columns.end(), column_name) != index_columns.end())
+            result.emplace_back(skip_indices[i]);
+    }
+
+    return result;
 }
 
 }

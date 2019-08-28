@@ -104,11 +104,25 @@ public:
     virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
+    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+
+    /// Index name
     String name;
+
+    /// Index expression with columns arguments
     ExpressionActionsPtr expr;
+
+    /// Names of columns which are used
+    /// to calculate expression for index
     Names columns;
+
+    /// Data types of columns
     DataTypes data_types;
+
+    /// Block with columns and data_types
     Block header;
+
+    /// Skip index granularity
     size_t granularity;
 };
 
