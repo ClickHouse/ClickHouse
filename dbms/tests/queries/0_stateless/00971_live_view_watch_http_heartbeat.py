@@ -15,6 +15,9 @@ log = None
 with client(name='client1>', log=log) as client1:
     client1.expect(prompt)
 
+    client1.send('SET allow_experimental_live_view = 1')
+    client1.expect(prompt)
+
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
     client1.send(' DROP TABLE IF EXISTS test.mt')
@@ -24,7 +27,7 @@ with client(name='client1>', log=log) as client1:
     client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
 
-    with http_client({'method':'GET', 'url':'/?live_view_heartbeat_interval=1&query=WATCH%20test.lv%20FORMAT%20JSONEachRowWithProgress'}, name='client2>', log=log) as client2:
+    with http_client({'method':'GET', 'url':'/?allow_experimental_live_view=1&live_view_heartbeat_interval=1&query=WATCH%20test.lv%20FORMAT%20JSONEachRowWithProgress'}, name='client2>', log=log) as client2:
         client2.expect('"progress".*',)
         client2.expect('{"row":{"sum(a)":"0","_version":"1"}}\n', escape=True)
         client2.expect('"progress".*\n')

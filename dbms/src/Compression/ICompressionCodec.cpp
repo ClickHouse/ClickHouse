@@ -47,7 +47,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 header_size = getHeaderSize();
-    UInt32 decompressed_size = unalignedLoad<UInt32>(&source[5]);
+    UInt32 decompressed_size = readDecompressedBlockSize(source);
     doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
 
     return decompressed_size;

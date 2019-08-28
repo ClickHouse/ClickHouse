@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/File.h>
 #include <Common/ThreadPool.h>
@@ -115,6 +116,7 @@ public:
         const String & name,
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
+        const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

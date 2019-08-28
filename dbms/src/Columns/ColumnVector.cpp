@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -224,7 +225,7 @@ Float64 ColumnVector<T>::getFloat64(size_t n) const
 template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnVector & src_vec = static_cast<const ColumnVector &>(src);
+    const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
         throw Exception("Parameters start = "

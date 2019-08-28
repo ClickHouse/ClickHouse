@@ -13,6 +13,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -195,7 +196,7 @@ public:
         // input data
         const auto & return_type = block.getByPosition(result).type;
         auto res_ptr = return_type->createColumn();
-        ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+        ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
         IColumn & res_data = res.getData();
         ColumnArray::Offsets & res_offsets = res.getOffsets();

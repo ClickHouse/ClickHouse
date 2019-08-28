@@ -1,6 +1,7 @@
 #include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -68,7 +69,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     if (length == 0)
         return;
 
-    const ColumnString & src_concrete = static_cast<const ColumnString &>(src);
+    const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
         throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
@@ -360,7 +361,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 {
-    const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
+    const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
 
     return collator.compare(
         reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),

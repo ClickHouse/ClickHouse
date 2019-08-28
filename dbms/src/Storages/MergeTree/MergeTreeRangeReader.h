@@ -41,7 +41,7 @@ public:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark,  MergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, MergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.

@@ -22,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -264,11 +265,11 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<Float> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<Float> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<Float>::create(size);
-        auto & res_data = static_cast<ColumnVector<Float> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<Float> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -356,7 +357,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnFixedString & column_fixed_string = static_cast<const ColumnFixedString &>(column);
+        const ColumnFixedString & column_fixed_string = assert_cast<const ColumnFixedString &>(column);
         const size_t string_size = column_fixed_string.getN();
 
         const auto & src_data = column_fixed_string.getChars();
@@ -393,11 +394,11 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<UInt32> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<UInt32> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<UInt32>::create(size);
-        auto & res_data = static_cast<ColumnVector<UInt32> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<UInt32> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -750,7 +751,7 @@ public:
 
     void train(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         for (size_t i = 0; i < size; ++i)
@@ -767,7 +768,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         auto res_column = ColumnString::create();
@@ -802,7 +803,7 @@ public:
 
     void train(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         nested_model->train(nested_column);
@@ -815,7 +816,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -835,7 +836,7 @@ public:
 
     void train(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         nested_model->train(nested_column);
@@ -848,7 +849,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
