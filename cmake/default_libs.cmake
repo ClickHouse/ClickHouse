@@ -12,7 +12,7 @@ if (OS_LINUX)
         set (BUILTINS_LIBRARY "-lgcc")
     endif ()
 
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 endif ()
@@ -28,7 +28,6 @@ add_library(global-libs INTERFACE)
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-target_link_libraries(global-libs INTERFACE pthread ${CMAKE_DL_LIBS})
 
 add_subdirectory(libs/libglibc-compatibility)
 include (cmake/find_unwind.cmake)

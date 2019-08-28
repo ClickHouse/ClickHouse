@@ -26,7 +26,6 @@ set(LIBUNWIND_SOURCES
 
 add_library(unwind ${LIBUNWIND_SOURCES})
 
-target_link_libraries(unwind PRIVATE Threads::Threads)
 target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
 target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
 target_compile_options(unwind PRIVATE -fno-exceptions -funwind-tables -fno-sanitize=all -nostdinc++ -fno-rtti)
