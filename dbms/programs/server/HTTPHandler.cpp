@@ -657,7 +657,7 @@ void HTTPHandler::processQuery(
                      [&response] (const String & content_type) { response.setContentType(content_type); },
                      [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
     }
-    
+
     if (used_output.hasDelayed())
     {
         /// TODO: set Content-Length if possible
