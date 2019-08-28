@@ -470,7 +470,7 @@ StorageLiveView::~StorageLiveView()
         no_users_thread.detach();
 }
 
-void StorageLiveView::drop()
+void StorageLiveView::drop(TableStructureWriteLockHolder &)
 {
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
