@@ -20,7 +20,7 @@ struct SyntaxAnalyzerResult
     NamesAndTypesList source_columns;
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
-    /// Columns will be added to block by JOIN. It's a subset of analyzed_join.available_joined_columns
+    /// Columns will be added to block by JOIN. It's a subset of analyzed_join.columns_from_joined_table with corrected Nullability
     NamesAndTypesList columns_added_by_join;
 
     Aliases aliases;
@@ -42,7 +42,7 @@ struct SyntaxAnalyzerResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
-    void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
+    void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns, bool make_joined_columns_nullable);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
 };
 
